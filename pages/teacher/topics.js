@@ -137,14 +137,32 @@ export default function TopicsPage() {
 카테고리: ${cat}
 최근 주제 (중복 피하기): ${recentTitles || '없음'}
 
-JSON 형식으로만 응답:
-{"title":"주제 제목","description":"학생에게 설명할 내용 (2-3문장, 친근하게)"}`
+다음 항목을 모두 만들어줘:
+1. 주제 제목 (간결하고 흥미로워야 함)
+2. 주제 설명 (학생에게 친근하게, 2-3문장으로 어떻게 쓰면 좋을지 안내)
+3. 평가 기준 4개 (각각 25점, 합 100점)
+   - 이 주제에 어울리는 평가 기준이어야 함
+   - 예: "주제에 맞는 내용", "글의 짜임새", "풍부한 표현", "맞춤법과 문법"
 
-      const text = await callGemini(apiKey, prompt, { maxTokens: 500 })
+JSON 형식으로만 응답 (다른 설명 X):
+{"title":"주제 제목","description":"주제 설명","rubrics":[{"name":"기준 이름","score":25},{"name":"기준 이름","score":25},{"name":"기준 이름","score":25},{"name":"기준 이름","score":25}]}`
+
+      const text = await callGemini(apiKey, prompt, { maxTokens: 800 })
       const result = parseAIJson(text)
 
       if (result.title) setTitle(result.title)
       if (result.description) setDesc(result.description)
+      if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
+        // 점수 합이 100이 되도록 보정
+        const totalCheck = result.rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)
+        if (totalCheck === 100) {
+          setRubrics(result.rubrics)
+        } else {
+          // 합이 100이 아니면 균등 분배
+          const eachScore = Math.floor(100 / result.rubrics.length)
+          setRubrics(result.rubrics.map(r => ({ name: r.name, score: eachScore })))
+        }
+      }
     } catch(e) {
       alert('AI 추천 실패: ' + e.message)
     }
