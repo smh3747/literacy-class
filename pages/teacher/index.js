@@ -1,13 +1,16 @@
 import Head from 'next/head'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
+import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import ApiKeyManager from '../../components/ApiKeyManager'
 
 export default function TeacherHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
+  const [stats, setStats] = useState({ students: 0, topics: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { checkAuth() }, [])
@@ -17,19 +20,22 @@ export default function TeacherHome() {
     if (!authUser) { router.push('/teacher/login'); return }
     const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
-      await supabase.auth.signOut()
-      router.push('/teacher/login')
-      return
+      await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
+    
+    if (profile.classes?.id) {
+      const [s, t] = await Promise.all([
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('class_id', profile.classes.id).eq('role', 'student'),
+        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id)
+      ])
+      setStats({ students: s.count || 0, topics: t.count || 0 })
+    }
     setLoading(false)
   }
 
-  const logout = async () => {
-    await supabase.auth.signOut()
-    router.push('/')
-  }
+  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
 
@@ -38,22 +44,56 @@ export default function TeacherHome() {
       <Head><title>선생님 화면 - 문해력 수업</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
-        <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+        <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+          <div>
+            <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
+            <p className="text-sm text-gray-600 mt-1">{user.role === 'admin' ? '👑 관리자' : '👩‍🏫 담임 교사'}</p>
+          </div>
+
+          {/* 학급 정보 카드 */}
           {classInfo && (
-            <div className="bg-primary-light border border-primary rounded-2xl p-5">
-              <div className="text-sm text-primary-dark font-semibold mb-1">📋 우리 학급</div>
-              <div className="text-xl font-bold text-primary-dark mb-2">{classInfo.name}</div>
-              <div className="text-sm text-primary-dark">
-                학생 가입 코드: <span className="text-2xl font-mono font-bold tracking-widest">{classInfo.code}</span>
+            <div className="bg-primary-light border-2 border-primary rounded-2xl p-5">
+              <div className="text-xs text-primary-dark font-semibold mb-1">📋 우리 학급</div>
+              <div className="text-2xl font-bold text-primary-dark mb-3">{classInfo.name}</div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="text-xs text-primary-dark mb-1">학생 가입 코드</div>
+                  <div className="text-3xl font-mono font-bold tracking-widest text-primary-dark">{classInfo.code}</div>
+                </div>
+                <div className="text-right text-sm">
+                  <div className="text-primary-dark">학생 <strong>{stats.students}</strong>명</div>
+                  <div className="text-primary-dark">주제 <strong>{stats.topics}</strong>개</div>
+                </div>
               </div>
-              <p className="text-xs text-gray-700 mt-2">학생들에게 이 코드를 알려주세요. 가입 시 입력해야 해요.</p>
+              <p className="text-xs text-gray-700 mt-3">학생들에게 위 코드를 알려주세요. 가입 시 입력해야 해요.</p>
             </div>
           )}
 
-          <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
-            <div className="text-5xl mb-3">👩‍🏫</div>
-            <h2 className="text-xl font-bold mb-2">{user.realname} 선생님 환영합니다!</h2>
-            <p className="text-gray-600">학생 일괄 등록, 주제 관리 등은 다음 단계에서 추가됩니다.</p>
+          {/* API 키 관리 */}
+          <ApiKeyManager />
+
+          {/* 메뉴 */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Link href="/teacher/topics" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📚</div>
+              <h3 className="font-bold mb-1">주제 관리</h3>
+              <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
+            </Link>
+            <Link href="/teacher/students" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">👥</div>
+              <h3 className="font-bold mb-1">학생 관리</h3>
+              <p className="text-xs text-gray-500">학급명렬표 일괄 등록</p>
+            </Link>
+            <div className="bg-gray-100 rounded-2xl p-5 border border-gray-200 opacity-60">
+              <div className="text-3xl mb-2">📝</div>
+              <h3 className="font-bold mb-1">학생 글 보기</h3>
+              <p className="text-xs text-gray-500">3단계-B에서 추가됩니다</p>
+            </div>
+            <div className="bg-gray-100 rounded-2xl p-5 border border-gray-200 opacity-60">
+              <div className="text-3xl mb-2">📊</div>
+              <h3 className="font-bold mb-1">학생 기록</h3>
+              <p className="text-xs text-gray-500">3단계-B에서 추가됩니다</p>
+            </div>
           </div>
         </main>
       </div>
