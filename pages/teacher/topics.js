@@ -119,11 +119,11 @@ export default function TopicsPage() {
     await loadTopics(classInfo.id)
   }
 
-  // AI 주제 추천 (Gemini)
+  // AI 주제 추천 (Gemini) - 2단계로 나눠서 안정적으로
   const suggestTopic = async () => {
     const apiKey = loadApiKey()
     if (!apiKey) {
-      alert('Gemini API 키를 먼저 등록해주세요!\n(선생님 메인 화면에서 등록 가능)')
+      alert('Gemini API 키를 먼저 등록해주세요! (선생님 메인 화면에서 등록 가능)')
       return
     }
 
@@ -133,41 +133,60 @@ export default function TopicsPage() {
       const cat = categories[Math.floor(Math.random() * categories.length)]
       const recentTitles = topics.slice(0, 10).map(t => t.title).join(', ')
       
-      const prompt = `초등학교 5학년 학생을 위한 글쓰기 주제를 1개 추천해줘.
+      // === 1단계: 주제 + 설명만 만들기 (작은 JSON, 안정적) ===
+      const prompt1 = `초등학교 5학년 글쓰기 주제 1개를 만들어줘.
 카테고리: ${cat}
 최근 주제 (중복 피하기): ${recentTitles || '없음'}
 
+JSON으로만 응답 (마크다운, 설명, 줄바꿈 모두 금지). 한 줄로:
+{"title":"주제","description":"학생용 설명 2-3문장"}`
+
+      const text1 = await callGemini(apiKey, prompt1, { maxTokens: 400 })
+      const result1 = parseAIJson(text1)
+      
+      const newTitle = result1.title || ''
+      const newDesc = result1.description || ''
+      
+      if (newTitle) setTitle(newTitle)
+      if (newDesc) setDesc(newDesc)
+      
+      // === 2단계: 그 주제에 맞는 평가 기준 4개 만들기 ===
+      if (newTitle) {
+        try {
+          const prompt2 = `초등학교 5학년 글쓰기 평가 기준 4개를 만들어줘.
+주제: "${newTitle}"
+
 규칙:
-1. JSON 형식으로만 응답 (다른 설명, 주석, 마크다운 모두 금지)
-2. { 로 시작해서 } 로 끝나야 함
-3. 모든 문자열은 한 줄로 (줄바꿈 금지)
-4. 큰따옴표만 사용 (작은따옴표 금지)
+- 주제에 어울리는 4개 기준
+- 각 25점, 합 100점
+- 짧고 명확한 이름 (예: "주제 표현", "글의 짜임")
 
-만들 항목:
-- title: 주제 제목 (10-20자)
-- description: 학생용 설명 (한 줄, 2-3문장 분량)
-- rubrics: 평가 기준 4개 배열, 각 기준은 {name, score}, 합 100점
+JSON으로만 응답 (한 줄):
+{"rubrics":[{"name":"기준1","score":25},{"name":"기준2","score":25},{"name":"기준3","score":25},{"name":"기준4","score":25}]}`
 
-정확한 형식 예시:
-{"title":"내 인생 첫 도전","description":"처음 도전했던 일을 떠올려보세요. 어떤 마음이었는지, 어떻게 됐는지 솔직하게 써보세요.","rubrics":[{"name":"주제에 맞는 내용","score":25},{"name":"글의 짜임새","score":25},{"name":"풍부한 표현","score":25},{"name":"맞춤법과 문법","score":25}]}`
-
-      const text = await callGemini(apiKey, prompt, { maxTokens: 1000 })
-      const result = parseAIJson(text)
-
-      if (result.title) setTitle(result.title)
-      if (result.description) setDesc(result.description)
-      if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
-        // 점수 합이 100이 되도록 보정
-        const totalCheck = result.rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)
-        if (totalCheck === 100) {
-          setRubrics(result.rubrics)
-        } else {
-          // 합이 100이 아니면 균등 분배
-          const eachScore = Math.floor(100 / result.rubrics.length)
-          setRubrics(result.rubrics.map(r => ({ name: r.name, score: eachScore })))
+          const text2 = await callGemini(apiKey, prompt2, { maxTokens: 500 })
+          const result2 = parseAIJson(text2)
+          
+          if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
+            const cleaned = result2.rubrics.map(r => ({
+              name: r.name || '평가 기준',
+              score: Number(r.score) || 25
+            }))
+            const total = cleaned.reduce((s, r) => s + r.score, 0)
+            if (total !== 100) {
+              const each = Math.floor(100 / cleaned.length)
+              cleaned.forEach((r, i) => r.score = i === cleaned.length - 1 ? 100 - each * (cleaned.length - 1) : each)
+            }
+            setRubrics(cleaned)
+          }
+        } catch(rubricErr) {
+          console.error('평가 기준 생성 실패 (주제는 유지):', rubricErr)
+          // 평가 기준 실패해도 주제는 채워짐 - 알림만
+          alert('주제는 추천됐지만 평가 기준은 자동 생성 실패. 직접 입력하거나 다시 시도해주세요.')
         }
       }
     } catch(e) {
+      console.error('AI 추천 오류:', e)
       alert('AI 추천 실패: ' + e.message)
     }
     setAiSuggesting(false)
