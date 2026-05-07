@@ -1,0 +1,191 @@
+import Head from 'next/head'
+import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
+import { supabase } from '../../lib/supabase'
+import ConsentForm from '../../components/ConsentForm'
+
+export default function TeacherLogin() {
+  const router = useRouter()
+  const [mode, setMode] = useState('login')
+  const [username, setUsername] = useState('')
+  const [realname, setRealname] = useState('')
+  const [password, setPassword] = useState('')
+  const [secretCode, setSecretCode] = useState('')
+  const [className, setClassName] = useState('')
+  const [signupRole, setSignupRole] = useState('teacher') // teacher / admin
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [step, setStep] = useState('form')
+
+  const handleSubmit = async () => {
+    setLoading(true)
+    setError('')
+    const email = `${username}@writing.class`
+
+    try {
+      if (mode === 'login') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+        if (err) throw err
+        router.push('/teacher')
+      } else {
+        // 가입 코드 검증 (서버에서 확인)
+        const codeRes = await fetch('/api/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: secretCode, role: signupRole })
+        })
+        if (!codeRes.ok) {
+          const data = await codeRes.json()
+          throw new Error(data.error || '가입 코드가 잘못됐어요')
+        }
+
+        // 관리자 가입은 1명만 가능
+        if (signupRole === 'admin') {
+          const { data: existingAdmin } = await supabase.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
+          if (existingAdmin) throw new Error('관리자는 이미 가입되어 있어요')
+        }
+
+        const { data, error: err } = await supabase.auth.signUp({ email, password })
+        if (err) {
+          if (err.message.includes('already')) throw new Error('이미 가입된 아이디예요')
+          throw err
+        }
+
+        // 학급 자동 생성 (4자리 랜덤 코드)
+        let newCode, attempts = 0
+        while (attempts < 10) {
+          newCode = String(Math.floor(1000 + Math.random() * 9000))
+          const { data: existing } = await supabase.from('classes').select('id').eq('code', newCode).maybeSingle()
+          if (!existing) break
+          attempts++
+        }
+
+        const { data: newClass, error: classErr } = await supabase.from('classes')
+          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id })
+          .select().single()
+        if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
+
+        await supabase.from('profiles').insert({
+          id: data.user.id, username, realname: realname.trim(), role: signupRole, class_id: newClass.id
+        })
+
+        router.push('/teacher')
+      }
+    } catch(e) {
+      setError(e.message || '오류가 발생했어요')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <Head><title>선생님 로그인 - 문해력 수업</title></Head>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <header className="bg-white border-b border-gray-200 px-4 py-3">
+          <div className="max-w-md mx-auto flex items-center gap-3">
+            <Link href="/" className="text-gray-600 hover:text-gray-900">←</Link>
+            <h1 className="text-base font-bold">선생님 로그인</h1>
+          </div>
+        </header>
+        <main className="flex-1 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 sm:p-8 shadow-sm">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-2">👩‍🏫</div>
+              <h2 className="text-xl font-bold">{mode === 'login' ? '선생님 로그인' : '선생님 가입'}</h2>
+            </div>
+
+            <div className="flex gap-2 mb-6 bg-gray-100 rounded-xl p-1">
+              <button onClick={() => { setMode('login'); setError(''); setStep('form'); }}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
+                로그인
+              </button>
+              <button onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
+                회원가입
+              </button>
+            </div>
+
+            {mode === 'signup' && step === 'consent' ? (
+              <>
+                <p className="text-sm text-gray-600 mb-4">가입 전 아래 항목에 동의해주세요</p>
+                <ConsentForm onComplete={handleSubmit} />
+              </>
+            ) : (
+              <div className="space-y-3">
+                {mode === 'signup' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">가입 유형</label>
+                      <select value={signupRole} onChange={e => setSignupRole(e.target.value)}
+                        className="w-full p-3 border border-gray-200 rounded-lg">
+                        <option value="teacher">담임 교사</option>
+                        <option value="admin">관리자 (운영자)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        {signupRole === 'admin' ? '관리자 코드' : '교사 가입 코드'}
+                      </label>
+                      <input type="password" value={secretCode} onChange={e => setSecretCode(e.target.value)}
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="가입 코드" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">이름</label>
+                      <input type="text" value={realname} onChange={e => setRealname(e.target.value)}
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">학급 이름</label>
+                      <input type="text" value={className} onChange={e => setClassName(e.target.value)}
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <label className="block text-sm font-medium mb-1">아이디</label>
+                  <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                    className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디" autoComplete="username" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">비밀번호</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                    className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+                </div>
+                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+                <button
+                  onClick={() => {
+                    if (mode === 'signup') {
+                      if (!username || !password || !realname || !className || !secretCode) {
+                        setError('모든 항목을 입력해주세요')
+                        return
+                      }
+                      if (password.length < 6) {
+                        setError('비밀번호는 6자 이상이어야 해요')
+                        return
+                      }
+                      setStep('consent')
+                    } else {
+                      handleSubmit()
+                    }
+                  }}
+                  disabled={loading}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50"
+                >
+                  {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '다음')}
+                </button>
+              </div>
+            )}
+
+            <div className="mt-4 text-center">
+              <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary">
+                Gemini API 키 발급 방법 →
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    </>
+  )
+}
