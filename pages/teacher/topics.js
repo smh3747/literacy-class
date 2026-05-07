@@ -134,14 +134,18 @@ export default function TopicsPage() {
       const recentTitles = topics.slice(0, 10).map(t => t.title).join(', ')
       
       // === 1단계: 주제 + 설명만 만들기 (작은 JSON, 안정적) ===
-      const prompt1 = `초등학교 5학년 글쓰기 주제 1개를 만들어줘.
+      const prompt1 = `초등 5학년 글쓰기 주제 1개를 JSON으로 만들어줘.
 카테고리: ${cat}
-최근 주제 (중복 피하기): ${recentTitles || '없음'}
+중복 피하기: ${recentTitles || '없음'}
 
-JSON으로만 응답 (마크다운, 설명, 줄바꿈 모두 금지). 한 줄로:
-{"title":"주제","description":"학생용 설명 2-3문장"}`
+규칙:
+- title: 10-15자
+- description: 한 줄, 50자 이내
+- 줄바꿈 금지, JSON만 응답
 
-      const text1 = await callGemini(apiKey, prompt1, { maxTokens: 400 })
+예시: {"title":"비 오는 날의 추억","description":"비 오는 날 떠오르는 기억을 떠올려보고 그 느낌을 자세히 써보세요."}`
+
+      const text1 = await callGemini(apiKey, prompt1, { maxTokens: 800 })
       const result1 = parseAIJson(text1)
       
       const newTitle = result1.title || ''
@@ -153,18 +157,16 @@ JSON으로만 응답 (마크다운, 설명, 줄바꿈 모두 금지). 한 줄로
       // === 2단계: 그 주제에 맞는 평가 기준 4개 만들기 ===
       if (newTitle) {
         try {
-          const prompt2 = `초등학교 5학년 글쓰기 평가 기준 4개를 만들어줘.
-주제: "${newTitle}"
+          const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개.
 
 규칙:
-- 주제에 어울리는 4개 기준
-- 각 25점, 합 100점
-- 짧고 명확한 이름 (예: "주제 표현", "글의 짜임")
+- 4개, 각 25점 (합 100점)
+- 기준 이름은 5-10자로 짧게
+- JSON만 응답, 한 줄로
 
-JSON으로만 응답 (한 줄):
-{"rubrics":[{"name":"기준1","score":25},{"name":"기준2","score":25},{"name":"기준3","score":25},{"name":"기준4","score":25}]}`
+예시: {"rubrics":[{"name":"주제 표현","score":25},{"name":"글의 짜임","score":25},{"name":"풍부한 어휘","score":25},{"name":"맞춤법","score":25}]}`
 
-          const text2 = await callGemini(apiKey, prompt2, { maxTokens: 500 })
+          const text2 = await callGemini(apiKey, prompt2, { maxTokens: 800 })
           const result2 = parseAIJson(text2)
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
@@ -181,13 +183,24 @@ JSON으로만 응답 (한 줄):
           }
         } catch(rubricErr) {
           console.error('평가 기준 생성 실패 (주제는 유지):', rubricErr)
-          // 평가 기준 실패해도 주제는 채워짐 - 알림만
-          alert('주제는 추천됐지만 평가 기준은 자동 생성 실패. 직접 입력하거나 다시 시도해주세요.')
+          const errMsg = (rubricErr.message || '').includes('503') || (rubricErr.message || '').includes('overload')
+            ? 'AI 서버가 일시적으로 바빠요. 평가 기준은 기본값 그대로 두거나, 다시 추천 버튼을 눌러주세요.'
+            : '평가 기준 생성 실패. 직접 입력하거나 다시 시도해주세요.'
+          alert(errMsg)
         }
       }
     } catch(e) {
       console.error('AI 추천 오류:', e)
-      alert('AI 추천 실패: ' + e.message)
+      const msg = e.message || ''
+      let userMsg = 'AI 추천 실패: ' + msg
+      if (msg.includes('503') || msg.includes('overload') || msg.includes('high demand')) {
+        userMsg = '⏳ Gemini 서버가 지금 매우 바빠요!\n잠시 후 (30초~1분) 다시 시도해주세요.'
+      } else if (msg.includes('API key') || msg.includes('403')) {
+        userMsg = '🔑 API 키 문제: ' + msg + '\n키를 확인하거나 새로 발급해주세요.'
+      } else if (msg.includes('JSON 파싱')) {
+        userMsg = '🔄 AI 응답이 깨졌어요. 다시 한 번 추천 버튼을 눌러주세요.'
+      }
+      alert(userMsg)
     }
     setAiSuggesting(false)
   }
