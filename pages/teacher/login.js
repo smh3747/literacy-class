@@ -13,15 +13,33 @@ export default function TeacherLogin() {
   const [password, setPassword] = useState('')
   const [secretCode, setSecretCode] = useState('')
   const [className, setClassName] = useState('')
-  const [signupRole, setSignupRole] = useState('teacher') // teacher / admin
+  const [signupRole, setSignupRole] = useState('teacher')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [step, setStep] = useState('form')
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    checkSession()
+  }, [])
+
+  const checkSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const { data: profile } = await supabase.from('profiles')
+        .select('role').eq('id', session.user.id).maybeSingle()
+      if (profile?.role === 'teacher' || profile?.role === 'admin') {
+        router.replace('/teacher')
+        return
+      }
+    }
+    setCheckingAuth(false)
+  }
 
   const handleSubmit = async () => {
     setLoading(true)
     setError('')
-    const email = `${username}@writing.class`
+    const email = `${username.toLowerCase()}@writing.class`
 
     try {
       if (mode === 'login') {
@@ -29,7 +47,6 @@ export default function TeacherLogin() {
         if (err) throw err
         router.push('/teacher')
       } else {
-        // 가입 코드 검증 (서버에서 확인)
         const codeRes = await fetch('/api/verify-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -40,7 +57,6 @@ export default function TeacherLogin() {
           throw new Error(data.error || '가입 코드가 잘못됐어요')
         }
 
-        // 관리자 가입은 1명만 가능
         if (signupRole === 'admin') {
           const { data: existingAdmin } = await supabase.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
           if (existingAdmin) throw new Error('관리자는 이미 가입되어 있어요')
@@ -52,7 +68,6 @@ export default function TeacherLogin() {
           throw err
         }
 
-        // 학급 자동 생성 (4자리 랜덤 코드)
         let newCode, attempts = 0
         while (attempts < 10) {
           newCode = String(Math.floor(1000 + Math.random() * 9000))
@@ -67,7 +82,7 @@ export default function TeacherLogin() {
         if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
 
         await supabase.from('profiles').insert({
-          id: data.user.id, username, realname: realname.trim(), role: signupRole, class_id: newClass.id
+          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), role: signupRole, class_id: newClass.id
         })
 
         router.push('/teacher')
@@ -77,6 +92,8 @@ export default function TeacherLogin() {
       setLoading(false)
     }
   }
+
+  if (checkingAuth) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500 text-sm">로딩 중...</div></div>
 
   return (
     <>

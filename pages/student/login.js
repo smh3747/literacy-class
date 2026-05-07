@@ -1,6 +1,6 @@
 import Head from 'next/head'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import ConsentForm from '../../components/ConsentForm'
@@ -13,7 +13,25 @@ export default function StudentLogin() {
   const [classCode, setClassCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [step, setStep] = useState('form') // form / consent
+  const [step, setStep] = useState('form')
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    checkSession()
+  }, [])
+
+  const checkSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const { data: profile } = await supabase.from('profiles')
+        .select('role').eq('id', session.user.id).maybeSingle()
+      if (profile?.role === 'student') {
+        router.replace('/student')
+        return
+      }
+    }
+    setCheckingAuth(false)
+  }
 
   const handleSubmit = async () => {
     if (!username || !password) return setError('아이디와 비밀번호를 입력해주세요')
@@ -21,7 +39,7 @@ export default function StudentLogin() {
 
     setLoading(true)
     setError('')
-    const email = `${username}@writing.class`
+    const email = `${username.toLowerCase()}@writing.class`
 
     try {
       if (mode === 'login') {
@@ -29,7 +47,6 @@ export default function StudentLogin() {
         if (err) throw err
         router.push('/student')
       } else {
-        // 학급 코드 검증
         const { data: classData } = await supabase.from('classes').select('id, name').eq('code', classCode).maybeSingle()
         if (!classData) {
           setError('학급 코드가 잘못됐어요. 선생님께 확인해주세요')
@@ -44,7 +61,7 @@ export default function StudentLogin() {
           return
         }
         await supabase.from('profiles').insert({
-          id: data.user.id, username, realname: username, role: 'student', class_id: classData.id
+          id: data.user.id, username: username.toLowerCase(), realname: username, role: 'student', class_id: classData.id
         })
         router.push('/student')
       }
@@ -53,6 +70,8 @@ export default function StudentLogin() {
       setLoading(false)
     }
   }
+
+  if (checkingAuth) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500 text-sm">로딩 중...</div></div>
 
   return (
     <>

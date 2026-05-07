@@ -1,10 +1,48 @@
 import Head from 'next/head'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
+import { supabase } from '../lib/supabase'
 import FeedbackModal from '../components/FeedbackModal'
 
 export default function Home() {
+  const router = useRouter()
   const [showFeedback, setShowFeedback] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    checkExistingSession()
+  }, [])
+
+  const checkExistingSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        // 이미 로그인된 상태 → 역할에 맞는 화면으로 이동
+        const { data: profile } = await supabase.from('profiles')
+          .select('role').eq('id', session.user.id).maybeSingle()
+        
+        if (profile?.role === 'teacher' || profile?.role === 'admin') {
+          router.replace('/teacher')
+          return
+        } else if (profile?.role === 'student') {
+          router.replace('/student')
+          return
+        }
+      }
+    } catch(e) {
+      console.error('세션 확인 오류:', e)
+    }
+    setCheckingAuth(false)
+  }
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500 text-sm">로딩 중...</div>
+      </div>
+    )
+  }
 
   return (
     <>

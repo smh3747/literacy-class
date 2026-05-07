@@ -137,17 +137,21 @@ export default function TopicsPage() {
 카테고리: ${cat}
 최근 주제 (중복 피하기): ${recentTitles || '없음'}
 
-다음 항목을 모두 만들어줘:
-1. 주제 제목 (간결하고 흥미로워야 함)
-2. 주제 설명 (학생에게 친근하게, 2-3문장으로 어떻게 쓰면 좋을지 안내)
-3. 평가 기준 4개 (각각 25점, 합 100점)
-   - 이 주제에 어울리는 평가 기준이어야 함
-   - 예: "주제에 맞는 내용", "글의 짜임새", "풍부한 표현", "맞춤법과 문법"
+규칙:
+1. JSON 형식으로만 응답 (다른 설명, 주석, 마크다운 모두 금지)
+2. { 로 시작해서 } 로 끝나야 함
+3. 모든 문자열은 한 줄로 (줄바꿈 금지)
+4. 큰따옴표만 사용 (작은따옴표 금지)
 
-JSON 형식으로만 응답 (다른 설명 X):
-{"title":"주제 제목","description":"주제 설명","rubrics":[{"name":"기준 이름","score":25},{"name":"기준 이름","score":25},{"name":"기준 이름","score":25},{"name":"기준 이름","score":25}]}`
+만들 항목:
+- title: 주제 제목 (10-20자)
+- description: 학생용 설명 (한 줄, 2-3문장 분량)
+- rubrics: 평가 기준 4개 배열, 각 기준은 {name, score}, 합 100점
 
-      const text = await callGemini(apiKey, prompt, { maxTokens: 800 })
+정확한 형식 예시:
+{"title":"내 인생 첫 도전","description":"처음 도전했던 일을 떠올려보세요. 어떤 마음이었는지, 어떻게 됐는지 솔직하게 써보세요.","rubrics":[{"name":"주제에 맞는 내용","score":25},{"name":"글의 짜임새","score":25},{"name":"풍부한 표현","score":25},{"name":"맞춤법과 문법","score":25}]}`
+
+      const text = await callGemini(apiKey, prompt, { maxTokens: 1000 })
       const result = parseAIJson(text)
 
       if (result.title) setTitle(result.title)
