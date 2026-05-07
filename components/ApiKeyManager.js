@@ -3,39 +3,56 @@ import Link from 'next/link'
 import { loadApiKey, saveApiKey, deleteApiKey } from '../lib/gemini'
 
 export default function ApiKeyManager({ onChange }) {
-  const [apiKey, setApiKey] = useState('')
+  const [savedKey, setSavedKey] = useState('') // 실제 저장된 키
+  const [inputKey, setInputKey] = useState('') // 입력창의 임시 값
   const [showInput, setShowInput] = useState(false)
   const [showKey, setShowKey] = useState(false)
-  const [hasKey, setHasKey] = useState(false)
 
   useEffect(() => {
     const k = loadApiKey()
-    setApiKey(k)
-    setHasKey(!!k)
+    setSavedKey(k)
     onChange?.(k)
   }, [])
 
+  const startEdit = () => {
+    setInputKey('') // ★ 입력창 비우기 (이전 키 안 보이게)
+    setShowInput(true)
+  }
+
+  const cancelEdit = () => {
+    setInputKey('')
+    setShowInput(false)
+  }
+
   const save = () => {
-    if (!apiKey.trim().startsWith('AIza')) {
+    const key = inputKey.trim()
+    if (!key) {
+      alert('API 키를 입력해주세요')
+      return
+    }
+    if (!key.startsWith('AIza')) {
       alert('Gemini API 키는 "AIza" 로 시작해요. 다시 확인해주세요.')
       return
     }
-    saveApiKey(apiKey.trim())
-    setHasKey(true)
+    saveApiKey(key)
+    setSavedKey(key) // ★ 저장된 키 즉시 갱신
+    setInputKey('')
     setShowInput(false)
-    onChange?.(apiKey.trim())
+    onChange?.(key)
     alert('API 키 저장 완료!')
   }
 
   const remove = () => {
     if (!confirm('정말 API 키를 삭제하시겠어요?\n\n공용 PC라면 반드시 삭제해주세요!')) return
     deleteApiKey()
-    setApiKey('')
-    setHasKey(false)
+    setSavedKey('')
+    setInputKey('')
+    setShowInput(false)
     onChange?.('')
   }
 
-  const masked = apiKey ? apiKey.slice(0, 6) + '...' + apiKey.slice(-4) : ''
+  const hasKey = !!savedKey
+  const masked = savedKey ? savedKey.slice(0, 6) + '...' + savedKey.slice(-4) : ''
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -52,14 +69,14 @@ export default function ApiKeyManager({ onChange }) {
       </div>
 
       {hasKey && !showInput ? (
-        <div className="mt-3 flex items-center gap-2">
-          <code className="flex-1 bg-gray-50 px-3 py-2 rounded text-xs text-gray-600">
-            {showKey ? apiKey : masked}
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <code className="flex-1 min-w-0 bg-gray-50 px-3 py-2 rounded text-xs text-gray-600 break-all">
+            {showKey ? savedKey : masked}
           </code>
-          <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 border border-gray-200 rounded hover:bg-gray-50">
+          <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-2 border border-gray-200 rounded hover:bg-gray-50">
             {showKey ? '🙈' : '👁️'}
           </button>
-          <button onClick={() => setShowInput(true)} className="text-xs px-3 py-2 border border-gray-200 rounded hover:bg-gray-50">
+          <button onClick={startEdit} className="text-xs px-3 py-2 border border-gray-200 rounded hover:bg-gray-50">
             변경
           </button>
           <button onClick={remove} className="text-xs px-3 py-2 border border-red-200 text-red-600 rounded hover:bg-red-50">
@@ -68,16 +85,22 @@ export default function ApiKeyManager({ onChange }) {
         </div>
       ) : (
         <div className="mt-3 space-y-2">
+          {hasKey && (
+            <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded">
+              💡 새 API 키를 입력하면 기존 키가 교체됩니다
+            </div>
+          )}
           <input
             type="password"
-            placeholder="AIza... 로 시작하는 키 붙여넣기"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
+            placeholder="AIza... 로 시작하는 새 키 붙여넣기"
+            value={inputKey}
+            onChange={e => setInputKey(e.target.value)}
             className="w-full p-3 border border-gray-200 rounded-lg text-sm font-mono"
+            autoComplete="off"
           />
           <div className="flex gap-2">
-            {showInput && (
-              <button onClick={() => { setShowInput(false); setApiKey(loadApiKey()); }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm">
+            {hasKey && (
+              <button onClick={cancelEdit} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm">
                 취소
               </button>
             )}
