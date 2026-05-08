@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 const DEFAULT_RUBRICS = [
@@ -154,8 +154,11 @@ export default function TopicsPage() {
         try {
           const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
 - 정확히 4개
-- 각 25점 (합 100점)
-- 기준 이름은 4-8자로 짧게 (예: 주제 표현, 글의 짜임, 풍부한 어휘, 맞춤법)`
+- 합계 100점이 되도록 주제 특성에 맞게 배점 (각 항목 10~40점 사이)
+  예: 주제가 창의력 강조라면 → 창의성 35점, 구성 25점, 표현 25점, 맞춤법 15점
+  예: 주제가 논리 강조라면 → 주장의 명확성 30점, 근거 30점, 글의 짜임 25점, 맞춤법 15점
+- 기준 이름은 4-10자로 짧게
+- 각 기준은 주제에 적합하고 변별력 있어야 함`
 
           const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
           
@@ -164,32 +167,29 @@ export default function TopicsPage() {
               name: r.name || '평가 기준',
               score: Number(r.score) || 25
             }))
-            // 점수 합 100점 자동 보정
+            // 합계가 100이 아니면 비율 유지하며 보정
             const total = cleaned.reduce((s, r) => s + r.score, 0)
-            if (total !== 100) {
-              const each = Math.floor(100 / cleaned.length)
-              cleaned.forEach((r, i) => r.score = i === cleaned.length - 1 ? 100 - each * (cleaned.length - 1) : each)
+            if (total !== 100 && total > 0) {
+              // 비율 유지하며 합계 100으로 스케일링
+              cleaned.forEach(r => {
+                r.score = Math.round((r.score / total) * 100)
+              })
+              // 반올림 오차 보정 (마지막 항목에서)
+              const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
+              if (newTotal !== 100) {
+                cleaned[cleaned.length - 1].score += (100 - newTotal)
+              }
             }
             setRubrics(cleaned)
           }
         } catch(rubricErr) {
           console.error('평가 기준 생성 실패 (주제는 유지):', rubricErr)
-          const errMsg = (rubricErr.message || '').includes('503') || (rubricErr.message || '').includes('overload')
-            ? 'AI 서버가 일시적으로 바빠요. 평가 기준은 기본값 그대로 두거나, 다시 추천 버튼을 눌러주세요.'
-            : '평가 기준 생성 실패. 직접 입력하거나 다시 시도해주세요.'
-          alert(errMsg)
+          alert('주제는 추천됐지만 평가 기준 생성은 실패했어요.\n\n' + getFriendlyErrorMessage(rubricErr))
         }
       }
     } catch(e) {
       console.error('AI 추천 오류:', e)
-      const msg = e.message || ''
-      let userMsg = 'AI 추천 실패: ' + msg
-      if (msg.includes('503') || msg.includes('overload') || msg.includes('high demand')) {
-        userMsg = '⏳ Gemini 서버가 지금 매우 바빠요! 잠시 후 (30초~1분) 다시 시도해주세요.'
-      } else if (msg.includes('API key') || msg.includes('403')) {
-        userMsg = '🔑 API 키 문제: ' + msg
-      }
-      alert(userMsg)
+      alert(getFriendlyErrorMessage(e))
     }
     setAiSuggesting(false)
   }

@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 // 한국 시간 기준 오늘 날짜
@@ -275,10 +275,7 @@ ${essay}
       generateExample(essay, totalMax)
     } catch(e) {
       console.error('제출 오류:', e)
-      const msg = e.message || ''
-      if (msg.includes('JSON 파싱')) alert('AI 응답이 깨졌어요. 다시 한 번 제출해주세요.\n글은 그대로 있어요.')
-      else if (msg.includes('503')) alert('⏳ AI 서버가 바빠요. 잠시 후 다시 제출해주세요.\n글은 그대로 있어요.')
-      else alert('제출 오류: ' + msg + '\n\n글은 그대로 있어요. 다시 시도해주세요.')
+      alert(getFriendlyErrorMessage(e) + '\n\n💡 글은 그대로 있으니 안심하세요. 다시 시도해주세요.')
     }
     setSubmitting(false)
   }
@@ -413,7 +410,7 @@ ${rewriteEssay}
       alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
-      alert('제출 실패: ' + e.message + '\n\n글은 그대로 있어요.')
+      alert(getFriendlyErrorMessage(e) + '\n\n💡 글은 그대로 있으니 안심하세요.')
     }
     setRewriting(false)
   }
