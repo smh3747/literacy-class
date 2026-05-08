@@ -164,55 +164,109 @@ export default function TopicsPage() {
       // 2단계: 평가 기준
       if (newTitle) {
         try {
-          const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
+          const prompt2 = `주제 "${newTitle}"
+${newDesc ? '주제 설명: ' + newDesc : ''}
 
-⚠️ 매우 중요한 규칙:
-- 평가 기준 이름(name)은 반드시 "글쓰기 평가의 표준 카테고리"에서만 선택
-- 주제와 관련된 단어를 평가 기준 이름에 절대 사용하지 말 것
-- 단, hint(부가 설명)에는 주제에 맞는 구체적 내용을 넣을 것
+위 주제에 정말 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
 
-✅ name으로 사용 가능한 카테고리 (이 안에서 4개 선택, 약간 변형 가능):
+⚠️ 주제 분석부터 하기:
+이 주제에서 학생이 가장 잘 보여줘야 할 능력은 무엇인지 먼저 생각해보세요.
+- 경험 회상이 중요한가? → "솔직한 표현", "자세한 묘사" 강조
+- 상상력이 중요한가? → "창의성", "상상력" 강조
+- 논리/주장이 중요한가? → "주장과 근거", "논리성" 강조
+- 감정 전달이 중요한가? → "솔직한 표현", "감각적 표현" 강조
+
+✅ name (평가 기준 이름) - 다음 카테고리에서 4개 선택:
 [내용] 주제에 맞는 내용, 주제 표현, 구체적인 내용, 자세한 묘사, 솔직한 표현, 창의성, 상상력, 논리성, 주장과 근거
 [형식] 글의 짜임새, 글의 구성, 처음-가운데-끝, 문단 구성
 [표현] 풍부한 어휘, 다양한 표현, 비유 표현, 감각적 표현, 문장력
 [기본] 맞춤법과 문법, 띄어쓰기
 
-✅ hint (부가 설명)는 주제에 맞춰 구체적으로:
-- 학생이 "무엇을" 잘 표현해야 하는지 알려주는 짧은 힌트
-- 15-30자 정도
-- 예시:
-  주제 "책 속 주인공 따라잡기"라면:
-  - name: "자세한 묘사", hint: "주인공의 삶, 외모, 행동을 그림 그리듯 표현"
-  - name: "상상력", hint: "주인공이 되어 본 하루의 새로운 상상"
-  - name: "글의 짜임새", hint: "처음-가운데-끝의 흐름이 자연스러운가"
-  - name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
+✅ hint (부가 설명) - 매우 중요!:
+- 반드시 채워야 함 (빈 값 절대 금지)
+- 주제 "${newTitle}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
+- 15-30자
+- 4개 hint가 모두 서로 다른 내용이어야 함
+- 주제와 직접 연결된 단어 사용
+
+예시 (주제: "내 인생 첫 도전"):
+- name: "솔직한 표현", hint: "도전할 때의 떨림과 망설임을 진솔하게"
+- name: "구체적인 내용", hint: "어떤 도전이었는지 상황을 자세하게"
+- name: "글의 짜임새", hint: "도전 전-중-후의 흐름이 자연스러운가"
+- name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
+
+예시 (주제: "맛있는 추억 레시피"):
+- name: "감각적 표현", hint: "음식의 맛, 향, 온도를 생생하게"
+- name: "솔직한 표현", hint: "그 음식과 함께한 추억과 감정"
+- name: "글의 짜임새", hint: "음식 소개-추억-느낌 흐름"
+- name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
 
 배점 규칙:
 - 합계 100점, 각 항목 10~40점 범위
-- 주제 특성에 따라 강조 영역에 더 높은 배점
+- 주제에 가장 중요한 영역에 35-40점, 다음 25-30점, 다음 15-25점, 맞춤법 10-20점
 
-각 평가 기준은 {name, hint, score} 모두 채울 것.`
+각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
 
           const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
             const cleaned = result2.rubrics.map(r => ({
               name: r.name || '평가 기준',
+              hint: (r.hint && r.hint.trim()) ? r.hint.trim() : '',
               score: Number(r.score) || 25
             }))
             // 합계가 100이 아니면 비율 유지하며 보정
             const total = cleaned.reduce((s, r) => s + r.score, 0)
             if (total !== 100 && total > 0) {
-              // 비율 유지하며 합계 100으로 스케일링
               cleaned.forEach(r => {
                 r.score = Math.round((r.score / total) * 100)
               })
-              // 반올림 오차 보정 (마지막 항목에서)
               const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
               if (newTotal !== 100) {
                 cleaned[cleaned.length - 1].score += (100 - newTotal)
               }
             }
+            
+            // ★ hint가 비어있으면 한 번 더 보충 호출
+            const emptyHints = cleaned.filter(r => !r.hint).length
+            if (emptyHints > 0) {
+              try {
+                const hintPrompt = `주제: "${newTitle}"
+이 주제의 글쓰기 평가 기준 ${cleaned.length}개에 대해 각각 부가 설명(hint)을 만들어줘.
+
+평가 기준:
+${cleaned.map((r, i) => `${i+1}. ${r.name}`).join('\n')}
+
+각 hint는:
+- 학생이 "이 항목에서 무엇을 잘 표현해야 하는지" 알려주는 힌트
+- 주제와 관련된 구체적 내용 포함
+- 15-30자
+- 서로 다른 내용
+
+JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
+                
+                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.6 })
+                if (Array.isArray(hintResult.rubrics)) {
+                  // name 매칭으로 hint 채우기
+                  cleaned.forEach((r, i) => {
+                    if (!r.hint) {
+                      const matched = hintResult.rubrics.find(h => h.name === r.name) || hintResult.rubrics[i]
+                      if (matched && matched.hint) r.hint = matched.hint.trim()
+                    }
+                  })
+                }
+              } catch(hintErr) {
+                console.log('hint 보충 실패, 진행:', hintErr.message)
+              }
+            }
+            
+            // 그래도 비어있으면 기본 hint
+            cleaned.forEach(r => {
+              if (!r.hint) {
+                r.hint = '이 항목에서 무엇을 잘 표현해야 하는지'
+              }
+            })
+            
             setRubrics(cleaned)
           }
         } catch(rubricErr) {
