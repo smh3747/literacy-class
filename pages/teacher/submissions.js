@@ -224,17 +224,18 @@ export default function TeacherSubmissions() {
                       dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
 
                     {Array.isArray(s.scores) && (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {s.scores.map((sc, idx) => {
                           const r = selectedTopic.rubrics[idx] || { name: `기준 ${idx+1}`, score: 25 }
                           const pct = Math.round((sc / r.score) * 100)
                           return (
                             <div key={idx}>
                               <div className="flex justify-between text-xs">
-                                <span className="text-gray-600">{r.name}</span>
+                                <span className="text-gray-700 font-medium">{r.name}</span>
                                 <span>{sc}/{r.score}</span>
                               </div>
-                              <div className="bg-gray-100 rounded-full h-1.5"><div className="bg-primary h-full rounded-full" style={{width: pct + '%'}} /></div>
+                              {r.hint && <div className="text-xs text-gray-500 mt-0.5">💡 {r.hint}</div>}
+                              <div className="bg-gray-100 rounded-full h-1.5 mt-1"><div className="bg-primary h-full rounded-full" style={{width: pct + '%'}} /></div>
                             </div>
                           )
                         })}

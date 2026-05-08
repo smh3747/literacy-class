@@ -7,10 +7,10 @@ import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } fr
 import Header from '../../components/Header'
 
 const DEFAULT_RUBRICS = [
-  { name: '주제에 맞는 내용', score: 25 },
-  { name: '글의 짜임새', score: 25 },
-  { name: '풍부한 표현', score: 25 },
-  { name: '맞춤법과 문법', score: 25 }
+  { name: '주제에 맞는 내용', hint: '주제에서 벗어나지 않고 핵심을 잘 표현', score: 25 },
+  { name: '글의 짜임새', hint: '처음-가운데-끝의 흐름이 자연스러운가', score: 25 },
+  { name: '풍부한 표현', hint: '다양한 어휘와 생생한 묘사', score: 25 },
+  { name: '맞춤법과 문법', hint: '정확한 표기와 띄어쓰기', score: 25 }
 ]
 
 export default function TopicsPage() {
@@ -138,8 +138,20 @@ export default function TopicsPage() {
 카테고리: ${cat}
 최근 주제 (중복 피하기): ${recentTitles || '없음'}
 
-- title은 10-15자 정도로 흥미롭게
-- description은 학생에게 친근하게 한 줄(50자 이내)`
+규칙:
+- title: 10-15자, 흥미로운 주제 제목
+- description: 학생에게 글쓰기 방법을 알려주는 안내문
+  ⚠️ 질문형(?)으로 끝나면 안 됨, 안내/지시형으로
+  ⚠️ "무엇을 떠올리고", "어떻게 쓰면 좋을지" 구체적으로 알려주기
+  ⚠️ 70-100자 정도로 충분히 자세하게
+  
+좋은 예시:
+- title: "내 인생의 첫 도전"
+  description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
+
+나쁜 예시:
+- description: "도전한 일을 써볼까?" (너무 짧고 질문형)
+- description: "재미있게 써보세요" (구체성 없음)`
 
       const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { maxTokens: 4000 })
       
@@ -155,36 +167,31 @@ export default function TopicsPage() {
           const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
 
 ⚠️ 매우 중요한 규칙:
-- 평가 기준 이름은 반드시 "글쓰기 평가의 표준 카테고리"에서만 선택
-- 주제와 관련된 단어를 평가 기준에 절대 사용하지 말 것 (예: 음식 주제라고 "표현의 맛" ❌)
+- 평가 기준 이름(name)은 반드시 "글쓰기 평가의 표준 카테고리"에서만 선택
+- 주제와 관련된 단어를 평가 기준 이름에 절대 사용하지 말 것
+- 단, hint(부가 설명)에는 주제에 맞는 구체적 내용을 넣을 것
 
-✅ 사용 가능한 평가 카테고리 (이 안에서 4개 선택, 약간 변형 가능):
-[내용 영역]
-- 주제에 맞는 내용, 주제 표현, 중심 생각의 명확성
-- 구체적인 내용, 자세한 묘사, 솔직한 표현
-- 창의성, 독창성, 상상력
-- 논리성, 주장과 근거, 설득력
+✅ name으로 사용 가능한 카테고리 (이 안에서 4개 선택, 약간 변형 가능):
+[내용] 주제에 맞는 내용, 주제 표현, 구체적인 내용, 자세한 묘사, 솔직한 표현, 창의성, 상상력, 논리성, 주장과 근거
+[형식] 글의 짜임새, 글의 구성, 처음-가운데-끝, 문단 구성
+[표현] 풍부한 어휘, 다양한 표현, 비유 표현, 감각적 표현, 문장력
+[기본] 맞춤법과 문법, 띄어쓰기
 
-[형식 영역]
-- 글의 짜임새, 글의 구성, 처음-가운데-끝
-- 문단 구성, 흐름의 자연스러움
-
-[표현 영역]  
-- 풍부한 어휘, 다양한 표현, 어휘력
-- 비유 표현, 감각적 표현
-- 적절한 문장, 문장력
-
-[기본 영역]
-- 맞춤법과 문법, 띄어쓰기, 정확한 표기
+✅ hint (부가 설명)는 주제에 맞춰 구체적으로:
+- 학생이 "무엇을" 잘 표현해야 하는지 알려주는 짧은 힌트
+- 15-30자 정도
+- 예시:
+  주제 "책 속 주인공 따라잡기"라면:
+  - name: "자세한 묘사", hint: "주인공의 삶, 외모, 행동을 그림 그리듯 표현"
+  - name: "상상력", hint: "주인공이 되어 본 하루의 새로운 상상"
+  - name: "글의 짜임새", hint: "처음-가운데-끝의 흐름이 자연스러운가"
+  - name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
 
 배점 규칙:
-- 합계 100점
-- 주제 특성에 따라 강조 영역에 더 높은 배점 (10~40점 범위)
-- 예: 창의력 강조 주제 → 창의성 35, 구체적인 내용 25, 글의 짜임새 25, 맞춤법 15
-- 예: 논리 강조 주제 → 주장과 근거 35, 논리성 25, 글의 짜임새 25, 맞춤법 15
-- 예: 일상 경험 주제 → 솔직한 표현 30, 자세한 묘사 30, 글의 짜임새 25, 맞춤법 15
+- 합계 100점, 각 항목 10~40점 범위
+- 주제 특성에 따라 강조 영역에 더 높은 배점
 
-기준 이름은 4-10자로 짧게.`
+각 평가 기준은 {name, hint, score} 모두 채울 것.`
 
           const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
           
@@ -269,15 +276,21 @@ export default function TopicsPage() {
                   <label className="text-sm font-medium">평가 기준 (총 {totalMax}점)</label>
                   <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {rubrics.map((r, i) => (
-                    <div key={i} className="flex gap-2 items-center">
-                      <input type="text" value={r.name} onChange={e => updateRubric(i, 'name', e.target.value)}
-                        className="flex-1 p-2 border border-gray-200 rounded text-sm" />
-                      <input type="number" value={r.score} onChange={e => updateRubric(i, 'score', e.target.value)}
-                        className="w-20 p-2 border border-gray-200 rounded text-sm" min="1" />
-                      <span className="text-sm text-gray-500">점</span>
-                      <button onClick={() => removeRubric(i)} className="text-red-500 text-sm w-8">✕</button>
+                    <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <input type="text" value={r.name} onChange={e => updateRubric(i, 'name', e.target.value)}
+                          placeholder="평가 기준 이름"
+                          className="flex-1 p-2 border border-gray-200 rounded text-sm font-medium" />
+                        <input type="number" value={r.score} onChange={e => updateRubric(i, 'score', e.target.value)}
+                          className="w-20 p-2 border border-gray-200 rounded text-sm" min="1" />
+                        <span className="text-sm text-gray-500">점</span>
+                        <button onClick={() => removeRubric(i)} className="text-red-500 text-sm w-6">✕</button>
+                      </div>
+                      <input type="text" value={r.hint || ''} onChange={e => updateRubric(i, 'hint', e.target.value)}
+                        placeholder="부가 설명 (예: 주인공의 삶, 주인공의 모습 등)"
+                        className="w-full p-2 border border-gray-100 rounded text-xs text-gray-600 bg-gray-50" />
                     </div>
                   ))}
                 </div>

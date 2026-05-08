@@ -473,6 +473,19 @@ ${rewriteEssay}
               {/* 단계별 화면 */}
               {step === 'write' && (
                 <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+                  {todayTopic.rubrics?.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+                      <div className="font-bold mb-2">📝 평가 기준 (총 {todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점)</div>
+                      <div className="space-y-1">
+                        {todayTopic.rubrics.map((r, i) => (
+                          <div key={i}>
+                            <strong>{r.name} ({r.score}점)</strong>
+                            {r.hint && <span className="text-blue-700"> - {r.hint}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <h3 className="font-bold">✏️ 글쓰기</h3>
                   <textarea
                     value={essay}
@@ -529,16 +542,17 @@ ${rewriteEssay}
 
                     {/* 점수 막대 */}
                     {Array.isArray(feedbackResult.scores) && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {feedbackResult.scores.map((s, i) => {
                           const r = todayTopic.rubrics[i] || { name: `기준 ${i+1}`, score: 25 }
                           const pct = Math.round((s / r.score) * 100)
                           return (
                             <div key={i}>
                               <div className="flex justify-between text-xs mb-1">
-                                <span className="text-gray-600">{r.name}</span>
+                                <span className="text-gray-700 font-medium">{r.name}</span>
                                 <span className="font-medium">{s}/{r.score}</span>
                               </div>
+                              {r.hint && <div className="text-xs text-gray-500 mb-1">💡 {r.hint}</div>}
                               <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
                                 <div className="bg-primary h-full" style={{width: pct + '%'}} />
                               </div>
