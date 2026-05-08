@@ -125,7 +125,8 @@ export default function StudentHistory() {
         <Head><title>{g.title} - 문해력 수업</title></Head>
         <style>{`
           .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: help; position: relative; }
-          .grammar-error:hover::after { content: attr(data-correction); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap; z-index: 100; margin-bottom: 6px; }
+          .grammar-error:hover::after, .grammar-error:active::after { content: attr(data-correction); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 8px 12px; border-radius: 8px; font-size: 12px; white-space: normal; word-break: keep-all; line-height: 1.5; width: max-content; max-width: 280px; z-index: 100; margin-bottom: 6px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+          @media (max-width: 640px) { .grammar-error:hover::after, .grammar-error:active::after { max-width: calc(100vw - 40px); font-size: 11px; } }
         `}</style>
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />

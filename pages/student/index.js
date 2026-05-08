@@ -490,7 +490,7 @@ ${rewriteEssay}
           cursor: help;
           position: relative;
         }
-        .grammar-error:hover::after {
+        .grammar-error:hover::after, .grammar-error:active::after {
           content: attr(data-correction);
           position: absolute;
           bottom: 100%;
@@ -498,13 +498,24 @@ ${rewriteEssay}
           transform: translateX(-50%);
           background: #1f2937;
           color: white;
-          padding: 6px 10px;
-          border-radius: 6px;
+          padding: 8px 12px;
+          border-radius: 8px;
           font-size: 12px;
-          white-space: nowrap;
+          white-space: normal;
+          word-break: keep-all;
+          line-height: 1.5;
+          width: max-content;
+          max-width: 280px;
           z-index: 100;
           margin-bottom: 6px;
           font-weight: 500;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        @media (max-width: 640px) {
+          .grammar-error:hover::after, .grammar-error:active::after {
+            max-width: calc(100vw - 40px);
+            font-size: 11px;
+          }
         }
       `}</style>
       <div className="min-h-screen bg-gray-50">
