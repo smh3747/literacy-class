@@ -144,8 +144,13 @@ export default function ApiKeyManager({ classId, onChange }) {
               저장
             </button>
           </div>
+          <div className="text-xs space-y-1 bg-red-50 border border-red-200 p-3 rounded">
+            <p className="font-semibold text-red-900">🚨 반드시 개인 Gmail 계정으로 발급한 키만 사용!</p>
+            <p className="text-red-800">• 학교/회사/교육청 계정 키는 Google이 차단해서 작동 안 해요</p>
+            <p className="text-red-800">• 키가 AIza로 시작 + 개인 @gmail.com 계정인지 확인</p>
+          </div>
           <div className="text-xs text-gray-600 space-y-1 bg-yellow-50 border border-yellow-200 p-3 rounded">
-            <p className="font-semibold">⚠️ 학급 단위 저장 안내</p>
+            <p className="font-semibold">📌 학급 단위 저장 안내</p>
             <p>• 한 번 저장하면 학급의 모든 학생이 이 키로 AI를 사용해요</p>
             <p>• 학생들에게는 키가 보이지 않아요 (자동 처리)</p>
             <p>• 무료 한도(분당 30회)는 학급 전체가 공유합니다</p>

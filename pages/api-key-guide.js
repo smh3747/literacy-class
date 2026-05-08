@@ -36,8 +36,8 @@ export default function ApiKeyGuide() {
               <li className="flex gap-3">
                 <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">2</span>
                 <div className="flex-1">
-                  <p className="font-medium mb-1">Google 계정으로 로그인</p>
-                  <p className="text-gray-600 text-xs">기존 Gmail 계정으로 로그인하시면 됩니다</p>
+                  <p className="font-medium mb-1">⚠️ <span className="text-red-600">반드시 개인 Gmail 계정</span>으로 로그인</p>
+                  <p className="text-gray-600 text-xs">학교/회사 계정은 차단되니, 본인의 개인 Gmail (@gmail.com)으로 로그인하세요</p>
                 </div>
               </li>
               <li className="flex gap-3">
@@ -64,8 +64,20 @@ export default function ApiKeyGuide() {
             </ol>
           </div>
 
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-5">
+            <h3 className="font-bold text-red-900 mb-2 text-base">🚨 가장 중요! 반드시 개인 Gmail 계정으로!</h3>
+            <ul className="text-sm text-red-900 space-y-2">
+              <li>❌ <strong>학교/회사 Google 계정 사용 금지</strong> (예: @harangwriting.es.kr, @company.com)</li>
+              <li className="ml-4 text-xs">→ Google이 API 사용을 막아둔 경우가 많아 차단돼요</li>
+              <li>❌ <strong>교육청/정부기관 계정 사용 금지</strong></li>
+              <li className="ml-4 text-xs">→ 보안 정책으로 막혀있어요</li>
+              <li className="pt-1">✅ <strong>반드시 개인 Gmail 계정 사용</strong> (예: 본인이름@gmail.com)</li>
+              <li className="ml-4 text-xs">→ 만약 학교 계정으로 발급하셨다면, 다른 브라우저나 시크릿 모드에서 개인 Gmail로 로그인 후 다시 발급</li>
+            </ul>
+          </div>
+
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
-            <h3 className="font-bold text-yellow-900 mb-2">⚠️ 주의사항</h3>
+            <h3 className="font-bold text-yellow-900 mb-2">⚠️ 사용 시 주의사항</h3>
             <ul className="text-sm text-yellow-900 space-y-1">
               <li>• API 키는 <strong>본인의 기기에만</strong> 저장하세요</li>
               <li>• 공용 PC에서 사용 후 반드시 "키 삭제" 버튼을 눌러주세요</li>
