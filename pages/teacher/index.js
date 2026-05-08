@@ -84,15 +84,15 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">학생 관리</h3>
               <p className="text-xs text-gray-500">학급명렬표 일괄 등록</p>
             </Link>
-            <div className="bg-gray-100 rounded-2xl p-5 border border-gray-200 opacity-60">
+            <Link href="/teacher/submissions" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">학생 글 보기</h3>
-              <p className="text-xs text-gray-500">3단계-B에서 추가됩니다</p>
-            </div>
+              <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
+            </Link>
             <div className="bg-gray-100 rounded-2xl p-5 border border-gray-200 opacity-60">
               <div className="text-3xl mb-2">📊</div>
               <h3 className="font-bold mb-1">학생 기록</h3>
-              <p className="text-xs text-gray-500">3단계-B에서 추가됩니다</p>
+              <p className="text-xs text-gray-500">학생별 성장 그래프 (추후)</p>
             </div>
           </div>
         </main>
