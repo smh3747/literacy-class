@@ -43,8 +43,26 @@ export default function StudentLogin() {
 
     try {
       if (mode === 'login') {
-        const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+        const { data: loginData, error: err } = await supabase.auth.signInWithPassword({ email, password })
         if (err) throw err
+        
+        const { data: profile } = await supabase.from('profiles').select('role, realname').eq('id', loginData.user.id).maybeSingle()
+        
+        if (!profile) {
+          await supabase.auth.signOut()
+          throw new Error('회원 정보를 찾을 수 없어요. 가입을 먼저 해주세요.')
+        }
+        
+        if (profile.role === 'teacher' || profile.role === 'admin') {
+          await supabase.auth.signOut()
+          throw new Error(`이 계정은 선생님 계정이에요!\n\n${profile.realname || ''}님, "👩‍🏫 선생님이에요" 버튼으로 다시 들어가주세요.`)
+        }
+        
+        if (profile.role !== 'student') {
+          await supabase.auth.signOut()
+          throw new Error('학생 권한이 없는 계정이에요.')
+        }
+        
         router.push('/student')
       } else {
         const { data: classData } = await supabase.from('classes').select('id, name').eq('code', classCode).maybeSingle()
@@ -66,7 +84,18 @@ export default function StudentLogin() {
         router.push('/student')
       }
     } catch(e) {
-      setError(e.message || '오류가 발생했어요')
+      let errMsg = e.message || '오류가 발생했어요'
+      // Supabase 영문 오류를 한글로
+      if (errMsg.includes('Invalid login credentials')) {
+        errMsg = '아이디 또는 비밀번호가 잘못됐어요.\n다시 확인해주세요.'
+      } else if (errMsg.includes('Email not confirmed')) {
+        errMsg = '이메일 인증이 필요해요. 관리자에게 문의해주세요.'
+      } else if (errMsg.includes('User not found') || errMsg.includes('user does not exist')) {
+        errMsg = '가입되지 않은 아이디예요. 회원가입을 해주세요.'
+      } else if (errMsg.includes('Network')) {
+        errMsg = '네트워크 연결을 확인해주세요.'
+      }
+      setError(errMsg)
       setLoading(false)
     }
   }

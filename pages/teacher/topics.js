@@ -49,16 +49,17 @@ export default function TopicsPage() {
       saveLocalApiKey(profile.classes.api_key)
     }
     
-    await loadTopics(profile.classes?.id)
+    await loadTopics(profile.id)
     setLoading(false)
   }
 
-  const loadTopics = async (classId) => {
-    if (!classId) return
-    // 같은 학급 + 주제 가져오기 (class_id 컬럼이 topics에 있어야 함)
-    let query = supabase.from('topics').select('*').order('date', { ascending: false }).limit(30)
-    // class_id가 topics에 있으면 필터, 없으면 teacher_id로 필터
-    const { data } = await query.eq('teacher_id', user?.id || '00000000-0000-0000-0000-000000000000')
+  const loadTopics = async (teacherId) => {
+    if (!teacherId) return
+    const { data } = await supabase.from('topics')
+      .select('*')
+      .eq('teacher_id', teacherId)
+      .order('date', { ascending: false })
+      .limit(50)
     setTopics(data || [])
   }
 
@@ -111,7 +112,7 @@ export default function TopicsPage() {
       setTitle('')
       setDesc('')
       setRubrics(DEFAULT_RUBRICS)
-      await loadTopics(classInfo.id)
+      await loadTopics(user.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
     }
@@ -122,7 +123,7 @@ export default function TopicsPage() {
     if (!confirm('이 주제를 삭제할까요? (학생 글은 유지됨)')) return
     const { error } = await supabase.from('topics').delete().eq('id', id)
     if (error) return alert('삭제 실패: ' + error.message)
-    await loadTopics(classInfo.id)
+    await loadTopics(user.id)
   }
 
   // AI 주제 추천 (Structured Output - JSON 깨질 일 없음)
