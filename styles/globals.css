@@ -10,14 +10,57 @@
 body {
   background: #fafaf7;
   color: #1f2937;
+  /* 모바일 사파리 바운스 방지 */
+  overscroll-behavior-y: none;
 }
 
-/* 모바일 친화적 input */
+/* 모바일 input 자동 확대 방지 */
 input, textarea, select {
-  font-size: 16px; /* iOS 자동 확대 방지 */
+  font-size: 16px;
 }
 
 /* 한글 줄바꿈 */
 * {
   word-break: keep-all;
+}
+
+/* 모바일 터치 영역 충분히 */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+  min-height: 32px;
+}
+
+/* 모바일에서 textarea 안 짤림 */
+textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  resize: vertical;
+}
+
+/* 작은 화면 (모바일) */
+@media (max-width: 640px) {
+  /* 표 가로 스크롤 가능하게 */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* 큰 패딩 줄임 */
+  .p-8 { padding: 1.25rem; }
+  .p-6 { padding: 1rem; }
+  
+  /* 그래프/통계 카드 */
+  .stats-card {
+    padding: 0.75rem;
+  }
+}
+
+/* iOS 입력 줌 방지 */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
+/* 인쇄 시 */
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
 }

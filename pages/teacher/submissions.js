@@ -95,6 +95,46 @@ export default function TeacherSubmissions() {
     setView('studentDetail')
   }
 
+  const downloadExcel = async () => {
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+    
+    const rows = []
+    rows.push(['번호', '이름', '아이디', '시도', '점수', '총점', '제출시각', '복붙', '글 내용', '종합 의견', '잘한 점', '발전 점'])
+    
+    topicStudents.forEach((g, gIdx) => {
+      const sorted = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+      sorted.forEach(s => {
+        rows.push([
+          gIdx + 1,
+          g.profile.realname,
+          g.profile.username,
+          (s.attempt||1) === 1 ? '첫 글' : `수정본 ${s.attempt}`,
+          s.total_score,
+          s.max_score,
+          s.created_at?.slice(0, 16).replace('T', ' '),
+          s.paste_detected ? `Y(${s.paste_count})` : 'N',
+          s.essay_text || '',
+          s.feedback_overall || '',
+          s.feedback_good || '',
+          s.feedback_improve || ''
+        ])
+      })
+    })
+    
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    // 컬럼 너비
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 6 }, { wch: 6 },
+      { wch: 18 }, { wch: 7 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
+    ]
+    
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '학생글')
+    
+    const filename = `${selectedTopic.title}_${selectedTopic.date}.xlsx`
+    XLSX.writeFile(wb, filename)
+  }
+
   const allowExtraRewrite = async (subId) => {
     if (!confirm('이 학생에게 추가 수정을 허용하시겠어요?\n허용하면 학생이 한 번 더 글을 고칠 수 있어요.')) return
     const { error } = await supabase.from('submissions').update({ extra_rewrite_allowed: true }).eq('id', subId)
@@ -144,10 +184,18 @@ export default function TeacherSubmissions() {
           {view === 'topicStudents' && selectedTopic && (
             <>
               <button onClick={() => setView('topics')} className="text-sm text-gray-600">← 주제 목록</button>
-              <div className="bg-primary-light rounded-2xl p-4">
-                <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
-                <h2 className="text-lg font-bold text-primary-dark">{selectedTopic.title}</h2>
-                <div className="text-xs text-primary-dark mt-1">{topicStudents.length}명 제출</div>
+              <div className="bg-primary-light rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
+                  <h2 className="text-lg font-bold text-primary-dark">{selectedTopic.title}</h2>
+                  <div className="text-xs text-primary-dark mt-1">{topicStudents.length}명 제출</div>
+                </div>
+                {topicStudents.length > 0 && (
+                  <button onClick={downloadExcel}
+                    className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
+                    📥 Excel 다운로드
+                  </button>
+                )}
               </div>
 
               {topicStudents.length === 0 ? (

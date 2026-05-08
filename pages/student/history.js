@@ -4,6 +4,10 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
+import { Line } from 'react-chartjs-2'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 function escapeHtml(text) {
   if (!text) return ''
@@ -150,6 +154,40 @@ export default function StudentHistory() {
   }
 
   // 목록 화면
+  // 그래프 데이터 준비 (시간순으로 최종본 점수)
+  const chartData = (() => {
+    if (grouped.length === 0) return null
+    const sorted = [...grouped].sort((a,b) => new Date(a.date) - new Date(b.date))
+    const labels = sorted.map(g => g.date?.slice(5) || '')
+    const finals = sorted.map(g => {
+      const sortedItems = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+      const last = sortedItems[sortedItems.length - 1]
+      return Math.round((last.total_score / last.max_score) * 100)
+    })
+    return {
+      labels,
+      datasets: [{
+        label: '점수 (100점 환산)',
+        data: finals,
+        borderColor: '#2d6a4f',
+        backgroundColor: 'rgba(45, 106, 79, 0.1)',
+        tension: 0.3,
+        fill: true,
+      }]
+    }
+  })()
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      title: { display: true, text: '나의 글쓰기 점수 변화' }
+    },
+    scales: {
+      y: { min: 0, max: 100, ticks: { stepSize: 20 } }
+    }
+  }
+
   return (
     <>
       <Head><title>내 글 기록 - 문해력 수업</title></Head>
@@ -160,6 +198,12 @@ export default function StudentHistory() {
             <h2 className="text-xl font-bold">📚 내 글 기록</h2>
             <Link href="/student" className="text-sm text-primary hover:underline">오늘 글쓰기 →</Link>
           </div>
+
+          {chartData && grouped.length >= 2 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm">
+              <Line data={chartData} options={chartOptions} />
+            </div>
+          )}
 
           {grouped.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center text-gray-500">

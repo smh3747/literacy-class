@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
+import StudentTutorial from '../../components/StudentTutorial'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -670,6 +671,7 @@ ${rewriteEssay}
           </div>
         </main>
         {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
+        <StudentTutorial />
       </div>
     </>
   )

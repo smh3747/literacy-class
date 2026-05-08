@@ -160,27 +160,36 @@ export default function ParentConsent() {
             </section>
 
             {/* 서명란 */}
-            <section className="mt-10 grid grid-cols-2 gap-6 text-sm">
-              <div>
-                <p className="mb-1">학년/반/번호:</p>
-                <div className="border-b border-gray-400 h-7"></div>
-              </div>
-              <div>
-                <p className="mb-1">학생 성명:</p>
-                <div className="border-b border-gray-400 h-7"></div>
-              </div>
-              <div>
-                <p className="mb-1">학부모 성명:</p>
-                <div className="border-b border-gray-400 h-7"></div>
-              </div>
-              <div>
-                <p className="mb-1">학부모 서명:</p>
-                <div className="border-b border-gray-400 h-7 flex items-end justify-end">
-                  <span className="text-xs text-gray-500 pr-2">(인)</span>
+            <section className="mt-10 space-y-6 text-sm">
+              {/* 학생 정보 */}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                <div>
+                  <p className="mb-2 font-medium">학년/반/번호</p>
+                  <div className="border-b-2 border-gray-400 h-8"></div>
+                </div>
+                <div>
+                  <p className="mb-2 font-medium">학생 성명</p>
+                  <div className="border-b-2 border-gray-400 h-8"></div>
                 </div>
               </div>
-              <div className="col-span-2 text-right text-sm mt-4">
-                <span>날짜: 2026년 ____ 월 ____ 일</span>
+
+              {/* 학부모 정보 */}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                <div>
+                  <p className="mb-2 font-medium">학부모 성명</p>
+                  <div className="border-b-2 border-gray-400 h-8"></div>
+                </div>
+                <div>
+                  <p className="mb-2 font-medium">학부모 서명</p>
+                  <div className="border-b-2 border-gray-400 h-8 flex items-end justify-end pr-2">
+                    <span className="text-xs text-gray-500">(인)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 날짜 */}
+              <div className="text-right text-sm pt-4">
+                <span>날짜: 2026년 _____ 월 _____ 일</span>
               </div>
             </section>
 

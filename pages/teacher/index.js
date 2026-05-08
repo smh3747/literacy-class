@@ -145,6 +145,16 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">학부모 동의서</h3>
               <p className="text-xs text-gray-500">인쇄 / PDF 다운로드</p>
             </Link>
+            <Link href="/teacher/student-growth" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📊</div>
+              <h3 className="font-bold mb-1">학생 성장 그래프</h3>
+              <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
+            </Link>
+            <Link href="/teacher/help" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📖</div>
+              <h3 className="font-bold mb-1">도움말 / FAQ</h3>
+              <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
+            </Link>
           </div>
         </main>
         {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
