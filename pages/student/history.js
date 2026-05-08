@@ -9,6 +9,37 @@ import { Line } from 'react-chartjs-2'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
+function FeedbackList({ text, color = 'gray' }) {
+  if (!text) return null
+  let items = []
+  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
+    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
+    if (items.length === 1) {
+      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
+    }
+  } else {
+    items = [text]
+  }
+  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  
+  const colorClasses = { green: 'text-green-900', amber: 'text-amber-900', blue: 'text-blue-900', gray: 'text-gray-700' }
+  const dotClasses = { green: 'bg-green-600', amber: 'bg-amber-600', blue: 'bg-blue-600', gray: 'bg-gray-400' }
+  
+  if (items.length <= 1) {
+    return <p className={`text-sm ${colorClasses[color]} break-keep leading-relaxed`}>{items[0] || text}</p>
+  }
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2">
+          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${dotClasses[color]} mt-2`}></span>
+          <span className={`text-sm ${colorClasses[color]} break-keep leading-relaxed flex-1`}>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function escapeHtml(text) {
   if (!text) return ''
   return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -123,10 +154,25 @@ export default function StudentHistory() {
                 <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
 
-                <div className="space-y-2 text-sm">
-                  <div><strong>💬 종합 의견:</strong> <span className="text-gray-700">{s.feedback_overall}</span></div>
-                  <div><strong>⭐ 잘한 점:</strong> <span className="text-gray-700">{s.feedback_good}</span></div>
-                  <div><strong>🌱 발전시킬 점:</strong> <span className="text-gray-700">{s.feedback_improve}</span></div>
+                <div className="space-y-3 text-sm">
+                  <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                    <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
+                      <span>💬</span> 종합 의견
+                    </h4>
+                    <p className="text-blue-900 break-keep leading-relaxed">{s.feedback_overall}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+                    <h4 className="font-bold mb-1 text-green-900 flex items-center gap-1.5">
+                      <span>⭐</span> 잘한 점
+                    </h4>
+                    <FeedbackList text={s.feedback_good} color="green" />
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                    <h4 className="font-bold mb-1 text-amber-900 flex items-center gap-1.5">
+                      <span>🌱</span> 발전시킬 점
+                    </h4>
+                    <FeedbackList text={s.feedback_improve} color="amber" />
+                  </div>
                 </div>
 
                 {s.example_text && (i === items.length - 1) && (

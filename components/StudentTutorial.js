@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 export default function StudentTutorial() {
   const [show, setShow] = useState(false)
   const [step, setStep] = useState(0)
+  const [dontShow, setDontShow] = useState(false)
 
   useEffect(() => {
     const seen = localStorage.getItem('student_tutorial_seen')
@@ -10,6 +11,14 @@ export default function StudentTutorial() {
   }, [])
 
   const close = () => {
+    if (dontShow) {
+      localStorage.setItem('student_tutorial_seen', '1')
+    }
+    setShow(false)
+  }
+
+  const finish = () => {
+    // 끝까지 본 경우엔 자동으로 안 보이게
     localStorage.setItem('student_tutorial_seen', '1')
     setShow(false)
   }
@@ -30,7 +39,7 @@ export default function StudentTutorial() {
     {
       icon: '✏️',
       title: '자유롭게 글쓰기',
-      desc: '평가 기준을 참고해서 자유롭게 써 보세요.\n30자 이상 써야 제출할 수 있어요.\n중간에 저장은 자동으로 돼요!'
+      desc: '평가 기준을 참고해서 자유롭게 써 보세요.\n30자 이상 써야 제출할 수 있어요.\n중간 저장은 자동으로 돼요!'
     },
     {
       icon: '🤖',
@@ -59,7 +68,6 @@ export default function StudentTutorial() {
         <h2 className="text-xl font-bold mb-3">{cur.title}</h2>
         <p className="text-sm text-gray-600 whitespace-pre-line leading-relaxed mb-6">{cur.desc}</p>
 
-        {/* 진행 표시 */}
         <div className="flex justify-center gap-1.5 mb-6">
           {steps.map((_, i) => (
             <div key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-6 bg-primary' : 'w-1.5 bg-gray-200'}`} />
@@ -73,7 +81,7 @@ export default function StudentTutorial() {
             </button>
           )}
           {isLast ? (
-            <button onClick={close} className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold">
+            <button onClick={finish} className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold">
               시작하기 🚀
             </button>
           ) : (
@@ -83,9 +91,16 @@ export default function StudentTutorial() {
           )}
         </div>
 
-        <button onClick={close} className="mt-3 text-xs text-gray-400 hover:text-gray-600">
-          건너뛰기
-        </button>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={dontShow} onChange={e => setDontShow(e.target.checked)} className="w-4 h-4" />
+            <span>다시 보지 않기</span>
+          </label>
+          <span className="text-gray-300">|</span>
+          <button onClick={close} className="text-xs text-gray-400 hover:text-gray-600">
+            건너뛰기
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -5,6 +5,37 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 
+function FeedbackList({ text, color = 'gray' }) {
+  if (!text) return null
+  let items = []
+  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
+    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
+    if (items.length === 1) {
+      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
+    }
+  } else {
+    items = [text]
+  }
+  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  
+  const colorClasses = { green: 'text-green-900', amber: 'text-amber-900', blue: 'text-blue-900', gray: 'text-gray-700' }
+  const dotClasses = { green: 'bg-green-600', amber: 'bg-amber-600', blue: 'bg-blue-600', gray: 'bg-gray-400' }
+  
+  if (items.length <= 1) {
+    return <p className={`text-sm ${colorClasses[color]} break-keep leading-relaxed`}>{items[0] || text}</p>
+  }
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2">
+          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${dotClasses[color]} mt-2`}></span>
+          <span className={`text-sm ${colorClasses[color]} break-keep leading-relaxed flex-1`}>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function escapeHtml(text) {
   if (!text) return ''
   return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -96,6 +127,8 @@ export default function TeacherSubmissions() {
   }
 
   const downloadExcel = async () => {
+    if (!confirm(`📥 학생 글 일괄 다운로드\n\n사용 목적:\n- 학기말 글 모음집 제작\n- 학생 포트폴리오 보관\n- 가정통신문/평가 자료\n\n⚠️ 학생 개인정보가 포함되니 외부 공유 금지!\n\n계속하시겠어요?`)) return
+    
     const XLSX = (await import('xlsx')).default || (await import('xlsx'))
     
     const rows = []
@@ -290,10 +323,19 @@ export default function TeacherSubmissions() {
                       </div>
                     )}
 
-                    <div className="space-y-2 text-sm pt-2 border-t">
-                      <div><strong>💬 종합:</strong> {s.feedback_overall}</div>
-                      <div><strong>⭐ 잘한 점:</strong> {s.feedback_good}</div>
-                      <div><strong>🌱 발전:</strong> {s.feedback_improve}</div>
+                    <div className="space-y-2 text-sm pt-3 border-t">
+                      <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                        <h4 className="font-bold mb-1 text-blue-900 text-sm">💬 종합 의견</h4>
+                        <p className="text-blue-900 break-keep leading-relaxed">{s.feedback_overall}</p>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+                        <h4 className="font-bold mb-1 text-green-900 text-sm">⭐ 잘한 점</h4>
+                        <FeedbackList text={s.feedback_good} color="green" />
+                      </div>
+                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
+                        <h4 className="font-bold mb-1 text-amber-900 text-sm">🌱 발전시킬 점</h4>
+                        <FeedbackList text={s.feedback_improve} color="amber" />
+                      </div>
                     </div>
 
                     {showAllowBtn && (

@@ -16,6 +16,56 @@ function todayStr() {
 }
 
 // HTML 이스케이프
+// 피드백 텍스트를 리스트로 시각화 (- 로 시작하는 항목들 자동 분리)
+function FeedbackList({ text, color = 'gray' }) {
+  if (!text) return null
+  
+  // "- "로 분리, 또는 "•"로 분리
+  let items = []
+  
+  // 패턴 1: "- A. - B. - C." 형태 → 각 "- " 기준 분리
+  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
+    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
+    // 첫 항목이 "- "로 시작 안 하면 (= 시작 부분에 일반 텍스트가 있으면) 그것도 살림
+    if (items.length === 1) {
+      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
+    }
+  } else {
+    items = [text]
+  }
+  
+  // 너무 길거나 빈 항목 제거, 끝에 "." 추가
+  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  
+  const colorClasses = {
+    green: 'text-green-900',
+    amber: 'text-amber-900',
+    blue: 'text-blue-900',
+    gray: 'text-gray-700'
+  }
+  const dotClasses = {
+    green: 'bg-green-600',
+    amber: 'bg-amber-600',
+    blue: 'bg-blue-600',
+    gray: 'bg-gray-400'
+  }
+  
+  if (items.length <= 1) {
+    return <p className={`text-sm ${colorClasses[color]} break-keep leading-relaxed`}>{items[0] || text}</p>
+  }
+  
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2">
+          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${dotClasses[color]} mt-2`}></span>
+          <span className={`text-sm ${colorClasses[color]} break-keep leading-relaxed flex-1`}>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function escapeHtml(text) {
   if (!text) return ''
   return String(text)
@@ -108,7 +158,7 @@ export default function StudentHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key, school)').eq('id', authUser.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
@@ -459,13 +509,21 @@ ${rewriteEssay}
       `}</style>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
-        <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+        <main className="max-w-3xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
           
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-gray-700">{user?.realname || ''}님</h2>
-            <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
-              🔐 비밀번호 변경
-            </button>
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">{user?.realname || ''}님 안녕하세요!</h2>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  {(user?.school || classInfo?.school) && <span>{user?.school || classInfo?.school}</span>}
+                  {classInfo?.name && <span>{(user?.school || classInfo?.school) ? ' · ' : ''}{classInfo.name}</span>}
+                </p>
+              </div>
+              <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                🔐 비밀번호 변경
+              </button>
+            </div>
           </div>
           
           {!todayTopic ? (
@@ -533,10 +591,10 @@ ${rewriteEssay}
                   )}
 
                   {/* 피드백 결과 */}
-                  <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-bold">📊 피드백 결과</h3>
-                      <span className="text-lg font-bold">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
+                  <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 overflow-hidden">
+                    <div className="flex justify-between items-center gap-2">
+                      <h3 className="font-bold text-base">📊 피드백 결과</h3>
+                      <span className="text-base sm:text-lg font-bold flex-shrink-0">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
                     </div>
 
                     {/* 내가 쓴 글 (맞춤법 표시) */}
@@ -558,17 +616,17 @@ ${rewriteEssay}
 
                     {/* 점수 막대 */}
                     {Array.isArray(feedbackResult.scores) && (
-                      <div className="space-y-3">
+                      <div className="space-y-3 overflow-hidden">
                         {feedbackResult.scores.map((s, i) => {
                           const r = todayTopic.rubrics[i] || { name: `기준 ${i+1}`, score: 25 }
                           const pct = Math.round((s / r.score) * 100)
                           return (
-                            <div key={i}>
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className="text-gray-700 font-medium">{r.name}</span>
-                                <span className="font-medium">{s}/{r.score}</span>
+                            <div key={i} className="min-w-0">
+                              <div className="flex justify-between gap-2 text-xs mb-1">
+                                <span className="text-gray-700 font-medium break-keep">{r.name}</span>
+                                <span className="font-medium flex-shrink-0">{s}/{r.score}</span>
                               </div>
-                              {r.hint && <div className="text-xs text-gray-500 mb-1">💡 {r.hint}</div>}
+                              {r.hint && <div className="text-xs text-gray-500 mb-1 break-keep">💡 {r.hint}</div>}
                               <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
                                 <div className="bg-primary h-full" style={{width: pct + '%'}} />
                               </div>
@@ -578,19 +636,30 @@ ${rewriteEssay}
                       </div>
                     )}
 
-                    {/* 의견들 */}
-                    <div className="space-y-3 pt-2 border-t border-gray-100">
-                      <div>
-                        <h4 className="text-sm font-bold mb-1">💬 종합 의견</h4>
-                        <p className="text-sm text-gray-700">{feedbackResult.overall}</p>
+                    {/* 의견들 - 시각적으로 분리 */}
+                    <div className="space-y-3 pt-3 border-t border-gray-100">
+                      {/* 종합 의견 */}
+                      <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                        <h4 className="text-sm font-bold mb-2 text-blue-900 flex items-center gap-1.5">
+                          <span>💬</span> 종합 의견
+                        </h4>
+                        <p className="text-sm text-blue-900 break-keep leading-relaxed">{feedbackResult.overall}</p>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-bold mb-1">⭐ 잘한 점</h4>
-                        <p className="text-sm text-gray-700">{feedbackResult.good}</p>
+
+                      {/* 잘한 점 */}
+                      <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                        <h4 className="text-sm font-bold mb-2 text-green-900 flex items-center gap-1.5">
+                          <span>⭐</span> 잘한 점
+                        </h4>
+                        <FeedbackList text={feedbackResult.good} color="green" />
                       </div>
-                      <div>
-                        <h4 className="text-sm font-bold mb-1">🌱 더 발전시킬 점</h4>
-                        <p className="text-sm text-gray-700">{feedbackResult.improve}</p>
+
+                      {/* 발전 점 */}
+                      <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                        <h4 className="text-sm font-bold mb-2 text-amber-900 flex items-center gap-1.5">
+                          <span>🌱</span> 더 발전시킬 점
+                        </h4>
+                        <FeedbackList text={feedbackResult.improve} color="amber" />
                       </div>
                     </div>
                   </div>

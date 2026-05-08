@@ -65,7 +65,7 @@ export default function StudentLogin() {
         
         router.push('/student')
       } else {
-        const { data: classData } = await supabase.from('classes').select('id, name, is_active').eq('code', classCode).maybeSingle()
+        const { data: classData } = await supabase.from('classes').select('id, name, is_active, school').eq('code', classCode).maybeSingle()
         if (!classData) {
           setError('학급 코드가 잘못됐어요. 선생님께 확인해주세요')
           setLoading(false)
@@ -84,7 +84,7 @@ export default function StudentLogin() {
           return
         }
         await supabase.from('profiles').insert({
-          id: data.user.id, username: username.toLowerCase(), realname: username, role: 'student', class_id: classData.id
+          id: data.user.id, username: username.toLowerCase(), realname: username, role: 'student', class_id: classData.id, school: classData.school || null
         })
         router.push('/student')
       }

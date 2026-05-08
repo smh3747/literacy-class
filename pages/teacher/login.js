@@ -102,7 +102,7 @@ export default function TeacherLogin() {
         }
 
         const { data: newClass, error: classErr } = await supabase.from('classes')
-          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id })
+          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id, school: school.trim() })
           .select().single()
         if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
 
