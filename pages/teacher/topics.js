@@ -141,7 +141,7 @@ export default function TopicsPage() {
 - title은 10-15자 정도로 흥미롭게
 - description은 학생에게 친근하게 한 줄(50자 이내)`
 
-      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { maxTokens: 1000 })
+      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { maxTokens: 4000 })
       
       const newTitle = result1.title || ''
       const newDesc = result1.description || ''
@@ -157,7 +157,7 @@ export default function TopicsPage() {
 - 각 25점 (합 100점)
 - 기준 이름은 4-8자로 짧게 (예: 주제 표현, 글의 짜임, 풍부한 어휘, 맞춤법)`
 
-          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 1000, temperature: 0.5 })
+          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
             const cleaned = result2.rubrics.map(r => ({
