@@ -1,21 +1,38 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { loadApiKey, saveApiKey, deleteApiKey } from '../lib/gemini'
+import { supabase } from '../lib/supabase'
+import { saveApiKey as saveLocal, deleteApiKey as deleteLocal } from '../lib/gemini'
 
-export default function ApiKeyManager({ onChange }) {
-  const [savedKey, setSavedKey] = useState('') // 실제 저장된 키
-  const [inputKey, setInputKey] = useState('') // 입력창의 임시 값
+export default function ApiKeyManager({ classId, onChange }) {
+  const [savedKey, setSavedKey] = useState('')
+  const [inputKey, setInputKey] = useState('')
   const [showInput, setShowInput] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const k = loadApiKey()
-    setSavedKey(k)
-    onChange?.(k)
-  }, [])
+    if (classId) loadKey()
+    else setLoading(false)
+  }, [classId])
+
+  const loadKey = async () => {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('classes').select('api_key').eq('id', classId).maybeSingle()
+      const k = data?.api_key || ''
+      setSavedKey(k)
+      // 로컬에도 저장 (학생들이 쓸 때를 위해)
+      if (k) saveLocal(k)
+      else deleteLocal()
+      onChange?.(k)
+    } catch(e) {
+      console.error('API 키 로드 실패:', e)
+    }
+    setLoading(false)
+  }
 
   const startEdit = () => {
-    setInputKey('') // ★ 입력창 비우기 (이전 키 안 보이게)
+    setInputKey('')
     setShowInput(true)
   }
 
@@ -24,43 +41,62 @@ export default function ApiKeyManager({ onChange }) {
     setShowInput(false)
   }
 
-  const save = () => {
+  const save = async () => {
     const key = inputKey.trim()
-    if (!key) {
-      alert('API 키를 입력해주세요')
-      return
-    }
+    if (!key) return alert('API 키를 입력해주세요')
     if (!key.startsWith('AIza')) {
-      alert('Gemini API 키는 "AIza" 로 시작해요. 다시 확인해주세요.')
-      return
+      return alert('Gemini API 키는 "AIza" 로 시작해요. 다시 확인해주세요.')
     }
-    saveApiKey(key)
-    setSavedKey(key) // ★ 저장된 키 즉시 갱신
-    setInputKey('')
-    setShowInput(false)
-    onChange?.(key)
-    alert('API 키 저장 완료!')
+
+    try {
+      const { error } = await supabase.from('classes').update({ api_key: key }).eq('id', classId)
+      if (error) throw error
+      
+      setSavedKey(key)
+      saveLocal(key) // 로컬에도
+      setInputKey('')
+      setShowInput(false)
+      onChange?.(key)
+      alert('API 키 저장 완료!\n학급의 모든 학생이 이 키를 사용합니다.')
+    } catch(e) {
+      alert('저장 실패: ' + e.message)
+    }
   }
 
-  const remove = () => {
-    if (!confirm('정말 API 키를 삭제하시겠어요?\n\n공용 PC라면 반드시 삭제해주세요!')) return
-    deleteApiKey()
-    setSavedKey('')
-    setInputKey('')
-    setShowInput(false)
-    onChange?.('')
+  const remove = async () => {
+    if (!confirm('정말 API 키를 삭제하시겠어요?\n\n삭제하면 학생들이 AI 피드백을 받을 수 없어요!')) return
+    try {
+      const { error } = await supabase.from('classes').update({ api_key: null }).eq('id', classId)
+      if (error) throw error
+      
+      setSavedKey('')
+      deleteLocal()
+      setInputKey('')
+      setShowInput(false)
+      onChange?.('')
+    } catch(e) {
+      alert('삭제 실패: ' + e.message)
+    }
   }
 
   const hasKey = !!savedKey
   const masked = savedKey ? savedKey.slice(0, 6) + '...' + savedKey.slice(-4) : ''
 
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="text-sm text-gray-500">API 키 정보 로딩 중...</div>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h3 className="font-bold text-gray-900">🔑 Gemini API 키</h3>
+          <h3 className="font-bold text-gray-900">🔑 학급 Gemini API 키</h3>
           <p className="text-xs text-gray-500 mt-1">
-            {hasKey ? '✅ 등록됨' : '⚠️ 미등록 (AI 기능 사용 불가)'}
+            {hasKey ? '✅ 등록됨 (학급 모든 학생이 사용)' : '⚠️ 미등록 (학생들이 AI 피드백 못 받음)'}
           </p>
         </div>
         <Link href="/api-key-guide" target="_blank" className="text-xs text-primary hover:underline">
@@ -92,7 +128,7 @@ export default function ApiKeyManager({ onChange }) {
           )}
           <input
             type="password"
-            placeholder="AIza... 로 시작하는 새 키 붙여넣기"
+            placeholder="AIza... 로 시작하는 키 붙여넣기"
             value={inputKey}
             onChange={e => setInputKey(e.target.value)}
             className="w-full p-3 border border-gray-200 rounded-lg text-sm font-mono"
@@ -108,9 +144,12 @@ export default function ApiKeyManager({ onChange }) {
               저장
             </button>
           </div>
-          <p className="text-xs text-gray-500">
-            💡 키는 본인 브라우저에만 저장됩니다 (서버 X). 공용 PC라면 사용 후 삭제!
-          </p>
+          <div className="text-xs text-gray-600 space-y-1 bg-yellow-50 border border-yellow-200 p-3 rounded">
+            <p className="font-semibold">⚠️ 학급 단위 저장 안내</p>
+            <p>• 한 번 저장하면 학급의 모든 학생이 이 키로 AI를 사용해요</p>
+            <p>• 학생들에게는 키가 보이지 않아요 (자동 처리)</p>
+            <p>• 무료 한도(분당 30회)는 학급 전체가 공유합니다</p>
+          </div>
         </div>
       )}
     </div>

@@ -70,7 +70,7 @@ export default function TeacherHome() {
           )}
 
           {/* API 키 관리 */}
-          <ApiKeyManager />
+          <ApiKeyManager classId={classInfo?.id} />
 
           {/* 메뉴 */}
           <div className="grid sm:grid-cols-2 gap-3">

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 const DEFAULT_RUBRICS = [
@@ -37,12 +37,18 @@ export default function TopicsPage() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
+    
+    // 학급 API 키를 로컬에도 동기화
+    if (profile.classes?.api_key) {
+      saveLocalApiKey(profile.classes.api_key)
+    }
+    
     await loadTopics(profile.classes?.id)
     setLoading(false)
   }

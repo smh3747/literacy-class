@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 // 한국 시간 기준 오늘 날짜
@@ -105,12 +105,18 @@ export default function StudentHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key)').eq('id', authUser.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
+    
+    // 학급의 API 키 자동 로드 (학생에게 보이지 않게)
+    if (profile.classes?.api_key) {
+      saveLocalApiKey(profile.classes.api_key)
+    }
+    
     await loadTodayTopic(profile)
     setLoading(false)
   }
@@ -202,7 +208,7 @@ export default function StudentHome() {
     if (!apiKey) {
       // 학생은 선생님 키를 못 쓰니, 선생님이 같은 브라우저에서 미리 등록해 놨어야 함
       // 또는 학생 본인 키 등록 가능하게 안내
-      alert('AI 기능이 활성화되지 않았어요.\n선생님께 문의해주세요. (API 키 등록 필요)')
+      alert('AI 기능이 아직 활성화되지 않았어요.\n선생님께 "AI 기능 켜주세요"라고 말씀드려주세요!')
       return
     }
 
@@ -325,7 +331,7 @@ ${studentEssay}
     if (rewriteEssay.trim().length < 30) return alert('글을 더 써 주세요!')
     
     const apiKey = loadApiKey()
-    if (!apiKey) return alert('AI 기능 비활성화. 선생님께 문의해주세요.')
+    if (!apiKey) return alert('AI 기능이 아직 활성화되지 않았어요.\n선생님께 문의해주세요.')
 
     // 추가 수정 권한 체크
     const { data: existingSubs } = await supabase.from('submissions')
