@@ -203,11 +203,23 @@ export default function StudentsPage() {
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 학생이 없어요</p>
             ) : (
               <div className="space-y-2">
-                {students.map(s => (
+                {[...students].sort((a, b) => {
+                  const na = parseInt(a.number) || 999
+                  const nb = parseInt(b.number) || 999
+                  if (na !== nb) return na - nb
+                  return (a.username || '').localeCompare(b.username || '')
+                }).map(s => (
                   <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">{s.realname}</div>
-                      <div className="text-xs text-gray-500 font-mono">{s.username}</div>
+                    <div className="flex items-center gap-3">
+                      {s.number && (
+                        <span className="text-xs font-mono bg-white border border-gray-200 px-2 py-1 rounded">
+                          {s.number}번
+                        </span>
+                      )}
+                      <div>
+                        <div className="font-medium">{s.realname}</div>
+                        <div className="text-xs text-gray-500 font-mono">{s.username}</div>
+                      </div>
                     </div>
                   </div>
                 ))}

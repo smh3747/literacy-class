@@ -7,6 +7,7 @@ import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKe
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import StudentTutorial from '../../components/StudentTutorial'
+import useGrammarTooltip from '../../lib/useGrammarTooltip'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -117,6 +118,7 @@ function applyGrammarHighlights(essayText, corrections) {
 
 export default function StudentHome() {
   const router = useRouter()
+  useGrammarTooltip()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
   const [todayTopic, setTodayTopic] = useState(null)
@@ -487,35 +489,7 @@ ${rewriteEssay}
           background: #fee2e2;
           padding: 0 2px;
           border-radius: 2px;
-          cursor: help;
-          position: relative;
-        }
-        .grammar-error:hover::after, .grammar-error:active::after {
-          content: attr(data-correction);
-          position: absolute;
-          bottom: 100%;
-          left: 50%;
-          transform: translateX(-50%);
-          background: #1f2937;
-          color: white;
-          padding: 8px 12px;
-          border-radius: 8px;
-          font-size: 12px;
-          white-space: normal;
-          word-break: keep-all;
-          line-height: 1.5;
-          width: max-content;
-          max-width: 280px;
-          z-index: 100;
-          margin-bottom: 6px;
-          font-weight: 500;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        @media (max-width: 640px) {
-          .grammar-error:hover::after, .grammar-error:active::after {
-            max-width: calc(100vw - 40px);
-            font-size: 11px;
-          }
+          cursor: pointer;
         }
       `}</style>
       <div className="min-h-screen bg-gray-50">
@@ -529,6 +503,7 @@ ${rewriteEssay}
                 <p className="text-xs text-gray-600 mt-0.5">
                   {(user?.school || classInfo?.school) && <span>{user?.school || classInfo?.school}</span>}
                   {classInfo?.name && <span>{(user?.school || classInfo?.school) ? ' · ' : ''}{classInfo.name}</span>}
+                  {user?.number && <span> · {user.number}번</span>}
                 </p>
               </div>
               <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
@@ -621,7 +596,7 @@ ${rewriteEssay}
                       <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                         dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult.corrections)}} />
                       {feedbackResult.corrections?.length > 0 && (
-                        <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄에 마우스를 올리면 올바른 표기를 볼 수 있어요</p>
+                        <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하거나 클릭하면 올바른 표기를 볼 수 있어요</p>
                       )}
                     </div>
 
@@ -704,7 +679,7 @@ ${rewriteEssay}
                     <h3 className="font-bold mb-2 text-sm">📝 처음 쓴 내 글</h3>
                     <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                       dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult?.corrections)}} />
-                    <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄에 마우스 올려서 올바른 표기 확인</p>
+                    <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하면 올바른 표기 확인</p>
                   </div>
                   
                   {/* 예시 작품 */}

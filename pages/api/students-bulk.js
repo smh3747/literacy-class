@@ -33,14 +33,20 @@ export default async function handler(req, res) {
         continue
       }
 
-      // profile 추가
-      const { error: profErr } = await supabase.from('profiles').insert({
+      // profile 추가 (number 컬럼이 DB에 있으면 저장됨, 없으면 무시)
+      const profileData = {
         id: data.user.id,
         username: s.username,
         realname: s.realname,
         role: 'student',
         class_id: classId
-      })
+      }
+      // number가 있으면 추가 (문자열로 저장 - "01", "10" 등 보존)
+      if (s.number !== undefined && s.number !== null && s.number !== '') {
+        profileData.number = String(s.number).trim()
+      }
+
+      const { error: profErr } = await supabase.from('profiles').insert(profileData)
 
       if (profErr) {
         results.failed.push({ ...s, error: 'profile: ' + profErr.message })

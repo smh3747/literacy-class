@@ -34,177 +34,158 @@ export default function ParentConsent() {
     <>
       <Head><title>학부모 동의서 - 문해력 수업</title></Head>
       <style>{`
+        /* 화면 표시용 */
+        .consent-doc { font-size: 14px; line-height: 1.55; }
+        .consent-doc h1 { font-size: 1.35rem; }
+        .consent-doc h2 { font-size: 0.95rem; margin-bottom: 0.35rem; }
+        .consent-doc section { margin-bottom: 0.7rem; }
+
+        /* 인쇄 시: A4 한 장에 정확히 들어가도록 압축 */
         @media print {
           .no-print { display: none !important; }
-          .consent-doc { 
-            box-shadow: none !important; 
-            padding: 25px !important; 
+          @page { size: A4 portrait; margin: 10mm 12mm; }
+          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          .consent-doc {
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
             max-width: 100% !important;
-            font-size: 11pt;
-            line-height: 1.5;
+            font-size: 9.2pt !important;
+            line-height: 1.35 !important;
+            color: #000 !important;
+            page-break-inside: avoid;
           }
-          body { background: white !important; }
-          @page { 
-            size: A4; 
-            margin: 1cm; 
-          }
-        }
-        .consent-doc h1 { font-size: 1.4rem; }
-        .consent-doc h2 { font-size: 1rem; margin-bottom: 0.4rem; }
-        .consent-doc section { margin-bottom: 0.8rem; }
-        .consent-doc ul { font-size: 0.85rem; line-height: 1.5; }
-        @media print {
-          .consent-doc h1 { font-size: 14pt; }
-          .consent-doc h2 { font-size: 11pt; }
-          .consent-doc ul { font-size: 10pt; line-height: 1.4; }
-          .consent-doc p { font-size: 10pt; line-height: 1.4; }
+          .consent-doc h1 { font-size: 13pt !important; margin: 0 0 4pt 0 !important; }
+          .consent-doc h2 { font-size: 9.5pt !important; margin: 0 0 2pt 0 !important; }
+          .consent-doc section { margin-bottom: 4pt !important; }
+          .consent-doc p { margin: 0 0 2pt 0 !important; }
+          .consent-doc ul { margin: 0 !important; padding-left: 14pt !important; }
+          .consent-doc li { font-size: 8.8pt !important; line-height: 1.3 !important; margin-bottom: 1pt !important; }
+          .doc-header { padding-bottom: 4pt !important; margin-bottom: 6pt !important; }
+          .info-box { padding: 5pt 7pt !important; margin-bottom: 4pt !important; font-size: 8.8pt !important; }
+          .consent-check { padding: 5pt 7pt !important; margin: 4pt 0 !important; }
+          .consent-check label { font-size: 9pt !important; margin-bottom: 2pt !important; }
+          .sign-row { margin-top: 6pt !important; }
+          .sign-line { padding-top: 14pt !important; }
+          .doc-footer { font-size: 8.5pt !important; margin-top: 6pt !important; padding-top: 4pt !important; }
+          .checkbox-sq { width: 10pt !important; height: 10pt !important; }
         }
       `}</style>
+
       <div className="min-h-screen bg-gray-50">
         <div className="no-print">
           <Header user={user} onLogout={logout} />
           <div className="max-w-3xl mx-auto px-4 py-4 flex justify-between items-center">
             <Link href="/teacher" className="text-sm text-gray-600">← 선생님 메인</Link>
             <button onClick={printDoc} className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium">
-              🖨️ 인쇄하기
+              🖨️ 인쇄하기 (A4 한 장)
             </button>
           </div>
         </div>
 
         <main className="max-w-3xl mx-auto px-4 py-6">
-          <div className="consent-doc bg-white rounded-2xl p-6 sm:p-8 shadow-sm">
-            
+          <div className="consent-doc bg-white rounded-2xl p-8 sm:p-10 shadow-sm">
+
             {/* 헤더 */}
-            <div className="text-center mb-4 pb-3 border-b-2 border-gray-300">
-              <h1 className="font-bold mb-1">AI 글쓰기 수업 참여 동의서</h1>
+            <div className="doc-header text-center mb-5 pb-3 border-b-2 border-gray-300">
+              <h1 className="text-xl font-bold mb-1">AI 글쓰기 수업 참여 안내 및 동의서</h1>
               <p className="text-xs text-gray-600">「문해력 수업」 학부모 안내</p>
-              {user.school && <p className="text-xs text-gray-700 mt-1">{user.school} · {classInfo?.name || ''}</p>}
+              {user.school && <p className="text-xs text-gray-700 mt-1">{user.school} · {classInfo?.name}</p>}
             </div>
 
             {/* 인사말 */}
-            <p className="text-sm leading-relaxed mb-3">
-              안녕하세요, 학부모님. 저희 학급에서는 학생들의 글쓰기 능력 향상을 위해 <strong>AI 기반 글쓰기 피드백 서비스</strong>를 활용하고자 합니다. 아래 내용을 읽어보시고 동의 여부를 표시해 주세요.
-            </p>
+            <section className="mb-3">
+              <p className="text-[13px] leading-relaxed">
+                안녕하세요, 학부모님. 저희 학급은 학생들의 글쓰기 능력 향상을 위해 <strong>AI 기반 글쓰기 피드백 서비스</strong>를 활용한 수업을 운영합니다. 아래 내용을 확인하시고 동의 여부를 표시해 주시기 바랍니다.
+              </p>
+            </section>
 
-            {/* 1. 서비스 소개 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">1. 서비스 개요</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li><strong>이름</strong>: 문해력 수업 (literacy-class)</li>
-                <li><strong>목적</strong>: 학생 글쓰기 능력 향상 (AI 피드백)</li>
-                <li><strong>방법</strong>: 주제 글쓰기 → AI 피드백 → 수정본 작성</li>
+            {/* 1. 수업 개요 + 활용 목적 통합 */}
+            <section className="mb-3">
+              <h2 className="font-bold text-gray-800">1. 수업 개요 및 활용 목적</h2>
+              <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
+                <li>매일 1개 주제로 글쓰기 → AI가 즉시 피드백 제공 (잘한 점·발전시킬 점)</li>
+                <li>담임 교사가 검토 후 추가 지도, 학생은 자신의 글 누적 확인 가능</li>
+                <li>활용 목적: 글쓰기 능력 향상, 자기 표현력 신장, 누적 기록을 통한 성장 확인</li>
               </ul>
             </section>
 
-            {/* 2. 수집 정보 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">2. 수집 정보</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li><strong>학생</strong>: 학년/반/번호, 성명, 로그인 ID, 비밀번호</li>
-                <li><strong>학습</strong>: 작성한 글, AI 피드백, 점수</li>
-                <li><strong>수집 안 함</strong>: 주민번호, 연락처, 주소, 사진</li>
+            {/* 2. 수집·처리 정보 + 보관 통합 */}
+            <section className="mb-3">
+              <div className="info-box bg-gray-50 border border-gray-200 rounded p-3">
+                <h2 className="font-bold text-gray-800">2. 수집·처리 정보 및 보관</h2>
+                <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
+                  <li><strong>수집 정보:</strong> 학교/학년/반/번호, 학생 성명(아이디), 학생이 작성한 글</li>
+                  <li><strong>이용 목적:</strong> AI 피드백 제공 및 교사 지도 자료로 활용 (그 외 용도 사용 안 함)</li>
+                  <li><strong>보관 기간:</strong> 학년 종료 후 즉시 삭제 (요청 시 즉시 삭제 가능)</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* 3. 제3자 제공 */}
+            <section className="mb-3">
+              <h2 className="font-bold text-gray-800">3. AI 서비스 제공 업체</h2>
+              <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
+                <li>피드백 생성을 위해 학생 글이 <strong>Google(Gemini API)</strong>로 전송됨 (개인정보·신상정보 미포함)</li>
+                <li>Google은 학습 데이터로 사용하지 않으며, 일정 기간 후 자동 삭제</li>
               </ul>
             </section>
 
-            {/* 3. AI 처리 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">3. AI 처리 방식</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li>학생 글은 <strong>Google Gemini AI</strong>로 전송 (피드백용)</li>
-                <li><strong>학생 이름·학교명 등 개인정보는 함께 전송하지 않음</strong></li>
-                <li>AI는 받은 글을 학습 데이터로 사용하지 않음</li>
+            {/* 4. 학생/학부모 권리 + 보안 통합 */}
+            <section className="mb-3">
+              <h2 className="font-bold text-gray-800">4. 권리 및 보안 조치</h2>
+              <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
+                <li>본인 정보 열람·수정·삭제 요청 가능 (담임 교사를 통해 처리), 거부 시 학습 불이익 없음</li>
+                <li>HTTPS 암호화 통신, 비밀번호 단방향 암호화, 본인 글은 본인과 담임만 열람 가능</li>
               </ul>
             </section>
 
-            {/* 4. 보관 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">4. 보관 기간</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li>회원 정보: 회원 탈퇴 시까지</li>
-                <li>학생 글·피드백: 학기 종료 후 1년까지 보관 후 자동 삭제</li>
-                <li>학부모 요청 시 즉시 삭제</li>
-              </ul>
-            </section>
-
-            {/* 5. 권리 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">5. 학생 및 학부모의 권리</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li>본인 정보 열람·수정·삭제 요청 가능</li>
-                <li>참여를 원하지 않을 경우 거부할 수 있으며 학습 불이익 없음</li>
-                <li>요청은 담임 교사를 통해 처리</li>
-              </ul>
-            </section>
-
-            {/* 6. 보안 */}
-            <section>
-              <h2 className="font-bold border-l-4 border-primary pl-2">6. 보안 안전 조치</h2>
-              <ul className="space-y-0.5 ml-4 list-disc">
-                <li>HTTPS 암호화 통신</li>
-                <li>비밀번호 단방향 암호화 저장 (담임도 알 수 없음)</li>
-                <li>학생 본인만 자기 글 접근, 담임만 학급 학생들 글 열람 가능</li>
-              </ul>
-            </section>
-
-            {/* 동의 체크 */}
-            <section className="mt-4 pt-3 border-t-2 border-gray-300">
-              <h2 className="font-bold mb-2">📝 동의 확인</h2>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex items-start gap-2">
-                  <span className="border border-gray-400 w-4 h-4 inline-block flex-shrink-0 mt-0.5"></span>
-                  <p>위 안내 내용을 읽고 자녀의 「문해력 수업」 이용에 <strong>동의합니다</strong>.</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="border border-gray-400 w-4 h-4 inline-block flex-shrink-0 mt-0.5"></span>
-                  <p>자녀의 글이 AI 피드백을 위해 처리되는 것에 <strong>동의합니다</strong>.</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="border border-gray-400 w-4 h-4 inline-block flex-shrink-0 mt-0.5"></span>
-                  <p><strong>동의하지 않습니다</strong>. (자녀가 서비스를 이용하지 않습니다)</p>
-                </div>
+            {/* 동의 확인 */}
+            <section className="mb-2">
+              <div className="consent-check bg-blue-50 border border-blue-200 rounded p-3">
+                <h2 className="font-bold text-gray-800 mb-1">📝 동의 확인</h2>
+                <label className="flex items-start gap-2 mb-1 text-[13px]">
+                  <span className="checkbox-sq inline-block w-4 h-4 border border-gray-700 flex-shrink-0 mt-0.5"></span>
+                  <span>위 안내 내용을 읽고 자녀의 「문해력 수업」 이용에 <strong>동의합니다.</strong></span>
+                </label>
+                <label className="flex items-start gap-2 mb-1 text-[13px]">
+                  <span className="checkbox-sq inline-block w-4 h-4 border border-gray-700 flex-shrink-0 mt-0.5"></span>
+                  <span>자녀의 글이 AI 피드백을 위해 처리되는 것에 <strong>동의합니다.</strong></span>
+                </label>
+                <label className="flex items-start gap-2 text-[13px]">
+                  <span className="checkbox-sq inline-block w-4 h-4 border border-gray-700 flex-shrink-0 mt-0.5"></span>
+                  <span><strong>동의하지 않습니다.</strong> (자녀가 서비스를 이용하지 않습니다)</span>
+                </label>
               </div>
             </section>
 
             {/* 서명란 */}
-            <section className="mt-4 space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                  <p className="mb-1 font-medium">학년/반/번호</p>
-                  <div className="border-b-2 border-gray-400 h-6"></div>
-                </div>
-                <div>
-                  <p className="mb-1 font-medium">학생 성명</p>
-                  <div className="border-b-2 border-gray-400 h-6"></div>
-                </div>
-                <div>
-                  <p className="mb-1 font-medium">학부모 성명</p>
-                  <div className="border-b-2 border-gray-400 h-6"></div>
-                </div>
-                <div>
-                  <p className="mb-1 font-medium">학부모 서명</p>
-                  <div className="border-b-2 border-gray-400 h-6 flex items-end justify-end pr-2">
-                    <span className="text-xs text-gray-500">(인)</span>
-                  </div>
-                </div>
+            <section className="sign-row grid grid-cols-2 gap-x-8 gap-y-2 mt-4 text-[12px]">
+              <div>
+                <p className="text-gray-700">학년/반/번호</p>
+                <div className="sign-line border-b border-gray-700 mt-3"></div>
               </div>
-              <div className="text-right pt-2">
-                <span>날짜: 2026년 _____ 월 _____ 일</span>
+              <div>
+                <p className="text-gray-700">학생 성명</p>
+                <div className="sign-line border-b border-gray-700 mt-3"></div>
+              </div>
+              <div>
+                <p className="text-gray-700">학부모 성명</p>
+                <div className="sign-line border-b border-gray-700 mt-3"></div>
+              </div>
+              <div>
+                <p className="text-gray-700">학부모 서명</p>
+                <div className="sign-line border-b border-gray-700 mt-3 text-right pr-1 text-[11px] text-gray-600">(인)</div>
               </div>
             </section>
 
-            <div className="mt-4 text-center text-xs text-gray-500 pt-2 border-t">
-              본 동의서는 「개인정보 보호법」에 따라 작성되었습니다. 문의: 담임 교사
+            {/* 푸터 */}
+            <div className="doc-footer mt-4 pt-2 border-t border-gray-300 flex justify-between items-center text-[11px] text-gray-600">
+              <span>본 동의서는 「개인정보 보호법」에 따라 작성. 문의: 담임 교사</span>
+              <span>날짜: 2026년 _____ 월 _____ 일</span>
             </div>
-          </div>
 
-          <div className="no-print mt-6 bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm">
-            <h3 className="font-bold text-blue-900 mb-2">📄 사용 방법</h3>
-            <ol className="text-blue-900 space-y-1 list-decimal ml-5">
-              <li>위쪽 <strong>"🖨️ 인쇄하기"</strong> 버튼 클릭 (A4 1~2장 분량)</li>
-              <li>인쇄 또는 PDF로 저장</li>
-              <li>학생들에게 배포 → 부모님께 받아오기</li>
-              <li>또는 가정통신문/알림장으로 PDF 전송</li>
-            </ol>
           </div>
         </main>
       </div>

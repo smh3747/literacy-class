@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -77,6 +78,7 @@ function applyGrammar(essayText, corrections) {
 
 export default function StudentHistory() {
   const router = useRouter()
+  useGrammarTooltip()
   const [user, setUser] = useState(null)
   const [grouped, setGrouped] = useState([])
   const [loading, setLoading] = useState(true)
@@ -124,9 +126,7 @@ export default function StudentHistory() {
       <>
         <Head><title>{g.title} - 문해력 수업</title></Head>
         <style>{`
-          .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: help; position: relative; }
-          .grammar-error:hover::after, .grammar-error:active::after { content: attr(data-correction); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 8px 12px; border-radius: 8px; font-size: 12px; white-space: normal; word-break: keep-all; line-height: 1.5; width: max-content; max-width: 280px; z-index: 100; margin-bottom: 6px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-          @media (max-width: 640px) { .grammar-error:hover::after, .grammar-error:active::after { max-width: calc(100vw - 40px); font-size: 11px; } }
+          .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
         `}</style>
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />
@@ -154,6 +154,9 @@ export default function StudentHistory() {
                 )}
                 <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
+                {s.corrections?.length > 0 && (
+                  <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
+                )}
 
                 <div className="space-y-3 text-sm">
                   <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">

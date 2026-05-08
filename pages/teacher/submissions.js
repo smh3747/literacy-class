@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import useGrammarTooltip from '../../lib/useGrammarTooltip'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -73,6 +74,7 @@ function applyGrammar(essayText, corrections) {
 
 export default function TeacherSubmissions() {
   const router = useRouter()
+  useGrammarTooltip()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
   const [topics, setTopics] = useState([])
@@ -127,18 +129,35 @@ export default function TeacherSubmissions() {
   }
 
   const downloadExcel = async () => {
-    if (!confirm(`📥 학생 글 일괄 다운로드\n\n사용 목적:\n- 학기말 글 모음집 제작\n- 학생 포트폴리오 보관\n- 가정통신문/평가 자료\n\n⚠️ 학생 개인정보가 포함되니 외부 공유 금지!\n\n계속하시겠어요?`)) return
+    // 다운로드 사유 선택 (개인정보 보호 차원에서 목적 명시)
+    const purpose = prompt(
+      `📥 학생 글 일괄 다운로드\n\n` +
+      `⚠️ 학생 개인정보가 포함된 자료입니다.\n` +
+      `다운로드 후 외부 공유·유출은 금지됩니다.\n\n` +
+      `사용 목적을 입력해주세요 (취소하려면 빈칸):\n` +
+      `예: 학기말 평가 자료, 포트폴리오, 학부모 상담 자료 등`,
+      ''
+    )
+    if (!purpose || !purpose.trim()) return
+
+    const includeFeedback = confirm(
+      `AI 피드백(잘한 점/발전 점)도 포함할까요?\n\n` +
+      `[확인] 글 + 점수 + 피드백 (전체)\n` +
+      `[취소] 글 + 점수만 (간소)`
+    )
     
     const XLSX = (await import('xlsx')).default || (await import('xlsx'))
     
     const rows = []
-    rows.push(['번호', '이름', '아이디', '시도', '점수', '총점', '제출시각', '복붙', '글 내용', '종합 의견', '잘한 점', '발전 점'])
+    const baseHeader = ['번호', '이름', '아이디', '시도', '점수', '총점', '제출시각', '복붙', '글 내용']
+    const fullHeader = [...baseHeader, '종합 의견', '잘한 점', '발전 점']
+    rows.push(includeFeedback ? fullHeader : baseHeader)
     
     topicStudents.forEach((g, gIdx) => {
       const sorted = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
       sorted.forEach(s => {
-        rows.push([
-          gIdx + 1,
+        const baseRow = [
+          g.profile.number || (gIdx + 1),
           g.profile.realname,
           g.profile.username,
           (s.attempt||1) === 1 ? '첫 글' : `수정본 ${s.attempt}`,
@@ -146,23 +165,50 @@ export default function TeacherSubmissions() {
           s.max_score,
           s.created_at?.slice(0, 16).replace('T', ' '),
           s.paste_detected ? `Y(${s.paste_count})` : 'N',
-          s.essay_text || '',
-          s.feedback_overall || '',
-          s.feedback_good || '',
-          s.feedback_improve || ''
-        ])
+          s.essay_text || ''
+        ]
+        if (includeFeedback) {
+          baseRow.push(
+            s.feedback_overall || '',
+            s.feedback_good || '',
+            s.feedback_improve || ''
+          )
+        }
+        rows.push(baseRow)
       })
     })
     
     const ws = XLSX.utils.aoa_to_sheet(rows)
     // 컬럼 너비
-    ws['!cols'] = [
-      { wch: 5 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 6 }, { wch: 6 },
-      { wch: 18 }, { wch: 7 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
-    ]
+    if (includeFeedback) {
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 6 }, { wch: 6 },
+        { wch: 18 }, { wch: 7 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
+      ]
+    } else {
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 6 }, { wch: 6 },
+        { wch: 18 }, { wch: 7 }, { wch: 60 }
+      ]
+    }
     
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '학생글')
+    
+    // 사유를 두 번째 시트에 기록 (다운로드 이력)
+    const meta = [
+      ['항목', '내용'],
+      ['주제', selectedTopic.title],
+      ['날짜', selectedTopic.date],
+      ['다운로드 일시', new Date().toLocaleString('ko-KR')],
+      ['다운로드 사유', purpose.trim()],
+      ['다운로드한 교사', user.realname],
+      ['포함 항목', includeFeedback ? '글 + 점수 + AI 피드백' : '글 + 점수만'],
+      ['※ 주의', '학생 개인정보 포함. 외부 유출/공유 금지']
+    ]
+    const ws2 = XLSX.utils.aoa_to_sheet(meta)
+    ws2['!cols'] = [{ wch: 18 }, { wch: 50 }]
+    XLSX.utils.book_append_sheet(wb, ws2, '다운로드정보')
     
     const filename = `${selectedTopic.title}_${selectedTopic.date}.xlsx`
     XLSX.writeFile(wb, filename)
@@ -182,9 +228,7 @@ export default function TeacherSubmissions() {
     <>
       <Head><title>학생 글 보기 - 문해력 수업</title></Head>
       <style>{`
-        .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: help; position: relative; }
-        .grammar-error:hover::after, .grammar-error:active::after { content: attr(data-correction); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 8px 12px; border-radius: 8px; font-size: 12px; white-space: normal; word-break: keep-all; line-height: 1.5; width: max-content; max-width: 280px; z-index: 100; margin-bottom: 6px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-          @media (max-width: 640px) { .grammar-error:hover::after, .grammar-error:active::after { max-width: calc(100vw - 40px); font-size: 11px; } }
+        .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
       `}</style>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
