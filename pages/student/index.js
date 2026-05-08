@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
+import PasswordChangeModal from '../../components/PasswordChangeModal'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -82,6 +83,7 @@ export default function StudentHome() {
   const [rewriting, setRewriting] = useState(false)
   
   const [pasteWarning, setPasteWarning] = useState(false)
+  const [showPwModal, setShowPwModal] = useState(false)
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
@@ -458,6 +460,13 @@ ${rewriteEssay}
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-700">{user?.realname || ''}님</h2>
+            <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+              🔐 비밀번호 변경
+            </button>
+          </div>
+          
           {!todayTopic ? (
             <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
               <div className="text-5xl mb-3">📝</div>
@@ -660,6 +669,7 @@ ${rewriteEssay}
             </Link>
           </div>
         </main>
+        {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
       </div>
     </>
   )

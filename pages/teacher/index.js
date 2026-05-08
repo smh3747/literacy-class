@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import ApiKeyManager from '../../components/ApiKeyManager'
+import PasswordChangeModal from '../../components/PasswordChangeModal'
+import ProfileEditModal from '../../components/ProfileEditModal'
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -12,6 +14,8 @@ export default function TeacherHome() {
   const [classInfo, setClassInfo] = useState(null)
   const [stats, setStats] = useState({ students: 0, topics: 0 })
   const [loading, setLoading] = useState(true)
+  const [showPwModal, setShowPwModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -68,13 +72,21 @@ export default function TeacherHome() {
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
               <p className="text-sm text-gray-600 mt-1">
                 {user.role === 'admin' ? '👑 관리자' : '👩‍🏫 담임 교사'}
                 {user.school && <span className="ml-2 text-gray-500">· {user.school}</span>}
               </p>
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => setShowProfileModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                  ✏️ 내 정보 수정
+                </button>
+                <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                  🔐 비밀번호 변경
+                </button>
+              </div>
             </div>
             {user.role === 'admin' && (
               <Link href="/admin" className="text-sm bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-medium hover:bg-purple-200">
@@ -128,13 +140,15 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">학생 글 보기</h3>
               <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
             </Link>
-            <div className="bg-gray-100 rounded-2xl p-5 border border-gray-200 opacity-60">
-              <div className="text-3xl mb-2">📊</div>
-              <h3 className="font-bold mb-1">학생 기록</h3>
-              <p className="text-xs text-gray-500">학생별 성장 그래프 (추후)</p>
-            </div>
+            <Link href="/teacher/parent-consent" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📋</div>
+              <h3 className="font-bold mb-1">학부모 동의서</h3>
+              <p className="text-xs text-gray-500">인쇄 / PDF 다운로드</p>
+            </Link>
           </div>
         </main>
+        {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
+        {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
       </div>
     </>
   )
