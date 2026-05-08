@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGemini, parseAIJson, loadApiKey } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 // 한국 시간 기준 오늘 날짜
@@ -216,22 +216,21 @@ export default function StudentHome() {
 
 주제: ${todayTopic.title}
 ${todayTopic.description ? '주제 설명: ' + todayTopic.description : ''}
-평가 기준: ${rubricText}, 총 ${totalMax}점
+평가 기준 (${totalMax}점 만점): ${rubricText}
 
 학생 글:
 ${essay}
 
-JSON으로만 응답 (한 줄, 줄바꿈 금지):
-{"scores":[${rubrics.map(()=>'점수').join(',')}],"total":합계,"overall":"종합의견 2-3문장 따뜻하게","good":"잘한점 2가지","improve":"발전시킬점 2가지 부드럽게","corrections":[{"original":"틀린부분","correction":"올바른표기","reason":"맞춤법"}]}
+규칙:
+- scores 배열은 평가기준 순서대로 점수 (각 기준 만점 내에서)
+- total은 점수 합계
+- overall은 종합의견 (2-3문장, 따뜻하게)
+- good은 잘한 점 (2가지)
+- improve는 발전시킬 점 (2가지, 부드럽게)
+- corrections는 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만)
+- 오류 없으면 corrections는 빈 배열`
 
-corrections 규칙:
-- 명백히 틀린 것만 (5학년 수준)
-- 학생 글에 정확히 등장하는 표현만
-- 필드명은 반드시 original, correction, reason
-- 없으면 빈 배열 []`
-
-      const text = await callGemini(apiKey, prompt, { maxTokens: 2000 })
-      const result = parseAIJson(text)
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 4000 })
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -301,12 +300,9 @@ ${studentEssay}
 - 5학년 학생 수준의 자연스러운 글
 - 원본의 좋은 점은 살리고 부족한 점 보완
 - 350-500자 분량
-- 따뜻하고 진솔한 느낌
+- 따뜻하고 진솔한 느낌`
 
-JSON으로만 응답: {"example":"여기에 예시 작품 전문"}`
-
-      const text = await callGemini(apiKey, prompt, { maxTokens: 2000 })
-      const result = parseAIJson(text)
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 3000 })
       if (result.example) {
         setExampleText(result.example)
         // DB에도 저장
@@ -359,18 +355,20 @@ JSON으로만 응답: {"example":"여기에 예시 작품 전문"}`
       const prompt = `초등 5학년 학생이 다시 쓴 수정본에 피드백해줘.
 
 주제: ${todayTopic.title}
-평가 기준: ${rubricText}, 총 ${totalMax}점
+평가 기준 (${totalMax}점 만점): ${rubricText}
 
 수정본:
 ${rewriteEssay}
 
-JSON으로만 응답 (한 줄):
-{"scores":[점수배열],"total":합계,"overall":"수정본 종합의견 (처음보다 어떻게 좋아졌는지 격려)","good":"잘한점","improve":"더 발전시킬점","corrections":[{"original":"틀린부분","correction":"올바른표기","reason":"맞춤법"}]}
+규칙:
+- scores 배열은 평가기준 순서대로 점수
+- total은 합계
+- overall은 종합 의견 (처음보다 어떻게 좋아졌는지 격려, 2-3문장)
+- good은 잘한 점 (2가지)
+- improve는 더 발전시킬 점 (2가지, 부드럽게)
+- corrections는 명백한 오류만, 없으면 빈 배열`
 
-corrections는 명백한 오류만, 없으면 [] 로`
-
-      const text = await callGemini(apiKey, prompt, { maxTokens: 2000 })
-      const result = parseAIJson(text)
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 4000 })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)

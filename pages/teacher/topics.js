@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGemini, parseAIJson, loadApiKey } from '../../lib/gemini'
+import { callGeminiStructured, SCHEMAS, loadApiKey } from '../../lib/gemini'
 import Header from '../../components/Header'
 
 const DEFAULT_RUBRICS = [
@@ -119,7 +119,7 @@ export default function TopicsPage() {
     await loadTopics(classInfo.id)
   }
 
-  // AI 주제 추천 (Gemini) - 2단계로 나눠서 안정적으로
+  // AI 주제 추천 (Structured Output - JSON 깨질 일 없음)
   const suggestTopic = async () => {
     const apiKey = loadApiKey()
     if (!apiKey) {
@@ -133,20 +133,15 @@ export default function TopicsPage() {
       const cat = categories[Math.floor(Math.random() * categories.length)]
       const recentTitles = topics.slice(0, 10).map(t => t.title).join(', ')
       
-      // === 1단계: 주제 + 설명만 만들기 (작은 JSON, 안정적) ===
-      const prompt1 = `초등 5학년 글쓰기 주제 1개를 JSON으로 만들어줘.
+      // 1단계: 주제 + 설명
+      const prompt1 = `초등 5학년 글쓰기 주제 1개를 만들어줘.
 카테고리: ${cat}
-중복 피하기: ${recentTitles || '없음'}
+최근 주제 (중복 피하기): ${recentTitles || '없음'}
 
-규칙:
-- title: 10-15자
-- description: 한 줄, 50자 이내
-- 줄바꿈 금지, JSON만 응답
+- title은 10-15자 정도로 흥미롭게
+- description은 학생에게 친근하게 한 줄(50자 이내)`
 
-예시: {"title":"비 오는 날의 추억","description":"비 오는 날 떠오르는 기억을 떠올려보고 그 느낌을 자세히 써보세요."}`
-
-      const text1 = await callGemini(apiKey, prompt1, { maxTokens: 800 })
-      const result1 = parseAIJson(text1)
+      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { maxTokens: 1000 })
       
       const newTitle = result1.title || ''
       const newDesc = result1.description || ''
@@ -154,26 +149,22 @@ export default function TopicsPage() {
       if (newTitle) setTitle(newTitle)
       if (newDesc) setDesc(newDesc)
       
-      // === 2단계: 그 주제에 맞는 평가 기준 4개 만들기 ===
+      // 2단계: 평가 기준
       if (newTitle) {
         try {
-          const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개.
+          const prompt2 = `주제 "${newTitle}"에 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
+- 정확히 4개
+- 각 25점 (합 100점)
+- 기준 이름은 4-8자로 짧게 (예: 주제 표현, 글의 짜임, 풍부한 어휘, 맞춤법)`
 
-규칙:
-- 4개, 각 25점 (합 100점)
-- 기준 이름은 5-10자로 짧게
-- JSON만 응답, 한 줄로
-
-예시: {"rubrics":[{"name":"주제 표현","score":25},{"name":"글의 짜임","score":25},{"name":"풍부한 어휘","score":25},{"name":"맞춤법","score":25}]}`
-
-          const text2 = await callGemini(apiKey, prompt2, { maxTokens: 800 })
-          const result2 = parseAIJson(text2)
+          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 1000, temperature: 0.5 })
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
             const cleaned = result2.rubrics.map(r => ({
               name: r.name || '평가 기준',
               score: Number(r.score) || 25
             }))
+            // 점수 합 100점 자동 보정
             const total = cleaned.reduce((s, r) => s + r.score, 0)
             if (total !== 100) {
               const each = Math.floor(100 / cleaned.length)
@@ -194,11 +185,9 @@ export default function TopicsPage() {
       const msg = e.message || ''
       let userMsg = 'AI 추천 실패: ' + msg
       if (msg.includes('503') || msg.includes('overload') || msg.includes('high demand')) {
-        userMsg = '⏳ Gemini 서버가 지금 매우 바빠요!\n잠시 후 (30초~1분) 다시 시도해주세요.'
+        userMsg = '⏳ Gemini 서버가 지금 매우 바빠요! 잠시 후 (30초~1분) 다시 시도해주세요.'
       } else if (msg.includes('API key') || msg.includes('403')) {
-        userMsg = '🔑 API 키 문제: ' + msg + '\n키를 확인하거나 새로 발급해주세요.'
-      } else if (msg.includes('JSON 파싱')) {
-        userMsg = '🔄 AI 응답이 깨졌어요. 다시 한 번 추천 버튼을 눌러주세요.'
+        userMsg = '🔑 API 키 문제: ' + msg
       }
       alert(userMsg)
     }
