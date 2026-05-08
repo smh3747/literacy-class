@@ -65,9 +65,14 @@ export default function StudentLogin() {
         
         router.push('/student')
       } else {
-        const { data: classData } = await supabase.from('classes').select('id, name').eq('code', classCode).maybeSingle()
+        const { data: classData } = await supabase.from('classes').select('id, name, is_active').eq('code', classCode).maybeSingle()
         if (!classData) {
           setError('학급 코드가 잘못됐어요. 선생님께 확인해주세요')
+          setLoading(false)
+          return
+        }
+        if (classData.is_active === false) {
+          setError('이 학급은 현재 운영 중지 상태예요. 선생님께 문의해주세요.')
           setLoading(false)
           return
         }

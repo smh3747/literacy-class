@@ -37,6 +37,29 @@ export default function TeacherHome() {
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
 
+  const regenerateClassCode = async () => {
+    if (!classInfo) return
+    if (!confirm(`학급 가입 코드를 재발급할까요?\n\n현재: ${classInfo.code}\n\n⚠️ 재발급하면 기존 코드는 사용할 수 없어요. 학생들에게 새 코드를 알려야 해요!`)) return
+    
+    try {
+      let newCode, attempts = 0
+      while (attempts < 10) {
+        newCode = String(Math.floor(1000 + Math.random() * 9000))
+        const { data: existing } = await supabase.from('classes').select('id').eq('code', newCode).maybeSingle()
+        if (!existing) break
+        attempts++
+      }
+      
+      const { error } = await supabase.from('classes').update({ code: newCode }).eq('id', classInfo.id)
+      if (error) throw error
+      
+      setClassInfo({ ...classInfo, code: newCode })
+      alert(`✅ 새 학급 코드: ${newCode}\n\n학생들에게 새 코드를 알려주세요!`)
+    } catch(e) {
+      alert('재발급 실패: ' + e.message)
+    }
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
 
   return (
@@ -45,9 +68,19 @@ export default function TeacherHome() {
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
-          <div>
-            <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
-            <p className="text-sm text-gray-600 mt-1">{user.role === 'admin' ? '👑 관리자' : '👩‍🏫 담임 교사'}</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {user.role === 'admin' ? '👑 관리자' : '👩‍🏫 담임 교사'}
+                {user.school && <span className="ml-2 text-gray-500">· {user.school}</span>}
+              </p>
+            </div>
+            {user.role === 'admin' && (
+              <Link href="/admin" className="text-sm bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-medium hover:bg-purple-200">
+                🛡️ 관리자 모드
+              </Link>
+            )}
           </div>
 
           {/* 학급 정보 카드 */}
@@ -65,7 +98,13 @@ export default function TeacherHome() {
                   <div className="text-primary-dark">주제 <strong>{stats.topics}</strong>개</div>
                 </div>
               </div>
-              <p className="text-xs text-gray-700 mt-3">학생들에게 위 코드를 알려주세요. 가입 시 입력해야 해요.</p>
+              <div className="flex items-center justify-between mt-3">
+                <p className="text-xs text-gray-700">학생들에게 위 코드를 알려주세요</p>
+                <button onClick={regenerateClassCode}
+                  className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
+                  🔄 코드 재발급
+                </button>
+              </div>
             </div>
           )}
 

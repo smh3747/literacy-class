@@ -13,6 +13,7 @@ export default function TeacherLogin() {
   const [password, setPassword] = useState('')
   const [secretCode, setSecretCode] = useState('')
   const [className, setClassName] = useState('')
+  const [school, setSchool] = useState('')
   const [signupRole, setSignupRole] = useState('teacher')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -47,11 +48,16 @@ export default function TeacherLogin() {
         if (err) throw err
         
         // 로그인 성공 후 역할 확인
-        const { data: profile } = await supabase.from('profiles').select('role, realname').eq('id', loginData.user.id).maybeSingle()
+        const { data: profile } = await supabase.from('profiles').select('role, realname, is_banned').eq('id', loginData.user.id).maybeSingle()
         
         if (!profile) {
           await supabase.auth.signOut()
           throw new Error('회원 정보를 찾을 수 없어요. 가입을 먼저 해주세요.')
+        }
+        
+        if (profile.is_banned) {
+          await supabase.auth.signOut()
+          throw new Error('이 계정은 관리자에 의해 차단되었어요. 문의: 사이트 운영자')
         }
         
         if (profile.role === 'student') {
@@ -101,7 +107,7 @@ export default function TeacherLogin() {
         if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
 
         await supabase.from('profiles').insert({
-          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), role: signupRole, class_id: newClass.id
+          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), school: school.trim(), role: signupRole, class_id: newClass.id
         })
 
         router.push('/teacher')
@@ -183,6 +189,11 @@ export default function TeacherLogin() {
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명" />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium mb-1">학교명</label>
+                      <input type="text" value={school} onChange={e => setSchool(e.target.value)}
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 하랑초등학교" />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>
                       <input type="text" value={className} onChange={e => setClassName(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
@@ -204,7 +215,7 @@ export default function TeacherLogin() {
                 <button
                   onClick={() => {
                     if (mode === 'signup') {
-                      if (!username || !password || !realname || !className || !secretCode) {
+                      if (!username || !password || !realname || !className || !secretCode || !school) {
                         setError('모든 항목을 입력해주세요')
                         return
                       }
