@@ -29,6 +29,9 @@ export default function TopicsPage() {
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [rubrics, setRubrics] = useState(DEFAULT_RUBRICS)
+  const [lockEnabled, setLockEnabled] = useState(false)
+  const [lockStartTime, setLockStartTime] = useState('09:00')
+  const [lockEndTime, setLockEndTime] = useState('10:00')
   const [saving, setSaving] = useState(false)
   const [aiSuggesting, setAiSuggesting] = useState(false)
 
@@ -92,7 +95,10 @@ export default function TopicsPage() {
         const r = await supabase.from('topics').update({
           title: title.trim(),
           description: desc.trim(),
-          rubrics: rubrics
+          rubrics: rubrics,
+          lock_enabled: lockEnabled,
+          lock_start_time: lockEnabled ? lockStartTime : null,
+          lock_end_time: lockEnabled ? lockEndTime : null
         }).eq('id', existing.id)
         error = r.error
       } else {
@@ -101,7 +107,10 @@ export default function TopicsPage() {
           title: title.trim(),
           description: desc.trim(),
           rubrics: rubrics,
-          teacher_id: user.id
+          teacher_id: user.id,
+          lock_enabled: lockEnabled,
+          lock_start_time: lockEnabled ? lockStartTime : null,
+          lock_end_time: lockEnabled ? lockEndTime : null
         })
         error = r.error
       }
@@ -112,6 +121,9 @@ export default function TopicsPage() {
       setTitle('')
       setDesc('')
       setRubrics(DEFAULT_RUBRICS)
+      setLockEnabled(false)
+      setLockStartTime('09:00')
+      setLockEndTime('10:00')
       await loadTopics(user.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
@@ -357,6 +369,37 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
                 </div>
               </div>
 
+              {/* 수업 시간 락 */}
+              <div className="border border-gray-200 rounded-lg p-3">
+                <label className="flex items-center gap-2 mb-2">
+                  <input type="checkbox" checked={lockEnabled}
+                    onChange={e => setLockEnabled(e.target.checked)}
+                    className="w-4 h-4" />
+                  <span className="text-sm font-medium">🔒 수업 시간에만 글쓰기 허용</span>
+                </label>
+                {lockEnabled && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">시작</label>
+                        <input type="time" value={lockStartTime}
+                          onChange={e => setLockStartTime(e.target.value)}
+                          className="w-full p-2 border border-gray-200 rounded text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">종료</label>
+                        <input type="time" value={lockEndTime}
+                          onChange={e => setLockEndTime(e.target.value)}
+                          className="w-full p-2 border border-gray-200 rounded text-sm" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 이 시간대 밖에서는 학생이 새 글 제출/수정을 할 수 없어요. 작성된 글 보기는 항상 가능.
+                    </p>
+                  </>
+                )}
+              </div>
+
               <button onClick={saveTopic} disabled={saving}
                 className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                 {saving ? '저장 중...' : '💾 저장'}
@@ -369,24 +412,63 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
             <h3 className="font-bold mb-3">📚 등록된 주제 ({topics.length}개)</h3>
             {topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 주제가 없어요</p>
-            ) : (
-              <div className="space-y-2">
-                {topics.map(t => (
-                  <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="font-medium text-sm">{t.title}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {t.date} · 평가기준 {t.rubrics?.length || 0}개
-                      </div>
+            ) : (() => {
+              const today = (() => {
+                const now = new Date()
+                const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
+                return kst.toISOString().slice(0, 10)
+              })()
+              const todayTopics = topics.filter(t => t.date === today)
+              const futureTopics = topics.filter(t => t.date > today)
+              const pastTopics = topics.filter(t => t.date < today)
+
+              const renderTopic = (t) => (
+                <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{t.title}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {t.date} · 평가기준 {t.rubrics?.length || 0}개
+                      {t.lock_enabled && t.lock_start_time && t.lock_end_time && (
+                        <span className="ml-1 text-amber-700">· 🔒 {t.lock_start_time}~{t.lock_end_time}</span>
+                      )}
                     </div>
-                    <button onClick={() => deleteTopic(t.id)}
-                      className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded">
-                      삭제
-                    </button>
                   </div>
-                ))}
-              </div>
-            )}
+                  <button onClick={() => deleteTopic(t.id)}
+                    className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded">
+                    삭제
+                  </button>
+                </div>
+              )
+
+              return (
+                <div className="space-y-4">
+                  {todayTopics.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-primary-dark mb-2 flex items-center gap-1">
+                        🌟 오늘 ({todayTopics.length})
+                      </div>
+                      <div className="space-y-2">{todayTopics.map(renderTopic)}</div>
+                    </div>
+                  )}
+                  {futureTopics.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-blue-700 mb-2 flex items-center gap-1">
+                        📅 예정 ({futureTopics.length}) <span className="font-normal text-gray-500">- 해당 날짜가 되면 학생에게 자동 노출</span>
+                      </div>
+                      <div className="space-y-2">{futureTopics.map(renderTopic)}</div>
+                    </div>
+                  )}
+                  {pastTopics.length > 0 && (
+                    <details>
+                      <summary className="text-xs font-bold text-gray-500 mb-2 cursor-pointer hover:text-gray-700">
+                        🗂 지난 ({pastTopics.length}) - 클릭해서 펼치기
+                      </summary>
+                      <div className="space-y-2 mt-2">{pastTopics.map(renderTopic)}</div>
+                    </details>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </main>
       </div>

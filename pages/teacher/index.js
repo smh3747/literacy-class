@@ -12,7 +12,7 @@ export default function TeacherHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
-  const [stats, setStats] = useState({ students: 0, topics: 0 })
+  const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0 })
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -34,7 +34,20 @@ export default function TeacherHome() {
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('class_id', profile.classes.id).eq('role', 'student'),
         supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id)
       ])
-      setStats({ students: s.count || 0, topics: t.count || 0 })
+      // 신고된 제출물 수 (우리 학급 학생들의 것만)
+      let reportCount = 0
+      try {
+        const { data: studentIds } = await supabase.from('profiles')
+          .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
+        if (studentIds && studentIds.length > 0) {
+          const ids = studentIds.map(x => x.id)
+          const { count } = await supabase.from('submissions')
+            .select('id', { count: 'exact', head: true })
+            .in('user_id', ids).eq('reported', true)
+          reportCount = count || 0
+        }
+      } catch(e) { /* 컬럼 없으면 무시 */ }
+      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount })
     }
     setLoading(false)
   }
@@ -149,6 +162,19 @@ export default function TeacherHome() {
               <div className="text-3xl mb-2">📊</div>
               <h3 className="font-bold mb-1">학생 성장 그래프</h3>
               <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
+            </Link>
+            <Link href="/teacher/feedback-reports" className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
+              stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
+            } relative`}>
+              <div className="text-3xl mb-2">🚨</div>
+              <h3 className="font-bold mb-1">피드백 신고함
+                {stats.reports > 0 && (
+                  <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {stats.reports}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
             </Link>
             <Link href="/teacher/help" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📖</div>

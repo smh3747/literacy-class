@@ -5,6 +5,11 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import ConsentForm from '../../components/ConsentForm'
 
+// 로컬 스토리지 키
+const SAVED_USERNAME_KEY = 'lc-saved-username-teacher'
+const NO_AUTO_LOGIN_KEY = 'lc-no-auto-login'
+const SESSION_ACTIVE_KEY = 'lc-session-active'
+
 export default function TeacherLogin() {
   const router = useRouter()
   const [mode, setMode] = useState('login')
@@ -19,12 +24,35 @@ export default function TeacherLogin() {
   const [error, setError] = useState('')
   const [step, setStep] = useState('form')
   const [checkingAuth, setCheckingAuth] = useState(true)
+  // 새 옵션
+  const [saveUsername, setSaveUsername] = useState(false)
+  const [autoLogin, setAutoLogin] = useState(true)
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(SAVED_USERNAME_KEY)
+      if (saved) {
+        setUsername(saved)
+        setSaveUsername(true)
+      }
+      const noAuto = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
+      setAutoLogin(!noAuto)
+    }
     checkSession()
   }, [])
 
   const checkSession = async () => {
+    // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
+    if (typeof window !== 'undefined') {
+      const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
+      const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
+      if (noAutoLogin && !sessionActive) {
+        await supabase.auth.signOut()
+        setCheckingAuth(false)
+        return
+      }
+    }
+
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
       const { data: profile } = await supabase.from('profiles')
@@ -37,10 +65,26 @@ export default function TeacherLogin() {
     setCheckingAuth(false)
   }
 
-  // 엔터키 처리: 로그인은 바로 제출, 가입은 검증 후 동의 단계로
-  const handleKeyDown = (e) => {
-    if (e.key !== 'Enter' || loading) return
+  const persistOptions = () => {
+    if (typeof window === 'undefined') return
+    if (saveUsername && username) {
+      localStorage.setItem(SAVED_USERNAME_KEY, username)
+    } else {
+      localStorage.removeItem(SAVED_USERNAME_KEY)
+    }
+    if (autoLogin) {
+      localStorage.removeItem(NO_AUTO_LOGIN_KEY)
+      sessionStorage.removeItem(SESSION_ACTIVE_KEY)
+    } else {
+      localStorage.setItem(NO_AUTO_LOGIN_KEY, 'true')
+      sessionStorage.setItem(SESSION_ACTIVE_KEY, 'true')
+    }
+  }
+
+  // form onSubmit
+  const handleFormSubmit = (e) => {
     e.preventDefault()
+    if (loading) return
     if (mode === 'signup') {
       if (!username || !password || !realname || !className || !secretCode || !school) {
         setError('모든 항목을 입력해주세요')
@@ -66,7 +110,6 @@ export default function TeacherLogin() {
         const { data: loginData, error: err } = await supabase.auth.signInWithPassword({ email, password })
         if (err) throw err
         
-        // 로그인 성공 후 역할 확인
         const { data: profile } = await supabase.from('profiles').select('role, realname, is_banned').eq('id', loginData.user.id).maybeSingle()
         
         if (!profile) {
@@ -89,6 +132,7 @@ export default function TeacherLogin() {
           throw new Error('선생님/관리자 권한이 없는 계정이에요.')
         }
         
+        persistOptions()
         router.push('/teacher')
       } else {
         const codeRes = await fetch('/api/verify-code', {
@@ -129,11 +173,11 @@ export default function TeacherLogin() {
           id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), school: school.trim(), role: signupRole, class_id: newClass.id
         })
 
+        persistOptions()
         router.push('/teacher')
       }
     } catch(e) {
       let errMsg = e.message || '오류가 발생했어요'
-      // Supabase 영문 오류를 한글로
       if (errMsg.includes('Invalid login credentials')) {
         errMsg = '아이디 또는 비밀번호가 잘못됐어요.\n다시 확인해주세요.'
       } else if (errMsg.includes('Email not confirmed')) {
@@ -168,11 +212,11 @@ export default function TeacherLogin() {
             </div>
 
             <div className="flex gap-2 mb-6 bg-gray-100 rounded-xl p-1">
-              <button onClick={() => { setMode('login'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('login'); setError(''); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 로그인
               </button>
-              <button onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 회원가입
               </button>
@@ -184,7 +228,7 @@ export default function TeacherLogin() {
                 <ConsentForm onComplete={handleSubmit} />
               </>
             ) : (
-              <div className="space-y-3">
+              <form onSubmit={handleFormSubmit} className="space-y-3">
                 {mode === 'signup' && (
                   <>
                     <div>
@@ -200,25 +244,21 @@ export default function TeacherLogin() {
                         {signupRole === 'admin' ? '관리자 코드' : '교사 가입 코드'}
                       </label>
                       <input type="password" value={secretCode} onChange={e => setSecretCode(e.target.value)}
-                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="가입 코드" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">이름</label>
                       <input type="text" value={realname} onChange={e => setRealname(e.target.value)}
-                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학교명</label>
                       <input type="text" value={school} onChange={e => setSchool(e.target.value)}
-                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 하랑초등학교" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>
                       <input type="text" value={className} onChange={e => setClassName(e.target.value)}
-                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
                     </div>
                   </>
@@ -226,39 +266,48 @@ export default function TeacherLogin() {
                 <div>
                   <label className="block text-sm font-medium mb-1">아이디</label>
                   <input type="text" value={username} onChange={e => setUsername(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디" autoComplete="username" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
                 </div>
-                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+
+                {/* 옵션 체크박스 (로그인 모드일 때만) */}
+                {mode === 'login' && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveUsername}
+                        onChange={e => setSaveUsername(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span>아이디 저장</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoLogin}
+                        onChange={e => setAutoLogin(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span>자동 로그인</span>
+                    </label>
+                  </div>
+                )}
+
+                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-line">{error}</div>}
                 <button
-                  onClick={() => {
-                    if (mode === 'signup') {
-                      if (!username || !password || !realname || !className || !secretCode || !school) {
-                        setError('모든 항목을 입력해주세요')
-                        return
-                      }
-                      if (password.length < 6) {
-                        setError('비밀번호는 6자 이상이어야 해요')
-                        return
-                      }
-                      setStep('consent')
-                    } else {
-                      handleSubmit()
-                    }
-                  }}
+                  type="submit"
                   disabled={loading}
                   className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50"
                 >
                   {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '다음')}
                 </button>
-              </div>
+              </form>
             )}
 
             <div className="mt-4 text-center">

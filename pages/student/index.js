@@ -16,6 +16,28 @@ function todayStr() {
   return kst.toISOString().slice(0, 10)
 }
 
+// 현재 시간이 락 시간대 안에 있는지 검사
+// 반환: { allowed: boolean, reason: string }
+function checkTimeLock(topic) {
+  if (!topic?.lock_enabled || !topic.lock_start_time || !topic.lock_end_time) {
+    return { allowed: true, reason: '' }
+  }
+  const now = new Date()
+  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
+  const hh = String(kst.getUTCHours()).padStart(2, '0')
+  const mm = String(kst.getUTCMinutes()).padStart(2, '0')
+  const nowHM = `${hh}:${mm}`
+  const start = topic.lock_start_time
+  const end = topic.lock_end_time
+  if (nowHM < start) {
+    return { allowed: false, reason: `아직 수업 시간이 아니에요. ${start}부터 글쓰기가 시작돼요.` }
+  }
+  if (nowHM > end) {
+    return { allowed: false, reason: `수업 시간이 끝났어요. (${start}~${end})` }
+  }
+  return { allowed: true, reason: '' }
+}
+
 // HTML 이스케이프
 // 피드백 텍스트를 리스트로 시각화 (- 로 시작하는 항목들 자동 분리)
 function FeedbackList({ text, color = 'gray' }) {
@@ -258,7 +280,14 @@ export default function StudentHome() {
   const submitEssay = async () => {
     if (submitting) return
     if (essay.trim().length < 30) return alert('글을 더 써 주세요! (30자 이상)')
-    
+
+    // 시간 락 검증
+    const lock = checkTimeLock(todayTopic)
+    if (!lock.allowed) {
+      alert('🔒 ' + lock.reason)
+      return
+    }
+
     const apiKey = loadApiKey()
     if (!apiKey) {
       // 학생은 선생님 키를 못 쓰니, 선생님이 같은 브라우저에서 미리 등록해 놨어야 함
@@ -380,11 +409,44 @@ ${studentEssay}
     setStep('rewrite')
   }
 
+  // 피드백 신고
+  const reportFeedback = async () => {
+    if (!currentSub?.id) return alert('아직 제출된 글이 없어요')
+    if (currentSub.reported) return alert('이미 신고했어요. 선생님께서 확인하실 거예요.')
+
+    const reason = prompt(
+      '🚨 이 피드백이 이상하다고 느껴졌나요?\n\n' +
+      '어떤 점이 이상한지 알려주세요 (생략 가능):\n' +
+      '예: "내 글 내용과 다른 말을 했어요", "너무 짧아요" 등'
+    )
+    if (reason === null) return // 취소
+
+    try {
+      const { error } = await supabase.from('submissions').update({
+        reported: true,
+        report_reason: (reason || '').trim() || null,
+        reported_at: new Date().toISOString()
+      }).eq('id', currentSub.id)
+      if (error) throw error
+      setCurrentSub({ ...currentSub, reported: true, report_reason: reason })
+      alert('🙏 신고가 접수됐어요!\n선생님께서 확인하시고 도와주실 거예요.')
+    } catch(e) {
+      alert('신고 실패: ' + e.message)
+    }
+  }
+
   // 수정본 제출
   const submitRewrite = async () => {
     if (rewriting) return
     if (rewriteEssay.trim().length < 30) return alert('글을 더 써 주세요!')
-    
+
+    // 시간 락 검증
+    const lock = checkTimeLock(todayTopic)
+    if (!lock.allowed) {
+      alert('🔒 ' + lock.reason)
+      return
+    }
+
     const apiKey = loadApiKey()
     if (!apiKey) return alert('AI 기능이 아직 활성화되지 않았어요.\n선생님께 문의해주세요.')
 
@@ -528,6 +590,22 @@ ${rewriteEssay}
                 <div className="text-xs text-primary-dark font-semibold mb-1">📅 {todayTopic.date}</div>
                 <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
                 {todayTopic.description && <p className="text-sm text-primary-dark/80">{todayTopic.description}</p>}
+                {todayTopic.lock_enabled && todayTopic.lock_start_time && todayTopic.lock_end_time && (
+                  (() => {
+                    const lock = checkTimeLock(todayTopic)
+                    return (
+                      <div className={`mt-3 px-3 py-2 rounded-lg text-xs font-medium ${
+                        lock.allowed
+                          ? 'bg-green-50 border border-green-200 text-green-800'
+                          : 'bg-amber-50 border border-amber-200 text-amber-900'
+                      }`}>
+                        {lock.allowed
+                          ? `🔓 글쓰기 가능 시간: ${todayTopic.lock_start_time} ~ ${todayTopic.lock_end_time}`
+                          : `🔒 ${lock.reason}`}
+                      </div>
+                    )
+                  })()
+                )}
               </div>
 
               {/* 단계별 화면 */}
@@ -647,6 +725,21 @@ ${rewriteEssay}
                         </h4>
                         <FeedbackList text={feedbackResult.improve} color="amber" />
                       </div>
+                    </div>
+
+                    {/* 피드백 신고 버튼 - 카드 하단에 작게 */}
+                    <div className="pt-2 border-t border-gray-100 flex justify-end">
+                      <button onClick={reportFeedback}
+                        className={`text-xs px-3 py-1.5 rounded-full ${
+                          currentSub?.reported
+                            ? 'bg-amber-100 text-amber-800 cursor-default'
+                            : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                        }`}
+                        disabled={currentSub?.reported}
+                        title="피드백이 이상하다고 느껴지면 선생님께 알릴 수 있어요"
+                      >
+                        {currentSub?.reported ? '🙏 신고 완료' : '🚨 이 피드백 이상해요'}
+                      </button>
                     </div>
                   </div>
 

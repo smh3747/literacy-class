@@ -5,6 +5,11 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import ConsentForm from '../../components/ConsentForm'
 
+// 로컬 스토리지 키
+const SAVED_USERNAME_KEY = 'lc-saved-username'
+const NO_AUTO_LOGIN_KEY = 'lc-no-auto-login'
+const SESSION_ACTIVE_KEY = 'lc-session-active'
+
 export default function StudentLogin() {
   const router = useRouter()
   const [mode, setMode] = useState('login')
@@ -15,12 +20,36 @@ export default function StudentLogin() {
   const [error, setError] = useState('')
   const [step, setStep] = useState('form')
   const [checkingAuth, setCheckingAuth] = useState(true)
+  // 새 옵션
+  const [saveUsername, setSaveUsername] = useState(false)
+  const [autoLogin, setAutoLogin] = useState(true)
 
   useEffect(() => {
+    // 저장된 아이디 / 자동 로그인 설정 복원
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(SAVED_USERNAME_KEY)
+      if (saved) {
+        setUsername(saved)
+        setSaveUsername(true)
+      }
+      const noAuto = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
+      setAutoLogin(!noAuto)
+    }
     checkSession()
   }, [])
 
   const checkSession = async () => {
+    // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
+    if (typeof window !== 'undefined') {
+      const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
+      const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
+      if (noAutoLogin && !sessionActive) {
+        await supabase.auth.signOut()
+        setCheckingAuth(false)
+        return
+      }
+    }
+
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
       const { data: profile } = await supabase.from('profiles')
@@ -33,10 +62,29 @@ export default function StudentLogin() {
     setCheckingAuth(false)
   }
 
-  // 엔터키 처리: 로그인은 바로 제출, 가입은 동의 단계로
-  const handleKeyDown = (e) => {
-    if (e.key !== 'Enter' || loading) return
+  // 옵션 저장 (로그인/가입 성공 직후 호출)
+  const persistOptions = () => {
+    if (typeof window === 'undefined') return
+    // 아이디 저장
+    if (saveUsername && username) {
+      localStorage.setItem(SAVED_USERNAME_KEY, username)
+    } else {
+      localStorage.removeItem(SAVED_USERNAME_KEY)
+    }
+    // 자동 로그인
+    if (autoLogin) {
+      localStorage.removeItem(NO_AUTO_LOGIN_KEY)
+      sessionStorage.removeItem(SESSION_ACTIVE_KEY)
+    } else {
+      localStorage.setItem(NO_AUTO_LOGIN_KEY, 'true')
+      sessionStorage.setItem(SESSION_ACTIVE_KEY, 'true')
+    }
+  }
+
+  // form onSubmit: 엔터키든 버튼이든 다 여기로
+  const handleFormSubmit = (e) => {
     e.preventDefault()
+    if (loading) return
     if (mode === 'signup') {
       if (!username || !password || !classCode) {
         setError('모든 항목을 입력해주세요')
@@ -78,6 +126,7 @@ export default function StudentLogin() {
           throw new Error('학생 권한이 없는 계정이에요.')
         }
         
+        persistOptions()
         router.push('/student')
       } else {
         const { data: classData } = await supabase.from('classes').select('id, name, is_active, school').eq('code', classCode).maybeSingle()
@@ -101,11 +150,11 @@ export default function StudentLogin() {
         await supabase.from('profiles').insert({
           id: data.user.id, username: username.toLowerCase(), realname: username, role: 'student', class_id: classData.id, school: classData.school || null
         })
+        persistOptions()
         router.push('/student')
       }
     } catch(e) {
       let errMsg = e.message || '오류가 발생했어요'
-      // Supabase 영문 오류를 한글로
       if (errMsg.includes('Invalid login credentials')) {
         errMsg = '아이디 또는 비밀번호가 잘못됐어요.\n다시 확인해주세요.'
       } else if (errMsg.includes('Email not confirmed')) {
@@ -140,11 +189,11 @@ export default function StudentLogin() {
             </div>
 
             <div className="flex gap-2 mb-6 bg-gray-100 rounded-xl p-1">
-              <button onClick={() => { setMode('login'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('login'); setError(''); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 로그인
               </button>
-              <button onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 회원가입
               </button>
@@ -156,7 +205,7 @@ export default function StudentLogin() {
                 <ConsentForm onComplete={handleSubmit} />
               </>
             ) : (
-              <div className="space-y-3">
+              <form onSubmit={handleFormSubmit} className="space-y-3">
                 {mode === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium mb-1">학급 코드</label>
@@ -165,9 +214,9 @@ export default function StudentLogin() {
                       placeholder="선생님께 받은 4자리"
                       value={classCode}
                       onChange={e => setClassCode(e.target.value)}
-                      onKeyDown={handleKeyDown}
                       className="w-full p-3 border border-gray-200 rounded-lg text-center tracking-widest font-mono"
                       maxLength="6"
+                      inputMode="numeric"
                     />
                   </div>
                 )}
@@ -178,7 +227,6 @@ export default function StudentLogin() {
                     placeholder="영문 아이디"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete="username"
                   />
@@ -190,21 +238,45 @@ export default function StudentLogin() {
                     placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   />
                   {mode === 'login' && <p className="text-xs text-gray-500 mt-1">처음이세요? 초기 비밀번호는 <strong>1234</strong></p>}
                 </div>
-                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+
+                {/* 옵션 체크박스 (로그인 모드일 때만) */}
+                {mode === 'login' && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveUsername}
+                        onChange={e => setSaveUsername(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span>아이디 저장</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoLogin}
+                        onChange={e => setAutoLogin(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span>자동 로그인</span>
+                    </label>
+                  </div>
+                )}
+
+                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-line">{error}</div>}
                 <button
-                  onClick={() => mode === 'signup' ? setStep('consent') : handleSubmit()}
+                  type="submit"
                   disabled={loading}
                   className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50"
                 >
                   {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '다음')}
                 </button>
-              </div>
+              </form>
             )}
           </div>
         </main>
