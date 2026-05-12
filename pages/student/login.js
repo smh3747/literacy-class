@@ -82,18 +82,29 @@ export default function StudentLogin() {
   }
 
   // form onSubmit: 엔터키든 버튼이든 다 여기로
+  // setTimeout 0ms: 마지막 onChange의 setState가 반영된 뒤 실행되도록 보장
   const handleFormSubmit = (e) => {
-    e.preventDefault()
+    if (e?.preventDefault) e.preventDefault()
     if (loading) return
-    if (mode === 'signup') {
-      if (!username || !password || !classCode) {
-        setError('모든 항목을 입력해주세요')
-        return
+    setTimeout(() => {
+      if (mode === 'signup') {
+        if (!username || !password || !classCode) {
+          setError('모든 항목을 입력해주세요')
+          return
+        }
+        setStep('consent')
+      } else {
+        handleSubmit()
       }
-      setStep('consent')
-    } else {
-      handleSubmit()
-    }
+    }, 0)
+  }
+
+  // 추가 안전망: input에서 엔터 직접 캐치 (IME는 무시)
+  const handleEnter = (e) => {
+    if (e.key !== 'Enter') return
+    if (e.isComposing || e.keyCode === 229) return
+    e.preventDefault()
+    handleFormSubmit(e)
   }
 
   const handleSubmit = async () => {
@@ -214,6 +225,7 @@ export default function StudentLogin() {
                       placeholder="선생님께 받은 4자리"
                       value={classCode}
                       onChange={e => setClassCode(e.target.value)}
+                      onKeyDown={handleEnter}
                       className="w-full p-3 border border-gray-200 rounded-lg text-center tracking-widest font-mono"
                       maxLength="6"
                       inputMode="numeric"
@@ -227,6 +239,7 @@ export default function StudentLogin() {
                     placeholder="영문 아이디"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
+                    onKeyDown={handleEnter}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete="username"
                   />
@@ -238,6 +251,7 @@ export default function StudentLogin() {
                     placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    onKeyDown={handleEnter}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   />
