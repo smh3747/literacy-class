@@ -239,7 +239,7 @@ export default function TeacherLogin() {
                 <ConsentForm onComplete={handleSubmit} />
               </>
             ) : (
-              <form onSubmit={handleFormSubmit} className="space-y-3">
+              <div className="space-y-3">
                 {mode === 'signup' && (
                   <>
                     <div>
@@ -318,13 +318,14 @@ export default function TeacherLogin() {
 
                 {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-line">{error}</div>}
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleFormSubmit}
                   disabled={loading}
                   className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50"
                 >
                   {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '다음')}
                 </button>
-              </form>
+              </div>
             )}
 
             <div className="mt-4 text-center">
