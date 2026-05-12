@@ -99,6 +99,49 @@ export default function TeacherSubmissions() {
     const { data } = await supabase.from('topics').select('*').eq('teacher_id', profile.id).order('date', { ascending: false }).limit(30)
     setTopics(data || [])
     setLoading(false)
+
+    // URL query로 자동 진입 (?topic=ID 또는 ?topic=ID&student=ID)
+    const { topic: qTopic, student: qStudent } = router.query
+    if (qTopic && data) {
+      const t = data.find(x => x.id === qTopic)
+      if (t) {
+        // classInfo가 아직 state에 안 반영됐을 수 있으므로 직접 전달
+        await openTopicWithClass(t, profile.classes, qStudent)
+      }
+    }
+  }
+
+  // classInfo state 의존하지 않는 버전 (URL query 자동 진입용)
+  const openTopicWithClass = async (topic, cls, autoStudentId = null) => {
+    setSelectedTopic(topic)
+    const { data: students } = await supabase.from('profiles')
+      .select('id, realname, username, number, is_hidden')
+      .eq('class_id', cls.id).eq('role', 'student')
+    const visibleStudents = (students || []).filter(s => !s.is_hidden)
+    const studentIds = visibleStudents.map(s => s.id)
+    if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
+
+    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds)
+
+    const byStudent = {}
+    visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
+    ;(subs || []).forEach(s => {
+      if (byStudent[s.user_id]) byStudent[s.user_id].items.push(s)
+    })
+
+    const groups = Object.values(byStudent).filter(g => g.items.length > 0)
+    setTopicStudents(groups)
+
+    // 학생 자동 선택?
+    if (autoStudentId) {
+      const target = groups.find(g => g.profile.id === autoStudentId)
+      if (target) {
+        setSelectedStudent(target)
+        setView('studentDetail')
+        return
+      }
+    }
+    setView('topicStudents')
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }

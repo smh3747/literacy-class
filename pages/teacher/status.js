@@ -226,44 +226,54 @@ export default function SubmissionStatus() {
                 {submitted.length === 0 ? (
                   <p className="text-sm text-gray-500 py-4 text-center">아직 제출한 학생이 없어요</p>
                 ) : (
-                  <div className="space-y-1">
-                    {submitted.map(s => {
-                      const best = bestSubByUser[s.id]
-                      const userSubs = submissions.filter(sub => sub.user_id === s.id)
-                      const hasReport = userSubs.some(sub => sub.reported)
-                      return (
-                        <div key={s.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 text-sm">
-                          <div className="flex items-center gap-2">
-                            {s.number && (
-                              <span className="text-xs text-gray-500 font-mono w-8 text-center">{s.number}번</span>
-                            )}
-                            <span className="font-medium">{s.realname}</span>
-                            {userSubs.length > 1 && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                                +{userSubs.length - 1} 수정
-                              </span>
-                            )}
-                            {hasReport && (
-                              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
-                                🚨 신고
-                              </span>
-                            )}
-                          </div>
-                          {best && (
-                            <span className="text-xs font-mono text-gray-600">
-                              {best.total_score}/{best.max_score}
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <>
+                    <p className="text-xs text-gray-500 mb-2">💡 학생 이름을 클릭하면 글과 피드백을 바로 볼 수 있어요</p>
+                    <div className="space-y-1">
+                      {submitted.map(s => {
+                        const best = bestSubByUser[s.id]
+                        const userSubs = submissions.filter(sub => sub.user_id === s.id)
+                        const hasReport = userSubs.some(sub => sub.reported)
+                        return (
+                          <Link
+                            key={s.id}
+                            href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                            className="flex items-center justify-between p-2 rounded hover:bg-blue-50 text-sm cursor-pointer transition group"
+                          >
+                            <div className="flex items-center gap-2">
+                              {s.number && (
+                                <span className="text-xs text-gray-500 font-mono w-8 text-center">{s.number}번</span>
+                              )}
+                              <span className="font-medium group-hover:text-primary group-hover:underline">{s.realname}</span>
+                              {userSubs.length > 1 && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                                  +{userSubs.length - 1} 수정
+                                </span>
+                              )}
+                              {hasReport && (
+                                <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+                                  🚨 신고
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {best && (
+                                <span className="text-xs font-mono text-gray-600">
+                                  {best.total_score}/{best.max_score}
+                                </span>
+                              )}
+                              <span className="text-gray-400 group-hover:text-primary">→</span>
+                            </div>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
 
               <div className="text-center pt-2">
-                <Link href={`/teacher/submissions`} className="text-sm text-primary hover:underline">
-                  → 학생 글 자세히 보기
+                <Link href={`/teacher/submissions?topic=${selectedTopicId}`} className="text-sm text-primary hover:underline">
+                  → 전체 학생 글 보기
                 </Link>
               </div>
             </>

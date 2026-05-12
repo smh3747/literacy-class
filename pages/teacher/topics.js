@@ -52,18 +52,52 @@ export default function TopicsPage() {
       saveLocalApiKey(profile.classes.api_key)
     }
     
-    await loadTopics(profile.id)
+    await loadTopics(profile.id, profile.classes?.id)
     setLoading(false)
   }
 
-  const loadTopics = async (teacherId) => {
+  const loadTopics = async (teacherId, classId = null) => {
     if (!teacherId) return
     const { data } = await supabase.from('topics')
       .select('*')
       .eq('teacher_id', teacherId)
       .order('date', { ascending: false })
       .limit(50)
-    setTopics(data || [])
+
+    if (!data || data.length === 0) {
+      setTopics([])
+      return
+    }
+
+    // 우리 학급 학생 ID 목록 (숨김 제외) - 제출 카운트 정확하게 계산하기 위해
+    const cid = classId || classInfo?.id
+    let visibleStudentIds = []
+    if (cid) {
+      const { data: studs } = await supabase.from('profiles')
+        .select('id, is_hidden').eq('class_id', cid).eq('role', 'student')
+      visibleStudentIds = (studs || []).filter(s => !s.is_hidden).map(s => s.id)
+    }
+
+    // 주제별 제출 학생 수 (한 학생이 여러 번 제출해도 1명으로)
+    const topicIds = data.map(t => t.id)
+    const { data: subs } = await supabase.from('submissions')
+      .select('topic_id, user_id')
+      .in('topic_id', topicIds)
+      .in('user_id', visibleStudentIds.length > 0 ? visibleStudentIds : ['00000000-0000-0000-0000-000000000000'])
+
+    // topic_id → Set of unique user_id
+    const submitMap = {}
+    ;(subs || []).forEach(s => {
+      if (!submitMap[s.topic_id]) submitMap[s.topic_id] = new Set()
+      submitMap[s.topic_id].add(s.user_id)
+    })
+
+    const enriched = data.map(t => ({
+      ...t,
+      submitted_count: submitMap[t.id]?.size || 0,
+      total_students: visibleStudentIds.length
+    }))
+    setTopics(enriched)
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
@@ -124,7 +158,7 @@ export default function TopicsPage() {
       setLockEnabled(false)
       setLockStartTime('09:00')
       setLockEndTime('10:00')
-      await loadTopics(user.id)
+      await loadTopics(user.id, classInfo?.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
     }
@@ -135,7 +169,7 @@ export default function TopicsPage() {
     if (!confirm('이 주제를 삭제할까요? (학생 글은 유지됨)')) return
     const { error } = await supabase.from('topics').delete().eq('id', id)
     if (error) return alert('삭제 실패: ' + error.message)
-    await loadTopics(user.id)
+    await loadTopics(user.id, classInfo?.id)
   }
 
   // AI 주제 추천 (Structured Output - JSON 깨질 일 없음)
@@ -422,23 +456,49 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
               const futureTopics = topics.filter(t => t.date > today)
               const pastTopics = topics.filter(t => t.date < today)
 
-              const renderTopic = (t) => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">{t.title}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {t.date} · 평가기준 {t.rubrics?.length || 0}개
-                      {t.lock_enabled && t.lock_start_time && t.lock_end_time && (
-                        <span className="ml-1 text-amber-700">· 🔒 {t.lock_start_time}~{t.lock_end_time}</span>
-                      )}
-                    </div>
+              const renderTopic = (t) => {
+                const submitted = t.submitted_count || 0
+                const total = t.total_students || 0
+                const allSubmitted = total > 0 && submitted === total
+                const noSubmissions = submitted === 0
+                return (
+                  <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition group">
+                    <Link
+                      href={`/teacher/submissions?topic=${t.id}`}
+                      className="flex-1 cursor-pointer"
+                    >
+                      <div className="font-medium text-sm group-hover:text-primary">{t.title}</div>
+                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                        <span>{t.date}</span>
+                        <span>·</span>
+                        <span>평가기준 {t.rubrics?.length || 0}개</span>
+                        {total > 0 && (
+                          <>
+                            <span>·</span>
+                            <span className={`px-1.5 py-0.5 rounded font-medium ${
+                              allSubmitted ? 'bg-green-100 text-green-700' :
+                              noSubmissions ? 'bg-gray-100 text-gray-500' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              📥 {submitted}/{total}명 제출
+                            </span>
+                          </>
+                        )}
+                        {t.lock_enabled && t.lock_start_time && t.lock_end_time && (
+                          <>
+                            <span>·</span>
+                            <span className="text-amber-700">🔒 {t.lock_start_time}~{t.lock_end_time}</span>
+                          </>
+                        )}
+                      </div>
+                    </Link>
+                    <button onClick={() => deleteTopic(t.id)}
+                      className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded ml-2 flex-shrink-0">
+                      삭제
+                    </button>
                   </div>
-                  <button onClick={() => deleteTopic(t.id)}
-                    className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded">
-                    삭제
-                  </button>
-                </div>
-              )
+                )
+              }
 
               return (
                 <div className="space-y-4">
