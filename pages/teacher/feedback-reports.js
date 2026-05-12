@@ -28,13 +28,14 @@ export default function FeedbackReports() {
 
   const loadReports = async (profile) => {
     if (!profile?.classes?.id) return
-    // 우리 학급 학생들의 신고된 제출물만
+    // 우리 학급 학생들의 신고된 제출물만 (숨김 학생 제외)
     const { data: students } = await supabase.from('profiles')
-      .select('id, realname, username, number')
+      .select('id, realname, username, number, is_hidden')
       .eq('class_id', profile.classes.id).eq('role', 'student')
-    if (!students) return
+    const visibleStudents = (students || []).filter(s => !s.is_hidden)
+    if (!visibleStudents) return
 
-    const ids = students.map(s => s.id)
+    const ids = visibleStudents.map(s => s.id)
     if (ids.length === 0) return
 
     const { data: subs } = await supabase.from('submissions')
@@ -45,7 +46,7 @@ export default function FeedbackReports() {
 
     // 학생 정보 매핑
     const studentMap = {}
-    students.forEach(s => { studentMap[s.id] = s })
+    visibleStudents.forEach(s => { studentMap[s.id] = s })
     const enriched = (subs || []).map(s => ({ ...s, student: studentMap[s.user_id] }))
     setReports(enriched)
   }

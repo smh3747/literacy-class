@@ -17,6 +17,8 @@ export default function StudentsPage() {
   // 인라인 편집 상태
   const [editingNumbers, setEditingNumbers] = useState({}) // {studentId: number}
   const [savingId, setSavingId] = useState(null)
+  // 숨김 학생 보기 토글
+  const [showHidden, setShowHidden] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -167,6 +169,54 @@ export default function StudentsPage() {
     setSavingId(null)
   }
 
+  // 학생 숨김/복원 토글
+  const toggleHidden = async (studentId, studentName, currentValue) => {
+    const newValue = !currentValue
+    if (newValue) {
+      // 숨김 처리
+      const reason = prompt(
+        `🙈 "${studentName}" 학생을 숨김 처리할까요?\n\n` +
+        `숨김 처리하면:\n` +
+        `- 통계/그래프/제출 현황에서 제외됩니다\n` +
+        `- 학생 본인은 여전히 로그인 가능 (데이터 보존)\n` +
+        `- 언제든지 복원 가능합니다\n\n` +
+        `사유를 입력해주세요 (선택, 예: 전출, 휴학 등):`,
+        '전출'
+      )
+      if (reason === null) return // 취소
+
+      setSavingId(studentId)
+      try {
+        const { error } = await supabase.from('profiles').update({
+          is_hidden: true,
+          hidden_at: new Date().toISOString(),
+          hidden_reason: (reason || '').trim() || null
+        }).eq('id', studentId)
+        if (error) throw error
+        await loadStudents(classInfo.id)
+      } catch(e) {
+        alert('실패: ' + e.message)
+      }
+      setSavingId(null)
+    } else {
+      // 복원
+      if (!confirm(`"${studentName}" 학생을 다시 활성화할까요?`)) return
+      setSavingId(studentId)
+      try {
+        const { error } = await supabase.from('profiles').update({
+          is_hidden: false,
+          hidden_at: null,
+          hidden_reason: null
+        }).eq('id', studentId)
+        if (error) throw error
+        await loadStudents(classInfo.id)
+      } catch(e) {
+        alert('실패: ' + e.message)
+      }
+      setSavingId(null)
+    }
+  }
+
   // 모든 학생 번호 일괄 저장 (편집 중인 것들만)
   const saveAllNumbers = async () => {
     const ids = Object.keys(editingNumbers)
@@ -270,19 +320,38 @@ export default function StudentsPage() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-bold">
-                👥 등록된 학생 ({students.length}명)
-                {students.length > 0 && (
+                👥 등록된 학생
+                {(() => {
+                  const active = students.filter(s => !s.is_hidden).length
+                  const hidden = students.filter(s => s.is_hidden).length
+                  return (
+                    <span className="ml-1">
+                      ({active}명{hidden > 0 && <span className="text-gray-400"> · 숨김 {hidden}명</span>})
+                    </span>
+                  )
+                })()}
+                {students.filter(s => !s.is_hidden).length > 0 && (
                   <span className="ml-2 text-xs font-normal text-gray-500">
-                    동의서 회신 {students.filter(s => s.consent_received).length}/{students.length}
+                    동의서 회신 {students.filter(s => !s.is_hidden && s.consent_received).length}/{students.filter(s => !s.is_hidden).length}
                   </span>
                 )}
               </h3>
-              {Object.keys(editingNumbers).length > 0 && (
-                <button onClick={saveAllNumbers}
-                  className="text-xs bg-primary text-white px-3 py-1 rounded-full">
-                  💾 변경된 번호 {Object.keys(editingNumbers).length}건 일괄 저장
-                </button>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {students.some(s => s.is_hidden) && (
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                    <input type="checkbox" checked={showHidden}
+                      onChange={e => setShowHidden(e.target.checked)}
+                      className="w-3.5 h-3.5" />
+                    <span>숨김 학생 보기</span>
+                  </label>
+                )}
+                {Object.keys(editingNumbers).length > 0 && (
+                  <button onClick={saveAllNumbers}
+                    className="text-xs bg-primary text-white px-3 py-1 rounded-full">
+                    💾 변경된 번호 {Object.keys(editingNumbers).length}건 일괄 저장
+                  </button>
+                )}
+              </div>
             </div>
 
             {students.length === 0 ? (
@@ -290,7 +359,7 @@ export default function StudentsPage() {
             ) : (
               <>
                 <p className="text-xs text-gray-500 mb-3">
-                  💡 번호칸은 직접 클릭해서 수정 / 동의서는 종이 회신 받으면 체크
+                  💡 번호칸은 직접 클릭해서 수정 / 동의서는 종이 회신 받으면 체크 / 🙈 버튼으로 전출생 숨김
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -299,23 +368,29 @@ export default function StudentsPage() {
                         <th className="py-2 px-2 w-20">번호</th>
                         <th className="py-2 px-2">이름</th>
                         <th className="py-2 px-2 hidden sm:table-cell">아이디</th>
-                        <th className="py-2 px-2 text-center w-24">동의서</th>
+                        <th className="py-2 px-2 text-center w-16">동의서</th>
+                        <th className="py-2 px-2 text-center w-12">숨김</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[...students].sort((a, b) => {
-                        const na = parseInt(a.number) || 999
-                        const nb = parseInt(b.number) || 999
-                        if (na !== nb) return na - nb
-                        return (a.username || '').localeCompare(b.username || '')
-                      }).map(s => {
+                      {[...students]
+                        .filter(s => showHidden || !s.is_hidden)
+                        .sort((a, b) => {
+                          // 숨김 학생은 아래로
+                          if (a.is_hidden !== b.is_hidden) return a.is_hidden ? 1 : -1
+                          const na = parseInt(a.number) || 999
+                          const nb = parseInt(b.number) || 999
+                          if (na !== nb) return na - nb
+                          return (a.username || '').localeCompare(b.username || '')
+                        }).map(s => {
                         const currentNumber = editingNumbers[s.id] !== undefined
                           ? editingNumbers[s.id]
                           : (s.number || '')
                         const isDirty = editingNumbers[s.id] !== undefined && editingNumbers[s.id] !== (s.number || '')
 
                         return (
-                          <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <tr key={s.id}
+                            className={`border-b border-gray-100 hover:bg-gray-50 ${s.is_hidden ? 'opacity-50 bg-gray-50' : ''}`}>
                             <td className="py-2 px-2">
                               <input
                                 type="text"
@@ -327,23 +402,42 @@ export default function StudentsPage() {
                                 className={`w-14 p-1 text-center text-sm border rounded font-mono ${
                                   isDirty ? 'border-amber-400 bg-amber-50' : 'border-gray-200'
                                 }`}
-                                disabled={savingId === s.id}
+                                disabled={savingId === s.id || s.is_hidden}
                               />
                             </td>
-                            <td className="py-2 px-2 font-medium">{s.realname}</td>
+                            <td className="py-2 px-2 font-medium">
+                              {s.realname}
+                              {s.is_hidden && s.hidden_reason && (
+                                <span className="ml-2 text-xs text-gray-400">({s.hidden_reason})</span>
+                              )}
+                            </td>
                             <td className="py-2 px-2 text-xs text-gray-500 font-mono hidden sm:table-cell">{s.username}</td>
                             <td className="py-2 px-2 text-center">
                               <button
                                 onClick={() => toggleConsent(s.id, s.consent_received)}
-                                disabled={savingId === s.id}
+                                disabled={savingId === s.id || s.is_hidden}
                                 className={`inline-flex items-center justify-center w-7 h-7 rounded ${
                                   s.consent_received
                                     ? 'bg-green-100 text-green-700 border border-green-300'
                                     : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'
-                                }`}
-                                title={s.consent_received ? '동의서 회신됨 (취소하려면 클릭)' : '동의서 미회신 (회신 처리하려면 클릭)'}
+                                } disabled:opacity-40`}
+                                title={s.consent_received ? '동의서 회신됨' : '동의서 미회신'}
                               >
                                 {s.consent_received ? '✓' : '·'}
+                              </button>
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                onClick={() => toggleHidden(s.id, s.realname, s.is_hidden)}
+                                disabled={savingId === s.id}
+                                className={`inline-flex items-center justify-center w-7 h-7 rounded text-sm ${
+                                  s.is_hidden
+                                    ? 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'
+                                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+                                }`}
+                                title={s.is_hidden ? '숨김 해제 (활성화)' : '숨김 처리 (전출생 등)'}
+                              >
+                                {s.is_hidden ? '↻' : '🙈'}
                               </button>
                             </td>
                           </tr>

@@ -106,15 +106,18 @@ export default function TeacherSubmissions() {
   const openTopic = async (topic) => {
     setSelectedTopic(topic)
     
-    // 같은 학급 학생들의 이 주제 제출본
-    const { data: students } = await supabase.from('profiles').select('id, realname, username').eq('class_id', classInfo.id).eq('role', 'student')
-    const studentIds = (students || []).map(s => s.id)
+    // 같은 학급 학생들의 이 주제 제출본 (숨김 학생 제외)
+    const { data: students } = await supabase.from('profiles')
+      .select('id, realname, username, number, is_hidden')
+      .eq('class_id', classInfo.id).eq('role', 'student')
+    const visibleStudents = (students || []).filter(s => !s.is_hidden)
+    const studentIds = visibleStudents.map(s => s.id)
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
     
     const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds)
     
     const byStudent = {}
-    students.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
+    visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
     ;(subs || []).forEach(s => {
       if (byStudent[s.user_id]) byStudent[s.user_id].items.push(s)
     })

@@ -1,0 +1,275 @@
+import Head from 'next/head'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/router'
+import Link from 'next/link'
+import { supabase } from '../../lib/supabase'
+import Header from '../../components/Header'
+
+// 한국 시간 기준 오늘 날짜
+function todayStr() {
+  const now = new Date()
+  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
+  return kst.toISOString().slice(0, 10)
+}
+
+export default function SubmissionStatus() {
+  const router = useRouter()
+  const [user, setUser] = useState(null)
+  const [classInfo, setClassInfo] = useState(null)
+  const [topics, setTopics] = useState([])
+  const [selectedTopicId, setSelectedTopicId] = useState('')
+  const [students, setStudents] = useState([])
+  const [submissions, setSubmissions] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { checkAuth() }, [])
+
+  const checkAuth = async () => {
+    const { data: { user: au } } = await supabase.auth.getUser()
+    if (!au) { router.push('/teacher/login'); return }
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name)').eq('id', au.id).maybeSingle()
+    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+      await supabase.auth.signOut(); router.push('/teacher/login'); return
+    }
+    setUser(profile)
+    setClassInfo(profile.classes)
+
+    if (profile.classes?.id) {
+      // 주제 목록 (최근 30개)
+      const { data: topicList } = await supabase.from('topics')
+        .select('id, date, title')
+        .eq('teacher_id', profile.id)
+        .order('date', { ascending: false })
+        .limit(30)
+      setTopics(topicList || [])
+
+      // 오늘 주제를 기본 선택
+      const today = todayStr()
+      const todayTopic = (topicList || []).find(t => t.date === today)
+      const initialId = todayTopic ? todayTopic.id : (topicList?.[0]?.id || '')
+      setSelectedTopicId(initialId)
+
+      // 학급 학생 목록 (숨김 제외)
+      const { data: studentList } = await supabase.from('profiles')
+        .select('id, realname, username, number, is_hidden')
+        .eq('class_id', profile.classes.id).eq('role', 'student')
+      const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
+      setStudents(visibleStudents)
+
+      // 선택된 주제의 제출 목록 로드
+      if (initialId && visibleStudents.length > 0) {
+        await loadSubmissions(initialId, visibleStudents)
+      }
+    }
+    setLoading(false)
+  }
+
+  const loadSubmissions = async (topicId, studentList = students) => {
+    const studentIds = studentList.map(s => s.id)
+    if (studentIds.length === 0) { setSubmissions([]); return }
+
+    const { data: subs } = await supabase.from('submissions')
+      .select('id, user_id, total_score, max_score, created_at, attempt, reported')
+      .eq('topic_id', topicId)
+      .in('user_id', studentIds)
+    setSubmissions(subs || [])
+  }
+
+  const handleTopicChange = async (topicId) => {
+    setSelectedTopicId(topicId)
+    if (topicId) await loadSubmissions(topicId)
+  }
+
+  // 미제출 학생 명단을 클립보드에 복사
+  const copyAbsentList = (list, label = '미제출') => {
+    if (list.length === 0) return alert(`${label} 학생이 없어요!`)
+    const text = list
+      .map(s => `${s.number ? s.number + '번 ' : ''}${s.realname}`)
+      .join(', ')
+    navigator.clipboard.writeText(text)
+      .then(() => alert(`📋 ${list.length}명의 명단이 복사됐어요!\n\n${text}`))
+      .catch(() => prompt('아래 내용을 복사해주세요:', text))
+  }
+
+  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
+
+  // 제출/미제출 분류
+  const submittedUserIds = new Set(submissions.map(s => s.user_id))
+  const submitted = students.filter(s => submittedUserIds.has(s.id))
+  const absent = students.filter(s => !submittedUserIds.has(s.id))
+  const selectedTopic = topics.find(t => t.id === selectedTopicId)
+
+  // 정렬: 번호순
+  const sortByNumber = (a, b) => {
+    const na = parseInt(a.number) || 999
+    const nb = parseInt(b.number) || 999
+    if (na !== nb) return na - nb
+    return (a.realname || '').localeCompare(b.realname || '')
+  }
+  submitted.sort(sortByNumber)
+  absent.sort(sortByNumber)
+
+  // 학생별 최고 점수 (attempt 여러 개일 때)
+  const bestSubByUser = {}
+  submissions.forEach(s => {
+    const cur = bestSubByUser[s.user_id]
+    if (!cur || (s.total_score || 0) > (cur.total_score || 0)) {
+      bestSubByUser[s.user_id] = s
+    }
+  })
+
+  return (
+    <>
+      <Head><title>제출 현황 - 문해력 수업</title></Head>
+      <div className="min-h-screen bg-gray-50">
+        <Header user={user} onLogout={logout} />
+        <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Link href="/teacher" className="text-gray-600">←</Link>
+            <h1 className="text-xl font-bold">📋 제출 현황</h1>
+          </div>
+
+          {/* 주제 선택 */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <label className="block text-xs text-gray-600 mb-1">주제 선택</label>
+            {topics.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">등록된 주제가 없어요</p>
+            ) : (
+              <select value={selectedTopicId} onChange={e => handleTopicChange(e.target.value)}
+                className="w-full p-2 border border-gray-200 rounded-lg text-sm">
+                {topics.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.date === todayStr() ? '🌟 ' : ''}{t.date} · {t.title}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {students.length === 0 ? (
+            <div className="bg-white rounded-2xl p-10 text-center text-gray-500">
+              <p className="text-sm">학급에 학생이 없어요</p>
+              <Link href="/teacher/students" className="text-xs text-primary underline mt-2 inline-block">
+                학생 관리로 이동 →
+              </Link>
+            </div>
+          ) : !selectedTopic ? (
+            <div className="bg-white rounded-2xl p-10 text-center text-gray-500">
+              <p className="text-sm">주제를 선택해주세요</p>
+            </div>
+          ) : (
+            <>
+              {/* 요약 카드 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-primary">{students.length}</div>
+                  <div className="text-xs text-gray-500 mt-1">전체</div>
+                </div>
+                <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-200">
+                  <div className="text-2xl font-bold text-green-700">{submitted.length}</div>
+                  <div className="text-xs text-green-700 mt-1">✓ 제출</div>
+                </div>
+                <div className="bg-amber-50 rounded-2xl p-4 text-center border border-amber-200">
+                  <div className="text-2xl font-bold text-amber-700">{absent.length}</div>
+                  <div className="text-xs text-amber-700 mt-1">미제출</div>
+                </div>
+              </div>
+
+              {/* 진행률 바 */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex justify-between items-center mb-2 text-xs">
+                  <span className="text-gray-600">제출률</span>
+                  <span className="font-bold text-primary">
+                    {Math.round((submitted.length / students.length) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                  <div className="bg-gradient-to-r from-green-400 to-green-600 h-full transition-all"
+                    style={{width: `${(submitted.length / students.length) * 100}%`}} />
+                </div>
+              </div>
+
+              {/* 미제출 학생 */}
+              <div className="bg-white rounded-2xl p-5 shadow-sm">
+                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold text-amber-900">
+                    🚨 미제출 학생 ({absent.length}명)
+                  </h3>
+                  {absent.length > 0 && (
+                    <button onClick={() => copyAbsentList(absent)}
+                      className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 px-3 py-1.5 rounded-full">
+                      📋 명단 복사
+                    </button>
+                  )}
+                </div>
+                {absent.length === 0 ? (
+                  <p className="text-sm text-green-600 py-4 text-center">🎉 모두 제출했어요!</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {absent.map(s => (
+                      <div key={s.id} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm">
+                        {s.number && <span className="text-xs text-amber-700 mr-1.5">{s.number}번</span>}
+                        <span className="font-medium">{s.realname}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 제출 학생 */}
+              <div className="bg-white rounded-2xl p-5 shadow-sm">
+                <h3 className="font-bold text-green-900 mb-3">
+                  ✅ 제출한 학생 ({submitted.length}명)
+                </h3>
+                {submitted.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">아직 제출한 학생이 없어요</p>
+                ) : (
+                  <div className="space-y-1">
+                    {submitted.map(s => {
+                      const best = bestSubByUser[s.id]
+                      const userSubs = submissions.filter(sub => sub.user_id === s.id)
+                      const hasReport = userSubs.some(sub => sub.reported)
+                      return (
+                        <div key={s.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 text-sm">
+                          <div className="flex items-center gap-2">
+                            {s.number && (
+                              <span className="text-xs text-gray-500 font-mono w-8 text-center">{s.number}번</span>
+                            )}
+                            <span className="font-medium">{s.realname}</span>
+                            {userSubs.length > 1 && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                                +{userSubs.length - 1} 수정
+                              </span>
+                            )}
+                            {hasReport && (
+                              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+                                🚨 신고
+                              </span>
+                            )}
+                          </div>
+                          {best && (
+                            <span className="text-xs font-mono text-gray-600">
+                              {best.total_score}/{best.max_score}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-center pt-2">
+                <Link href={`/teacher/submissions`} className="text-sm text-primary hover:underline">
+                  → 학생 글 자세히 보기
+                </Link>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    </>
+  )
+}

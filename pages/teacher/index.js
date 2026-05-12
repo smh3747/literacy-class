@@ -31,14 +31,17 @@ export default function TeacherHome() {
     
     if (profile.classes?.id) {
       const [s, t] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('class_id', profile.classes.id).eq('role', 'student'),
+        supabase.from('profiles').select('id', { count: 'exact', head: true })
+          .eq('class_id', profile.classes.id).eq('role', 'student')
+          .or('is_hidden.is.null,is_hidden.eq.false'),
         supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id)
       ])
-      // 신고된 제출물 수 (우리 학급 학생들의 것만)
+      // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
       try {
         const { data: studentIds } = await supabase.from('profiles')
           .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
+          .or('is_hidden.is.null,is_hidden.eq.false')
         if (studentIds && studentIds.length > 0) {
           const ids = studentIds.map(x => x.id)
           const { count } = await supabase.from('submissions')
@@ -147,6 +150,11 @@ export default function TeacherHome() {
               <div className="text-3xl mb-2">👥</div>
               <h3 className="font-bold mb-1">학생 관리</h3>
               <p className="text-xs text-gray-500">학급명렬표 일괄 등록</p>
+            </Link>
+            <Link href="/teacher/status" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📋</div>
+              <h3 className="font-bold mb-1">제출 현황</h3>
+              <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
             </Link>
             <Link href="/teacher/submissions" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>

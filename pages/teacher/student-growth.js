@@ -31,10 +31,11 @@ export default function StudentGrowth() {
     setClassInfo(profile.classes)
 
     if (profile.classes?.id) {
-      const { data: studentList } = await supabase.from('profiles').select('id, realname, username').eq('class_id', profile.classes.id).eq('role', 'student').order('username')
-      setStudents(studentList || [])
+      const { data: studentList } = await supabase.from('profiles').select('id, realname, username, is_hidden').eq('class_id', profile.classes.id).eq('role', 'student').order('username')
+      const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
+      setStudents(visibleStudents)
 
-      const studentIds = (studentList || []).map(s => s.id)
+      const studentIds = visibleStudents.map(s => s.id)
       if (studentIds.length > 0) {
         const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).order('created_at')
         setAllSubmissions(subs || [])
