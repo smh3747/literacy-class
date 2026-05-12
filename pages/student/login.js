@@ -33,6 +33,21 @@ export default function StudentLogin() {
     setCheckingAuth(false)
   }
 
+  // 엔터키 처리: 로그인은 바로 제출, 가입은 동의 단계로
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter' || loading) return
+    e.preventDefault()
+    if (mode === 'signup') {
+      if (!username || !password || !classCode) {
+        setError('모든 항목을 입력해주세요')
+        return
+      }
+      setStep('consent')
+    } else {
+      handleSubmit()
+    }
+  }
+
   const handleSubmit = async () => {
     if (!username || !password) return setError('아이디와 비밀번호를 입력해주세요')
     if (mode === 'signup' && !classCode) return setError('학급 코드를 입력해주세요')
@@ -150,6 +165,7 @@ export default function StudentLogin() {
                       placeholder="선생님께 받은 4자리"
                       value={classCode}
                       onChange={e => setClassCode(e.target.value)}
+                      onKeyDown={handleKeyDown}
                       className="w-full p-3 border border-gray-200 rounded-lg text-center tracking-widest font-mono"
                       maxLength="6"
                     />
@@ -162,6 +178,7 @@ export default function StudentLogin() {
                     placeholder="영문 아이디"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete="username"
                   />
@@ -173,6 +190,7 @@ export default function StudentLogin() {
                     placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   />

@@ -37,6 +37,25 @@ export default function TeacherLogin() {
     setCheckingAuth(false)
   }
 
+  // 엔터키 처리: 로그인은 바로 제출, 가입은 검증 후 동의 단계로
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter' || loading) return
+    e.preventDefault()
+    if (mode === 'signup') {
+      if (!username || !password || !realname || !className || !secretCode || !school) {
+        setError('모든 항목을 입력해주세요')
+        return
+      }
+      if (password.length < 6) {
+        setError('비밀번호는 6자 이상이어야 해요')
+        return
+      }
+      setStep('consent')
+    } else {
+      handleSubmit()
+    }
+  }
+
   const handleSubmit = async () => {
     setLoading(true)
     setError('')
@@ -181,21 +200,25 @@ export default function TeacherLogin() {
                         {signupRole === 'admin' ? '관리자 코드' : '교사 가입 코드'}
                       </label>
                       <input type="password" value={secretCode} onChange={e => setSecretCode(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="가입 코드" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">이름</label>
                       <input type="text" value={realname} onChange={e => setRealname(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학교명</label>
                       <input type="text" value={school} onChange={e => setSchool(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 하랑초등학교" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>
                       <input type="text" value={className} onChange={e => setClassName(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
                     </div>
                   </>
@@ -203,11 +226,13 @@ export default function TeacherLogin() {
                 <div>
                   <label className="block text-sm font-medium mb-1">아이디</label>
                   <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디" autoComplete="username" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
                 </div>
