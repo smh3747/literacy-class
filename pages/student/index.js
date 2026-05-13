@@ -22,6 +22,10 @@ function checkTimeLock(topic) {
   if (!topic?.lock_enabled || !topic.lock_start_time || !topic.lock_end_time) {
     return { allowed: true, reason: '' }
   }
+  // 오늘 주제가 아니면 시간 락 무시 (지난 주제는 언제든 쓸 수 있게)
+  if (topic.date !== todayStr()) {
+    return { allowed: true, reason: '' }
+  }
   const now = new Date()
   const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
   const hh = String(kst.getUTCHours()).padStart(2, '0')
@@ -144,6 +148,8 @@ export default function StudentHome() {
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
   const [todayTopic, setTodayTopic] = useState(null)
+  const [pendingTopics, setPendingTopics] = useState([]) // 지난 미제출 주제들
+  const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   
   const [step, setStep] = useState('write') // write / feedback / done
@@ -198,19 +204,67 @@ export default function StudentHome() {
     setLoading(false)
   }
 
-  const loadTodayTopic = async (profile) => {
-    if (!profile.class_id) return
-    
-    // 학급 담임의 오늘 주제 찾기
+  // 지난 주제 중 학생이 아직 제출하지 않은 것들 로드
+  const loadPendingTopics = async (profile, teacherId) => {
     const today = todayStr()
+    // 최근 30일 이내 주제 중 오늘보다 이전 것
+    const { data: pastTopics } = await supabase.from('topics')
+      .select('id, date, title, description')
+      .eq('teacher_id', teacherId)
+      .lt('date', today)
+      .order('date', { ascending: false })
+      .limit(30)
+
+    if (!pastTopics || pastTopics.length === 0) {
+      setPendingTopics([])
+      return
+    }
+
+    // 이 학생의 제출 기록 확인
+    const topicIds = pastTopics.map(t => t.id)
+    const { data: mySubs } = await supabase.from('submissions')
+      .select('topic_id')
+      .eq('user_id', profile.id)
+      .in('topic_id', topicIds)
+
+    const submittedSet = new Set((mySubs || []).map(s => s.topic_id))
+    const pending = pastTopics.filter(t => !submittedSet.has(t.id))
+    setPendingTopics(pending)
+  }
+
+  const loadTodayTopic = async (profile, targetTopicId = null) => {
+    if (!profile.class_id) return
+
+    // 학급 담임 찾기
     const { data: classData } = await supabase.from('classes').select('teacher_id').eq('id', profile.class_id).maybeSingle()
     if (!classData) return
-    
-    const { data: topic } = await supabase.from('topics')
-      .select('*').eq('teacher_id', classData.teacher_id).eq('date', today).maybeSingle()
-    
+
+    let topic = null
+    if (targetTopicId) {
+      // 특정 주제 로드 (지난 주제 선택 시)
+      const { data } = await supabase.from('topics')
+        .select('*').eq('id', targetTopicId).maybeSingle()
+      topic = data
+    } else {
+      // 오늘 주제 찾기
+      const today = todayStr()
+      const { data } = await supabase.from('topics')
+        .select('*').eq('teacher_id', classData.teacher_id).eq('date', today).maybeSingle()
+      topic = data
+
+      // 지난 미제출 주제 목록도 같이 조회
+      await loadPendingTopics(profile, classData.teacher_id)
+    }
+
     if (!topic) return
     setTodayTopic(topic)
+    setShowPendingPicker(false)
+    // 화면 리셋
+    setEssay('')
+    setFeedbackResult(null)
+    setExampleText('')
+    setCurrentSub(null)
+    setStep('write')
 
     // 이미 제출했나 확인
     const { data: existing } = await supabase.from('submissions')
@@ -575,22 +629,94 @@ ${rewriteEssay}
           </div>
           
           {!todayTopic ? (
-            <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
-              <div className="text-5xl mb-3">📝</div>
-              <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
-              <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
-              <Link href="/student/history" className="mt-6 inline-block text-primary text-sm hover:underline">
-                내 글 기록 보기 →
-              </Link>
-            </div>
+            <>
+              <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
+                <div className="text-5xl mb-3">📝</div>
+                <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
+                <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
+                <Link href="/student/history" className="mt-6 inline-block text-primary text-sm hover:underline">
+                  내 글 기록 보기 →
+                </Link>
+              </div>
+
+              {/* 지난 주제 중 안 쓴 글 안내 */}
+              {pendingTopics.length > 0 && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm">
+                  <h3 className="font-bold mb-1 text-base">📚 안 쓴 글이 있어요 ({pendingTopics.length}개)</h3>
+                  <p className="text-xs text-gray-600 mb-3">결석했거나 못 쓴 지난 주제예요. 지금 써도 돼요!</p>
+                  <div className="space-y-2">
+                    {pendingTopics.map(t => (
+                      <button key={t.id}
+                        onClick={() => loadTodayTopic(user, t.id)}
+                        className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
+                        <div className="text-xs text-amber-700 font-semibold">📅 {t.date}</div>
+                        <div className="font-medium text-sm mt-0.5">{t.title}</div>
+                        {t.description && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{t.description}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <>
+              {/* 지난 주제 글쓰기 안내 배너 (오늘 주제 있을 때) */}
+              {pendingTopics.length > 0 && !showPendingPicker && todayTopic.date === todayStr() && step === 'write' && (
+                <button onClick={() => setShowPendingPicker(true)}
+                  className="w-full bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-2xl p-3 text-left transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-sm text-amber-900">📚 안 쓴 지난 글이 {pendingTopics.length}개 있어요</div>
+                      <div className="text-xs text-amber-700 mt-0.5">결석했거나 못 쓴 주제도 지금 쓸 수 있어요</div>
+                    </div>
+                    <div className="text-amber-700">→</div>
+                  </div>
+                </button>
+              )}
+
+              {/* 지난 주제 선택 모드 */}
+              {showPendingPicker && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-base">📚 지난 주제 선택</h3>
+                    <button onClick={() => setShowPendingPicker(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700">✕ 닫기</button>
+                  </div>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {pendingTopics.map(t => (
+                      <button key={t.id}
+                        onClick={() => loadTodayTopic(user, t.id)}
+                        className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
+                        <div className="text-xs text-amber-700 font-semibold">📅 {t.date}</div>
+                        <div className="font-medium text-sm mt-0.5">{t.title}</div>
+                        {t.description && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{t.description}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 주제 정보 */}
               <div className="bg-primary-light border border-primary rounded-2xl p-4">
-                <div className="text-xs text-primary-dark font-semibold mb-1">📅 {todayTopic.date}</div>
-                <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
-                {todayTopic.description && <p className="text-sm text-primary-dark/80">{todayTopic.description}</p>}
-                {todayTopic.lock_enabled && todayTopic.lock_start_time && todayTopic.lock_end_time && (
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex-1">
+                    <div className="text-xs text-primary-dark font-semibold mb-1">
+                      📅 {todayTopic.date}
+                      {todayTopic.date !== todayStr() && (
+                        <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
+                      )}
+                    </div>
+                    <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
+                    {todayTopic.description && <p className="text-sm text-primary-dark/80">{todayTopic.description}</p>}
+                  </div>
+                  {todayTopic.date !== todayStr() && (
+                    <button onClick={() => loadTodayTopic(user)}
+                      className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-full hover:bg-primary-light flex-shrink-0">
+                      🌟 오늘 주제로
+                    </button>
+                  )}
+                </div>
+                {todayTopic.lock_enabled && todayTopic.lock_start_time && todayTopic.lock_end_time && todayTopic.date === todayStr() && (
                   (() => {
                     const lock = checkTimeLock(todayTopic)
                     return (

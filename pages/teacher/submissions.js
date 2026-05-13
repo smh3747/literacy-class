@@ -129,12 +129,18 @@ export default function TeacherSubmissions() {
       if (byStudent[s.user_id]) byStudent[s.user_id].items.push(s)
     })
 
-    const groups = Object.values(byStudent).filter(g => g.items.length > 0)
+    // 미제출 학생까지 모두 포함, 번호순 정렬
+    const groups = Object.values(byStudent).sort((a, b) => {
+      const na = parseInt(a.profile.number) || 999
+      const nb = parseInt(b.profile.number) || 999
+      if (na !== nb) return na - nb
+      return (a.profile.realname || '').localeCompare(b.profile.realname || '')
+    })
     setTopicStudents(groups)
 
-    // 학생 자동 선택?
+    // 학생 자동 선택? (제출한 학생만 자동 진입)
     if (autoStudentId) {
-      const target = groups.find(g => g.profile.id === autoStudentId)
+      const target = groups.find(g => g.profile.id === autoStudentId && g.items.length > 0)
       if (target) {
         setSelectedStudent(target)
         setView('studentDetail')
@@ -165,7 +171,14 @@ export default function TeacherSubmissions() {
       if (byStudent[s.user_id]) byStudent[s.user_id].items.push(s)
     })
     
-    setTopicStudents(Object.values(byStudent).filter(g => g.items.length > 0))
+    // 미제출 학생까지 모두 포함, 번호순 정렬
+    const groups = Object.values(byStudent).sort((a, b) => {
+      const na = parseInt(a.profile.number) || 999
+      const nb = parseInt(b.profile.number) || 999
+      if (na !== nb) return na - nb
+      return (a.profile.realname || '').localeCompare(b.profile.realname || '')
+    })
+    setTopicStudents(groups)
     setView('topicStudents')
   }
 
@@ -308,27 +321,59 @@ export default function TeacherSubmissions() {
           {view === 'topicStudents' && selectedTopic && (
             <>
               <button onClick={() => setView('topics')} className="text-sm text-gray-600">← 주제 목록</button>
-              <div className="bg-primary-light rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
-                  <h2 className="text-lg font-bold text-primary-dark">{selectedTopic.title}</h2>
-                  <div className="text-xs text-primary-dark mt-1">{topicStudents.length}명 제출</div>
-                </div>
-                {topicStudents.length > 0 && (
-                  <button onClick={downloadExcel}
-                    className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
-                    📥 Excel 다운로드
-                  </button>
-                )}
-              </div>
+              {(() => {
+                const submittedCount = topicStudents.filter(g => g.items.length > 0).length
+                const absentCount = topicStudents.filter(g => g.items.length === 0).length
+                return (
+                  <div className="bg-primary-light rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
+                      <h2 className="text-lg font-bold text-primary-dark">{selectedTopic.title}</h2>
+                      <div className="text-xs text-primary-dark mt-1">
+                        ✅ {submittedCount}명 제출
+                        {absentCount > 0 && <span className="ml-2 text-amber-700">· 🚨 {absentCount}명 미제출</span>}
+                      </div>
+                    </div>
+                    {submittedCount > 0 && (
+                      <button onClick={downloadExcel}
+                        className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
+                        📥 Excel 다운로드
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
 
               {topicStudents.length === 0 ? (
                 <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
-                  <p>아직 제출한 학생이 없어요</p>
+                  <p>학급에 학생이 없어요</p>
                 </div>
               ) : (
                 <div className="bg-white rounded-2xl p-5 shadow-sm space-y-2">
                   {topicStudents.map(g => {
+                    // 미제출 학생
+                    if (g.items.length === 0) {
+                      return (
+                        <div key={g.profile.id}
+                          className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex justify-between items-center opacity-90">
+                          <div className="flex items-center gap-2">
+                            {g.profile.number && (
+                              <span className="text-xs text-gray-500 font-mono w-10 text-center">{g.profile.number}번</span>
+                            )}
+                            <div>
+                              <div className="font-medium text-sm text-gray-800">
+                                {g.profile.realname}
+                                <span className="ml-2 text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5">@{g.profile.username}</div>
+                            </div>
+                          </div>
+                          <div className="text-xs text-amber-700">-</div>
+                        </div>
+                      )
+                    }
+
+                    // 제출 학생
                     const sorted = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
                     const first = sorted[0]
                     const last = sorted[sorted.length - 1]
@@ -337,12 +382,17 @@ export default function TeacherSubmissions() {
                     return (
                       <button key={g.profile.id} onClick={() => openStudent(g)}
                         className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition flex justify-between items-center">
-                        <div>
-                          <div className="font-medium text-sm">
-                            {g.profile.realname}
-                            {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
+                        <div className="flex items-center gap-2">
+                          {g.profile.number && (
+                            <span className="text-xs text-gray-500 font-mono w-10 text-center">{g.profile.number}번</span>
+                          )}
+                          <div>
+                            <div className="font-medium text-sm">
+                              {g.profile.realname}
+                              {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
                         </div>
                         <div className="text-right text-xs">
                           {isImproved ? (
