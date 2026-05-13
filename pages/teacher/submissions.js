@@ -72,6 +72,39 @@ function applyGrammar(essayText, corrections) {
   return result.replace(/\n/g, '<br>')
 }
 
+// 두 텍스트의 유사도 계산 (베껴쓰기 의심 감지용)
+// 5글자 이상 연속 일치하는 부분의 비율 측정
+function calcSimilarity(textA, textB) {
+  if (!textA || !textB) return { score: 0, matchedChars: 0, longestMatch: '' }
+  const a = textA.replace(/\s+/g, '').toLowerCase()
+  const b = textB.replace(/\s+/g, '').toLowerCase()
+  if (a.length < 10 || b.length < 10) return { score: 0, matchedChars: 0, longestMatch: '' }
+
+  // 5글자 이상 연속 일치 부분 찾기
+  const minLen = 5
+  const matched = new Set() // 학생 글에서 일치한 인덱스
+  let longest = ''
+  for (let i = 0; i < a.length - minLen; i++) {
+    let bestLen = 0
+    for (let j = 0; j < b.length - minLen; j++) {
+      let k = 0
+      while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++
+      if (k >= minLen && k > bestLen) bestLen = k
+    }
+    if (bestLen >= minLen) {
+      for (let m = 0; m < bestLen; m++) matched.add(i + m)
+      const snippet = textA.slice(i, i + bestLen).replace(/\s+/g, ' ').trim()
+      if (snippet.length > longest.length) longest = snippet
+      i += bestLen - 1 // 이미 매칭된 부분 건너뛰기 (성능)
+    }
+  }
+  return {
+    score: matched.size / a.length, // 0~1
+    matchedChars: matched.size,
+    longestMatch: longest.slice(0, 30) // 최대 30자만
+  }
+}
+
 export default function TeacherSubmissions() {
   const router = useRouter()
   useGrammarTooltip()
@@ -425,17 +458,56 @@ export default function TeacherSubmissions() {
               {[...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1)).map((s, i, arr) => {
                 const isLast = i === arr.length - 1
                 const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
+                // 베껴쓰기 의심 체크: 이 글의 직전 글에 제공된 example_text와 비교
+                const prevSub = arr[i - 1]
+                const prevExample = prevSub?.example_text
+                const similarity = prevExample
+                  ? calcSimilarity(s.essay_text, prevExample)
+                  : { score: 0, matchedChars: 0, longestMatch: '' }
+                const isSuspicious = similarity.score >= 0.3 // 30% 이상 일치하면 의심
+                const isHighlySuspicious = similarity.score >= 0.5 // 50% 이상은 강한 의심
                 return (
-                  <div key={s.id} className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-                    <div className="flex justify-between items-center">
+                  <div key={s.id} className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 ${
+                    isHighlySuspicious ? 'border-2 border-red-400' : isSuspicious ? 'border-2 border-amber-400' : ''
+                  }`}>
+                    <div className="flex justify-between items-center flex-wrap gap-2">
                       <h3 className="font-bold text-sm">
                         {(s.attempt||1) === 1 ? '📝 첫 번째 글' : (s.attempt||1) === 2 ? '✨ 수정본' : `✨ 수정본 ${s.attempt}`}
                       </h3>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {s.paste_detected && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">⚠️ 복붙 {s.paste_count || 1}회</span>}
+                        {isHighlySuspicious && (
+                          <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-bold">
+                            🚨 예시 유사도 {Math.round(similarity.score * 100)}%
+                          </span>
+                        )}
+                        {isSuspicious && !isHighlySuspicious && (
+                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">
+                            ⚠️ 예시 유사도 {Math.round(similarity.score * 100)}%
+                          </span>
+                        )}
                         <span className="text-base font-bold">{s.total_score}/{s.max_score}점</span>
                       </div>
                     </div>
+
+                    {/* 베껴쓰기 의심 경고 */}
+                    {isSuspicious && (
+                      <div className={`rounded-lg p-3 text-xs ${
+                        isHighlySuspicious
+                          ? 'bg-red-50 border border-red-200 text-red-900'
+                          : 'bg-amber-50 border border-amber-200 text-amber-900'
+                      }`}>
+                        <div className="font-bold mb-1">
+                          {isHighlySuspicious ? '🚨 AI 예시를 거의 그대로 베낀 것으로 의심됨' : '⚠️ AI 예시와 일부 일치'}
+                        </div>
+                        <div>
+                          이전에 제공된 AI 예시 작품과 {Math.round(similarity.score * 100)}%가 일치합니다.
+                          {similarity.longestMatch && (
+                            <span className="block mt-1">가장 긴 일치 부분: "<span className="font-mono bg-white px-1 rounded">{similarity.longestMatch}{similarity.longestMatch.length === 30 ? '...' : ''}</span>"</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {s.corrections?.length > 0 && (
                       <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full inline-block">
@@ -478,6 +550,21 @@ export default function TeacherSubmissions() {
                         <FeedbackList text={s.feedback_improve} color="amber" />
                       </div>
                     </div>
+
+                    {/* 이 글이 학생에게 제공한 AI 예시 작품 */}
+                    {s.example_text && (
+                      <details className="pt-3 border-t">
+                        <summary className="cursor-pointer text-sm font-bold text-purple-700 hover:text-purple-900">
+                          📖 이 글에 대해 AI가 학생에게 보여준 예시 작품 보기
+                        </summary>
+                        <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm whitespace-pre-wrap leading-relaxed text-purple-900">
+                          {s.example_text}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          💡 다음 수정본이 이 예시와 비슷하다면 베껴 썼을 가능성이 있어요
+                        </p>
+                      </details>
+                    )}
 
                     {showAllowBtn && (
                       <button onClick={() => allowExtraRewrite(s.id)}

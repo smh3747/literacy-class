@@ -295,6 +295,7 @@ export default function StudentHome() {
           // 추가 수정 허용됨
           setCurrentSub(last)
           setEssay(last.essay_text)
+          if (last.example_text) setExampleText(last.example_text)
           setFeedbackResult({
             scores: last.scores, total: last.total_score, overall: last.feedback_overall,
             good: last.feedback_good, improve: last.feedback_improve, corrections: last.corrections || []
@@ -304,6 +305,7 @@ export default function StudentHome() {
           // 완료 상태
           setCurrentSub(last)
           setEssay(last.essay_text)
+          if (last.example_text) setExampleText(last.example_text)
           setFeedbackResult({
             scores: last.scores, total: last.total_score, overall: last.feedback_overall,
             good: last.feedback_good, improve: last.feedback_improve, corrections: last.corrections || []
@@ -424,7 +426,37 @@ ${essay}
     setSubmitting(false)
   }
 
-  // 예시 작품 생성
+  // 예시 작품 생성 (subId 명시 가능 - 수정본 직후 사용)
+  const generateExampleForSub = async (studentEssay, totalMax, subId) => {
+    const apiKey = loadApiKey()
+    if (!apiKey || !subId) return
+
+    setExampleLoading(true)
+    try {
+      const prompt = `초등 5학년 학생이 쓴 다음 글을 더 좋게 다시 쓴 예시를 1편 만들어줘.
+주제: ${todayTopic.title}
+
+원본 글:
+${studentEssay}
+
+규칙:
+- 5학년 학생 수준의 자연스러운 글
+- 원본의 좋은 점은 살리고 부족한 점 보완
+- 350-500자 분량
+- 따뜻하고 진솔한 느낌`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 4000 })
+      if (result.example) {
+        setExampleText(result.example)
+        await supabase.from('submissions').update({ example_text: result.example }).eq('id', subId)
+      }
+    } catch(e) {
+      console.error('수정본 예시 생성 실패:', e)
+    }
+    setExampleLoading(false)
+  }
+
+  // 예시 작품 생성 (첫 글용 - currentSub 사용)
   const generateExample = async (studentEssay, totalMax) => {
     const apiKey = loadApiKey()
     if (!apiKey) return
@@ -551,7 +583,7 @@ ${rewriteEssay}
       if (!result.improve) result.improve = '계속 노력해보세요.'
       if (!Array.isArray(result.corrections)) result.corrections = []
 
-      const { error } = await supabase.from('submissions').insert({
+      const { data: newSub, error } = await supabase.from('submissions').insert({
         user_id: user.id,
         topic_id: todayTopic.id,
         topic_title: todayTopic.title,
@@ -569,7 +601,7 @@ ${rewriteEssay}
         paste_count: pasteCountRef.current,
         is_final: true,
         extra_rewrite_allowed: false
-      })
+      }).select().single()
       if (error) throw error
 
       // 이전 글들도 final 처리
@@ -582,9 +614,14 @@ ${rewriteEssay}
 
       // 새 정보로 업데이트
       setEssay(rewriteEssay)
+      setCurrentSub(newSub) // 수정본 row를 currentSub로 (예시 저장 대상)
       setFeedbackResult(result)
+      setExampleText('') // 새 예시 받기 위해 비우기
       setStep('done')
       alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
+
+      // 수정본에 대한 새 예시 작품 생성 (백그라운드)
+      generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
       alert(getFriendlyErrorMessage(e) + '\n\n💡 글은 그대로 있으니 안심하세요.')
@@ -869,10 +906,13 @@ ${rewriteEssay}
                     </div>
                   </div>
 
-                  {/* 예시 작품 */}
-                  {(exampleText || exampleLoading) && step === 'feedback' && (
+                  {/* 예시 작품 (피드백/완료 단계 모두 표시) */}
+                  {(exampleText || exampleLoading) && (step === 'feedback' || step === 'done') && (
                     <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5">
-                      <h3 className="font-bold text-purple-900 mb-2">📖 AI 예시 작품</h3>
+                      <h3 className="font-bold text-purple-900 mb-2">
+                        📖 AI 예시 작품
+                        {step === 'done' && <span className="ml-2 text-xs font-normal text-purple-600">(수정본 기준)</span>}
+                      </h3>
                       {exampleLoading ? (
                         <p className="text-sm text-purple-700">예시 작품을 만들고 있어요...</p>
                       ) : (
