@@ -184,6 +184,11 @@ export default function TeacherHome() {
               </h3>
               <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
             </Link>
+            <Link href="/teacher/grammar-backfill" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">📝</div>
+              <h3 className="font-bold mb-1">맞춤법 일괄 적용</h3>
+              <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
+            </Link>
             <Link href="/teacher/help" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📖</div>
               <h3 className="font-bold mb-1">도움말 / FAQ</h3>
