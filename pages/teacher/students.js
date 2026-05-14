@@ -115,12 +115,64 @@ export default function StudentsPage() {
     setUploading(false)
   }
 
-  const resetPassword = async (studentId, username) => {
-    if (!confirm(`${username}의 비밀번호를 "1234"로 초기화할까요?`)) return
+  // 비밀번호 초기화 (공란 = 1234, 입력값 = 그 값으로)
+  const resetPassword = async (studentId, username, realname) => {
+    const input = prompt(
+      `🔐 "${realname}" 학생의 비밀번호 초기화\n\n` +
+      `새 비밀번호를 입력하세요.\n` +
+      `※ 그대로 [확인] 누르면 "1234"로 초기화됩니다.\n` +
+      `※ 4자 이상 입력 가능`,
+      ''
+    )
+    if (input === null) return // 취소 버튼
+
+    let newPassword = input.trim()
+    if (newPassword === '') {
+      newPassword = '1234'
+    } else if (newPassword.length < 4) {
+      alert('비밀번호는 4자 이상이어야 해요')
+      return
+    }
+
+    if (!confirm(
+      `다음 학생의 비밀번호를 "${newPassword}"로 초기화할까요?\n\n` +
+      `학생: ${realname} (${username})\n\n` +
+      `학생에게 이 비밀번호를 알려주고 로그인 후 변경하라고 안내해주세요.`
+    )) return
+
+    setSavingId(studentId)
     try {
-      // Note: 실제로는 admin API 필요. 여기서는 안내만
-      alert('비밀번호 초기화는 추후 추가됩니다. 학생에게 직접 변경 안내 부탁드립니다.')
-    } catch(e) { alert('실패: ' + e.message) }
+      // 현재 로그인 세션의 access token 가져오기
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        alert('로그인 세션이 만료됐어요. 다시 로그인해주세요.')
+        setSavingId(null)
+        return
+      }
+
+      const res = await fetch('/api/reset-student-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          newPassword,
+          accessToken: session.access_token
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '초기화 실패')
+
+      alert(
+        `✅ 비밀번호 초기화 완료!\n\n` +
+        `학생: ${realname}\n` +
+        `새 비밀번호: ${newPassword}\n\n` +
+        `학생에게 이 비밀번호를 전달해주세요.`
+      )
+    } catch(e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
   }
 
   // 번호 인라인 편집 저장
@@ -359,7 +411,7 @@ export default function StudentsPage() {
             ) : (
               <>
                 <p className="text-xs text-gray-500 mb-3">
-                  💡 번호칸은 직접 클릭해서 수정 / 동의서는 종이 회신 받으면 체크 / 🙈 버튼으로 전출생 숨김
+                  💡 번호칸 클릭해서 수정 / 동의서 ✓ / 🔑 비밀번호 초기화 / 🙈 전출생 숨김
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -369,6 +421,7 @@ export default function StudentsPage() {
                         <th className="py-2 px-2">이름</th>
                         <th className="py-2 px-2 hidden sm:table-cell">아이디</th>
                         <th className="py-2 px-2 text-center w-16">동의서</th>
+                        <th className="py-2 px-2 text-center w-12">비번</th>
                         <th className="py-2 px-2 text-center w-12">숨김</th>
                       </tr>
                     </thead>
@@ -424,6 +477,16 @@ export default function StudentsPage() {
                                 title={s.consent_received ? '동의서 회신됨' : '동의서 미회신'}
                               >
                                 {s.consent_received ? '✓' : '·'}
+                              </button>
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                onClick={() => resetPassword(s.id, s.username, s.realname)}
+                                disabled={savingId === s.id || s.is_hidden}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded text-sm text-gray-400 hover:bg-amber-100 hover:text-amber-700 disabled:opacity-40"
+                                title="비밀번호 초기화 (학생이 비번 잊었을 때)"
+                              >
+                                🔑
                               </button>
                             </td>
                             <td className="py-2 px-2 text-center">
