@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
+import { getAuthErrorMessage } from '../../lib/authErrors'
 import ConsentForm from '../../components/ConsentForm'
 
 // 로컬 스토리지 키
@@ -153,8 +154,7 @@ export default function StudentLogin() {
         }
         const { data, error: err } = await supabase.auth.signUp({ email, password })
         if (err) {
-          if (err.message.includes('already')) setError('이미 가입된 아이디예요')
-          else setError(err.message)
+          setError(getAuthErrorMessage(err, 'signup'))
           setLoading(false)
           return
         }
@@ -180,16 +180,7 @@ export default function StudentLogin() {
         router.push('/student')
       }
     } catch(e) {
-      let errMsg = e.message || '오류가 발생했어요'
-      if (errMsg.includes('Invalid login credentials')) {
-        errMsg = '아이디 또는 비밀번호가 잘못됐어요.\n다시 확인해주세요.'
-      } else if (errMsg.includes('Email not confirmed')) {
-        errMsg = '이메일 인증이 필요해요. 관리자에게 문의해주세요.'
-      } else if (errMsg.includes('User not found') || errMsg.includes('user does not exist')) {
-        errMsg = '가입되지 않은 아이디예요. 회원가입을 해주세요.'
-      } else if (errMsg.includes('Network')) {
-        errMsg = '네트워크 연결을 확인해주세요.'
-      }
+      const errMsg = getAuthErrorMessage(e, mode === 'signup' ? 'signup' : 'login')
       setError(errMsg)
       setLoading(false)
     }

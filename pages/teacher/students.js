@@ -225,11 +225,42 @@ export default function StudentsPage() {
       })
       const result = await res.json()
 
-      const msg = `✅ 성공: ${result.success.length}명\n❌ 실패: ${result.failed.length}명`
-      const failedDetail = result.failed.length > 0
-        ? '\n\n실패 명단:\n' + result.failed.map(f => `- ${f.realname} (${f.username}): ${f.error}`).join('\n')
-        : ''
-      alert(msg + failedDetail)
+      // 실패 명단 친절하게 변환
+      const friendlyError = (errStr) => {
+        if (!errStr) return '알 수 없는 오류'
+        if (errStr.includes('이미 가입')) return '이미 가입된 아이디 (다른 학급/학교 학생일 수 있음)'
+        if (errStr.includes('Password should be at least')) {
+          const m = errStr.match(/at least (\d+)/)
+          return `비밀번호 ${m ? m[1] : 6}자 이상 필요 (Supabase 정책)`
+        }
+        if (errStr.includes('Unable to validate email')) return '아이디 형식 오류 (영문/숫자만)'
+        if (errStr.includes('아이디/이름 누락')) return '엑셀에 아이디 또는 이름이 비어 있음'
+        return errStr
+      }
+
+      let msg = `✅ 성공: ${result.success.length}명\n❌ 실패: ${result.failed.length}명`
+
+      if (result.failed.length > 0) {
+        // 동일 사유 그룹핑
+        const errorGroups = {}
+        result.failed.forEach(f => {
+          const reason = friendlyError(f.error)
+          if (!errorGroups[reason]) errorGroups[reason] = []
+          errorGroups[reason].push(`${f.realname}(${f.username})`)
+        })
+        msg += '\n\n📋 실패 사유:\n'
+        for (const [reason, list] of Object.entries(errorGroups)) {
+          msg += `\n[${reason}]\n - ${list.join(', ')}\n`
+        }
+
+        // 가장 흔한 케이스 안내
+        const allAlreadyJoined = result.failed.every(f => (f.error || '').includes('이미 가입'))
+        if (allAlreadyJoined) {
+          msg += '\n💡 이미 가입된 학생들은 그대로 로그인하면 돼요!\n비밀번호를 모르면 학생 관리에서 🔑로 초기화하세요.'
+        }
+      }
+
+      alert(msg)
 
       setParsedStudents([])
       setEditingUsernames({})
@@ -296,7 +327,19 @@ export default function StudentsPage() {
         `학생에게 이 비밀번호를 전달해주세요.`
       )
     } catch(e) {
-      alert('실패: ' + e.message)
+      // 친절한 에러 메시지 변환
+      let msg = e.message || '알 수 없는 오류'
+      if (msg.includes('Service Role Key') || msg.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+        msg = '⚠️ Vercel 환경변수 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았어요.\n관리자에게 문의하세요.'
+      } else if (msg.includes('Password should be at least')) {
+        const m = msg.match(/at least (\d+)/)
+        msg = `비밀번호는 ${m ? m[1] : 6}자 이상이어야 해요.`
+      } else if (msg.includes('User not found')) {
+        msg = '해당 학생 계정을 찾을 수 없어요.'
+      } else if (msg.includes('rate limit') || msg.includes('429')) {
+        msg = '잠시 후 다시 시도해주세요. (요청 한도 초과)'
+      }
+      alert('실패: ' + msg)
     }
     setSavingId(null)
   }
