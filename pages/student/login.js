@@ -270,7 +270,7 @@ export default function StudentLogin() {
                     className="w-full p-3 border border-gray-200 rounded-lg"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   />
-                  {mode === 'login' && <p className="text-xs text-gray-500 mt-1">처음이세요? 초기 비밀번호는 <strong>1234</strong></p>}
+                  {mode === 'login' && <p className="text-xs text-gray-500 mt-1">처음이세요? 초기 비밀번호는 <strong>123456</strong></p>}
                 </div>
 
                 {/* 옵션 체크박스 (로그인 모드일 때만) */}

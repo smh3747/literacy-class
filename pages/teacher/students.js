@@ -214,7 +214,7 @@ export default function StudentsPage() {
       return
     }
 
-    if (!confirm(`${finalStudents.length}명을 일괄 등록할게요.\n\n초기 비밀번호는 모두 "1234" 입니다.\n진행할까요?`)) return
+    if (!confirm(`${finalStudents.length}명을 일괄 등록할게요.\n\n초기 비밀번호는 모두 "123456" 입니다.\n진행할까요?`)) return
 
     setUploading(true)
     try {
@@ -241,22 +241,22 @@ export default function StudentsPage() {
     setUploading(false)
   }
 
-  // 비밀번호 초기화 (공란 = 1234, 입력값 = 그 값으로)
+  // 비밀번호 초기화 (공란 = 123456, 입력값 = 그 값으로)
   const resetPassword = async (studentId, username, realname) => {
     const input = prompt(
       `🔐 "${realname}" 학생의 비밀번호 초기화\n\n` +
       `새 비밀번호를 입력하세요.\n` +
-      `※ 그대로 [확인] 누르면 "1234"로 초기화됩니다.\n` +
-      `※ 4자 이상 입력 가능`,
+      `※ 그대로 [확인] 누르면 "123456"으로 초기화됩니다.\n` +
+      `※ 6자 이상 입력 가능`,
       ''
     )
     if (input === null) return // 취소 버튼
 
     let newPassword = input.trim()
     if (newPassword === '') {
-      newPassword = '1234'
-    } else if (newPassword.length < 4) {
-      alert('비밀번호는 4자 이상이어야 해요')
+      newPassword = '123456'
+    } else if (newPassword.length < 6) {
+      alert('비밀번호는 6자 이상이어야 해요')
       return
     }
 
@@ -483,7 +483,7 @@ export default function StudentsPage() {
             <h3 className="font-bold mb-2">📋 학급명렬표 일괄 등록</h3>
             <p className="text-sm text-gray-600 mb-3">
               <strong>나이스에서 다운받은 학급명렬표</strong>를 그대로 올리면 돼요.
-              아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>1234</strong>입니다.
+              아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>123456</strong>입니다.
             </p>
             {!user?.school && (
               <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg mb-3">

@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       }
 
       const email = `${s.username}@writing.class`
-      const password = '1234' // 초기 비밀번호
+      const password = '123456' // 초기 비밀번호 (Supabase 정책: 최소 6자)
 
       // 가입
       const { data, error } = await supabase.auth.signUp({ email, password })
