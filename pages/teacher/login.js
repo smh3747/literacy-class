@@ -268,7 +268,7 @@ export default function TeacherLogin() {
                       <label className="block text-sm font-medium mb-1">학교명</label>
                       <input type="text" value={school} onChange={e => setSchool(e.target.value)}
                         onKeyDown={handleEnter}
-                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 하랑초등학교" />
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 한국초등학교" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>

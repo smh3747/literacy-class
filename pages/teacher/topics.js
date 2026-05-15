@@ -34,24 +34,43 @@ export default function TopicsPage() {
   const [lockEndTime, setLockEndTime] = useState('10:00')
   const [saving, setSaving] = useState(false)
   const [aiSuggesting, setAiSuggesting] = useState(false)
+  // AI 추천 옵션
+  const [showAiOptions, setShowAiOptions] = useState(false)
+  const [aiGrade, setAiGrade] = useState('') // '', '3', '4', '5', '6'
+  const [aiLevel, setAiLevel] = useState('보통') // 쉬움/보통/어려움
+  const [aiCategory, setAiCategory] = useState('') // 빈 값이면 랜덤
+  const [aiUserRequest, setAiUserRequest] = useState('') // 사용자 자유 요청
+  // 역방향: 주제 → 평가기준 자동 생성
+  const [generatingRubrics, setGeneratingRubrics] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key, grade)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
-    
+
+    // 학급 학년 자동 추출/세팅
+    let gradeStr = ''
+    if (profile.classes?.grade) {
+      gradeStr = String(profile.classes.grade)
+    } else if (profile.classes?.name) {
+      // 학급명에서 학년 추출 ("5학년 1반" → "5")
+      const m = profile.classes.name.match(/(\d)\s*학년/)
+      if (m) gradeStr = m[1]
+    }
+    setAiGrade(gradeStr)
+
     // 학급 API 키를 로컬에도 동기화
     if (profile.classes?.api_key) {
       saveLocalApiKey(profile.classes.api_key)
     }
-    
+
     await loadTopics(profile.id, profile.classes?.id)
     setLoading(false)
   }
@@ -182,22 +201,42 @@ export default function TopicsPage() {
 
     setAiSuggesting(true)
     try {
-      const categories = ['일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화', '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음']
-      const cat = categories[Math.floor(Math.random() * categories.length)]
-      const recentTitles = topics.slice(0, 10).map(t => t.title).join(', ')
-      
-      // 1단계: 주제 + 설명
-      const prompt1 = `초등 5학년 글쓰기 주제 1개를 만들어줘.
-카테고리: ${cat}
-최근 주제 (중복 피하기): ${recentTitles || '없음'}
+      // 카테고리: 사용자 선택 우선, 비어있으면 랜덤
+      const categories = [
+        '일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화',
+        '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음',
+        '상상력', '내가 만든 세상', '시간 여행', '비밀의 장소', '미래의 나',
+        '신비한 일', '재미있는 발견', '동물 친구', '사회와 환경', '교과 연계'
+      ]
+      const cat = aiCategory || categories[Math.floor(Math.random() * categories.length)]
+      const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
 
+      // 학년 - 미입력 시 5학년 기본값
+      const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
+      const levelText = aiLevel || '보통'
+
+      // 1단계: 주제 + 설명
+      let prompt1 = `${gradeText} 글쓰기 주제 1개를 만들어줘.
+카테고리: ${cat}
+난이도: ${levelText}
+최근 주제 (중복 절대 금지): ${recentTitles || '없음'}
+`
+      if (aiUserRequest && aiUserRequest.trim()) {
+        prompt1 += `\n선생님 요청 사항: ${aiUserRequest.trim()}\n위 요청을 반드시 반영해주세요.\n`
+      }
+      prompt1 += `
 규칙:
-- title: 10-15자, 흥미로운 주제 제목
+- title: 10-15자, 흥미롭고 ${gradeText} 학생들이 재미있어할 주제
+- 주제는 ${cat} 카테고리에 잘 맞아야 함
+- 난이도 "${levelText}" 수준에 맞추기:
+  · 쉬움: 학생이 경험한 일이나 좋아하는 것에 대해 쓰기 쉬운 주제
+  · 보통: 약간의 사고/상상력이 필요한 주제
+  · 어려움: 의견 제시, 비교, 분석 등 한 단계 깊은 사고를 요구하는 주제
 - description: 학생에게 글쓰기 방법을 알려주는 안내문
   ⚠️ 질문형(?)으로 끝나면 안 됨, 안내/지시형으로
   ⚠️ "무엇을 떠올리고", "어떻게 쓰면 좋을지" 구체적으로 알려주기
   ⚠️ 70-100자 정도로 충분히 자세하게
-  
+
 좋은 예시:
 - title: "내 인생의 첫 도전"
   description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
@@ -220,7 +259,7 @@ export default function TopicsPage() {
           const prompt2 = `주제 "${newTitle}"
 ${newDesc ? '주제 설명: ' + newDesc : ''}
 
-위 주제에 정말 어울리는 초등 5학년 글쓰기 평가 기준 4개를 만들어줘.
+위 주제에 정말 어울리는 ${gradeText} 글쓰기 평가 기준 4개를 만들어줘.
 
 ⚠️ 주제 분석부터 하기:
 이 주제에서 학생이 가장 잘 보여줘야 할 능력은 무엇인지 먼저 생각해보세요.
@@ -334,6 +373,88 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
     setAiSuggesting(false)
   }
 
+  // 역방향 기능: 선생님이 주제만 입력 → AI가 설명 + 평가기준 자동 생성
+  const generateFromTopic = async () => {
+    if (!title.trim()) {
+      alert('먼저 주제를 입력해주세요!')
+      return
+    }
+    const apiKey = loadApiKey()
+    if (!apiKey) {
+      alert('Gemini API 키를 먼저 등록해주세요!')
+      return
+    }
+
+    setGeneratingRubrics(true)
+    try {
+      const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
+      const levelText = aiLevel || '보통'
+
+      // 1단계: 주제 설명 (description) 생성
+      if (!desc.trim()) {
+        const descPrompt = `${gradeText} 글쓰기 주제: "${title.trim()}"
+난이도: ${levelText}
+
+이 주제로 학생들이 글을 쓸 수 있도록 안내문(description)을 만들어줘.
+
+규칙:
+- 70-100자
+- 안내/지시형으로 (질문형 금지)
+- "무엇을 떠올리고, 어떻게 쓰면 좋을지" 구체적으로
+- 학생이 글 쓰기 막막하지 않도록 친절하게`
+
+        try {
+          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { maxTokens: 2000 })
+          if (descResult.description) setDesc(descResult.description)
+        } catch(e) {
+          console.warn('설명 생성 실패:', e)
+        }
+      }
+
+      // 2단계: 평가 기준 생성
+      const prompt = `주제: "${title.trim()}"
+${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
+
+위 주제에 어울리는 ${gradeText} 글쓰기 평가 기준 4개를 만들어줘.
+
+⚠️ 주제 분석부터:
+이 주제에서 학생이 가장 잘 보여줘야 할 능력은 무엇인지 먼저 생각해보세요.
+- 경험 회상 → "솔직한 표현", "자세한 묘사"
+- 상상력 → "창의성", "상상력"
+- 논리/주장 → "주장과 근거", "논리성"
+- 감정 전달 → "솔직한 표현", "감각적 표현"
+
+✅ name (평가 기준 이름) - 다음 카테고리에서 4개 선택:
+[내용] 주제에 맞는 내용, 주제 표현, 구체적인 내용, 자세한 묘사, 솔직한 표현, 창의성, 상상력, 논리성, 주장과 근거
+[형식] 글의 짜임새, 글의 구성, 처음-가운데-끝, 문단 구성
+[표현] 풍부한 어휘, 다양한 표현, 비유 표현, 감각적 표현, 문장력
+[기본] 맞춤법과 문법, 띄어쓰기
+
+✅ hint (부가 설명) - 주제 "${title.trim()}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
+✅ score: 각 항목 25점, 총 100점`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
+      if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
+        const cleaned = result.rubrics.slice(0, 4).map(r => ({
+          name: r.name || '평가 기준',
+          score: r.score || 25,
+          hint: r.hint || '이 항목에서 무엇을 잘 표현해야 하는지'
+        }))
+        // 총점 100점 보장
+        const sum = cleaned.reduce((s, r) => s + r.score, 0)
+        if (sum !== 100 && cleaned.length === 4) {
+          cleaned.forEach(r => { r.score = 25 })
+        }
+        setRubrics(cleaned)
+      }
+      alert('✅ 평가 기준 자동 생성 완료!')
+    } catch(e) {
+      console.error('평가 기준 생성 오류:', e)
+      alert(getFriendlyErrorMessage(e))
+    }
+    setGeneratingRubrics(false)
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
   return (
@@ -357,13 +478,79 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
                   <input type="date" value={date} onChange={e => setDate(e.target.value)}
                     className="w-full p-2 border border-gray-200 rounded-lg" />
                 </div>
-                <div className="sm:col-span-2 flex items-end">
+                <div className="sm:col-span-2 flex items-end gap-2">
                   <button onClick={suggestTopic} disabled={aiSuggesting}
-                    className="w-full py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 disabled:opacity-50">
+                    className="flex-1 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 disabled:opacity-50">
                     {aiSuggesting ? '추천 중...' : '✨ AI 주제 추천'}
+                  </button>
+                  <button onClick={() => setShowAiOptions(!showAiOptions)}
+                    className="px-3 py-2 border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50 text-sm">
+                    {showAiOptions ? '▲ 옵션' : '▼ 옵션'}
                   </button>
                 </div>
               </div>
+
+              {/* AI 추천 옵션 패널 */}
+              {showAiOptions && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-purple-900 mb-1">학년</label>
+                      <select value={aiGrade} onChange={e => setAiGrade(e.target.value)}
+                        className="w-full p-2 border border-purple-200 rounded-lg text-sm bg-white">
+                        <option value="">선택 안 함</option>
+                        <option value="1">초등 1학년</option>
+                        <option value="2">초등 2학년</option>
+                        <option value="3">초등 3학년</option>
+                        <option value="4">초등 4학년</option>
+                        <option value="5">초등 5학년</option>
+                        <option value="6">초등 6학년</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-purple-900 mb-1">난이도</label>
+                      <select value={aiLevel} onChange={e => setAiLevel(e.target.value)}
+                        className="w-full p-2 border border-purple-200 rounded-lg text-sm bg-white">
+                        <option value="쉬움">쉬움 (경험·취향 위주)</option>
+                        <option value="보통">보통 (약간의 상상력)</option>
+                        <option value="어려움">어려움 (의견·분석)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 mb-1">카테고리 (선택)</label>
+                    <select value={aiCategory} onChange={e => setAiCategory(e.target.value)}
+                      className="w-full p-2 border border-purple-200 rounded-lg text-sm bg-white">
+                      <option value="">랜덤</option>
+                      <option value="일상 경험">일상 경험</option>
+                      <option value="가족과 친구">가족과 친구</option>
+                      <option value="학교 생활">학교 생활</option>
+                      <option value="감정과 마음">감정과 마음</option>
+                      <option value="꿈과 미래">꿈과 미래</option>
+                      <option value="상상력">상상력 (만약에~)</option>
+                      <option value="시간 여행">시간 여행</option>
+                      <option value="내가 만든 세상">내가 만든 세상</option>
+                      <option value="동물 친구">동물 친구</option>
+                      <option value="음식과 추억">음식과 추억</option>
+                      <option value="여행과 모험">여행과 모험</option>
+                      <option value="계절과 자연">계절과 자연</option>
+                      <option value="책과 영화">책과 영화</option>
+                      <option value="취미와 관심사">취미와 관심사</option>
+                      <option value="사회와 환경">사회와 환경</option>
+                      <option value="교과 연계">교과 연계 (국어/사회/과학)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 mb-1">
+                      자유 요청 (선택)
+                    </label>
+                    <textarea value={aiUserRequest} onChange={e => setAiUserRequest(e.target.value)}
+                      rows="2" placeholder='예: "추석 관련 주제로", "환경 보호에 관한 주제", "친구와의 갈등을 다루는 주제"'
+                      className="w-full p-2 border border-purple-200 rounded-lg text-sm bg-white" />
+                    <p className="text-xs text-purple-700 mt-1">💡 원하는 분야나 키워드를 자유롭게 적어주세요</p>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">주제</label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -376,6 +563,16 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
                   rows="3" placeholder="학생들에게 보여줄 안내 내용"
                   className="w-full p-3 border border-gray-200 rounded-lg" />
               </div>
+
+              {/* 역방향 AI 버튼: 직접 입력한 주제에 대해 설명+평가기준 자동 생성 */}
+              {title.trim() && (
+                <button onClick={generateFromTopic} disabled={generatingRubrics}
+                  className="w-full py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium hover:bg-indigo-200 disabled:opacity-50 text-sm">
+                  {generatingRubrics
+                    ? '⏳ AI가 생성 중...'
+                    : `🤖 위 주제 "${title.trim().slice(0, 20)}${title.length > 20 ? '...' : ''}"에 맞는 ${desc.trim() ? '평가기준' : '설명 + 평가기준'} 자동 생성`}
+                </button>
+              )}
 
               {/* 루브릭 */}
               <div>

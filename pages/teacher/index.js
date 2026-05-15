@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import ApiKeyManager from '../../components/ApiKeyManager'
+import ClassSettings from '../../components/ClassSettings'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
 
@@ -22,7 +23,7 @@ export default function TeacherHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, grade, ranking_enabled, board_scope)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
@@ -138,6 +139,9 @@ export default function TeacherHome() {
 
           {/* API 키 관리 */}
           <ApiKeyManager classId={classInfo?.id} />
+
+          {/* 학급 설정 (랭킹/게시판) */}
+          {classInfo && <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />}
 
           {/* 메뉴 */}
           <div className="grid sm:grid-cols-2 gap-3">

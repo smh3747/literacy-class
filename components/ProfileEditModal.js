@@ -78,7 +78,7 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
               <div>
                 <label className="block text-sm font-medium mb-1">학교명</label>
                 <input type="text" value={school} onChange={e => setSchool(e.target.value)}
-                  placeholder="예: 하랑초등학교"
+                  placeholder="예: 한국초등학교"
                   className="w-full p-3 border border-gray-200 rounded-lg" />
               </div>
               <div>

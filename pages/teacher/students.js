@@ -14,8 +14,12 @@ export default function StudentsPage() {
   const [uploadStatus, setUploadStatus] = useState(null)
   const [parsedStudents, setParsedStudents] = useState([])
   const [uploading, setUploading] = useState(false)
+  // 아이디 prefix (예: "hr" → hr5101)
+  const [idPrefix, setIdPrefix] = useState('')
+  const [defaultPrefix, setDefaultPrefix] = useState('') // 학교 초성 기본값
   // 인라인 편집 상태
   const [editingNumbers, setEditingNumbers] = useState({}) // {studentId: number}
+  const [editingUsernames, setEditingUsernames] = useState({}) // {parsedIdx: username} - 미리보기에서 개별 수정
   const [savingId, setSavingId] = useState(null)
   // 숨김 학생 보기 토글
   const [showHidden, setShowHidden] = useState(false)
@@ -31,6 +35,18 @@ export default function StudentsPage() {
     }
     setUser(profile)
     setClassInfo(profile.classes)
+
+    // 학교명에서 기본 prefix 계산 (예: "한국초등학교" → "hgc")
+    if (profile.school) {
+      try {
+        const { toInitialAlpha } = await import('../../lib/usernameGen')
+        const core = profile.school.replace('초등학교', '초').replace('중학교', '중').replace('고등학교', '고')
+        const def = toInitialAlpha(core)
+        setDefaultPrefix(def)
+        setIdPrefix(def) // 기본값
+      } catch(e) {}
+    }
+
     await loadStudents(profile.classes?.id)
     setLoading(false)
   }
@@ -43,11 +59,45 @@ export default function StudentsPage() {
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
 
+  // 자동 아이디 생성 (prefix 기반)
+  // prefix가 있으면 그걸 사용, 비어있으면 학교 초성 사용
+  const buildUsername = (prefix, grade, classNum, number) => {
+    const p = (prefix || '').trim().toLowerCase() || 'sch'
+    const g = String(grade || '0').trim()
+    const c = String(classNum || '0').trim()
+    const n = String(number || '0').trim().padStart(2, '0')
+    return `${p}${g}${c}${n}`
+  }
+
+  // prefix가 바뀌면 미리보기 학생들의 username 재생성
+  const updatePrefixAndRegenerate = (newPrefix) => {
+    setIdPrefix(newPrefix)
+    // 자동 생성 학생들만 username 갱신
+    setParsedStudents(prev => prev.map(s => {
+      if (s._auto && s._grade && s._class && s.number) {
+        return {
+          ...s,
+          username: buildUsername(newPrefix, s._grade, s._class, s.number)
+        }
+      }
+      return s
+    }))
+    // 개별 편집 중인 것들 초기화
+    setEditingUsernames({})
+  }
+
   const handleFile = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
+    if (!user?.school || !user.school.trim()) {
+      alert('학교명이 등록되지 않았어요!\n선생님 메인 화면 → "✏️ 내 정보 수정"에서 학교명을 먼저 입력해주세요.')
+      e.target.value = ''
+      return
+    }
+
     const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+
     const reader = new FileReader()
     reader.onload = (evt) => {
       try {
@@ -55,31 +105,74 @@ export default function StudentsPage() {
         const wb = XLSX.read(data, { type: 'array' })
         const sheet = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
-        
-        // 헤더 찾기 (성명, 아이디 컬럼 위치)
+
+        // 헤더 찾기
         const header = rows[0] || []
+        const gradeIdx = header.findIndex(h => String(h).trim() === '학년')
+        const classIdx = header.findIndex(h => String(h).trim() === '반')
+        const numIdx = header.findIndex(h => String(h).includes('번호'))
         const nameIdx = header.findIndex(h => String(h).includes('성명') || String(h).includes('이름'))
         const idIdx = header.findIndex(h => String(h).includes('아이디'))
-        const numIdx = header.findIndex(h => String(h).includes('번호'))
-        
-        if (nameIdx === -1 || idIdx === -1) {
-          alert('엑셀에 "성명"과 "아이디" 컬럼이 있어야 해요!')
+
+        const isNiceFormat = gradeIdx !== -1 && classIdx !== -1 && numIdx !== -1 && nameIdx !== -1
+        const isOldFormat = nameIdx !== -1 && idIdx !== -1
+
+        if (!isNiceFormat && !isOldFormat) {
+          alert(
+            '엑셀 형식을 인식할 수 없어요.\n\n' +
+            '✅ 권장: 나이스 명렬표 (학년 | 반 | 번호 | 성명)\n' +
+            '✅ 또는: 성명 + 아이디 컬럼이 있는 엑셀'
+          )
           return
         }
 
         const parsed = []
+        const currentPrefix = idPrefix || defaultPrefix
+
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i]
-          if (!row || !row[nameIdx] || !row[idIdx]) continue
-          parsed.push({
-            number: row[numIdx] || '',
-            realname: String(row[nameIdx]).trim(),
-            username: String(row[idIdx]).trim().toLowerCase()
-          })
+          if (!row) continue
+
+          if (isNiceFormat) {
+            const name = row[nameIdx] ? String(row[nameIdx]).trim() : ''
+            const grade = row[gradeIdx]
+            const classNum = row[classIdx]
+            const number = row[numIdx]
+            if (!name || !grade || !classNum || !number) continue
+
+            const username = buildUsername(currentPrefix, grade, classNum, number)
+
+            parsed.push({
+              number: String(number).trim(),
+              realname: name,
+              username,
+              _auto: true,
+              _grade: String(grade),
+              _class: String(classNum)
+            })
+          } else {
+            if (!row[nameIdx] || !row[idIdx]) continue
+            parsed.push({
+              number: row[numIdx] ? String(row[numIdx]).trim() : '',
+              realname: String(row[nameIdx]).trim(),
+              username: String(row[idIdx]).trim().toLowerCase()
+            })
+          }
         }
-        
+
         setParsedStudents(parsed)
-        setUploadStatus(`📋 ${parsed.length}명의 학생이 감지되었어요. 아래에서 확인 후 "일괄 등록" 클릭`)
+        setEditingUsernames({})
+
+        if (isNiceFormat) {
+          const sample = parsed[0]
+          setUploadStatus(
+            `📋 나이스 명렬표 인식: ${parsed.length}명\n` +
+            `🆔 아이디 자동 생성됨 (예: ${sample?.username})\n` +
+            `💡 아이디 앞부분(prefix)을 바꾸면 모두 한꺼번에 변경돼요. 개별 수정도 가능합니다.`
+          )
+        } else {
+          setUploadStatus(`📋 ${parsed.length}명의 학생이 감지되었어요.`)
+        }
       } catch(err) {
         alert('엑셀 파일 읽기 실패: ' + err.message)
       }
@@ -89,24 +182,57 @@ export default function StudentsPage() {
 
   const submitBulk = async () => {
     if (parsedStudents.length === 0) return
-    if (!confirm(`${parsedStudents.length}명을 일괄 등록할게요.\n\n초기 비밀번호는 모두 "1234" 입니다.\n진행할까요?`)) return
+
+    // 최종 아이디 결정: editingUsernames에 값이 있으면 그걸, 없으면 username 사용
+    const finalStudents = parsedStudents.map((s, idx) => ({
+      number: s.number,
+      realname: s.realname,
+      username: ((editingUsernames[idx] !== undefined ? editingUsernames[idx] : s.username) || '').trim().toLowerCase()
+    }))
+
+    // 유효성 검사
+    const invalid = finalStudents.filter(s => !s.username || !/^[a-z0-9_-]+$/i.test(s.username))
+    if (invalid.length > 0) {
+      alert(
+        `❌ 아이디 형식이 잘못된 학생이 있어요:\n\n` +
+        invalid.slice(0, 5).map(s => `- ${s.realname}: "${s.username}"`).join('\n') +
+        (invalid.length > 5 ? `\n... 외 ${invalid.length - 5}명` : '') +
+        `\n\n아이디는 영문/숫자/_/-만 사용 가능해요.`
+      )
+      return
+    }
+
+    // 중복 체크 (같은 배치 안에서)
+    const seen = new Set()
+    const dupes = []
+    finalStudents.forEach(s => {
+      if (seen.has(s.username)) dupes.push(s.username)
+      seen.add(s.username)
+    })
+    if (dupes.length > 0) {
+      alert(`❌ 중복된 아이디가 있어요:\n${[...new Set(dupes)].join(', ')}\n\n각각 다르게 수정해주세요.`)
+      return
+    }
+
+    if (!confirm(`${finalStudents.length}명을 일괄 등록할게요.\n\n초기 비밀번호는 모두 "1234" 입니다.\n진행할까요?`)) return
 
     setUploading(true)
     try {
       const res = await fetch('/api/students-bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students: parsedStudents, classId: classInfo.id })
+        body: JSON.stringify({ students: finalStudents, classId: classInfo.id })
       })
       const result = await res.json()
-      
+
       const msg = `✅ 성공: ${result.success.length}명\n❌ 실패: ${result.failed.length}명`
-      const failedDetail = result.failed.length > 0 
+      const failedDetail = result.failed.length > 0
         ? '\n\n실패 명단:\n' + result.failed.map(f => `- ${f.realname} (${f.username}): ${f.error}`).join('\n')
         : ''
       alert(msg + failedDetail)
-      
+
       setParsedStudents([])
+      setEditingUsernames({})
       setUploadStatus(null)
       await loadStudents(classInfo.id)
     } catch(e) {
@@ -290,6 +416,46 @@ export default function StudentsPage() {
     await loadStudents(classInfo.id)
   }
 
+  // 닉네임 없는 학생에게 일괄 부여
+  const assignMissingNicknames = async () => {
+    const targets = students.filter(s => !s.nickname && !s.is_hidden)
+    if (targets.length === 0) {
+      alert('모든 학생이 이미 닉네임을 가지고 있어요!')
+      return
+    }
+    if (!confirm(
+      `🎭 닉네임 없는 학생 ${targets.length}명에게 닉네임을 부여할까요?\n\n` +
+      `예: "용감한 코끼리", "푸른 토끼" 등\n` +
+      `학급 내 중복 없이 자동 생성됩니다.`
+    )) return
+
+    setSavingId('bulk-nickname')
+    try {
+      const { generateUniqueNickname } = await import('../../lib/nickname')
+      // 현재 사용 중인 닉네임 수집
+      const used = students.map(s => s.nickname).filter(Boolean)
+
+      let success = 0, failed = 0
+      for (const s of targets) {
+        try {
+          const nickname = generateUniqueNickname(used)
+          used.push(nickname)
+          const { error } = await supabase.from('profiles')
+            .update({ nickname }).eq('id', s.id)
+          if (error) throw error
+          success++
+        } catch(e) {
+          failed++
+        }
+      }
+      alert(`✅ 닉네임 부여 완료!\n성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+      await loadStudents(classInfo.id)
+    } catch(e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
   return (
@@ -316,38 +482,96 @@ export default function StudentsPage() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h3 className="font-bold mb-2">📋 학급명렬표 일괄 등록</h3>
             <p className="text-sm text-gray-600 mb-3">
-              엑셀 파일(.xlsx)을 업로드하면 학생들이 한 번에 등록돼요. 초기 비밀번호는 모두 <strong>1234</strong> 입니다.
+              <strong>나이스에서 다운받은 학급명렬표</strong>를 그대로 올리면 돼요.
+              아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>1234</strong>입니다.
             </p>
+            {!user?.school && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg mb-3">
+                ⚠️ 학교명이 등록되지 않았어요!<br/>
+                메인 화면 → "✏️ 내 정보 수정"에서 학교명을 먼저 입력해주세요.
+              </div>
+            )}
             <div className="space-y-3">
               <label className="block">
                 <span className="sr-only">엑셀 파일 선택</span>
-                <input 
-                  type="file" 
-                  accept=".xlsx,.xls" 
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
                   onChange={handleFile}
-                  className="w-full text-sm border border-gray-200 rounded-lg p-2 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-primary file:text-white"
+                  disabled={!user?.school}
+                  className="w-full text-sm border border-gray-200 rounded-lg p-2 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-primary file:text-white disabled:opacity-50"
                 />
               </label>
               {uploadStatus && (
-                <div className="text-sm bg-blue-50 text-blue-900 p-3 rounded-lg">{uploadStatus}</div>
+                <div className="text-sm bg-blue-50 text-blue-900 p-3 rounded-lg whitespace-pre-line">{uploadStatus}</div>
               )}
               {parsedStudents.length > 0 && (
                 <>
-                  <div className="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
+                  {/* prefix 일괄 변경 (자동 생성된 학생이 있을 때만) */}
+                  {parsedStudents.some(s => s._auto) && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <label className="block text-sm font-medium text-blue-900 mb-1">
+                        🆔 아이디 앞부분 (prefix) - 일괄 변경
+                      </label>
+                      <div className="flex gap-2 items-center flex-wrap">
+                        <input
+                          type="text"
+                          value={idPrefix}
+                          onChange={e => updatePrefixAndRegenerate(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                          placeholder="예: hr, abc, gildong"
+                          className="flex-1 min-w-[120px] px-3 py-2 border border-blue-200 rounded text-sm font-mono"
+                          maxLength="10"
+                        />
+                        {defaultPrefix && idPrefix !== defaultPrefix && (
+                          <button
+                            onClick={() => updatePrefixAndRegenerate(defaultPrefix)}
+                            className="text-xs px-2 py-2 border border-blue-200 text-blue-700 rounded hover:bg-blue-100">
+                            ↻ 기본값 ({defaultPrefix})
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-blue-700 mt-2">
+                        💡 prefix를 바꾸면 모든 학생 아이디가 자동 변경돼요.
+                        형식: <code className="font-mono bg-white px-1">[prefix][학년][반][번호 2자리]</code>
+                        {parsedStudents[0]?._auto && (
+                          <span> (예: <code className="font-mono bg-white px-1">{parsedStudents[0]?.username}</code>)</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-50 rounded-lg p-3 max-h-72 overflow-y-auto">
                     <table className="w-full text-sm">
                       <thead><tr className="text-left border-b">
-                        <th className="py-1 px-2">번호</th>
-                        <th className="py-1 px-2">이름</th>
-                        <th className="py-1 px-2">아이디</th>
+                        <th className="py-1 px-2 w-14">번호</th>
+                        <th className="py-1 px-2 w-24">이름</th>
+                        <th className="py-1 px-2">아이디 (개별 수정 가능)</th>
                       </tr></thead>
                       <tbody>
-                        {parsedStudents.map((s, i) => (
-                          <tr key={i} className="border-b border-gray-100">
-                            <td className="py-1 px-2">{s.number}</td>
-                            <td className="py-1 px-2">{s.realname}</td>
-                            <td className="py-1 px-2 font-mono text-xs">{s.username}</td>
-                          </tr>
-                        ))}
+                        {parsedStudents.map((s, i) => {
+                          const editValue = editingUsernames[i] !== undefined ? editingUsernames[i] : s.username
+                          const isEdited = editingUsernames[i] !== undefined && editingUsernames[i] !== s.username
+                          return (
+                            <tr key={i} className="border-b border-gray-100">
+                              <td className="py-1 px-2">{s.number}</td>
+                              <td className="py-1 px-2">{s.realname}</td>
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  value={editValue}
+                                  onChange={e => setEditingUsernames(prev => ({
+                                    ...prev,
+                                    [i]: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+                                  }))}
+                                  className={`w-full px-2 py-1 text-xs font-mono border rounded ${
+                                    isEdited ? 'border-amber-400 bg-amber-50' : 'border-gray-200'
+                                  }`}
+                                  maxLength="30"
+                                />
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -358,11 +582,20 @@ export default function StudentsPage() {
                 </>
               )}
               <details className="text-xs text-gray-500">
-                <summary className="cursor-pointer hover:text-gray-700">📥 엑셀 양식 다운로드 안내</summary>
-                <div className="mt-2 p-3 bg-gray-50 rounded">
-                  엑셀에 다음 컬럼이 있어야 해요:<br/>
-                  <code className="block mt-1 font-mono">학년 | 반 | 번호 | 성명 | 아이디 | 비고</code>
-                  <p className="mt-2">아이디는 영문+숫자로 (예: harang01, minsu_k 등). 한글 ❌</p>
+                <summary className="cursor-pointer hover:text-gray-700">📖 명렬표 형식 안내</summary>
+                <div className="mt-2 p-3 bg-gray-50 rounded space-y-2">
+                  <div>
+                    <p className="font-semibold text-gray-700">✅ 권장: 나이스 학급명렬표</p>
+                    <code className="block mt-1 font-mono text-[11px]">학년 | 반 | 번호 | 성명 | 비고</code>
+                    <p className="mt-1">→ 아이디는 자동 생성: <strong>[학교초성][학년][반][번호]</strong></p>
+                    <p>예: 한국초등학교 5학년 1반 1번 → <code className="font-mono">hgc5101</code></p>
+                    <p className="mt-1 text-amber-700">학생들에게 본인 아이디 알려주는 것 잊지 마세요!</p>
+                  </div>
+                  <div className="pt-2 border-t border-gray-200">
+                    <p className="font-semibold text-gray-700">✅ 또는: 아이디 직접 지정</p>
+                    <code className="block mt-1 font-mono text-[11px]">학년 | 반 | 번호 | 성명 | 아이디 | 비고</code>
+                    <p className="mt-1">아이디 컬럼이 있으면 그 값을 그대로 사용합니다.</p>
+                  </div>
                 </div>
               </details>
             </div>
@@ -376,9 +609,11 @@ export default function StudentsPage() {
                 {(() => {
                   const active = students.filter(s => !s.is_hidden).length
                   const hidden = students.filter(s => s.is_hidden).length
+                  const noNickname = students.filter(s => !s.is_hidden && !s.nickname).length
                   return (
                     <span className="ml-1">
-                      ({active}명{hidden > 0 && <span className="text-gray-400"> · 숨김 {hidden}명</span>})
+                      ({active}명{hidden > 0 && <span className="text-gray-400"> · 숨김 {hidden}명</span>}
+                      {noNickname > 0 && <span className="text-amber-600 ml-1">· 닉네임 없음 {noNickname}</span>})
                     </span>
                   )
                 })()}
@@ -389,6 +624,13 @@ export default function StudentsPage() {
                 )}
               </h3>
               <div className="flex items-center gap-2 flex-wrap">
+                {students.filter(s => !s.is_hidden && !s.nickname).length > 0 && (
+                  <button onClick={assignMissingNicknames}
+                    disabled={savingId === 'bulk-nickname'}
+                    className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1 rounded-full disabled:opacity-50">
+                    {savingId === 'bulk-nickname' ? '⏳ 부여 중...' : `🎭 닉네임 일괄 부여 (${students.filter(s => !s.is_hidden && !s.nickname).length}명)`}
+                  </button>
+                )}
                 {students.some(s => s.is_hidden) && (
                   <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                     <input type="checkbox" checked={showHidden}
@@ -459,9 +701,12 @@ export default function StudentsPage() {
                               />
                             </td>
                             <td className="py-2 px-2 font-medium">
-                              {s.realname}
+                              <div>{s.realname}</div>
+                              {s.nickname && (
+                                <div className="text-[10px] text-purple-600 mt-0.5">🎭 {s.nickname}</div>
+                              )}
                               {s.is_hidden && s.hidden_reason && (
-                                <span className="ml-2 text-xs text-gray-400">({s.hidden_reason})</span>
+                                <div className="text-xs text-gray-400 mt-0.5">({s.hidden_reason})</div>
                               )}
                             </td>
                             <td className="py-2 px-2 text-xs text-gray-500 font-mono hidden sm:table-cell">{s.username}</td>

@@ -158,9 +158,24 @@ export default function StudentLogin() {
           setLoading(false)
           return
         }
-        await supabase.from('profiles').insert({
-          id: data.user.id, username: username.toLowerCase(), realname: username, role: 'student', class_id: classData.id, school: classData.school || null
-        })
+
+        // 학급 내 기존 닉네임 가져와서 중복 안 되게 부여
+        let nickname = null
+        try {
+          const { generateUniqueNickname } = await import('../../lib/nickname')
+          const { data: existing } = await supabase.from('profiles')
+            .select('nickname').eq('class_id', classData.id).eq('role', 'student')
+          const used = (existing || []).map(p => p.nickname).filter(Boolean)
+          nickname = generateUniqueNickname(used)
+        } catch(e) { /* nickname 컬럼 없으면 무시 */ }
+
+        const profileData = {
+          id: data.user.id, username: username.toLowerCase(), realname: username,
+          role: 'student', class_id: classData.id, school: classData.school || null
+        }
+        if (nickname) profileData.nickname = nickname
+
+        await supabase.from('profiles').insert(profileData)
         persistOptions()
         router.push('/student')
       }

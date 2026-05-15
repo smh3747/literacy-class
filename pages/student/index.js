@@ -658,10 +658,21 @@ ${rewriteEssay}
                   {classInfo?.name && <span>{(user?.school || classInfo?.school) ? ' · ' : ''}{classInfo.name}</span>}
                   {user?.number && <span> · {user.number}번</span>}
                 </p>
+                {user?.nickname && (
+                  <p className="text-xs mt-1 text-purple-700">
+                    🎭 친구들에겐 <strong>{user.nickname}</strong>(이)로 보여요
+                  </p>
+                )}
               </div>
-              <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
-                🔐 비밀번호 변경
-              </button>
+              <div className="flex gap-1.5 flex-wrap">
+                <Link href="/student/ranking"
+                  className="text-xs text-amber-700 hover:text-amber-900 px-3 py-1 rounded-full border border-amber-200 bg-amber-50">
+                  🏆 랭킹
+                </Link>
+                <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                  🔐 비밀번호
+                </button>
+              </div>
             </div>
           </div>
           
