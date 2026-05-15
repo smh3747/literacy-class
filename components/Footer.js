@@ -14,9 +14,9 @@ export default function Footer() {
           무단 복제 및 재배포를 금지합니다.
         </p>
         <p className="flex justify-center gap-3 pt-1">
-          <Link href="/terms" className="hover:text-primary">이용약관</Link>
+          <Link href="/terms" target="_blank" className="hover:text-primary">이용약관</Link>
           <span>·</span>
-          <Link href="/privacy" className="hover:text-primary">개인정보처리방침</Link>
+          <Link href="/privacy" target="_blank" className="hover:text-primary">개인정보처리방침</Link>
         </p>
       </div>
     </footer>

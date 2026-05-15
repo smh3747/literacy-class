@@ -1,14 +1,26 @@
 import Head from 'next/head'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 
 export default function Privacy() {
+  const router = useRouter()
+
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length <= 1) {
+      window.close()
+      setTimeout(() => router.push('/'), 100)
+    } else {
+      router.back()
+    }
+  }
+
   return (
     <>
       <Head><title>개인정보처리방침 - 문해력 수업</title></Head>
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
-            <Link href="/" className="text-gray-600 hover:text-gray-900">←</Link>
+            <button onClick={goBack} className="text-gray-600 hover:text-gray-900" title="뒤로 / 닫기">←</button>
             <h1 className="text-base font-bold">개인정보처리방침</h1>
           </div>
         </header>
