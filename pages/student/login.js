@@ -24,6 +24,9 @@ export default function StudentLogin() {
   // 새 옵션
   const [saveUsername, setSaveUsername] = useState(false)
   const [autoLogin, setAutoLogin] = useState(true)
+  // 가입 시 동의 체크 (한 화면에 같이 표시)
+  const [agreeTerms, setAgreeTerms] = useState(false)
+  const [agreePrivacy, setAgreePrivacy] = useState(false)
 
   useEffect(() => {
     // 저장된 아이디 / 자동 로그인 설정 복원
@@ -93,7 +96,15 @@ export default function StudentLogin() {
           setError('모든 항목을 입력해주세요')
           return
         }
-        setStep('consent')
+        if (password.length < 6) {
+          setError('비밀번호는 6자 이상이어야 해요')
+          return
+        }
+        if (!agreeTerms || !agreePrivacy) {
+          setError('이용약관과 개인정보처리방침에 동의해주세요')
+          return
+        }
+        handleSubmit()
       } else {
         handleSubmit()
       }
@@ -216,22 +227,7 @@ export default function StudentLogin() {
               </button>
             </div>
 
-            {mode === 'signup' && step === 'consent' ? (
-              <>
-                <p className="text-sm text-gray-600 mb-4">가입 전 아래 항목에 동의해주세요</p>
-                {error && (
-                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded mb-3 whitespace-pre-line border border-red-200">
-                    {error}
-                  </div>
-                )}
-                <ConsentForm onComplete={handleSubmit} />
-                <button type="button" onClick={() => { setStep('form'); setError('') }}
-                  className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700">
-                  ← 정보 다시 입력
-                </button>
-              </>
-            ) : (
-              <div className="space-y-3">
+            <div className="space-y-3">
                 {mode === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium mb-1">학급 코드</label>
@@ -297,17 +293,59 @@ export default function StudentLogin() {
                   </div>
                 )}
 
-                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-line">{error}</div>}
+                {/* 가입 모드: 동의 체크박스 */}
+                {mode === 'signup' && (
+                  <div className="space-y-2 pt-2 border-t border-gray-100">
+                    <p className="text-xs text-gray-600">가입 전 동의해주세요</p>
+                    <label className="flex items-center gap-2 p-2 bg-gray-50 rounded font-medium text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={agreeTerms && agreePrivacy}
+                        onChange={() => {
+                          const all = !(agreeTerms && agreePrivacy)
+                          setAgreeTerms(all); setAgreePrivacy(all)
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <span>모두 동의합니다 (필수)</span>
+                    </label>
+                    <div className="space-y-1.5 px-1">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={agreeTerms}
+                          onChange={e => setAgreeTerms(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <span>
+                          (필수) <Link href="/terms" target="_blank" className="text-primary underline">이용약관</Link>에 동의합니다
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={agreePrivacy}
+                          onChange={e => setAgreePrivacy(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <span>
+                          (필수) <Link href="/privacy" target="_blank" className="text-primary underline">개인정보처리방침</Link>에 동의합니다
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-line border border-red-200">{error}</div>}
                 <button
                   type="button"
                   onClick={handleFormSubmit}
                   disabled={loading}
                   className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50"
                 >
-                  {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '다음')}
+                  {loading ? '처리 중...' : (mode === 'login' ? '로그인' : '가입하기')}
                 </button>
               </div>
-            )}
           </div>
         </main>
       </div>
