@@ -219,7 +219,16 @@ export default function StudentLogin() {
             {mode === 'signup' && step === 'consent' ? (
               <>
                 <p className="text-sm text-gray-600 mb-4">가입 전 아래 항목에 동의해주세요</p>
+                {error && (
+                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded mb-3 whitespace-pre-line border border-red-200">
+                    {error}
+                  </div>
+                )}
                 <ConsentForm onComplete={handleSubmit} />
+                <button type="button" onClick={() => { setStep('form'); setError('') }}
+                  className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700">
+                  ← 정보 다시 입력
+                </button>
               </>
             ) : (
               <div className="space-y-3">
