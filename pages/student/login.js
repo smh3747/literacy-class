@@ -42,6 +42,19 @@ export default function StudentLogin() {
     checkSession()
   }, [])
 
+  // 🔗 URL 쿼리로 학급 코드 자동 입력 + 가입 모드 (?code=XXX 또는 ?code=XXX&mode=signup)
+  useEffect(() => {
+    if (!router.isReady) return
+    const { code, mode: qMode } = router.query
+    if (code && typeof code === 'string') {
+      setClassCode(code.toUpperCase())
+      // QR로 들어온 경우 가입 모드로 자동 전환 (이미 로그인 사용자가 아니면)
+      if (qMode === 'signup' || !username) {
+        setMode('signup')
+      }
+    }
+  }, [router.isReady, router.query])
+
   const checkSession = async () => {
     // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
     if (typeof window !== 'undefined') {

@@ -20,6 +20,23 @@ function todayStr() {
 // 현재 시간이 락 시간대 안에 있는지 검사
 // 반환: { allowed: boolean, reason: string }
 function checkTimeLock(topic) {
+  // 1. 제출 기한 검사 (시간 락보다 먼저)
+  if (topic?.deadline_date) {
+    const deadlineStr = `${topic.deadline_date}T${topic.deadline_time || '23:59'}:00`
+    // KST를 명시
+    const deadline = new Date(deadlineStr + '+09:00')
+    const now = new Date()
+    if (now > deadline) {
+      const mm = String(deadline.getMonth() + 1).padStart(2, '0')
+      const dd = String(deadline.getDate()).padStart(2, '0')
+      return {
+        allowed: false,
+        reason: `이 주제의 제출 기한이 지났어요. (~${mm}/${dd} ${topic.deadline_time || '23:59'})`
+      }
+    }
+  }
+
+  // 2. 수업 시간 락 검사
   if (!topic?.lock_enabled || !topic.lock_start_time || !topic.lock_end_time) {
     return { allowed: true, reason: '' }
   }
@@ -885,6 +902,29 @@ ${rewriteEssay}
                     )
                   })()
                 )}
+                {/* 제출 기한 배지 */}
+                {todayTopic.deadline_date && (() => {
+                  const dl = new Date(`${todayTopic.deadline_date}T${todayTopic.deadline_time || '23:59'}:00+09:00`)
+                  const now = new Date()
+                  const isPast = now > dl
+                  const hoursLeft = Math.floor((dl - now) / 3600000)
+                  const daysLeft = Math.floor(hoursLeft / 24)
+                  let timeLabel = ''
+                  if (isPast) timeLabel = '마감됨'
+                  else if (hoursLeft < 24) timeLabel = `${hoursLeft}시간 남음`
+                  else timeLabel = `${daysLeft}일 남음`
+                  return (
+                    <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
+                      isPast
+                        ? 'bg-red-50 border border-red-200 text-red-900'
+                        : hoursLeft < 24
+                          ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                          : 'bg-blue-50 border border-blue-200 text-blue-900'
+                    }`}>
+                      📅 제출 마감: {todayTopic.deadline_date} {todayTopic.deadline_time || '23:59'} ({timeLabel})
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* 단계별 화면 */}

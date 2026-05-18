@@ -426,6 +426,15 @@ export default function TeacherSubmissions() {
                         <span className="text-gray-600">
                           · 최소 {selectedTopic.min_length || 30}자 / 수정 {maxRewrites}회
                         </span>
+                        {selectedTopic.deadline_date && (() => {
+                          const dl = new Date(`${selectedTopic.deadline_date}T${selectedTopic.deadline_time || '23:59'}:00+09:00`)
+                          const isPast = new Date() > dl
+                          return (
+                            <span className={isPast ? 'text-red-600 font-medium' : 'text-emerald-700'}>
+                              · {isPast ? '⏰ 마감됨' : '📅 마감'} {selectedTopic.deadline_date.slice(5)} {selectedTopic.deadline_time || '23:59'}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
                     <div className="flex gap-2 flex-wrap">

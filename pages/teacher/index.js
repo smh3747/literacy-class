@@ -8,6 +8,7 @@ import ApiKeyManager from '../../components/ApiKeyManager'
 import ClassSettings from '../../components/ClassSettings'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
+import QrCodeModal from '../../components/QrCodeModal'
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -17,6 +18,7 @@ export default function TeacherHome() {
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showQrModal, setShowQrModal] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -146,12 +148,18 @@ export default function TeacherHome() {
                   <div className="text-primary-dark">주제 <strong>{stats.topics}</strong>개</div>
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                 <p className="text-xs text-gray-700">학생들에게 위 코드를 알려주세요</p>
-                <button onClick={regenerateClassCode}
-                  className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
-                  🔄 코드 재발급
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowQrModal(true)}
+                    className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light font-medium">
+                    📱 QR코드 보기
+                  </button>
+                  <button onClick={regenerateClassCode}
+                    className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
+                    🔄 코드 재발급
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -253,6 +261,13 @@ export default function TeacherHome() {
         </main>
         {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
         {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
+        {showQrModal && classInfo && (
+          <QrCodeModal
+            classCode={classInfo.code}
+            className={classInfo.name}
+            onClose={() => setShowQrModal(false)}
+          />
+        )}
       </div>
     </>
   )

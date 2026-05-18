@@ -171,6 +171,20 @@ export default function AdminHome() {
     await loadAll()
   }
 
+  // 💬 의견 일괄 복원 (숨김 모두)
+  const restoreAllHidden = async () => {
+    const hidden = feedbacks.filter(f => f.is_hidden)
+    if (hidden.length === 0) return alert('복원할 의견이 없어요')
+    if (!confirm(`숨김 처리된 ${hidden.length}개 의견을 모두 복원할까요?`)) return
+
+    const { error } = await supabase.from('feedback').update({
+      is_hidden: false, hidden_at: null
+    }).in('id', hidden.map(f => f.id))
+    if (error) return alert('실패: ' + error.message)
+    alert(`✅ ${hidden.length}개 복원 완료`)
+    await loadAll()
+  }
+
   // 📋 의견을 마크다운 형식으로 정리 (Claude에게 바로 전달용)
   const formatFeedbacksAsMarkdown = (fbs) => {
     if (!fbs || fbs.length === 0) return ''
@@ -493,6 +507,12 @@ ${contents}
                       <button onClick={hideAllVisible}
                         className="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">
                         📦 보이는 의견 모두 숨김
+                      </button>
+                    )}
+                    {showHiddenFeedback && hiddenFeedbacks.length > 0 && (
+                      <button onClick={restoreAllHidden}
+                        className="text-xs px-3 py-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded">
+                        ↩️ 숨김 의견 모두 복원
                       </button>
                     )}
                   </div>

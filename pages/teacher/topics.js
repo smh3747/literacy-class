@@ -35,6 +35,10 @@ export default function TopicsPage() {
   // 글자수 + 재수정 설정
   const [minLength, setMinLength] = useState(30)
   const [maxRewrites, setMaxRewrites] = useState(1)
+  // 제출 기한 (옵션)
+  const [deadlineEnabled, setDeadlineEnabled] = useState(false)
+  const [deadlineDate, setDeadlineDate] = useState('')
+  const [deadlineTime, setDeadlineTime] = useState('23:59')
   const [saving, setSaving] = useState(false)
   const [aiSuggesting, setAiSuggesting] = useState(false)
   // AI 추천 옵션
@@ -339,7 +343,9 @@ export default function TopicsPage() {
           lock_start_time: lockEnabled ? lockStartTime : null,
           lock_end_time: lockEnabled ? lockEndTime : null,
           min_length: minLen,
-          max_rewrites: maxRew
+          max_rewrites: maxRew,
+          deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
+          deadline_time: deadlineEnabled ? deadlineTime : null
         }).eq('id', existing.id)
         error = r.error
       } else {
@@ -353,7 +359,9 @@ export default function TopicsPage() {
           lock_start_time: lockEnabled ? lockStartTime : null,
           lock_end_time: lockEnabled ? lockEndTime : null,
           min_length: minLen,
-          max_rewrites: maxRew
+          max_rewrites: maxRew,
+          deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
+          deadline_time: deadlineEnabled ? deadlineTime : null
         })
         error = r.error
       }
@@ -369,6 +377,9 @@ export default function TopicsPage() {
       setLockEndTime('10:00')
       setMinLength(30)
       setMaxRewrites(1)
+      setDeadlineEnabled(false)
+      setDeadlineDate('')
+      setDeadlineTime('23:59')
       await loadTopics(user.id, classInfo?.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
@@ -1023,6 +1034,37 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
                       💡 이 시간대 밖에서는 학생이 새 글 제출/수정을 할 수 없어요. 작성된 글 보기는 항상 가능.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* 📅 제출 기한 */}
+              <div className="border border-gray-200 rounded-lg p-3">
+                <label className="flex items-center gap-2 mb-2">
+                  <input type="checkbox" checked={deadlineEnabled}
+                    onChange={e => setDeadlineEnabled(e.target.checked)}
+                    className="w-4 h-4" />
+                  <span className="text-sm font-medium">📅 제출 기한 설정</span>
+                </label>
+                {deadlineEnabled && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">마감 날짜</label>
+                        <input type="date" value={deadlineDate || date}
+                          onChange={e => setDeadlineDate(e.target.value)}
+                          className="w-full p-2 border border-gray-200 rounded text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">마감 시각</label>
+                        <input type="time" value={deadlineTime}
+                          onChange={e => setDeadlineTime(e.target.value)}
+                          className="w-full p-2 border border-gray-200 rounded text-sm" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 기한이 지나면 학생은 새 글 제출/수정 불가. 기존 글은 그대로 보존돼요.
                     </p>
                   </>
                 )}
