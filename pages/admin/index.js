@@ -12,6 +12,7 @@ export default function AdminHome() {
   const [teachers, setTeachers] = useState([])
   const [classes, setClasses] = useState([])
   const [feedbacks, setFeedbacks] = useState([])
+  const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
 
@@ -41,7 +42,7 @@ export default function AdminHome() {
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
       supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayKr + 'T00:00:00'),
-      supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(50)
+      supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200)
     ])
 
     if (classesRes.error) {
@@ -111,6 +112,64 @@ export default function AdminHome() {
     await loadAll()
   }
 
+  // 🔐 관리자 권한 부여/회수
+  const toggleAdmin = async (teacher) => {
+    const isCurrentlyAdmin = teacher.role === 'admin'
+
+    // 자기 자신 권한 회수 시: 다른 관리자가 있는지 확인
+    if (isCurrentlyAdmin && teacher.id === user?.id) {
+      const adminCount = teachers.filter(t => t.role === 'admin').length
+      if (adminCount <= 1) {
+        return alert('⚠️ 마지막 관리자는 자기 권한을 회수할 수 없어요.\n다른 선생님께 먼저 관리자 권한을 부여한 뒤 회수해주세요.')
+      }
+      if (!confirm('🚨 본인의 관리자 권한을 회수하시겠어요?\n\n회수 후엔 관리자 페이지에 접근할 수 없어요.\n다른 관리자만 권한을 되돌릴 수 있어요.')) return
+    } else {
+      const action = isCurrentlyAdmin ? '회수' : '부여'
+      const warning = isCurrentlyAdmin
+        ? `\n\n회수 후 ${teacher.realname} 선생님은 일반 교사 권한으로 돌아가요.`
+        : `\n\n부여 후 ${teacher.realname} 선생님도 관리자 기능을 사용할 수 있어요.`
+      if (!confirm(`🔐 ${teacher.realname} 선생님의 관리자 권한을 ${action}하시겠어요?${warning}`)) return
+    }
+
+    const newRole = isCurrentlyAdmin ? 'teacher' : 'admin'
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', teacher.id)
+    if (error) return alert('실패: ' + error.message)
+    alert(`${isCurrentlyAdmin ? '회수' : '부여'} 완료!`)
+
+    // 본인이 권한 회수했으면 페이지 이탈
+    if (isCurrentlyAdmin && teacher.id === user?.id) {
+      router.push('/teacher')
+      return
+    }
+    await loadAll()
+  }
+
+  // 💬 의견 숨김/복원
+  const toggleHideFeedback = async (fb) => {
+    const action = fb.is_hidden ? '복원' : '숨김'
+    const { error } = await supabase.from('feedback').update({
+      is_hidden: !fb.is_hidden,
+      hidden_at: fb.is_hidden ? null : new Date().toISOString()
+    }).eq('id', fb.id)
+    if (error) return alert('실패: ' + error.message)
+    await loadAll()
+  }
+
+  // 💬 의견 일괄 숨김 (보이는 것 모두)
+  const hideAllVisible = async () => {
+    const visible = feedbacks.filter(f => !f.is_hidden)
+    if (visible.length === 0) return alert('숨길 의견이 없어요')
+    if (!confirm(`보이는 ${visible.length}개 의견을 모두 숨길까요?\n나중에 "숨김 포함 보기"에서 복원할 수 있어요.`)) return
+
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('feedback').update({
+      is_hidden: true, hidden_at: now
+    }).in('id', visible.map(f => f.id))
+    if (error) return alert('실패: ' + error.message)
+    alert(`✅ ${visible.length}개 숨김 완료`)
+    await loadAll()
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
   return (
@@ -151,7 +210,7 @@ export default function AdminHome() {
               { id: 'overview', label: '👥 선생님' },
               { id: 'classes', label: '🏫 학급' },
               { id: 'submissions', label: '📝 학생 글' },
-              { id: 'feedbacks', label: `💬 의견 (${feedbacks.length})` }
+              { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex-1 min-w-fit py-2 px-3 rounded-lg text-sm font-medium whitespace-nowrap ${tab === t.id ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
@@ -201,12 +260,30 @@ export default function AdminHome() {
                             )}
                           </td>
                           <td className="p-2 text-center">
-                            {t.role !== 'admin' && (
-                              <button onClick={() => toggleTeacherBan(t)}
-                                className={`text-xs px-3 py-1 rounded ${t.is_banned ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
-                                {t.is_banned ? '차단 해제' : '차단'}
-                              </button>
-                            )}
+                            <div className="flex flex-col sm:flex-row gap-1 justify-center">
+                              {t.role !== 'admin' && !t.is_banned && (
+                                <button onClick={() => toggleTeacherBan(t)}
+                                  className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">
+                                  차단
+                                </button>
+                              )}
+                              {t.role !== 'admin' && t.is_banned && (
+                                <button onClick={() => toggleTeacherBan(t)}
+                                  className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200">
+                                  차단 해제
+                                </button>
+                              )}
+                              {!t.is_banned && (
+                                <button onClick={() => toggleAdmin(t)}
+                                  className={`text-xs px-2 py-1 rounded ${
+                                    t.role === 'admin'
+                                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                  }`}>
+                                  {t.role === 'admin' ? '관리자 해제' : '관리자 부여'}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -276,23 +353,57 @@ export default function AdminHome() {
 
           {tab === 'submissions' && <AdminSubmissions />}
 
-          {tab === 'feedbacks' && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold mb-3">💬 받은 의견 ({feedbacks.length}건)</h3>
-              {feedbacks.length === 0 ? (
-                <p className="text-sm text-gray-500 py-8 text-center">받은 의견이 없어요</p>
-              ) : (
-                <div className="space-y-3">
-                  {feedbacks.map(f => (
-                    <div key={f.id} className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-xs text-gray-500 mb-1">{f.created_at?.slice(0, 16).replace('T', ' ')}</div>
-                      <div className="text-sm whitespace-pre-wrap">{f.content}</div>
-                    </div>
-                  ))}
+          {tab === 'feedbacks' && (() => {
+            const visibleFeedbacks = feedbacks.filter(f => !f.is_hidden)
+            const hiddenFeedbacks = feedbacks.filter(f => f.is_hidden)
+            const displayed = showHiddenFeedback ? feedbacks : visibleFeedbacks
+            return (
+              <div className="bg-white rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold">
+                    💬 받은 의견 ({visibleFeedbacks.length}건
+                    {hiddenFeedbacks.length > 0 && <span className="text-xs text-gray-500"> + 숨김 {hiddenFeedbacks.length}건</span>})
+                  </h3>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={() => setShowHiddenFeedback(!showHiddenFeedback)}
+                      className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
+                      {showHiddenFeedback ? '👁️ 보이는 것만' : `🔍 숨김 포함 보기 (${hiddenFeedbacks.length})`}
+                    </button>
+                    {visibleFeedbacks.length > 0 && (
+                      <button onClick={hideAllVisible}
+                        className="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">
+                        📦 보이는 의견 모두 숨김
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {displayed.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-8 text-center">
+                    {feedbacks.length === 0 ? '받은 의견이 없어요' : '보이는 의견이 없어요. 숨김 포함 보기를 사용하세요.'}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {displayed.map(f => (
+                      <div key={f.id} className={`rounded-lg p-3 ${f.is_hidden ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="text-xs text-gray-500">
+                            {f.created_at?.slice(0, 16).replace('T', ' ')}
+                            {f.is_hidden && <span className="ml-2 bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
+                          </div>
+                          <button onClick={() => toggleHideFeedback(f)}
+                            className="text-xs text-gray-500 hover:text-gray-800 underline whitespace-nowrap">
+                            {f.is_hidden ? '↩️ 복원' : '🗑️ 숨김'}
+                          </button>
+                        </div>
+                        <div className="text-sm whitespace-pre-wrap">{f.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
         </main>
       </div>
