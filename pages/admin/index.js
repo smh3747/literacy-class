@@ -14,6 +14,7 @@ export default function AdminHome() {
   const [classes, setClasses] = useState([])
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
+  const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
 
@@ -185,6 +186,53 @@ export default function AdminHome() {
     await loadAll()
   }
 
+  // ☑️ 선택된 의견 일괄 숨김
+  const hideSelected = async () => {
+    const targetIds = [...selectedFeedbackIds]
+    if (targetIds.length === 0) return
+    if (!confirm(`선택한 ${targetIds.length}개 의견을 숨길까요?`)) return
+
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('feedback').update({
+      is_hidden: true, hidden_at: now
+    }).in('id', targetIds)
+    if (error) return alert('실패: ' + error.message)
+    setSelectedFeedbackIds(new Set())
+    await loadAll()
+  }
+
+  // ☑️ 선택된 의견 일괄 복원
+  const restoreSelected = async () => {
+    const targetIds = [...selectedFeedbackIds]
+    if (targetIds.length === 0) return
+    if (!confirm(`선택한 ${targetIds.length}개 의견을 복원할까요?`)) return
+
+    const { error } = await supabase.from('feedback').update({
+      is_hidden: false, hidden_at: null
+    }).in('id', targetIds)
+    if (error) return alert('실패: ' + error.message)
+    setSelectedFeedbackIds(new Set())
+    await loadAll()
+  }
+
+  // ☑️ 체크박스 토글
+  const toggleSelect = (id) => {
+    setSelectedFeedbackIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // 📋 복사/요약 대상 선택: 체크된 것 우선, 없으면 보이는 것 전체
+  const getTargetFeedbacks = () => {
+    if (selectedFeedbackIds.size > 0) {
+      return feedbacks.filter(f => selectedFeedbackIds.has(f.id))
+    }
+    return feedbacks.filter(f => !f.is_hidden)
+  }
+
   // 📋 의견을 마크다운 형식으로 정리 (Claude에게 바로 전달용)
   const formatFeedbacksAsMarkdown = (fbs) => {
     if (!fbs || fbs.length === 0) return ''
@@ -199,14 +247,15 @@ export default function AdminHome() {
     return md
   }
 
-  // 📋 보이는 의견 전체 복사
-  const copyVisibleFeedbacks = async () => {
-    const visible = feedbacks.filter(f => !f.is_hidden)
-    if (visible.length === 0) return alert('복사할 의견이 없어요')
-    const md = formatFeedbacksAsMarkdown(visible)
+  // 📋 의견 복사 (선택된 것 우선, 없으면 보이는 것 전체)
+  const copyFeedbacks = async () => {
+    const target = getTargetFeedbacks()
+    if (target.length === 0) return alert('복사할 의견이 없어요')
+    const md = formatFeedbacksAsMarkdown(target)
     try {
       await navigator.clipboard.writeText(md)
-      alert(`✅ ${visible.length}개 의견을 마크다운으로 복사했어요!\n\nClaude나 다른 AI에게 바로 붙여넣을 수 있어요.`)
+      const label = selectedFeedbackIds.size > 0 ? `선택한 ${target.length}개` : `보이는 ${target.length}개`
+      alert(`✅ ${label} 의견을 마크다운으로 복사했어요!\n\nClaude나 다른 AI에게 바로 붙여넣을 수 있어요.`)
     } catch(e) {
       alert('복사 실패: ' + e.message)
     }
@@ -217,9 +266,9 @@ export default function AdminHome() {
   const [aiSummary, setAiSummary] = useState(null)
 
   const summarizeWithAi = async () => {
-    const visible = feedbacks.filter(f => !f.is_hidden)
-    if (visible.length === 0) return alert('요약할 의견이 없어요')
-    if (visible.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
+    const target = getTargetFeedbacks()
+    if (target.length === 0) return alert('요약할 의견이 없어요')
+    if (target.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
 
     // gemini.js 동적 import
     const { callGeminiStructured, SCHEMAS, loadApiKey } = await import('../../lib/gemini')
@@ -230,8 +279,8 @@ export default function AdminHome() {
     setAiSummarizing(true)
     setAiSummary(null)
     try {
-      const contents = visible.map((f, i) => `[${i + 1}] ${f.content}`).join('\n\n')
-      const prompt = `다음은 "문해력 수업" 교육용 웹앱에 들어온 ${visible.length}개의 선생님 의견입니다. 카테고리별로 정리하고 우선순위와 대응 방안을 제안해주세요.
+      const contents = target.map((f, i) => `[${i + 1}] ${f.content}`).join('\n\n')
+      const prompt = `다음은 "문해력 수업" 교육용 웹앱에 들어온 ${target.length}개의 선생님 의견입니다. 카테고리별로 정리하고 우선순위와 대응 방안을 제안해주세요.
 
 의견 목록:
 ${contents}
@@ -491,6 +540,15 @@ ${contents}
             const visibleFeedbacks = feedbacks.filter(f => !f.is_hidden)
             const hiddenFeedbacks = feedbacks.filter(f => f.is_hidden)
             const displayed = showHiddenFeedback ? feedbacks : visibleFeedbacks
+            const selectedCount = selectedFeedbackIds.size
+            const allDisplayedSelected = displayed.length > 0 && displayed.every(f => selectedFeedbackIds.has(f.id))
+            const selectAll = () => setSelectedFeedbackIds(new Set(displayed.map(f => f.id)))
+            const clearSelection = () => setSelectedFeedbackIds(new Set())
+            // 선택된 항목 분석 (숨김/보임 카운트)
+            const selectedHidden = [...selectedFeedbackIds].filter(id =>
+              feedbacks.find(f => f.id === id)?.is_hidden
+            ).length
+            const selectedVisible = selectedCount - selectedHidden
             return (
               <div className="bg-white rounded-2xl p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -518,22 +576,56 @@ ${contents}
                   </div>
                 </div>
 
+                {/* ☑️ 선택 도구바 (선택된 항목이 있을 때 표시) */}
+                {selectedCount > 0 && (
+                  <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 mb-3 flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-blue-900">
+                      ☑️ {selectedCount}개 선택됨
+                    </span>
+                    <div className="flex gap-1.5 flex-wrap ml-auto">
+                      {selectedVisible > 0 && (
+                        <button onClick={hideSelected}
+                          className="text-xs bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
+                          🗑️ 숨김 ({selectedVisible})
+                        </button>
+                      )}
+                      {selectedHidden > 0 && (
+                        <button onClick={restoreSelected}
+                          className="text-xs bg-white border border-emerald-300 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-50">
+                          ↩️ 복원 ({selectedHidden})
+                        </button>
+                      )}
+                      <button onClick={clearSelection}
+                        className="text-xs text-gray-600 hover:text-gray-800 px-2">
+                        ✕ 선택 해제
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* AI 요약 + 복사 도구 */}
-                {visibleFeedbacks.length > 0 && (
+                {displayed.length > 0 && (
                   <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-3 mb-3">
-                    <p className="text-sm font-semibold text-purple-900 mb-2">🤖 Claude에게 보내기 도구</p>
+                    <p className="text-sm font-semibold text-purple-900 mb-2">
+                      🤖 Claude에게 보내기 도구
+                      {selectedCount > 0 && (
+                        <span className="ml-2 text-xs font-normal bg-purple-200 text-purple-900 px-2 py-0.5 rounded-full">
+                          선택한 {selectedCount}개만
+                        </span>
+                      )}
+                    </p>
                     <div className="flex gap-2 flex-wrap">
-                      <button onClick={copyVisibleFeedbacks}
+                      <button onClick={copyFeedbacks}
                         className="text-xs bg-white border border-purple-300 text-purple-700 px-3 py-2 rounded hover:bg-purple-50 font-medium">
-                        📋 의견 전체 복사 (마크다운)
+                        📋 {selectedCount > 0 ? `선택 ${selectedCount}개 복사` : '보이는 의견 전체 복사'} (마크다운)
                       </button>
                       <button onClick={summarizeWithAi} disabled={aiSummarizing}
                         className="text-xs bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">
-                        {aiSummarizing ? '🤖 분석 중...' : '✨ AI로 카테고리별 요약'}
+                        {aiSummarizing ? '🤖 분석 중...' : `✨ AI로 ${selectedCount > 0 ? '선택' : '전체'} 카테고리별 요약`}
                       </button>
                     </div>
                     <p className="text-xs text-gray-600 mt-2">
-                      💡 복사한 내용을 Claude에게 붙여넣으면 우선순위/대응 방안 분석이 시작돼요
+                      💡 체크박스로 선택하면 그 의견만 처리돼요. 선택 없으면 보이는 모든 의견 대상.
                     </p>
 
                     {aiSummary && (
@@ -589,23 +681,57 @@ ${contents}
                     {feedbacks.length === 0 ? '받은 의견이 없어요' : '보이는 의견이 없어요. 숨김 포함 보기를 사용하세요.'}
                   </p>
                 ) : (
-                  <div className="space-y-2">
-                    {displayed.map(f => (
-                      <div key={f.id} className={`rounded-lg p-3 ${f.is_hidden ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <div className="text-xs text-gray-500">
-                            {f.created_at?.slice(0, 16).replace('T', ' ')}
-                            {f.is_hidden && <span className="ml-2 bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
+                  <>
+                    {/* 전체 선택 헤더 */}
+                    <div className="flex items-center gap-2 mb-2 px-1 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={allDisplayedSelected}
+                        onChange={() => allDisplayedSelected ? clearSelection() : selectAll()}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                      <button onClick={() => allDisplayedSelected ? clearSelection() : selectAll()}
+                        className="hover:text-gray-900">
+                        {allDisplayedSelected ? '전체 해제' : `전체 선택 (${displayed.length})`}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {displayed.map(f => {
+                        const isSelected = selectedFeedbackIds.has(f.id)
+                        return (
+                          <div key={f.id}
+                            className={`rounded-lg p-3 flex items-start gap-3 ${
+                              isSelected
+                                ? 'bg-blue-50 border-2 border-blue-300'
+                                : f.is_hidden
+                                  ? 'bg-gray-100 opacity-60'
+                                  : 'bg-gray-50 border-2 border-transparent'
+                            }`}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(f.id)}
+                              className="w-4 h-4 mt-1 flex-shrink-0 cursor-pointer"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="text-xs text-gray-500">
+                                  {f.created_at?.slice(0, 16).replace('T', ' ')}
+                                  {f.is_hidden && <span className="ml-2 bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
+                                </div>
+                                <button onClick={() => toggleHideFeedback(f)}
+                                  className="text-xs text-gray-500 hover:text-gray-800 underline whitespace-nowrap">
+                                  {f.is_hidden ? '↩️ 복원' : '🗑️ 숨김'}
+                                </button>
+                              </div>
+                              <div className="text-sm whitespace-pre-wrap">{f.content}</div>
+                            </div>
                           </div>
-                          <button onClick={() => toggleHideFeedback(f)}
-                            className="text-xs text-gray-500 hover:text-gray-800 underline whitespace-nowrap">
-                            {f.is_hidden ? '↩️ 복원' : '🗑️ 숨김'}
-                          </button>
-                        </div>
-                        <div className="text-sm whitespace-pre-wrap">{f.content}</div>
-                      </div>
-                    ))}
-                  </div>
+                        )
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             )
