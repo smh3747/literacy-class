@@ -318,10 +318,13 @@ export default function TeacherSubmissions() {
   const allowAllExtraRewrites = async () => {
     if (!selectedTopic) return
     // 대상: 각 학생의 최신 attempt 글 중 extra_rewrite_allowed가 아닌 것
+    // topicStudents = [{profile, items: [submission, ...]}]
     const subsByStudent = {}
-    submissions.forEach(s => {
-      const cur = subsByStudent[s.user_id]
-      if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+    topicStudents.forEach(g => {
+      g.items.forEach(s => {
+        const cur = subsByStudent[s.user_id]
+        if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+      })
     })
     const latestSubs = Object.values(subsByStudent)
 
@@ -407,9 +410,11 @@ export default function TeacherSubmissions() {
                   ? selectedTopic.max_rewrites : 1
                 // 일괄 허용 가능한 대상 수 계산
                 const subsByStudent = {}
-                submissions.forEach(s => {
-                  const cur = subsByStudent[s.user_id]
-                  if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+                topicStudents.forEach(g => {
+                  g.items.forEach(s => {
+                    const cur = subsByStudent[s.user_id]
+                    if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+                  })
                 })
                 const needExtraCount = Object.values(subsByStudent).filter(s =>
                   (s.attempt || 1) >= 1 + maxRewrites && !s.extra_rewrite_allowed
