@@ -72,67 +72,57 @@ export default function ApiKeyGuide() {
                 <div className="flex items-start gap-3 mb-2">
                   <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">1</span>
                   <div className="flex-1">
-                    <p className="font-medium mb-1">Google AI Studio 접속</p>
+                    <p className="font-medium mb-1">Google AI Studio 접속 + 개인 Gmail 로그인 → "<strong className="text-red-600">+ API 키 만들기</strong>" 클릭</p>
                     <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
                        className="inline-block bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition mt-1">
                       🔗 aistudio.google.com/apikey 바로가기
                     </a>
-                    <p className="text-xs text-gray-500 mt-2">위 링크를 새 탭에서 열어주세요</p>
+                    <p className="text-xs text-gray-500 mt-2">⚠️ 학교/회사 계정 X, 반드시 <strong>@gmail.com 개인 계정</strong>으로 로그인</p>
+                    <p className="text-xs text-gray-500 mt-1">아래 사진의 빨간 ① 표시된 "API 키 만들기" 버튼을 클릭하세요</p>
                   </div>
                 </div>
-                <StepImage step={1} alt="Google AI Studio 첫 화면" />
+                <StepImage step={1} alt="API 키 만들기 버튼 위치" />
               </li>
 
-              {/* 2단계 */}
+              {/* 2단계: 키 만들기 모달 */}
               <li className="border-l-4 border-primary pl-4">
                 <div className="flex items-start gap-3 mb-2">
                   <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">2</span>
                   <div className="flex-1">
-                    <p className="font-medium mb-1">개인 Gmail로 로그인</p>
-                    <p className="text-gray-600 text-xs">⚠️ 학교/회사 계정 X, 반드시 <strong>@gmail.com 개인 계정</strong></p>
-                    <p className="text-gray-600 text-xs mt-1">처음이면 Google 계정 약관 동의도 함께 진행됩니다</p>
+                    <p className="font-medium mb-1">새 키 만들기 창에서 "<strong className="text-red-600">키 만들기</strong>" 버튼 클릭</p>
+                    <p className="text-gray-600 text-xs">키 이름은 기본값(Gemini API Key) 그대로 두셔도 OK</p>
+                    <p className="text-gray-600 text-xs mt-1">프로젝트도 기본값(Default Gemini Project) 그대로 두세요</p>
+                    <p className="text-xs text-gray-500 mt-1">아래 사진의 빨간 ② 표시된 버튼을 클릭하세요</p>
                   </div>
                 </div>
-                <StepImage step={2} alt="Google 로그인 화면" />
+                <StepImage step={3} alt="키 만들기 버튼 위치" />
               </li>
 
-              {/* 3단계 */}
+              {/* 3단계: 키 복사 */}
               <li className="border-l-4 border-primary pl-4">
                 <div className="flex items-start gap-3 mb-2">
                   <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">3</span>
                   <div className="flex-1">
-                    <p className="font-medium mb-1">"+ Create API key" 버튼 클릭</p>
-                    <p className="text-gray-600 text-xs">화면 중앙 또는 상단의 파란색 버튼</p>
-                    <p className="text-gray-500 text-xs mt-1">⚠️ 프로젝트 생성을 묻는 창이 뜨면 "Create API key in new project" 선택</p>
-                  </div>
-                </div>
-                <StepImage step={3} alt="Create API key 버튼" />
-              </li>
-
-              {/* 4단계 */}
-              <li className="border-l-4 border-primary pl-4">
-                <div className="flex items-start gap-3 mb-2">
-                  <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">4</span>
-                  <div className="flex-1">
                     <p className="font-medium mb-1">생성된 API 키 복사</p>
                     <p className="text-gray-600 text-xs">키는 <code className="bg-gray-100 px-1 rounded">AIza...</code>로 시작하는 약 40글자의 긴 문자열</p>
-                    <p className="text-gray-600 text-xs mt-1">옆의 <strong>"Copy"</strong> 또는 📋 아이콘 클릭해서 복사</p>
+                    <p className="text-gray-600 text-xs mt-1">아래 사진의 빨간 ③ 표시된 <strong>복사 아이콘</strong> 또는 아래쪽 <strong>"키 복사"</strong> 버튼 클릭</p>
                   </div>
                 </div>
-                <StepImage step={4} alt="생성된 API 키" />
+                <StepImage step={4} alt="키 복사 버튼 위치" />
               </li>
 
-              {/* 5단계 */}
+              {/* 4단계: 사이트에 붙여넣기 */}
               <li className="border-l-4 border-green-500 pl-4">
                 <div className="flex items-start gap-3 mb-2">
-                  <span className="flex-shrink-0 w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">5</span>
+                  <span className="flex-shrink-0 w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">4</span>
                   <div className="flex-1">
-                    <p className="font-medium mb-1">문해력 수업 사이트에 붙여넣기</p>
-                    <p className="text-gray-600 text-xs">선생님 메인 화면 → <strong>"🔑 Gemini API 키"</strong> 카드 → 키 입력칸에 붙여넣기 → <strong>저장</strong></p>
-                    <p className="text-gray-500 text-xs mt-1">학급의 모든 학생이 이 키를 자동으로 사용합니다</p>
+                    <p className="font-medium mb-1">문해력 수업 사이트에 붙여넣고 저장</p>
+                    <p className="text-gray-600 text-xs">선생님 메인 화면 → <strong>"🔑 학급 Gemini API 키"</strong> 카드 찾기</p>
+                    <p className="text-gray-600 text-xs mt-1">아래 사진의 빨간 ④ 입력칸에 키를 붙여넣고, ⑤ 저장 버튼 클릭</p>
+                    <p className="text-gray-500 text-xs mt-1">한 번 저장하면 학급의 모든 학생이 자동으로 이 키를 사용합니다</p>
                   </div>
                 </div>
-                <StepImage step={5} alt="API 키 등록 화면" />
+                <StepImage step={5} alt="키 입력 + 저장 버튼" />
               </li>
             </ol>
           </div>
