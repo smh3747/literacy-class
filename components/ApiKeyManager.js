@@ -153,9 +153,33 @@ export default function ApiKeyManager({ classId, onChange }) {
             <p className="font-semibold">📌 학급 단위 저장 안내</p>
             <p>• 한 번 저장하면 학급의 모든 학생이 이 키로 AI를 사용해요</p>
             <p>• 학생들에게는 키가 보이지 않아요 (자동 처리)</p>
-            <p>• 무료 한도(분당 30회)는 학급 전체가 공유합니다</p>
+            <p>• 무료 한도는 학급 전체가 공유합니다 (계정마다 다름)</p>
           </div>
         </div>
+      )}
+
+      {hasKey && !showInput && (
+        <details className="mt-3 text-xs">
+          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+            ⚠️ 학생이 "한도 초과(429)" 오류를 받았나요?
+          </summary>
+          <div className="mt-2 bg-orange-50 border border-orange-200 rounded p-3 text-orange-900 space-y-1.5 leading-relaxed">
+            <p className="font-semibold">📊 Gemini API 무료 한도는 계정마다 달라요</p>
+            <p>• 신규 계정은 하루 20~50회로 시작할 수 있어요</p>
+            <p>• 평소 Gemini를 자주 쓴 계정은 1,000~1,500회까지 가능</p>
+            <p className="pt-1.5 font-semibold">🔧 해결 방법 (효과 순서):</p>
+            <p>1. 다른 개인 Gmail로 새 키 발급 후 교체 (즉시)</p>
+            <p>2. 한국 시간 <strong>오후 5시</strong>까지 대기 (자동 리셋)</p>
+            <p>3. Google Cloud Billing 활성화 → Tier 1 (일일 1,500회, 카드 등록만 하면 무료 한도 내 청구 안 됨)</p>
+            <p className="pt-1.5 font-semibold">💡 한도 확인:</p>
+            <p>
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="underline">
+                aistudio.google.com/apikey
+              </a>
+              {' '}→ 키 옆 막대그래프 아이콘 클릭
+            </p>
+          </div>
+        </details>
       )}
     </div>
   )

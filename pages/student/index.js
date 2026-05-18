@@ -167,6 +167,8 @@ export default function StudentHome() {
   const [pasteWarning, setPasteWarning] = useState(false)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showNicknameModal, setShowNicknameModal] = useState(false)
+  // AI 호출 에러 모달
+  const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
@@ -432,7 +434,10 @@ ${essay}
       generateExample(essay, totalMax)
     } catch(e) {
       console.error('제출 오류:', e)
-      alert(getFriendlyErrorMessage(e) + '\n\n💡 글은 그대로 있으니 안심하세요. 다시 시도해주세요.')
+      setErrorModal({
+        title: '🚨 글 제출에 문제가 생겼어요',
+        message: getFriendlyErrorMessage(e)
+      })
     }
     setSubmitting(false)
   }
@@ -655,7 +660,10 @@ ${rewriteEssay}
       generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
-      alert(getFriendlyErrorMessage(e) + '\n\n💡 글은 그대로 있으니 안심하세요.')
+      setErrorModal({
+        title: '🚨 수정본 제출에 문제가 생겼어요',
+        message: getFriendlyErrorMessage(e)
+      })
     }
     setRewriting(false)
   }
@@ -1045,6 +1053,24 @@ ${rewriteEssay}
             onClose={() => setShowNicknameModal(false)}
             onSuccess={(newNick) => setUser(prev => ({ ...prev, nickname: newNick }))}
           />
+        )}
+        {errorModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
+              <h3 className="text-lg font-bold mb-3">{errorModal.title}</h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-amber-900 whitespace-pre-line leading-relaxed">
+                  {errorModal.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setErrorModal(null)}
+                className="w-full py-3 bg-primary text-white rounded-xl font-semibold"
+              >
+                확인
+              </button>
+            </div>
+          </div>
         )}
         <StudentTutorial />
       </div>
