@@ -46,6 +46,25 @@ export default function TopicsPage() {
   // 역방향: 주제 → 평가기준 자동 생성
   const [generatingRubrics, setGeneratingRubrics] = useState(false)
 
+  // 📅 기간 일괄 등록 모드
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchStartDate, setBatchStartDate] = useState(() => {
+    const d = new Date()
+    d.setHours(d.getHours() + 9)
+    return d.toISOString().split('T')[0]
+  })
+  const [batchEndDate, setBatchEndDate] = useState(() => {
+    const d = new Date()
+    d.setHours(d.getHours() + 9)
+    d.setDate(d.getDate() + 6) // 기본 7일
+    return d.toISOString().split('T')[0]
+  })
+  const [batchExcludeWeekend, setBatchExcludeWeekend] = useState(true)
+  const [batchTheme, setBatchTheme] = useState('') // 주제 방향 (선택)
+  const [batchGenerating, setBatchGenerating] = useState(false)
+  const [batchPreview, setBatchPreview] = useState(null) // 생성된 주제 리스트 미리보기
+  const [batchSaving, setBatchSaving] = useState(false)
+
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
@@ -134,6 +153,160 @@ export default function TopicsPage() {
   const removeRubric = (i) => setRubrics(rubrics.filter((_, idx) => idx !== i))
 
   const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
+
+  // 📅 기간 내 날짜 목록 생성 (주말 제외 옵션)
+  const getDatesInRange = (start, end, excludeWeekend) => {
+    const dates = []
+    const cur = new Date(start)
+    const stop = new Date(end)
+    while (cur <= stop) {
+      const day = cur.getDay()
+      if (!excludeWeekend || (day !== 0 && day !== 6)) {
+        const y = cur.getFullYear()
+        const m = String(cur.getMonth() + 1).padStart(2, '0')
+        const d = String(cur.getDate()).padStart(2, '0')
+        dates.push(`${y}-${m}-${d}`)
+      }
+      cur.setDate(cur.getDate() + 1)
+    }
+    return dates
+  }
+
+  // 📅 기간 일괄 AI 주제 생성 (미리보기)
+  const generateBatchTopics = async () => {
+    if (!batchStartDate || !batchEndDate) return alert('시작/종료 날짜를 모두 선택해주세요')
+    if (new Date(batchStartDate) > new Date(batchEndDate)) return alert('종료일이 시작일보다 빠를 수 없어요')
+
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
+
+    const dates = getDatesInRange(batchStartDate, batchEndDate, batchExcludeWeekend)
+    if (dates.length === 0) return alert('생성할 날짜가 없어요 (주말만 선택됨)')
+    if (dates.length > 14) return alert('한 번에 최대 14일까지만 가능해요 (현재 ' + dates.length + '일)')
+
+    // 이미 등록된 날짜 체크
+    const existingDates = new Set(topics.map(t => t.date))
+    const conflictDates = dates.filter(d => existingDates.has(d))
+    if (conflictDates.length > 0) {
+      const proceed = confirm(
+        `이미 등록된 날짜가 ${conflictDates.length}개 있어요:\n` +
+        conflictDates.slice(0, 5).join(', ') + (conflictDates.length > 5 ? ' ...' : '') +
+        `\n\n이 날짜들은 건너뛰고 나머지만 생성할까요?`
+      )
+      if (!proceed) return
+    }
+    const targetDates = dates.filter(d => !existingDates.has(d))
+    if (targetDates.length === 0) return alert('생성할 날짜가 없어요 (모두 등록됨)')
+
+    setBatchGenerating(true)
+    setBatchPreview(null)
+    try {
+      const gradeText = classInfo?.grade ? `초등 ${classInfo.grade}학년` : '초등 5학년'
+      const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
+
+      let prompt = `${gradeText} 글쓰기 주제 ${targetDates.length}개를 만들어주세요.
+
+규칙:
+- 각 주제는 서로 카테고리가 달라야 함 (예: 일상, 상상, 가족, 학교, 자연, 책/영화 등 다양하게)
+- 최근 출제 주제와 중복 금지: ${recentTitles || '없음'}
+- title: 10-15자, 흥미롭고 ${gradeText} 학생들이 재미있어할 주제
+- description: 70-100자의 글쓰기 안내 (질문형 X, 안내/지시형으로)
+- category: 카테고리명 (예: "일상 경험", "상상력", "가족과 친구" 등)
+`
+      if (batchTheme && batchTheme.trim()) {
+        prompt += `\n선생님 요청: ${batchTheme.trim()}\n위 방향성을 반영해주세요.\n`
+      }
+      prompt += `
+좋은 예시:
+- title: "내 인생의 첫 도전"
+  description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
+  category: "일상 경험"
+
+위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개)`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, {
+        maxTokens: 6000,
+        onProgress: (p) => console.log(p.message)
+      })
+
+      let aiTopics = Array.isArray(result.topics) ? result.topics : []
+      if (aiTopics.length < targetDates.length) {
+        alert(`AI가 ${aiTopics.length}개만 생성했어요. 필요한 ${targetDates.length}개보다 적어요. 다시 시도해주세요.`)
+        return
+      }
+      // 정확히 필요한 개수만 잘라서 사용
+      aiTopics = aiTopics.slice(0, targetDates.length)
+
+      // 미리보기 데이터 만들기 (날짜 + 주제 매핑)
+      const preview = targetDates.map((d, i) => ({
+        date: d,
+        title: aiTopics[i]?.title || '',
+        description: aiTopics[i]?.description || '',
+        category: aiTopics[i]?.category || ''
+      }))
+      setBatchPreview(preview)
+    } catch(e) {
+      console.error('일괄 생성 오류:', e)
+      alert('생성 실패: ' + (e.message || e))
+    }
+    setBatchGenerating(false)
+  }
+
+  // 📅 미리보기 항목 수정
+  const updatePreviewItem = (idx, field, value) => {
+    setBatchPreview(prev => prev.map((item, i) =>
+      i === idx ? { ...item, [field]: value } : item
+    ))
+  }
+
+  // 📅 미리보기 항목 제거
+  const removePreviewItem = (idx) => {
+    setBatchPreview(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // 📅 일괄 저장 (DB에 한 번에 등록)
+  const saveBatchTopics = async () => {
+    if (!batchPreview || batchPreview.length === 0) return
+
+    // 빈 주제 검증
+    const invalid = batchPreview.filter(p => !p.title.trim())
+    if (invalid.length > 0) {
+      return alert(`주제 제목이 비어있는 항목이 ${invalid.length}개 있어요. 직접 입력하거나 삭제해주세요.`)
+    }
+
+    if (!confirm(
+      `📅 ${batchPreview.length}개 주제를 등록할까요?\n\n` +
+      `각 주제는 기본 평가 기준 + 글자수 30자 + 수정 1회로 등록돼요.\n` +
+      `등록 후 개별 주제를 수정할 수 있어요.`
+    )) return
+
+    setBatchSaving(true)
+    try {
+      const insertRows = batchPreview.map(p => ({
+        date: p.date,
+        title: p.title.trim(),
+        description: p.description.trim(),
+        rubrics: DEFAULT_RUBRICS,
+        teacher_id: user.id,
+        min_length: 30,
+        max_rewrites: 1,
+        lock_enabled: false
+      }))
+
+      const { error } = await supabase.from('topics').insert(insertRows)
+      if (error) throw error
+
+      alert(`✅ ${batchPreview.length}개 주제가 등록되었어요!`)
+      setBatchPreview(null)
+      setBatchTheme('')
+      // 단일 모드로 돌아가서 목록 새로고침
+      setBatchMode(false)
+      await loadTopics(user.id, classInfo?.id)
+    } catch(e) {
+      alert('저장 실패: ' + e.message)
+    }
+    setBatchSaving(false)
+  }
 
   // 주제 저장
   const saveTopic = async () => {
@@ -487,7 +660,148 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
             <h1 className="text-xl font-bold">주제 관리</h1>
           </div>
 
-          {/* 새 주제 등록 */}
+          {/* 모드 전환 탭 */}
+          <div className="bg-white rounded-2xl p-1 shadow-sm flex gap-1">
+            <button onClick={() => { setBatchMode(false); setBatchPreview(null) }}
+              className={`flex-1 py-2 rounded-xl text-sm font-medium transition ${
+                !batchMode ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}>
+              ✏️ 하루 주제 등록
+            </button>
+            <button onClick={() => setBatchMode(true)}
+              className={`flex-1 py-2 rounded-xl text-sm font-medium transition ${
+                batchMode ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}>
+              📅 기간 일괄 등록
+            </button>
+          </div>
+
+          {/* 📅 기간 일괄 등록 모드 */}
+          {batchMode && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="text-3xl">📅</div>
+                <div>
+                  <h3 className="font-bold">기간 일괄 등록</h3>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    휴가나 출장 대비, AI가 여러 날치 주제를 한 번에 만들어줘요.
+                    생성 후 확인/수정한 다음 일괄 등록합니다.
+                  </p>
+                </div>
+              </div>
+
+              {!batchPreview && (
+                <div className="space-y-3">
+                  {/* 날짜 범위 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">시작 날짜</label>
+                      <input type="date" value={batchStartDate} onChange={e => setBatchStartDate(e.target.value)}
+                        className="w-full p-2 border border-gray-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">종료 날짜</label>
+                      <input type="date" value={batchEndDate} onChange={e => setBatchEndDate(e.target.value)}
+                        className="w-full p-2 border border-gray-200 rounded-lg" />
+                    </div>
+                  </div>
+
+                  {/* 주말 제외 */}
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={batchExcludeWeekend}
+                      onChange={e => setBatchExcludeWeekend(e.target.checked)}
+                      className="w-4 h-4" />
+                    <span>주말(토/일) 제외</span>
+                  </label>
+
+                  {/* 선택: 주제 방향 */}
+                  <div>
+                    <label className="block text-sm font-medium mb-1">주제 방향 (선택)</label>
+                    <input type="text" value={batchTheme} onChange={e => setBatchTheme(e.target.value)}
+                      placeholder="예: 봄 관련 주제, 또는 환경 보호 단원에 맞춰서"
+                      className="w-full p-2 border border-gray-200 rounded-lg text-sm" />
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 빈 칸이면 다양한 카테고리로 자동 생성돼요
+                    </p>
+                  </div>
+
+                  {/* 생성될 날짜 수 미리 안내 */}
+                  {(() => {
+                    if (!batchStartDate || !batchEndDate) return null
+                    if (new Date(batchStartDate) > new Date(batchEndDate)) return null
+                    const dates = getDatesInRange(batchStartDate, batchEndDate, batchExcludeWeekend)
+                    if (dates.length === 0) return null
+                    return (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
+                        📊 <strong>{dates.length}개</strong>의 주제가 생성됩니다 ({dates[0]} ~ {dates[dates.length-1]})
+                        {dates.length > 14 && <span className="block text-red-700 mt-1">⚠️ 한 번에 최대 14개까지 가능해요</span>}
+                      </div>
+                    )
+                  })()}
+
+                  <button onClick={generateBatchTopics} disabled={batchGenerating}
+                    className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-purple-700">
+                    {batchGenerating ? '🤖 AI가 주제 만드는 중...' : '✨ AI로 주제 일괄 생성'}
+                  </button>
+                  {batchGenerating && (
+                    <p className="text-xs text-center text-gray-600">
+                      여러 주제를 한 번에 만들어요. 약 10~30초 정도 걸려요.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 미리보기 + 수정 */}
+              {batchPreview && (
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                    <p className="text-sm font-semibold text-emerald-900">✅ {batchPreview.length}개 주제가 생성되었어요</p>
+                    <p className="text-xs text-emerald-800 mt-1">
+                      각 주제를 확인하고 필요하면 수정하세요. 마음에 안 들면 삭제하거나 다시 생성할 수 있어요.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                    {batchPreview.map((item, idx) => (
+                      <div key={idx} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-600">
+                            📅 {item.date}
+                            {item.category && <span className="ml-2 bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{item.category}</span>}
+                          </div>
+                          <button onClick={() => removePreviewItem(idx)}
+                            className="text-xs text-red-600 hover:text-red-800">
+                            ✕ 삭제
+                          </button>
+                        </div>
+                        <input type="text" value={item.title}
+                          onChange={e => updatePreviewItem(idx, 'title', e.target.value)}
+                          className="w-full p-2 border border-gray-200 rounded text-sm font-medium" />
+                        <textarea value={item.description}
+                          onChange={e => updatePreviewItem(idx, 'description', e.target.value)}
+                          rows="2"
+                          className="w-full p-2 border border-gray-200 rounded text-xs leading-relaxed" />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={() => setBatchPreview(null)}
+                      className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm">
+                      다시 생성
+                    </button>
+                    <button onClick={saveBatchTopics} disabled={batchSaving || batchPreview.length === 0}
+                      className="flex-[2] py-2.5 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                      {batchSaving ? '저장 중...' : `📥 ${batchPreview.length}개 모두 등록`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 새 주제 등록 (단일 모드) */}
+          {!batchMode && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h3 className="font-bold mb-3">✏️ 주제 등록</h3>
             <div className="space-y-3">
@@ -720,6 +1034,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
               </button>
             </div>
           </div>
+          )}
 
           {/* 주제 목록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
