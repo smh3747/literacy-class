@@ -72,10 +72,18 @@ export default function Home() {
           <div className="max-w-md w-full text-center">
             <div className="text-6xl mb-4">✏️</div>
             <h2 className="text-3xl font-bold text-gray-900 mb-3">문해력 수업</h2>
-            <p className="text-gray-600 mb-12">
+            <p className="text-gray-600 mb-6">
               선생님과 함께하는<br />
               스마트한 글쓰기 학습
             </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-8 text-xs text-amber-900 text-left">
+              <p className="font-bold mb-1">🌱 베타 운영 중입니다</p>
+              <p className="leading-relaxed">
+                현재 시범 운영 단계로 일부 기능이 추가·변경될 수 있어요.
+                의견은 언제든 우상단 <strong>"💬 의견 보내기"</strong>로 보내주세요.
+              </p>
+            </div>
 
             <div className="space-y-3">
               <Link
@@ -93,11 +101,11 @@ export default function Home() {
             </div>
 
             <div className="mt-12 text-xs text-gray-400">
-              <Link href="/terms" className="hover:text-gray-600">이용약관</Link>
+              <Link href="/terms" target="_blank" className="hover:text-gray-600">이용약관</Link>
               <span className="mx-2">·</span>
-              <Link href="/privacy" className="hover:text-gray-600">개인정보처리방침</Link>
+              <Link href="/privacy" target="_blank" className="hover:text-gray-600">개인정보처리방침</Link>
               <span className="mx-2">·</span>
-              <Link href="/api-key-guide" className="hover:text-gray-600">API 키 안내</Link>
+              <Link href="/api-key-guide" target="_blank" className="hover:text-gray-600">API 키 안내</Link>
             </div>
           </div>
         </main>

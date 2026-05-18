@@ -118,6 +118,7 @@ export default function ParentConsent() {
                 <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
                   <li><strong>수집 정보:</strong> 학교/학년/반/번호, 학생 성명(아이디), 학생이 작성한 글</li>
                   <li><strong>이용 목적:</strong> AI 피드백 제공 및 교사 지도 자료로 활용 (그 외 용도 사용 안 함)</li>
+                  <li><strong>익명화:</strong> 학급 내 랭킹/통계 표시 시 자동 닉네임(예: "용감한 토끼")만 노출, 본명은 담임만 확인</li>
                   <li><strong>보관 기간:</strong> 학년 종료 후 즉시 삭제 (요청 시 즉시 삭제 가능)</li>
                 </ul>
               </div>
@@ -138,6 +139,7 @@ export default function ParentConsent() {
               <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
                 <li>본인 정보 열람·수정·삭제 요청 가능 (담임 교사를 통해 처리), 거부 시 학습 불이익 없음</li>
                 <li>HTTPS 암호화 통신, 비밀번호 단방향 암호화, 본인 글은 본인과 담임만 열람 가능</li>
+                <li>현재 <strong>베타 운영 중</strong>: 일부 기능이 추가·변경될 수 있으며, 중요한 변경 시 별도 안내드립니다</li>
               </ul>
             </section>
 
