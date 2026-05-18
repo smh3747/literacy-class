@@ -337,7 +337,10 @@ export default function StudentHome() {
   // 첫 글 제출
   const submitEssay = async () => {
     if (submitting) return
-    if (essay.trim().length < 30) return alert('글을 더 써 주세요! (30자 이상)')
+    const minLen = todayTopic?.min_length || 30
+    if (essay.trim().length < minLen) {
+      return alert(`글을 더 써 주세요! (${minLen}자 이상)\n\n현재 ${essay.trim().length}자`)
+    }
 
     // 시간 락 검증
     const lock = checkTimeLock(todayTopic)
@@ -387,6 +390,12 @@ ${essay}
       if (!result.good) result.good = '열심히 글을 썼어요.'
       if (!result.improve) result.improve = '더 자세하게 써보세요.'
       if (!Array.isArray(result.corrections)) result.corrections = []
+
+      // 규칙 기반 보강: AI가 놓치는 패턴들 (.그래서 등 띄어쓰기) 추가로 잡기
+      try {
+        const { mergeCorrections } = await import('../../lib/koreanRules')
+        result.corrections = mergeCorrections(result.corrections, essay)
+      } catch(e) { console.warn('규칙 검사 실패:', e) }
 
       // DB 저장
       const { data: sub, error } = await supabase.from('submissions').insert({
@@ -526,7 +535,10 @@ ${studentEssay}
   // 수정본 제출
   const submitRewrite = async () => {
     if (rewriting) return
-    if (rewriteEssay.trim().length < 30) return alert('글을 더 써 주세요!')
+    const minLen = todayTopic?.min_length || 30
+    if (rewriteEssay.trim().length < minLen) {
+      return alert(`글을 더 써 주세요! (${minLen}자 이상)\n\n현재 ${rewriteEssay.trim().length}자`)
+    }
 
     // 시간 락 검증
     const lock = checkTimeLock(todayTopic)
@@ -541,15 +553,26 @@ ${studentEssay}
     // 추가 수정 권한 체크
     const { data: existingSubs } = await supabase.from('submissions')
       .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
-    
+
+    // max_rewrites: 0이면 수정 불가, N이면 attempt=N+1까지 가능
+    const maxRewrites = todayTopic?.max_rewrites !== undefined && todayTopic?.max_rewrites !== null
+      ? todayTopic.max_rewrites : 1
+    if (maxRewrites === 0) {
+      return alert('이 주제는 수정이 허용되지 않아요.')
+    }
+
     let nextAttempt = 2
     if (existingSubs && existingSubs.length > 0) {
       const maxAtt = Math.max(...existingSubs.map(s => s.attempt || 1))
       nextAttempt = maxAtt + 1
-      if (maxAtt >= 2) {
+      // maxAtt가 이미 (1 + maxRewrites)면 한도 도달
+      if (maxAtt >= 1 + maxRewrites) {
         const latest = existingSubs.find(s => s.attempt === maxAtt)
         if (!latest || !latest.extra_rewrite_allowed) {
-          return alert('수정은 한 번만 가능해요. 추가 수정을 원하면 선생님께 요청해주세요.')
+          return alert(
+            `수정 횟수를 모두 사용했어요 (${maxRewrites}회).\n` +
+            `추가 수정을 원하면 선생님께 요청해주세요.`
+          )
         }
       }
     }
@@ -584,6 +607,12 @@ ${rewriteEssay}
       if (!result.good) result.good = '글이 더 좋아졌어요.'
       if (!result.improve) result.improve = '계속 노력해보세요.'
       if (!Array.isArray(result.corrections)) result.corrections = []
+
+      // 규칙 기반 보강
+      try {
+        const { mergeCorrections } = await import('../../lib/koreanRules')
+        result.corrections = mergeCorrections(result.corrections, rewriteEssay)
+      } catch(e) { console.warn('규칙 검사 실패:', e) }
 
       const { data: newSub, error } = await supabase.from('submissions').insert({
         user_id: user.id,
@@ -809,12 +838,14 @@ ${rewriteEssay}
                     value={essay}
                     onChange={e => setEssay(e.target.value)}
                     onPaste={() => handlePaste('essay')}
-                    placeholder="여기에 글을 써 주세요... (30자 이상)"
+                    placeholder={`여기에 글을 써 주세요... (${todayTopic?.min_length || 30}자 이상)`}
                     rows="12"
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
                   />
                   <div className="flex justify-between items-center text-xs text-gray-500">
-                    <span>{essay.length}자</span>
+                    <span className={essay.length >= (todayTopic?.min_length || 30) ? 'text-green-600 font-medium' : ''}>
+                      {essay.length}자 / 최소 {todayTopic?.min_length || 30}자
+                    </span>
                     {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                   </div>
                   <button onClick={submitEssay} disabled={submitting}
@@ -974,10 +1005,13 @@ ${rewriteEssay}
                       onChange={e => setRewriteEssay(e.target.value)}
                       onPaste={() => handlePaste('rewrite')}
                       rows="12"
+                      placeholder={`수정본을 써 주세요... (${todayTopic?.min_length || 30}자 이상)`}
                       className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
                     />
                     <div className="flex justify-between items-center text-xs text-gray-500">
-                      <span>{rewriteEssay.length}자</span>
+                      <span className={rewriteEssay.length >= (todayTopic?.min_length || 30) ? 'text-green-600 font-medium' : ''}>
+                        {rewriteEssay.length}자 / 최소 {todayTopic?.min_length || 30}자
+                      </span>
                       {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                     </div>
                     <div className="flex gap-2">

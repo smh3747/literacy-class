@@ -314,6 +314,52 @@ export default function TeacherSubmissions() {
     openTopic(selectedTopic) // 새로고침
   }
 
+  // 일괄 추가 수정 허용
+  const allowAllExtraRewrites = async () => {
+    if (!selectedTopic) return
+    // 대상: 각 학생의 최신 attempt 글 중 extra_rewrite_allowed가 아닌 것
+    const subsByStudent = {}
+    submissions.forEach(s => {
+      const cur = subsByStudent[s.user_id]
+      if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+    })
+    const latestSubs = Object.values(subsByStudent)
+
+    const maxRewrites = selectedTopic?.max_rewrites !== undefined && selectedTopic?.max_rewrites !== null
+      ? selectedTopic.max_rewrites : 1
+    // 최대 횟수 도달 학생만 대상
+    const targets = latestSubs.filter(s =>
+      (s.attempt || 1) >= 1 + maxRewrites && !s.extra_rewrite_allowed
+    )
+
+    if (targets.length === 0) {
+      alert(
+        `일괄 허용 대상이 없어요.\n\n` +
+        `최대 수정 횟수(${maxRewrites}회)에 도달한 학생이 없거나,\n` +
+        `이미 추가 허용된 학생만 있어요.`
+      )
+      return
+    }
+
+    if (!confirm(
+      `📝 "${selectedTopic.title}" 주제에 대해\n` +
+      `${targets.length}명에게 추가 수정을 일괄 허용할까요?\n\n` +
+      `허용 후 학생들이 한 번 더 글을 고칠 수 있어요.`
+    )) return
+
+    let success = 0, failed = 0
+    for (const s of targets) {
+      try {
+        const { error } = await supabase.from('submissions')
+          .update({ extra_rewrite_allowed: true }).eq('id', s.id)
+        if (error) throw error
+        success++
+      } catch(e) { failed++ }
+    }
+    alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+    openTopic(selectedTopic)
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
   return (
@@ -357,22 +403,45 @@ export default function TeacherSubmissions() {
               {(() => {
                 const submittedCount = topicStudents.filter(g => g.items.length > 0).length
                 const absentCount = topicStudents.filter(g => g.items.length === 0).length
+                const maxRewrites = selectedTopic?.max_rewrites !== undefined && selectedTopic?.max_rewrites !== null
+                  ? selectedTopic.max_rewrites : 1
+                // 일괄 허용 가능한 대상 수 계산
+                const subsByStudent = {}
+                submissions.forEach(s => {
+                  const cur = subsByStudent[s.user_id]
+                  if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+                })
+                const needExtraCount = Object.values(subsByStudent).filter(s =>
+                  (s.attempt || 1) >= 1 + maxRewrites && !s.extra_rewrite_allowed
+                ).length
+
                 return (
                   <div className="bg-primary-light rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
                     <div>
                       <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
                       <h2 className="text-lg font-bold text-primary-dark">{selectedTopic.title}</h2>
-                      <div className="text-xs text-primary-dark mt-1">
-                        ✅ {submittedCount}명 제출
-                        {absentCount > 0 && <span className="ml-2 text-amber-700">· 🚨 {absentCount}명 미제출</span>}
+                      <div className="text-xs text-primary-dark mt-1 space-x-2">
+                        <span>✅ {submittedCount}명 제출</span>
+                        {absentCount > 0 && <span className="text-amber-700">🚨 {absentCount}명 미제출</span>}
+                        <span className="text-gray-600">
+                          · 최소 {selectedTopic.min_length || 30}자 / 수정 {maxRewrites}회
+                        </span>
                       </div>
                     </div>
-                    {submittedCount > 0 && (
-                      <button onClick={downloadExcel}
-                        className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
-                        📥 Excel 다운로드
-                      </button>
-                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      {needExtraCount > 0 && (
+                        <button onClick={allowAllExtraRewrites}
+                          className="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-200">
+                          ✏️ 전체 추가 수정 허용 ({needExtraCount}명)
+                        </button>
+                      )}
+                      {submittedCount > 0 && (
+                        <button onClick={downloadExcel}
+                          className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
+                          📥 Excel 다운로드
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })()}

@@ -32,6 +32,9 @@ export default function TopicsPage() {
   const [lockEnabled, setLockEnabled] = useState(false)
   const [lockStartTime, setLockStartTime] = useState('09:00')
   const [lockEndTime, setLockEndTime] = useState('10:00')
+  // 글자수 + 재수정 설정
+  const [minLength, setMinLength] = useState(30)
+  const [maxRewrites, setMaxRewrites] = useState(1)
   const [saving, setSaving] = useState(false)
   const [aiSuggesting, setAiSuggesting] = useState(false)
   // AI 추천 옵션
@@ -137,6 +140,16 @@ export default function TopicsPage() {
     if (!date || !title.trim()) return alert('날짜와 주제를 입력해주세요')
     if (rubrics.length === 0) return alert('평가 기준을 1개 이상 추가해주세요')
 
+    // 글자수 검증
+    const minLen = parseInt(minLength)
+    if (isNaN(minLen) || minLen < 10 || minLen > 5000) {
+      return alert('최소 글자수는 10~5000자 범위로 입력해주세요')
+    }
+    const maxRew = parseInt(maxRewrites)
+    if (isNaN(maxRew) || maxRew < 0 || maxRew > 5) {
+      return alert('최대 재수정 횟수는 0~5회 범위로 입력해주세요')
+    }
+
     setSaving(true)
     try {
       // 같은 날짜에 이미 있으면 업데이트
@@ -151,7 +164,9 @@ export default function TopicsPage() {
           rubrics: rubrics,
           lock_enabled: lockEnabled,
           lock_start_time: lockEnabled ? lockStartTime : null,
-          lock_end_time: lockEnabled ? lockEndTime : null
+          lock_end_time: lockEnabled ? lockEndTime : null,
+          min_length: minLen,
+          max_rewrites: maxRew
         }).eq('id', existing.id)
         error = r.error
       } else {
@@ -163,13 +178,15 @@ export default function TopicsPage() {
           teacher_id: user.id,
           lock_enabled: lockEnabled,
           lock_start_time: lockEnabled ? lockStartTime : null,
-          lock_end_time: lockEnabled ? lockEndTime : null
+          lock_end_time: lockEnabled ? lockEndTime : null,
+          min_length: minLen,
+          max_rewrites: maxRew
         })
         error = r.error
       }
 
       if (error) throw error
-      
+
       alert(existing ? '주제 수정 완료!' : '주제 등록 완료!')
       setTitle('')
       setDesc('')
@@ -177,6 +194,8 @@ export default function TopicsPage() {
       setLockEnabled(false)
       setLockStartTime('09:00')
       setLockEndTime('10:00')
+      setMinLength(30)
+      setMaxRewrites(1)
       await loadTopics(user.id, classInfo?.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
@@ -601,6 +620,66 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                         className="w-full p-2 border border-gray-100 rounded text-xs text-gray-600 bg-gray-50" />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* 글자수 + 재수정 횟수 */}
+              <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+                <p className="text-sm font-medium">✏️ 글쓰기 분량 + 수정 횟수</p>
+
+                {/* 글자수 프리셋 + 직접 입력 */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">최소 글자수 (이보다 적으면 제출 안 됨)</label>
+                  <div className="flex gap-1.5 flex-wrap mb-1.5">
+                    {[
+                      { v: 30, label: '짧은 글', desc: '30자' },
+                      { v: 100, label: '중간 글', desc: '100자' },
+                      { v: 200, label: '긴 글', desc: '200자' },
+                      { v: 400, label: '아주 긴 글', desc: '400자' }
+                    ].map(p => (
+                      <button key={p.v} onClick={() => setMinLength(p.v)}
+                        className={`px-2 py-1 rounded text-xs ${
+                          minLength === p.v
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}>
+                        {p.label} ({p.desc})
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">또는 직접 입력:</span>
+                    <input type="number" value={minLength}
+                      onChange={e => setMinLength(e.target.value)}
+                      min="10" max="5000"
+                      className="w-20 p-1 border border-gray-200 rounded text-sm" />
+                    <span className="text-xs text-gray-500">자 이상</span>
+                  </div>
+                </div>
+
+                {/* 최대 재수정 횟수 */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">최대 재수정 횟수</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {[
+                      { v: 0, label: '0회', desc: '수정 없음' },
+                      { v: 1, label: '1회', desc: '기본' },
+                      { v: 2, label: '2회' },
+                      { v: 3, label: '3회' }
+                    ].map(p => (
+                      <button key={p.v} onClick={() => setMaxRewrites(p.v)}
+                        className={`px-2 py-1 rounded text-xs ${
+                          maxRewrites === p.v
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}>
+                        {p.label}{p.desc ? ` (${p.desc})` : ''}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    💡 첫 글 외에 수정본을 몇 번까지 쓸 수 있는지 정해요. 학생이 다 쓰면 선생님이 추가 허용 가능.
+                  </p>
                 </div>
               </div>
 

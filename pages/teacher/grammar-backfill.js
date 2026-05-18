@@ -142,7 +142,13 @@ ${sub.essay_text}
           apiKey, prompt, SCHEMAS.grammarOnly,
           { maxTokens: 2000 }
         )
-        const corrections = Array.isArray(result.corrections) ? result.corrections : []
+        let corrections = Array.isArray(result.corrections) ? result.corrections : []
+
+        // 규칙 기반 보강 (AI가 놓친 .그래서 등 띄어쓰기 추가)
+        try {
+          const { mergeCorrections } = await import('../../lib/koreanRules')
+          corrections = mergeCorrections(corrections, sub.essay_text)
+        } catch(e) { console.warn('규칙 검사 실패:', e) }
 
         // DB 업데이트 (기존 corrections 덮어쓰기)
         const { error } = await supabase.from('submissions')
