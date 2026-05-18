@@ -586,11 +586,15 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                       <div className="flex gap-2 items-center">
                         <input type="text" value={r.name} onChange={e => updateRubric(i, 'name', e.target.value)}
                           placeholder="평가 기준 이름"
-                          className="flex-1 p-2 border border-gray-200 rounded text-sm font-medium" />
-                        <input type="number" value={r.score} onChange={e => updateRubric(i, 'score', e.target.value)}
-                          className="w-20 p-2 border border-gray-200 rounded text-sm" min="1" />
-                        <span className="text-sm text-gray-500">점</span>
-                        <button onClick={() => removeRubric(i)} className="text-red-500 text-sm w-6">✕</button>
+                          className="flex-1 min-w-0 p-2 border border-gray-200 rounded text-sm font-medium" />
+                        <div className="flex items-center bg-white border border-gray-200 rounded flex-shrink-0">
+                          <input type="number" value={r.score} onChange={e => updateRubric(i, 'score', e.target.value)}
+                            className="w-12 p-2 text-sm text-right border-0 focus:outline-none" min="1" />
+                          <span className="text-xs text-gray-500 pr-2">점</span>
+                        </div>
+                        <button onClick={() => removeRubric(i)}
+                          className="text-red-500 text-sm w-7 h-9 flex items-center justify-center hover:bg-red-50 rounded flex-shrink-0"
+                          title="이 기준 삭제">✕</button>
                       </div>
                       <input type="text" value={r.hint || ''} onChange={e => updateRubric(i, 'hint', e.target.value)}
                         placeholder="부가 설명 (예: 주인공의 삶, 주인공의 모습 등)"

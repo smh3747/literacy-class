@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
+import NicknameChangeModal from '../../components/NicknameChangeModal'
 import StudentTutorial from '../../components/StudentTutorial'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 
@@ -165,6 +166,7 @@ export default function StudentHome() {
   
   const [pasteWarning, setPasteWarning] = useState(false)
   const [showPwModal, setShowPwModal] = useState(false)
+  const [showNicknameModal, setShowNicknameModal] = useState(false)
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
@@ -659,8 +661,12 @@ ${rewriteEssay}
                   {user?.number && <span> · {user.number}번</span>}
                 </p>
                 {user?.nickname && (
-                  <p className="text-xs mt-1 text-purple-700">
-                    🎭 친구들에겐 <strong>{user.nickname}</strong>(이)로 보여요
+                  <p className="text-xs mt-1 text-purple-700 flex items-center gap-1.5 flex-wrap">
+                    <span>🎭 친구들에겐 <strong>{user.nickname}</strong>(이)로 보여요</span>
+                    <button onClick={() => setShowNicknameModal(true)}
+                      className="text-purple-600 underline hover:text-purple-900">
+                      변경
+                    </button>
                   </p>
                 )}
               </div>
@@ -996,6 +1002,16 @@ ${rewriteEssay}
           </div>
         </main>
         {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
+        {showNicknameModal && (
+          <NicknameChangeModal
+            targetUserId={user?.id}
+            currentNickname={user?.nickname}
+            classId={user?.class_id}
+            displayName={user?.realname}
+            onClose={() => setShowNicknameModal(false)}
+            onSuccess={(newNick) => setUser(prev => ({ ...prev, nickname: newNick }))}
+          />
+        )}
         <StudentTutorial />
       </div>
     </>

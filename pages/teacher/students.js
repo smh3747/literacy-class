@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import NicknameChangeModal from '../../components/NicknameChangeModal'
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -23,6 +24,8 @@ export default function StudentsPage() {
   const [savingId, setSavingId] = useState(null)
   // 숨김 학생 보기 토글
   const [showHidden, setShowHidden] = useState(false)
+  // 닉네임 변경 모달 (선생님이 학생 닉네임 변경)
+  const [editingNicknameStudent, setEditingNicknameStudent] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -745,8 +748,27 @@ export default function StudentsPage() {
                             </td>
                             <td className="py-2 px-2 font-medium">
                               <div>{s.realname}</div>
-                              {s.nickname && (
-                                <div className="text-[10px] text-purple-600 mt-0.5">🎭 {s.nickname}</div>
+                              {s.nickname ? (
+                                <div className="text-[10px] text-purple-600 mt-0.5 flex items-center gap-1 flex-wrap">
+                                  <span>🎭 {s.nickname}</span>
+                                  <button
+                                    onClick={() => setEditingNicknameStudent(s)}
+                                    disabled={s.is_hidden}
+                                    className="text-purple-500 hover:text-purple-900 underline disabled:opacity-40"
+                                    title="닉네임 변경"
+                                  >
+                                    변경
+                                  </button>
+                                </div>
+                              ) : (
+                                !s.is_hidden && (
+                                  <button
+                                    onClick={() => setEditingNicknameStudent(s)}
+                                    className="text-[10px] text-purple-500 hover:text-purple-900 underline mt-0.5"
+                                  >
+                                    🎭 닉네임 직접 부여
+                                  </button>
+                                )
                               )}
                               {s.is_hidden && s.hidden_reason && (
                                 <div className="text-xs text-gray-400 mt-0.5">({s.hidden_reason})</div>
@@ -801,6 +823,16 @@ export default function StudentsPage() {
             )}
           </div>
         </main>
+        {editingNicknameStudent && (
+          <NicknameChangeModal
+            targetUserId={editingNicknameStudent.id}
+            currentNickname={editingNicknameStudent.nickname}
+            classId={classInfo?.id}
+            displayName={editingNicknameStudent.realname}
+            onClose={() => setEditingNicknameStudent(null)}
+            onSuccess={() => loadStudents(classInfo.id)}
+          />
+        )}
       </div>
     </>
   )
