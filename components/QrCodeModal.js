@@ -8,13 +8,15 @@ export default function QrCodeModal({ classCode, className, onClose }) {
 
   useEffect(() => {
     if (!classCode) return
-    // 가입 URL 생성: 사이트 origin + /student/login?code=XXX&mode=signup
+    // 가입/로그인 통합 URL: /student/login?code=XXX
+    // - 학급 코드 자동 입력
+    // - 이미 가입한 학생은 로그인, 처음이면 가입 탭으로 전환 가능
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const signupUrl = `${origin}/student/login?code=${classCode}&mode=signup`
-    setUrl(signupUrl)
+    const loginUrl = `${origin}/student/login?code=${classCode}`
+    setUrl(loginUrl)
 
     if (canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, signupUrl, {
+      QRCode.toCanvas(canvasRef.current, loginUrl, {
         width: 256,
         margin: 2,
         color: { dark: '#1f2937', light: '#ffffff' }
@@ -62,7 +64,7 @@ export default function QrCodeModal({ classCode, className, onClose }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold">📱 학급 가입 QR코드</h3>
+          <h3 className="text-lg font-bold">📱 학급 QR코드</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
         </div>
 
@@ -70,7 +72,7 @@ export default function QrCodeModal({ classCode, className, onClose }) {
           <canvas ref={canvasRef} className="rounded-lg" />
           <div className="mt-3 text-center">
             <div className="text-2xl font-mono font-bold tracking-widest">{classCode}</div>
-            <p className="text-xs text-gray-600 mt-2">학생들이 QR을 찍으면 학급 코드가 자동 입력돼요</p>
+            <p className="text-xs text-gray-600 mt-2">학생들이 QR을 찍으면 로그인 화면으로 이동해요</p>
           </div>
         </div>
 
@@ -87,15 +89,15 @@ export default function QrCodeModal({ classCode, className, onClose }) {
           </div>
           <button onClick={copyUrl}
             className="w-full py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50">
-            {copied ? '✅ 복사됨!' : '🔗 가입 링크 복사'}
+            {copied ? '✅ 복사됨!' : '🔗 링크 복사'}
           </button>
         </div>
 
         <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
           <p className="font-semibold mb-1">💡 사용 방법</p>
-          <p>1. 이미지로 다운로드해서 학급 채팅방/안내장에 공유</p>
-          <p>2. 또는 인쇄용 보기로 출력해서 교실에 부착</p>
-          <p>3. 학생이 QR 스캔 → 학급 코드 자동 입력된 가입 화면</p>
+          <p>• 이미지 다운로드 → 단톡방/안내장에 공유, 또는 출력해서 교실에 부착</p>
+          <p>• 학생이 QR 스캔 → 학급 코드가 자동 입력된 로그인 화면</p>
+          <p>• 처음 학생은 "가입" 탭으로, 기존 학생은 그대로 로그인</p>
         </div>
       </div>
     </div>
