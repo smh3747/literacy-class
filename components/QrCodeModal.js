@@ -11,7 +11,19 @@ export default function QrCodeModal({ classCode, className, onClose }) {
     // 가입/로그인 통합 URL: /student/login?code=XXX
     // - 학급 코드 자동 입력
     // - 이미 가입한 학생은 로그인, 처음이면 가입 탭으로 전환 가능
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    //
+    // ⚠️ origin 결정 우선순위:
+    // 1. NEXT_PUBLIC_SITE_URL (Vercel 환경변수로 설정한 정식 도메인)
+    // 2. window.location.origin (선생님이 보고 있는 페이지의 origin)
+    //
+    // Preview 배포에서 QR 만들면 Vercel 로그인이 뜨므로,
+    // Production URL을 환경변수로 고정하는 것을 권장.
+    let origin = ''
+    if (process.env.NEXT_PUBLIC_SITE_URL) {
+      origin = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
+    } else if (typeof window !== 'undefined') {
+      origin = window.location.origin
+    }
     const loginUrl = `${origin}/student/login?code=${classCode}`
     setUrl(loginUrl)
 
@@ -70,9 +82,12 @@ export default function QrCodeModal({ classCode, className, onClose }) {
 
         <div className="bg-gray-50 rounded-xl p-4 flex flex-col items-center">
           <canvas ref={canvasRef} className="rounded-lg" />
-          <div className="mt-3 text-center">
+          <div className="mt-3 text-center w-full">
             <div className="text-2xl font-mono font-bold tracking-widest">{classCode}</div>
             <p className="text-xs text-gray-600 mt-2">학생들이 QR을 찍으면 로그인 화면으로 이동해요</p>
+            {url && (
+              <p className="text-[10px] text-gray-400 mt-1 break-all px-2">{url}</p>
+            )}
           </div>
         </div>
 
@@ -99,6 +114,16 @@ export default function QrCodeModal({ classCode, className, onClose }) {
           <p>• 학생이 QR 스캔 → 학급 코드가 자동 입력된 로그인 화면</p>
           <p>• 처음 학생은 "가입" 탭으로, 기존 학생은 그대로 로그인</p>
         </div>
+
+        {/* Preview URL 경고 (선생님이 잘못된 URL로 QR 만들었을 때) */}
+        {url && /vercel\.app/.test(url) && /-git-|-[a-z0-9]{8,}\./i.test(url) && (
+          <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
+            <p className="font-bold mb-1">⚠️ 주의: Preview URL이에요!</p>
+            <p>지금 QR이 가리키는 URL이 Vercel Preview 배포인 것 같아요.</p>
+            <p className="mt-1">학생들이 스캔하면 Vercel 인증 화면이 떠서 접속 불가능해요.</p>
+            <p className="mt-1 font-semibold">→ 정식 사이트 주소(literacy-class.vercel.app 등)로 다시 접속해서 QR을 만들어주세요.</p>
+          </div>
+        )}
       </div>
     </div>
   )
