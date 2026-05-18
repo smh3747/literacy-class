@@ -169,6 +169,10 @@ export default function StudentHome() {
   const [showNicknameModal, setShowNicknameModal] = useState(false)
   // AI 호출 에러 모달
   const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
+  // 백업 복원 알림 (null 또는 { type, length })
+  const [restoredBackup, setRestoredBackup] = useState(null)
+  // AI 재시도 진행 표시 (null 또는 메시지)
+  const [retryMessage, setRetryMessage] = useState(null)
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
@@ -183,7 +187,7 @@ export default function StudentHome() {
     backupTimerRef.current = setTimeout(() => {
       const text = step === 'write' ? essay : rewriteEssay
       if (text && text.length > 0) {
-        try { sessionStorage.setItem(key, text) } catch(e) {}
+        try { localStorage.setItem(key, text) } catch(e) {}
       }
     }, 5000)
     return () => { if (backupTimerRef.current) clearTimeout(backupTimerRef.current) }
@@ -321,8 +325,24 @@ export default function StudentHome() {
       // 새 주제 → 백업 복원 시도
       try {
         const backupKey = `essay_backup_${profile.id}_${topic.id}_write`
-        const backup = sessionStorage.getItem(backupKey)
-        if (backup) setEssay(backup)
+        const backup = localStorage.getItem(backupKey)
+        if (backup && backup.trim().length > 0) {
+          setEssay(backup)
+          // 복원 알림 띄우기 (1초 후, 화면 그려진 다음에)
+          setTimeout(() => {
+            setRestoredBackup({
+              type: 'write',
+              length: backup.length
+            })
+          }, 800)
+        }
+
+        // 수정본 백업도 있으면 미리 채워둠 (수정 모드 들어가면 보임)
+        const rewriteBackupKey = `essay_backup_${profile.id}_${topic.id}_rewrite`
+        const rewriteBackup = localStorage.getItem(rewriteBackupKey)
+        if (rewriteBackup && rewriteBackup.trim().length > 0) {
+          setRewriteEssay(rewriteBackup)
+        }
       } catch(e) {}
     }
   }
@@ -383,7 +403,7 @@ ${essay}
 - corrections는 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만)
 - 오류 없으면 corrections는 빈 배열`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, onProgress: (p) => setRetryMessage(p.message) })
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -422,7 +442,7 @@ ${essay}
       if (error) throw error
 
       // 백업 정리
-      try { sessionStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_write`) } catch(e) {}
+      try { localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_write`) } catch(e) {}
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -439,7 +459,7 @@ ${essay}
         message: getFriendlyErrorMessage(e)
       })
     }
-    setSubmitting(false)
+    setSubmitting(false); setRetryMessage(null)
   }
 
   // 예시 작품 생성 (subId 명시 가능 - 수정본 직후 사용)
@@ -604,7 +624,7 @@ ${rewriteEssay}
 - improve는 더 발전시킬 점 (2가지, 부드럽게)
 - corrections는 명백한 오류만, 없으면 빈 배열`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, onProgress: (p) => setRetryMessage(p.message) })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
@@ -644,7 +664,7 @@ ${rewriteEssay}
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
 
-      try { sessionStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`) } catch(e) {}
+      try { localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`) } catch(e) {}
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -665,7 +685,7 @@ ${rewriteEssay}
         message: getFriendlyErrorMessage(e)
       })
     }
-    setRewriting(false)
+    setRewriting(false); setRetryMessage(null)
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
@@ -687,6 +707,48 @@ ${rewriteEssay}
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
+
+          {/* 백업 복원 알림 배너 */}
+          {restoredBackup && (
+            <div className="bg-green-50 border-2 border-green-300 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl flex-shrink-0">💾</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-green-900 text-sm">저장된 글을 불러왔어요!</h3>
+                  <p className="text-xs text-green-800 mt-1">
+                    이전에 쓰던 글({restoredBackup.length}자)이 자동으로 불러와졌어요.
+                    이어서 쓰거나 새로 시작할 수 있어요.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => setRestoredBackup(null)}
+                      className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
+                    >
+                      ✓ 이어서 쓸게요
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('정말 새로 쓰시겠어요?\n이전 글은 사라져요.')) {
+                          setEssay('')
+                          setRewriteEssay('')
+                          if (user && todayTopic) {
+                            try {
+                              localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_write`)
+                              localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`)
+                            } catch(e) {}
+                          }
+                          setRestoredBackup(null)
+                        }
+                      }}
+                      className="text-xs bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                    >
+                      🗑️ 새로 쓰기
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -842,6 +904,10 @@ ${rewriteEssay}
                     </div>
                   )}
                   <h3 className="font-bold">✏️ 글쓰기</h3>
+                  <div className="text-xs bg-blue-50 border border-blue-200 rounded-lg p-2 text-blue-800 flex items-start gap-1.5">
+                    <span>💡</span>
+                    <span>본명, 주소, 전화번호, 가족 이름 같은 <strong>개인정보는 쓰지 말아주세요</strong>. AI 학습에 활용될 수 있어요.</span>
+                  </div>
                   <textarea
                     value={essay}
                     onChange={e => setEssay(e.target.value)}
@@ -860,6 +926,12 @@ ${rewriteEssay}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting ? '🤖 AI가 검토 중...' : '제출하고 피드백 받기 →'}
                   </button>
+                  {submitting && retryMessage && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+                      <span>⏳</span>
+                      <span>{retryMessage}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1030,6 +1102,12 @@ ${rewriteEssay}
                         {rewriting ? '🤖 AI 검토 중...' : '수정본 제출 →'}
                       </button>
                     </div>
+                    {rewriting && retryMessage && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+                        <span>⏳</span>
+                        <span>{retryMessage}</span>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

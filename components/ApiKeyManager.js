@@ -159,27 +159,46 @@ export default function ApiKeyManager({ classId, onChange }) {
       )}
 
       {hasKey && !showInput && (
-        <details className="mt-3 text-xs">
-          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
-            ⚠️ 학생이 "한도 초과(429)" 오류를 받았나요?
-          </summary>
-          <div className="mt-2 bg-orange-50 border border-orange-200 rounded p-3 text-orange-900 space-y-1.5 leading-relaxed">
-            <p className="font-semibold">📊 Gemini API 무료 한도는 계정마다 달라요</p>
-            <p>• 신규 계정은 하루 20~50회로 시작할 수 있어요</p>
-            <p>• 평소 Gemini를 자주 쓴 계정은 1,000~1,500회까지 가능</p>
-            <p className="pt-1.5 font-semibold">🔧 해결 방법 (효과 순서):</p>
-            <p>1. 다른 개인 Gmail로 새 키 발급 후 교체 (즉시)</p>
-            <p>2. 한국 시간 <strong>오후 5시</strong>까지 대기 (자동 리셋)</p>
-            <p>3. Google Cloud Billing 활성화 → Tier 1 (일일 1,500회, 카드 등록만 하면 무료 한도 내 청구 안 됨)</p>
-            <p className="pt-1.5 font-semibold">💡 한도 확인:</p>
-            <p>
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="underline">
-                aistudio.google.com/apikey
-              </a>
-              {' '}→ 키 옆 막대그래프 아이콘 클릭
-            </p>
-          </div>
-        </details>
+        <>
+          <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              ⚠️ 학생이 "한도 초과(429)" 오류를 받았나요?
+            </summary>
+            <div className="mt-2 bg-blue-50 border border-blue-200 rounded p-3 text-blue-900 space-y-1.5 leading-relaxed">
+              <p className="font-semibold">💡 우선 확인할 점</p>
+              <p>우리 앱은 한도 도달 시 <strong>자동으로 다른 모델로 전환</strong>되도록 만들어져 있어요. 일부 학생만 일시적으로 영향을 받았을 수 있어요.</p>
+
+              <p className="pt-1.5 font-semibold">🩹 그래도 안 되면</p>
+              <p>한국 시간 <strong>오후 5시</strong>에 자동으로 한도가 리셋돼요. 그 이후 다시 시도해주세요.</p>
+
+              <p className="text-xs text-gray-600 pt-1.5">
+                📌 학생 글은 자동 저장되니 안심하세요. 다음날 그대로 이어쓸 수 있어요.
+              </p>
+            </div>
+          </details>
+
+          <details className="mt-2 text-xs">
+            <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              🔒 학생 개인정보 보호 안내 (꼭 읽어주세요)
+            </summary>
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-3 text-amber-900 space-y-1.5 leading-relaxed">
+              <p className="font-semibold">Google이 학생 글을 학습에 활용할 수 있어요</p>
+              <p>무료 등급(Free Tier) API 키를 사용하면, Google의 정책에 따라 학생들이 작성한 글이 AI 모델 학습에 활용될 수 있어요.</p>
+
+              <p className="pt-1.5 font-semibold">📌 학생들에게 지도해주세요</p>
+              <p>학생 글에 다음 정보는 절대 쓰지 않도록 안내해주세요:</p>
+              <ul className="list-disc pl-5 space-y-0.5">
+                <li>본명, 주소, 전화번호, 이메일</li>
+                <li>가족 구성원의 실명이나 직업</li>
+                <li>비밀번호나 SNS 계정</li>
+                <li>학교명, 학급 정보</li>
+              </ul>
+              <p className="text-xs text-amber-800 pt-1.5">
+                ✅ 학생 글쓰기 화면에는 이 안내가 이미 자동 표시됩니다.
+              </p>
+            </div>
+          </details>
+        </>
       )}
     </div>
   )

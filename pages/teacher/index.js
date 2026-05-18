@@ -13,7 +13,7 @@ export default function TeacherHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
-  const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0 })
+  const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0, todayApiCalls: 0 })
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -39,6 +39,8 @@ export default function TeacherHome() {
       ])
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
+      // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
+      let todayApiCalls = 0
       try {
         const { data: studentIds } = await supabase.from('profiles')
           .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
@@ -49,9 +51,26 @@ export default function TeacherHome() {
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids).eq('reported', true)
           reportCount = count || 0
+
+          // 오늘 (한국 시간 기준이 아니라 PST 자정 기준 - 한도 리셋 시점)
+          // PST 자정 = 한국 시간 17:00. 그 이후가 "오늘"
+          const now = new Date()
+          const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
+          const pstOffset = -8 * 3600000 // PST = UTC-8 (DST 무시, 대략적)
+          const pstNow = new Date(utcMs + pstOffset)
+          const pstToday = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate())
+          const pstTodayUtc = pstToday.getTime() - pstOffset
+          const todayStartIso = new Date(pstTodayUtc).toISOString()
+
+          const { count: subCount } = await supabase.from('submissions')
+            .select('id', { count: 'exact', head: true })
+            .in('user_id', ids)
+            .gte('created_at', todayStartIso)
+          // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출
+          todayApiCalls = (subCount || 0) * 2
         }
       } catch(e) { /* 컬럼 없으면 무시 */ }
-      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount })
+      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount, todayApiCalls })
     }
     setLoading(false)
   }
@@ -139,6 +158,38 @@ export default function TeacherHome() {
 
           {/* API 키 관리 */}
           <ApiKeyManager classId={classInfo?.id} />
+
+          {/* 오늘 API 사용량 (추정) */}
+          {/* 사용량 카드: 한도 가까울 때만 표시 (정상 운영 중엔 안 보임) */}
+          {stats.todayApiCalls >= 40 && (() => {
+            const dangerThreshold = 80
+            const isDanger = stats.todayApiCalls >= dangerThreshold
+            return (
+              <div className={`rounded-2xl p-4 shadow-sm border ${
+                isDanger ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <div className="text-2xl flex-shrink-0">
+                    {isDanger ? '🚨' : '⚠️'}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={`font-bold text-sm ${
+                      isDanger ? 'text-red-900' : 'text-amber-900'
+                    }`}>
+                      오늘 AI 사용량 — 약 {stats.todayApiCalls}회
+                    </h3>
+                    <p className={`text-xs mt-1 ${
+                      isDanger ? 'text-red-800' : 'text-amber-800'
+                    }`}>
+                      {isDanger
+                        ? '한도에 가까워졌어요. 한도 도달 시 자동으로 다른 모델로 전환됩니다. 자정(한국 시간 오후 5시)에 자동 리셋돼요.'
+                        : '사용량이 많아지고 있어요. 한도 도달 시 자동으로 다른 모델로 전환되니 안심하셔도 돼요.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* 학급 설정 (랭킹/게시판) */}
           {classInfo && <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />}

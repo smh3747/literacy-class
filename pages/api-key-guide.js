@@ -184,17 +184,17 @@ export default function ApiKeyGuide() {
             </ul>
           </div>
 
-          {/* 무료 한도 */}
+          {/* 무료 한도 - 간단하게 */}
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold mb-3">💰 정말 무료인가요?</h2>
             <div className="text-sm space-y-2">
-              <p>네! Gemini API는 다음 한도까지 완전 무료입니다:</p>
-              <ul className="list-disc pl-5 space-y-1 text-gray-700">
-                <li>분당 60회 호출</li>
-                <li>일일 1,500회 호출</li>
-                <li>월 백만 토큰 (약 50만 단어)</li>
-              </ul>
-              <p className="mt-2">25명 학급에서 매일 글쓰기를 해도 <strong>한도의 10%도 사용하지 않아요</strong>.</p>
+              <p>네, <strong>완전 무료</strong>로 사용할 수 있어요.</p>
+              <p className="text-gray-600">
+                Google이 정한 일일 한도가 있긴 하지만, 우리 앱은 한도 도달 시 자동으로 다른 모델로 전환되어 학생들이 끊김 없이 사용할 수 있도록 설계되어 있어요.
+              </p>
+              <p className="text-gray-600 text-xs">
+                💡 학급 25명이 매일 글쓰기 + 수정해도 한도 안에서 안정적으로 운영 가능해요.
+              </p>
             </div>
           </div>
 

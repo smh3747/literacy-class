@@ -68,6 +68,18 @@ export default function Privacy() {
                 <li>처리 목적: AI 피드백 생성</li>
                 <li>※ 학생 이름, 학교명 등 개인 식별 정보는 AI에 전달되지 않습니다</li>
               </ul>
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-3 text-xs">
+                <p className="font-bold text-amber-900">⚠️ 무료 API 키 사용 시 안내</p>
+                <p className="text-amber-800 mt-1 leading-relaxed">
+                  Google Gemini API의 무료 등급(Free Tier)을 사용하는 경우, Google의 정책에 따라
+                  학생이 작성한 글이 <strong>Google의 AI 모델 학습 및 서비스 개선에 활용될 수 있습니다</strong>.
+                  이 과정에서 Google 측 검토자의 검토가 진행될 수 있습니다.
+                </p>
+                <p className="text-amber-800 mt-2 leading-relaxed">
+                  따라서 학생의 글에 <strong>본명, 주소, 전화번호, 이메일, 가족의 개인정보, 비밀번호 등 민감한 개인정보를 포함하지 않도록</strong> 지도해주세요.
+                  교사가 유료 등급(Cloud Billing) API 키를 사용하는 경우 이러한 학습 활용은 발생하지 않습니다.
+                </p>
+              </div>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">5. 학부모 및 학생의 권리</h2>
