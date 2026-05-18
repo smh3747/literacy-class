@@ -34,23 +34,54 @@ export default function AdminHome() {
   const loadAll = async () => {
     const today = new Date()
     const todayKr = new Date(today.getTime() + (9 * 3600 * 1000) - (today.getTimezoneOffset() * 60 * 1000)).toISOString().slice(0, 10)
-    
+
     const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes] = await Promise.all([
       supabase.from('profiles').select('*, classes(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
-      supabase.from('classes').select('*, profiles!classes_teacher_id_fkey(realname, school)').order('created_at', { ascending: false }),
+      supabase.from('classes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
       supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayKr + 'T00:00:00'),
       supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(50)
     ])
 
+    if (classesRes.error) {
+      console.error('학급 조회 실패:', classesRes.error)
+    }
+
+    // 학급별 담임 정보를 별도로 조회해서 매핑 (외래키 명시 안 함 - 더 안정적)
+    const classes = classesRes.data || []
+    if (classes.length > 0) {
+      const teacherIds = [...new Set(classes.map(c => c.teacher_id).filter(Boolean))]
+      if (teacherIds.length > 0) {
+        const { data: teacherProfiles } = await supabase.from('profiles')
+          .select('id, realname, school').in('id', teacherIds)
+        const tMap = {}
+        ;(teacherProfiles || []).forEach(t => { tMap[t.id] = t })
+        // classes에 담임 정보 붙이기
+        classes.forEach(c => {
+          if (c.teacher_id && tMap[c.teacher_id]) {
+            c.teacher_profile = tMap[c.teacher_id]
+          }
+        })
+      }
+      // 학급별 학생 수도 같이
+      const classIds = classes.map(c => c.id)
+      const { data: studentCounts } = await supabase.from('profiles')
+        .select('class_id').in('class_id', classIds).eq('role', 'student')
+      const countMap = {}
+      ;(studentCounts || []).forEach(s => {
+        countMap[s.class_id] = (countMap[s.class_id] || 0) + 1
+      })
+      classes.forEach(c => { c.student_count = countMap[c.id] || 0 })
+    }
+
     setTeachers(teachersRes.data || [])
-    setClasses(classesRes.data || [])
+    setClasses(classes)
     setFeedbacks(feedbackRes.data || [])
-    
+
     setStats({
       teachers: (teachersRes.data || []).filter(t => t.role !== 'admin').length,
-      classes: (classesRes.data || []).length,
+      classes: classes.length,
       students: studentsRes.count || 0,
       submissions: submissionsRes.count || 0,
       today: todayRes.count || 0
@@ -199,6 +230,7 @@ export default function AdminHome() {
                         <th className="p-2 text-left">학급명</th>
                         <th className="p-2 text-left">담임</th>
                         <th className="p-2 text-left">학교</th>
+                        <th className="p-2 text-center">학생수</th>
                         <th className="p-2 text-left">코드</th>
                         <th className="p-2 text-left">API 키</th>
                         <th className="p-2 text-left">상태</th>
@@ -209,8 +241,9 @@ export default function AdminHome() {
                       {classes.map(c => (
                         <tr key={c.id} className={`border-b border-gray-100 ${c.is_active === false ? 'bg-gray-100 opacity-60' : ''}`}>
                           <td className="p-2 font-medium">{c.name}</td>
-                          <td className="p-2 text-gray-600">{c.profiles?.realname || '-'}</td>
-                          <td className="p-2 text-gray-600">{c.profiles?.school || '-'}</td>
+                          <td className="p-2 text-gray-600">{c.teacher_profile?.realname || '-'}</td>
+                          <td className="p-2 text-gray-600">{c.teacher_profile?.school || '-'}</td>
+                          <td className="p-2 text-center text-gray-600">{c.student_count || 0}</td>
                           <td className="p-2 font-mono text-sm">{c.code}</td>
                           <td className="p-2">
                             {c.api_key ? (
