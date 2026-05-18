@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 
 export default function AdminHome() {
   const router = useRouter()
@@ -168,6 +169,125 @@ export default function AdminHome() {
     if (error) return alert('실패: ' + error.message)
     alert(`✅ ${visible.length}개 숨김 완료`)
     await loadAll()
+  }
+
+  // 📋 의견을 마크다운 형식으로 정리 (Claude에게 바로 전달용)
+  const formatFeedbacksAsMarkdown = (fbs) => {
+    if (!fbs || fbs.length === 0) return ''
+    const today = new Date().toISOString().slice(0, 10)
+    let md = `# 문해력 수업 - 사용자 의견 모음 (${today})\n\n`
+    md += `총 ${fbs.length}건\n\n---\n\n`
+    fbs.forEach((f, i) => {
+      const date = f.created_at?.slice(0, 16).replace('T', ' ') || ''
+      md += `## ${i + 1}. ${date}\n\n${f.content}\n\n---\n\n`
+    })
+    md += `\n위 의견들을 카테고리별로 정리하고, 각 의견에 대한 우선순위와 대응 방안을 제안해주세요.`
+    return md
+  }
+
+  // 📋 보이는 의견 전체 복사
+  const copyVisibleFeedbacks = async () => {
+    const visible = feedbacks.filter(f => !f.is_hidden)
+    if (visible.length === 0) return alert('복사할 의견이 없어요')
+    const md = formatFeedbacksAsMarkdown(visible)
+    try {
+      await navigator.clipboard.writeText(md)
+      alert(`✅ ${visible.length}개 의견을 마크다운으로 복사했어요!\n\nClaude나 다른 AI에게 바로 붙여넣을 수 있어요.`)
+    } catch(e) {
+      alert('복사 실패: ' + e.message)
+    }
+  }
+
+  // 🤖 AI 요약 (Gemini로 의견 분석 요약)
+  const [aiSummarizing, setAiSummarizing] = useState(false)
+  const [aiSummary, setAiSummary] = useState(null)
+
+  const summarizeWithAi = async () => {
+    const visible = feedbacks.filter(f => !f.is_hidden)
+    if (visible.length === 0) return alert('요약할 의견이 없어요')
+    if (visible.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
+
+    // gemini.js 동적 import
+    const { callGeminiStructured, SCHEMAS, loadApiKey } = await import('../../lib/gemini')
+    const { SchemaType } = await import('@google/generative-ai')
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요 (선생님 메인 화면에서)')
+
+    setAiSummarizing(true)
+    setAiSummary(null)
+    try {
+      const contents = visible.map((f, i) => `[${i + 1}] ${f.content}`).join('\n\n')
+      const prompt = `다음은 "문해력 수업" 교육용 웹앱에 들어온 ${visible.length}개의 선생님 의견입니다. 카테고리별로 정리하고 우선순위와 대응 방안을 제안해주세요.
+
+의견 목록:
+${contents}
+
+분석 형식:
+- categories: 의견을 카테고리별로 묶기 (예: "기능 추가 요청", "버그 신고", "UI 개선" 등)
+- priorityList: 우선순위 높은 의견 3-5개 (시급한 것부터)
+- summary: 전체적인 인사이트 한 문단
+
+이 분석 결과를 토대로 개발자(Claude)에게 다음 작업을 지시할 수 있도록 명확하게 정리해주세요.`
+
+      const schema = {
+        type: SchemaType.OBJECT,
+        properties: {
+          categories: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                name: { type: SchemaType.STRING },
+                items: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
+              },
+              required: ['name', 'items']
+            }
+          },
+          priorityList: {
+            type: SchemaType.ARRAY,
+            items: { type: SchemaType.STRING }
+          },
+          summary: { type: SchemaType.STRING }
+        },
+        required: ['categories', 'priorityList', 'summary']
+      }
+
+      const result = await callGeminiStructured(apiKey, prompt, schema, { maxTokens: 4000 })
+      setAiSummary(result)
+    } catch(e) {
+      alert('AI 요약 실패: ' + (e.message || e))
+    }
+    setAiSummarizing(false)
+  }
+
+  // AI 요약을 마크다운으로 변환
+  const formatAiSummaryAsMarkdown = (summary) => {
+    if (!summary) return ''
+    const today = new Date().toISOString().slice(0, 10)
+    let md = `# 문해력 수업 - 사용자 의견 AI 요약 (${today})\n\n`
+    md += `## 📊 카테고리별 정리\n\n`
+    summary.categories?.forEach(cat => {
+      md += `### ${cat.name}\n`
+      cat.items?.forEach(item => { md += `- ${item}\n` })
+      md += `\n`
+    })
+    md += `## 🚨 우선순위 (시급한 것부터)\n\n`
+    summary.priorityList?.forEach((item, i) => { md += `${i + 1}. ${item}\n` })
+    md += `\n## 💡 종합 인사이트\n\n${summary.summary || ''}\n`
+    md += `\n---\n위 분석을 바탕으로 작업을 진행해주세요.`
+    return md
+  }
+
+  // AI 요약 복사
+  const copyAiSummary = async () => {
+    if (!aiSummary) return
+    const md = formatAiSummaryAsMarkdown(aiSummary)
+    try {
+      await navigator.clipboard.writeText(md)
+      alert('✅ AI 요약을 복사했어요!\n\nClaude에게 바로 붙여넣을 수 있어요.')
+    } catch(e) {
+      alert('복사 실패: ' + e.message)
+    }
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
@@ -378,6 +498,72 @@ export default function AdminHome() {
                   </div>
                 </div>
 
+                {/* AI 요약 + 복사 도구 */}
+                {visibleFeedbacks.length > 0 && (
+                  <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-3 mb-3">
+                    <p className="text-sm font-semibold text-purple-900 mb-2">🤖 Claude에게 보내기 도구</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={copyVisibleFeedbacks}
+                        className="text-xs bg-white border border-purple-300 text-purple-700 px-3 py-2 rounded hover:bg-purple-50 font-medium">
+                        📋 의견 전체 복사 (마크다운)
+                      </button>
+                      <button onClick={summarizeWithAi} disabled={aiSummarizing}
+                        className="text-xs bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 disabled:opacity-50 font-medium">
+                        {aiSummarizing ? '🤖 분석 중...' : '✨ AI로 카테고리별 요약'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-2">
+                      💡 복사한 내용을 Claude에게 붙여넣으면 우선순위/대응 방안 분석이 시작돼요
+                    </p>
+
+                    {aiSummary && (
+                      <div className="mt-3 bg-white rounded-lg p-3 border border-purple-200 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-sm text-purple-900">🤖 AI 분석 결과</h4>
+                          <div className="flex gap-1">
+                            <button onClick={copyAiSummary}
+                              className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700">
+                              📋 복사
+                            </button>
+                            <button onClick={() => setAiSummary(null)}
+                              className="text-xs text-gray-500 hover:text-gray-800 px-2">✕</button>
+                          </div>
+                        </div>
+
+                        {aiSummary.categories?.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700 mb-1">📊 카테고리별</p>
+                            {aiSummary.categories.map((cat, i) => (
+                              <div key={i} className="bg-gray-50 rounded p-2 mb-1.5">
+                                <div className="text-xs font-semibold">{cat.name}</div>
+                                <ul className="text-xs text-gray-700 list-disc pl-4 mt-1">
+                                  {cat.items?.map((item, j) => <li key={j}>{item}</li>)}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {aiSummary.priorityList?.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700 mb-1">🚨 우선순위</p>
+                            <ol className="text-xs text-gray-700 list-decimal pl-4 space-y-0.5">
+                              {aiSummary.priorityList.map((item, i) => <li key={i}>{item}</li>)}
+                            </ol>
+                          </div>
+                        )}
+
+                        {aiSummary.summary && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700 mb-1">💡 종합 인사이트</p>
+                            <p className="text-xs text-gray-700 bg-blue-50 p-2 rounded">{aiSummary.summary}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {displayed.length === 0 ? (
                   <p className="text-sm text-gray-500 py-8 text-center">
                     {feedbacks.length === 0 ? '받은 의견이 없어요' : '보이는 의견이 없어요. 숨김 포함 보기를 사용하세요.'}
@@ -412,6 +598,30 @@ export default function AdminHome() {
 }
 
 function AdminSubmissions() {
+  return (
+    <>
+      <style>{`
+        .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
+        .grammar-tooltip {
+          position: fixed;
+          background: #1f2937;
+          color: white;
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 13px;
+          line-height: 1.4;
+          max-width: 280px;
+          z-index: 1000;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          pointer-events: auto;
+        }
+      `}</style>
+      <AdminSubmissionsInner />
+    </>
+  )
+}
+
+function AdminSubmissionsInner() {
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedClass, setSelectedClass] = useState('all')
@@ -485,21 +695,70 @@ function AdminSubmissions() {
 }
 
 function SubmissionDetail({ sub, onBack }) {
+  const [allSubs, setAllSubs] = useState([sub])
+  const [topic, setTopic] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadFullData()
+  }, [sub.id])
+
+  const loadFullData = async () => {
+    setLoading(true)
+    try {
+      // 1. 같은 학생 + 같은 주제의 모든 attempt 가져오기 (첫 글 + 수정본들)
+      const { data: subs } = await supabase.from('submissions')
+        .select('*')
+        .eq('user_id', sub.user_id)
+        .eq('topic_id', sub.topic_id)
+        .order('attempt', { ascending: true })
+
+      if (subs && subs.length > 0) setAllSubs(subs)
+
+      // 2. 주제 정보 (rubrics 포함)
+      if (sub.topic_id) {
+        const { data: t } = await supabase.from('topics').select('*').eq('id', sub.topic_id).maybeSingle()
+        if (t) setTopic(t)
+      }
+    } catch(e) {
+      console.error('상세 정보 로드 실패:', e)
+    }
+    setLoading(false)
+  }
+
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-      <button onClick={onBack} className="text-sm text-gray-600">← 목록으로</button>
-      <div className="bg-primary-light rounded-lg p-3">
-        <div className="font-bold">{sub.profiles?.realname}</div>
-        <div className="text-xs text-gray-700">{sub.topic_title} · {sub.created_at?.slice(0, 16).replace('T', ' ')}</div>
+    <div className="space-y-3">
+      <button onClick={onBack} className="text-sm text-gray-600 hover:text-gray-900">← 목록으로</button>
+
+      {/* 상단: 학생/주제 정보 */}
+      <div className="bg-primary-light rounded-2xl p-4">
+        <div className="font-bold text-lg">{sub.profiles?.realname || '?'}</div>
+        <div className="text-sm text-gray-700 mt-1">
+          📚 {sub.topic_title || topic?.title || '-'}
+          {topic?.date && <span className="ml-2 text-xs">({topic.date})</span>}
+        </div>
+        {topic?.description && (
+          <p className="text-xs text-gray-600 mt-2">{topic.description}</p>
+        )}
       </div>
-      <div className="bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap leading-relaxed">{sub.essay_text}</div>
-      <div className="space-y-2 text-sm pt-2 border-t">
-        <div><strong>점수:</strong> {sub.total_score}/{sub.max_score}점</div>
-        <div><strong>💬 종합:</strong> {sub.feedback_overall}</div>
-        <div><strong>⭐ 잘한 점:</strong> {sub.feedback_good}</div>
-        <div><strong>🌱 발전:</strong> {sub.feedback_improve}</div>
-        {sub.paste_detected && <div className="text-red-600 text-xs">⚠️ 붙여넣기 {sub.paste_count}회 감지됨</div>}
-      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-500 py-8 text-center">상세 정보 로딩 중...</p>
+      ) : (
+        <>
+          {/* 모든 attempt를 학생 화면처럼 표시 */}
+          {allSubs.map((s, i) => {
+            const label = s.attempt === 1
+              ? '✏️ 첫 글'
+              : `🔄 수정본 ${s.attempt - 1}회`
+            return <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={label} />
+          })}
+
+          {allSubs.length === 0 && (
+            <p className="text-sm text-gray-500 py-8 text-center">제출된 글이 없어요</p>
+          )}
+        </>
+      )}
     </div>
   )
 }
