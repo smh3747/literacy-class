@@ -99,6 +99,76 @@ export default function StudentsPage() {
       return
     }
 
+    const fileName = file.name.toLowerCase()
+    const isPdf = fileName.endsWith('.pdf') || file.type === 'application/pdf'
+    const isExcel = fileName.match(/\.(xlsx|xls)$/)
+
+    if (!isPdf && !isExcel) {
+      alert(
+        '❌ 인식할 수 없는 파일 형식이에요.\n\n' +
+        '✅ 엑셀 (.xlsx, .xls) - 권장\n' +
+        '✅ PDF (.pdf) - 텍스트 PDF만 가능\n\n' +
+        '나이스 → [기본학적관리] → [명렬표 출력] → [엑셀 내려받기]'
+      )
+      e.target.value = ''
+      return
+    }
+
+    setUploadStatus('📄 파일을 분석하는 중...')
+
+    // PDF 처리
+    if (isPdf) {
+      try {
+        const { parsePdfStudentList } = await import('../../lib/pdfParser')
+        const pdfStudents = await parsePdfStudentList(file)
+
+        if (pdfStudents.length === 0) {
+          setUploadStatus(null)
+          alert(
+            '❌ PDF에서 학생 명단을 인식하지 못했어요.\n\n' +
+            '가능한 원인:\n' +
+            '· 이미지로 된 PDF (스캔본)\n' +
+            '· 표 형식이 일반적인 나이스 명렬표와 다름\n\n' +
+            '✅ 해결 방법:\n' +
+            '나이스 → [엑셀 내려받기] 초록색 버튼으로 엑셀 파일을 받아 올려주세요.'
+          )
+          e.target.value = ''
+          return
+        }
+
+        const currentPrefix = idPrefix || defaultPrefix
+        const parsed = pdfStudents.map(s => ({
+          number: s.number,
+          realname: s.name,
+          username: buildUsername(currentPrefix, s.grade, s.classNum, s.number),
+          _auto: true,
+          _grade: s.grade,
+          _class: s.classNum
+        }))
+
+        setParsedStudents(parsed)
+        setEditingUsernames({})
+
+        const sample = parsed[0]
+        setUploadStatus(
+          `📋 PDF에서 ${parsed.length}명 인식 완료!\n` +
+          `🆔 아이디 자동 생성됨 (예: ${sample?.username})\n` +
+          `⚠️ PDF는 인식 정확도가 100%는 아니에요. 아래 명단을 꼭 확인해주세요!\n` +
+          `💡 인식 오류가 있으면 개별 수정 가능합니다.`
+        )
+        return
+      } catch(err) {
+        setUploadStatus(null)
+        alert(
+          '❌ PDF 처리 실패: ' + err.message + '\n\n' +
+          '엑셀 파일로 다시 시도해주세요.'
+        )
+        e.target.value = ''
+        return
+      }
+    }
+
+    // 엑셀 처리 (기존 로직)
     const XLSX = (await import('xlsx')).default || (await import('xlsx'))
 
     const reader = new FileReader()
@@ -441,6 +511,38 @@ export default function StudentsPage() {
     }
   }
 
+  // 동의서 일괄 처리 (체크 / 해제)
+  const bulkToggleConsent = async (newValue) => {
+    const targets = students.filter(s => !s.is_hidden && s.consent_received !== newValue)
+    if (targets.length === 0) {
+      alert(newValue ? '이미 모든 학생이 회신 처리되어 있어요' : '회신 처리된 학생이 없어요')
+      return
+    }
+    const action = newValue ? '회신 완료로 일괄 처리' : '미회신으로 일괄 해제'
+    if (!confirm(`${targets.length}명의 동의서를 "${action}"할까요?`)) return
+
+    setSavingId('bulk-consent')
+    try {
+      const now = new Date().toISOString()
+      let success = 0, failed = 0
+      for (const s of targets) {
+        try {
+          const { error } = await supabase.from('profiles').update({
+            consent_received: newValue,
+            consent_received_at: newValue ? now : null
+          }).eq('id', s.id)
+          if (error) throw error
+          success++
+        } catch(e) { failed++ }
+      }
+      alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+      await loadStudents(classInfo.id)
+    } catch(e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
+  }
+
   // 모든 학생 번호 일괄 저장 (편집 중인 것들만)
   const saveAllNumbers = async () => {
     const ids = Object.keys(editingNumbers)
@@ -460,6 +562,88 @@ export default function StudentsPage() {
     alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
     setEditingNumbers({})
     await loadStudents(classInfo.id)
+  }
+
+  // 학생 명단 엑셀 다운로드 (담임용 출력)
+  const downloadStudentList = async () => {
+    if (!students.length) return alert('등록된 학생이 없어요')
+
+    const includeHidden = confirm(
+      `👥 학생 명단을 엑셀로 다운로드할까요?\n\n` +
+      `[확인] 활성 + 숨김 학생 모두 다운로드\n` +
+      `[취소] 활성 학생만 다운로드 (전출생 제외)`
+    )
+
+    const reason = prompt(
+      `📝 다운로드 사유를 입력해주세요 (감사용 기록):\n\n` +
+      `예: "학생들에게 아이디 안내", "백업용", "학기말 정리" 등\n\n` +
+      `※ 학생 개인정보가 포함된 파일이니 안전하게 관리해주세요.\n` +
+      `※ 다운로드 후 사용 끝나면 즉시 파일을 삭제해주세요.`,
+      ''
+    )
+    if (reason === null) return
+
+    setSavingId('download')
+    try {
+      const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+
+      const targets = includeHidden ? [...students] : students.filter(s => !s.is_hidden)
+      // 정렬: 활성 먼저, 번호순
+      targets.sort((a, b) => {
+        if (a.is_hidden !== b.is_hidden) return a.is_hidden ? 1 : -1
+        const na = parseInt(a.number) || 999
+        const nb = parseInt(b.number) || 999
+        if (na !== nb) return na - nb
+        return (a.realname || '').localeCompare(b.realname || '')
+      })
+
+      // 시트1: 학생 명단
+      const sheet1Data = targets.map(s => ({
+        '번호': s.number || '',
+        '이름': s.realname || '',
+        '아이디': s.username || '',
+        '초기 비밀번호': '123456',
+        '닉네임': s.nickname || '',
+        '동의서 회신': s.consent_received ? '✓' : '',
+        '상태': s.is_hidden ? `숨김${s.hidden_reason ? ' (' + s.hidden_reason + ')' : ''}` : '활성'
+      }))
+      const ws1 = XLSX.utils.json_to_sheet(sheet1Data)
+      ws1['!cols'] = [
+        { wch: 6 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 18 }
+      ]
+
+      // 시트2: 메타 정보
+      const now = new Date()
+      const dateStr = now.toLocaleString('ko-KR')
+      const meta = [
+        ['항목', '값'],
+        ['다운로드 일시', dateStr],
+        ['다운로드 사유', reason.trim() || '(미입력)'],
+        ['학교', user?.school || '-'],
+        ['학급', classInfo?.name || '-'],
+        ['담임', user?.realname || '-'],
+        ['전체 학생 수', String(targets.length)],
+        ['활성 학생', String(targets.filter(s => !s.is_hidden).length)],
+        ['숨김 학생', String(targets.filter(s => s.is_hidden).length)],
+        ['', ''],
+        ['※ 주의', '본 파일은 학생 개인정보를 포함합니다.'],
+        ['', '안전하게 관리하시고, 사용 후 즉시 삭제해주세요.'],
+        ['', '초기 비밀번호는 모든 학생이 동일하게 "123456"입니다.'],
+        ['', '학생이 비밀번호를 변경한 경우 위 값과 다를 수 있습니다.']
+      ]
+      const ws2 = XLSX.utils.aoa_to_sheet(meta)
+      ws2['!cols'] = [{ wch: 18 }, { wch: 50 }]
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws1, '학생 명단')
+      XLSX.utils.book_append_sheet(wb, ws2, '메타 정보')
+
+      const fileName = `학생명단_${classInfo?.name || ''}_${now.toISOString().slice(0,10)}.xlsx`
+      XLSX.writeFile(wb, fileName)
+    } catch(e) {
+      alert('다운로드 실패: ' + e.message)
+    }
+    setSavingId(null)
   }
 
   // 닉네임 없는 학생에게 일괄 부여
@@ -528,9 +712,27 @@ export default function StudentsPage() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h3 className="font-bold mb-2">📋 학급명렬표 일괄 등록</h3>
             <p className="text-sm text-gray-600 mb-3">
-              <strong>나이스에서 다운받은 학급명렬표</strong>를 그대로 올리면 돼요.
+              <strong>나이스에서 다운받은 학급명렬표 엑셀(.xlsx)</strong>을 그대로 올리면 돼요.
               아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>123456</strong>입니다.
             </p>
+
+            {/* 나이스 다운로드 경로 안내 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-xs text-blue-900">
+              <p className="font-bold mb-2">📍 나이스에서 명렬표 받는 방법</p>
+              <ol className="list-decimal pl-5 space-y-1 leading-relaxed">
+                <li>나이스 접속 → <strong>[기본학적관리]</strong> 메뉴</li>
+                <li><strong>[명렬표 출력]</strong> 클릭</li>
+                <li><strong>[조회]</strong> 클릭하여 우리 반 학생 목록 표시</li>
+                <li>오른쪽 위 <strong className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">[엑셀 내려받기]</strong> 초록색 버튼 클릭 (권장)</li>
+                <li>다운로드된 파일을 아래에 업로드</li>
+              </ol>
+              <div className="mt-2 bg-white rounded p-2 space-y-1">
+                <p>✅ <strong>엑셀 (.xlsx)</strong> - 가장 정확, 권장</p>
+                <p>✅ <strong>PDF (.pdf)</strong> - 텍스트 PDF만 가능 (인식 후 결과 확인 필수)</p>
+                <p className="text-red-700">❌ <strong>이미지 PDF (스캔본)</strong> - 인식 불가</p>
+              </div>
+            </div>
+
             {!user?.school && (
               <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg mb-3">
                 ⚠️ 학교명이 등록되지 않았어요!<br/>
@@ -539,10 +741,10 @@ export default function StudentsPage() {
             )}
             <div className="space-y-3">
               <label className="block">
-                <span className="sr-only">엑셀 파일 선택</span>
+                <span className="sr-only">엑셀 또는 PDF 파일 선택</span>
                 <input
                   type="file"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.pdf"
                   onChange={handleFile}
                   disabled={!user?.school}
                   className="w-full text-sm border border-gray-200 rounded-lg p-2 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-primary file:text-white disabled:opacity-50"
@@ -670,6 +872,38 @@ export default function StudentsPage() {
                 )}
               </h3>
               <div className="flex items-center gap-2 flex-wrap">
+                {students.filter(s => !s.is_hidden).length > 0 && (
+                  <>
+                    <button onClick={downloadStudentList}
+                      disabled={savingId === 'download'}
+                      className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full disabled:opacity-50">
+                      {savingId === 'download' ? '⏳' : '📥 명단 엑셀'}
+                    </button>
+                    {(() => {
+                      const active = students.filter(s => !s.is_hidden)
+                      const notYet = active.filter(s => !s.consent_received).length
+                      const allReceived = notYet === 0 && active.length > 0
+                      if (allReceived) {
+                        return (
+                          <button onClick={() => bulkToggleConsent(false)}
+                            disabled={savingId === 'bulk-consent'}
+                            className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1 rounded-full disabled:opacity-50"
+                            title="모든 학생 동의서를 미회신으로 되돌리기">
+                            {savingId === 'bulk-consent' ? '⏳' : '↻ 동의서 일괄 해제'}
+                          </button>
+                        )
+                      }
+                      return (
+                        <button onClick={() => bulkToggleConsent(true)}
+                          disabled={savingId === 'bulk-consent'}
+                          className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full disabled:opacity-50"
+                          title="미회신 학생들을 일괄 회신 처리">
+                          {savingId === 'bulk-consent' ? '⏳' : `✓ 동의서 일괄 체크 (미회신 ${notYet}명)`}
+                        </button>
+                      )
+                    })()}
+                  </>
+                )}
                 {students.filter(s => !s.is_hidden && !s.nickname).length > 0 && (
                   <button onClick={assignMissingNicknames}
                     disabled={savingId === 'bulk-nickname'}
