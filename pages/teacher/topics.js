@@ -208,25 +208,34 @@ export default function TopicsPage() {
       const gradeText = classInfo?.grade ? `초등 ${classInfo.grade}학년` : '초등 5학년'
       const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
 
+      const hasTheme = batchTheme && batchTheme.trim()
+
       let prompt = `${gradeText} 글쓰기 주제 ${targetDates.length}개를 만들어주세요.
 
-규칙:
-- 각 주제는 서로 카테고리가 달라야 함 (예: 일상, 상상, 가족, 학교, 자연, 책/영화 등 다양하게)
+`
+      if (hasTheme) {
+        // 주제 방향이 있으면 모든 항목에 반드시 반영
+        prompt += `🎯 핵심 요구사항 (반드시 모든 주제에 반영):
+"${batchTheme.trim()}"
+
+위 방향성을 ${targetDates.length}개 주제 전부에 적용해주세요. 각 주제는 위 큰 방향 안에서 서로 다른 세부 주제/관점으로 만들어주세요.
+
+`
+      }
+
+      prompt += `규칙:
+- 만들어진 ${targetDates.length}개 주제는 서로 중복되지 않게 다양하게 (${hasTheme ? '큰 방향은 유지하되 세부 내용/접근 방식이 다르게' : '카테고리/주제가 다양하게'})
 - 최근 출제 주제와 중복 금지: ${recentTitles || '없음'}
 - title: 10-15자, 흥미롭고 ${gradeText} 학생들이 재미있어할 주제
 - description: 70-100자의 글쓰기 안내 (질문형 X, 안내/지시형으로)
-- category: 카테고리명 (예: "일상 경험", "상상력", "가족과 친구" 등)
-`
-      if (batchTheme && batchTheme.trim()) {
-        prompt += `\n선생님 요청: ${batchTheme.trim()}\n위 방향성을 반영해주세요.\n`
-      }
-      prompt += `
-좋은 예시:
+- category: 카테고리명${hasTheme ? ' (큰 방향성에 맞는 세부 카테고리)' : ' (예: "일상 경험", "상상력", "가족과 친구" 등)'}
+
+좋은 예시${hasTheme ? ` (방향성 "${batchTheme.trim()}"에 맞춘 예시는 아니고 형식만 참고)` : ''}:
 - title: "내 인생의 첫 도전"
   description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
   category: "일상 경험"
 
-위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개)`
+위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개${hasTheme ? `, 그리고 모든 주제가 "${batchTheme.trim()}" 방향성을 반영해야 합니다` : ''})`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, {
         maxTokens: 6000,
@@ -266,6 +275,58 @@ export default function TopicsPage() {
   // 📅 미리보기 항목 제거
   const removePreviewItem = (idx) => {
     setBatchPreview(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // 📅 개별 항목 재추천 (그 날짜 하나만 AI 새로 받아옴)
+  const [regeneratingIdx, setRegeneratingIdx] = useState(null)
+  const regenerateSingle = async (idx) => {
+    const item = batchPreview[idx]
+    if (!item) return
+
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요')
+
+    setRegeneratingIdx(idx)
+    try {
+      const gradeText = classInfo?.grade ? `초등 ${classInfo.grade}학년` : '초등 5학년'
+      // 다른 항목들과 중복되지 않게 + 최근 등록 주제 고려
+      const otherTitles = batchPreview.filter((_, i) => i !== idx).map(p => p.title).filter(Boolean).join(', ')
+      const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
+      const hasTheme = batchTheme && batchTheme.trim()
+
+      let prompt = `${gradeText} 글쓰기 주제 1개를 새로 만들어주세요.
+
+`
+      if (hasTheme) {
+        prompt += `🎯 핵심 방향성: "${batchTheme.trim()}"\n이 방향에 맞는 주제를 만들어주세요.\n\n`
+      }
+      prompt += `중복 금지:
+- 이번 일괄 등록의 다른 주제: ${otherTitles || '없음'}
+- 최근 등록 주제: ${recentTitles || '없음'}
+
+위 주제들과 다른 새로운 주제로 1개 만들어주세요.
+- title: 10-15자
+- description: 70-100자의 글쓰기 안내
+- category: 카테고리명`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicSuggestion, {
+        maxTokens: 1500
+      })
+
+      if (result.title) {
+        setBatchPreview(prev => prev.map((p, i) =>
+          i === idx ? {
+            ...p,
+            title: result.title,
+            description: result.description || p.description,
+            // category는 단일 추천 schema에 없으니 기존 유지
+          } : p
+        ))
+      }
+    } catch(e) {
+      alert('재추천 실패: ' + (e.message || e))
+    }
+    setRegeneratingIdx(null)
   }
 
   // 📅 일괄 저장 (DB에 한 번에 등록)
@@ -780,10 +841,17 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                             📅 {item.date}
                             {item.category && <span className="ml-2 bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{item.category}</span>}
                           </div>
-                          <button onClick={() => removePreviewItem(idx)}
-                            className="text-xs text-red-600 hover:text-red-800">
-                            ✕ 삭제
-                          </button>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => regenerateSingle(idx)}
+                              disabled={regeneratingIdx !== null}
+                              className="text-xs text-purple-700 hover:text-purple-900 disabled:opacity-40">
+                              {regeneratingIdx === idx ? '🤖 추천 중...' : '✨ 다시 추천'}
+                            </button>
+                            <button onClick={() => removePreviewItem(idx)}
+                              className="text-xs text-red-600 hover:text-red-800">
+                              ✕ 삭제
+                            </button>
+                          </div>
                         </div>
                         <input type="text" value={item.title}
                           onChange={e => updatePreviewItem(idx, 'title', e.target.value)}

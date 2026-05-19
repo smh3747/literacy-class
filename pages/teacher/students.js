@@ -21,11 +21,15 @@ export default function StudentsPage() {
   // 인라인 편집 상태
   const [editingNumbers, setEditingNumbers] = useState({}) // {studentId: number}
   const [editingUsernames, setEditingUsernames] = useState({}) // {parsedIdx: username} - 미리보기에서 개별 수정
+  const [editingExistingUsernames, setEditingExistingUsernames] = useState({}) // {studentId: username} - 기존 학생 아이디 인라인 수정
+  const [editingRealnames, setEditingRealnames] = useState({}) // {studentId: realname} - 학생 이름 인라인 수정
   const [savingId, setSavingId] = useState(null)
   // 숨김 학생 보기 토글
   const [showHidden, setShowHidden] = useState(false)
   // 닉네임 변경 모달 (선생님이 학생 닉네임 변경)
   const [editingNicknameStudent, setEditingNicknameStudent] = useState(null)
+  // 선택된 학생 ID들 (체크박스 - 일괄 비번 초기화용)
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set())
 
   useEffect(() => { checkAuth() }, [])
 
@@ -415,6 +419,183 @@ export default function StudentsPage() {
       alert('실패: ' + msg)
     }
     setSavingId(null)
+  }
+
+  // 🔐 선택한 학생들 비밀번호 일괄 초기화
+  const resetPasswordsBulk = async () => {
+    const targetIds = [...selectedStudentIds].filter(id => {
+      const s = students.find(x => x.id === id)
+      return s && !s.is_hidden
+    })
+    if (targetIds.length === 0) return alert('선택된 학생이 없어요 (숨김 학생은 제외돼요)')
+
+    const input = prompt(
+      `🔐 선택한 ${targetIds.length}명의 비밀번호를 일괄 초기화합니다.\n\n` +
+      `새 비밀번호를 입력하세요.\n` +
+      `※ 그대로 [확인] 누르면 "123456"으로 초기화됩니다.\n` +
+      `※ 6자 이상 입력 가능`,
+      ''
+    )
+    if (input === null) return
+
+    let newPassword = input.trim()
+    if (newPassword === '') newPassword = '123456'
+    else if (newPassword.length < 6) {
+      alert('비밀번호는 6자 이상이어야 해요')
+      return
+    }
+
+    if (!confirm(
+      `${targetIds.length}명의 비밀번호를 모두 "${newPassword}"로 초기화할까요?\n\n` +
+      `학생들에게 이 비밀번호를 알려주고 로그인 후 변경하라고 안내해주세요.`
+    )) return
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      alert('로그인 세션이 만료됐어요. 다시 로그인해주세요.')
+      return
+    }
+
+    let success = 0, failed = 0
+    const failedNames = []
+    for (const studentId of targetIds) {
+      try {
+        const res = await fetch('/api/reset-student-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId, newPassword, accessToken: session.access_token })
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || '실패')
+        }
+        success++
+      } catch(e) {
+        failed++
+        const s = students.find(x => x.id === studentId)
+        if (s) failedNames.push(s.realname)
+      }
+    }
+
+    alert(
+      `✅ 성공: ${success}명\n` +
+      (failed > 0 ? `❌ 실패: ${failed}명 (${failedNames.join(', ')})\n\n` : '') +
+      `새 비밀번호: ${newPassword}\n\n` +
+      `학생들에게 이 비밀번호를 전달해주세요.`
+    )
+    setSelectedStudentIds(new Set())
+  }
+
+  // 🆔 학생 아이디 수정 (인라인)
+  const saveUsername = async (studentId, originalUsername) => {
+    const newUsername = (editingExistingUsernames[studentId] || '').trim().toLowerCase()
+    if (!newUsername || newUsername === originalUsername) {
+      // 변경 없음
+      setEditingExistingUsernames(prev => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      return
+    }
+
+    // 형식 검증
+    if (!/^[a-z0-9_]{3,20}$/.test(newUsername)) {
+      alert('아이디는 영문 소문자, 숫자, 밑줄(_)만 사용 가능하고 3~20자여야 해요')
+      return
+    }
+
+    // 중복 확인 (같은 학급 또는 전체)
+    const duplicate = students.find(s => s.id !== studentId && s.username === newUsername)
+    if (duplicate) {
+      alert(`이미 사용 중인 아이디예요: ${duplicate.realname}`)
+      return
+    }
+
+    if (!confirm(
+      `학생 아이디를 변경할까요?\n\n` +
+      `이전: ${originalUsername}\n` +
+      `새 아이디: ${newUsername}\n\n` +
+      `학생에게 새 아이디를 꼭 알려주세요!`
+    )) return
+
+    setSavingId(studentId)
+    try {
+      // 1) auth email 변경 필요 (가짜 이메일 구조: username@literacy.local)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인 세션 만료')
+
+      const res = await fetch('/api/update-student-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, newUsername, accessToken: session.access_token })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '아이디 변경 실패')
+
+      alert(`✅ 아이디가 변경되었어요!\n\n새 아이디: ${newUsername}`)
+      setEditingExistingUsernames(prev => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      await loadStudents(classInfo.id)
+    } catch(e) {
+      alert('아이디 변경 실패: ' + (e.message || e))
+    }
+    setSavingId(null)
+  }
+
+  // 🆔 학생 이름 수정 (인라인)
+  const saveRealname = async (studentId, originalName) => {
+    const newName = (editingRealnames[studentId] || '').trim()
+    if (!newName || newName === originalName) {
+      setEditingRealnames(prev => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      return
+    }
+
+    if (newName.length < 1 || newName.length > 20) {
+      alert('이름은 1~20자 사이로 입력해주세요')
+      return
+    }
+
+    if (!confirm(
+      `학생 이름을 변경할까요?\n\n` +
+      `이전: ${originalName}\n` +
+      `새 이름: ${newName}`
+    )) return
+
+    setSavingId(studentId)
+    try {
+      const { error } = await supabase.from('profiles')
+        .update({ realname: newName })
+        .eq('id', studentId)
+      if (error) throw error
+
+      setEditingRealnames(prev => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      await loadStudents(classInfo.id)
+    } catch(e) {
+      alert('이름 변경 실패: ' + (e.message || e))
+    }
+    setSavingId(null)
+  }
+
+  // 학생 체크박스 토글
+  const toggleStudentSelect = (id) => {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   // 번호 인라인 편집 저장
@@ -930,16 +1111,60 @@ export default function StudentsPage() {
 
             {students.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 학생이 없어요</p>
-            ) : (
+            ) : (() => {
+              const visibleStudents = [...students]
+                .filter(s => showHidden || !s.is_hidden)
+                .sort((a, b) => {
+                  if (a.is_hidden !== b.is_hidden) return a.is_hidden ? 1 : -1
+                  const na = parseInt(a.number) || 999
+                  const nb = parseInt(b.number) || 999
+                  if (na !== nb) return na - nb
+                  return (a.username || '').localeCompare(b.username || '')
+                })
+              const selectableStudents = visibleStudents.filter(s => !s.is_hidden)
+              const allSelected = selectableStudents.length > 0 &&
+                selectableStudents.every(s => selectedStudentIds.has(s.id))
+              const selectAll = () => setSelectedStudentIds(new Set(selectableStudents.map(s => s.id)))
+              const clearSelection = () => setSelectedStudentIds(new Set())
+              return (
               <>
-                <p className="text-xs text-gray-500 mb-3">
-                  💡 번호칸 클릭해서 수정 / 동의서 ✓ / 🔑 비밀번호 초기화 / 🙈 전출생 숨김
+                <p className="text-xs text-gray-500 mb-2">
+                  💡 번호/이름/아이디 칸 클릭해서 수정 · 동의서 ✓ · 🔑 비번 초기화 · 🙈 전출생 숨김
                 </p>
+
+                {/* 선택 도구 */}
+                {selectedStudentIds.size > 0 && (
+                  <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 mb-3 flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-blue-900">
+                      ☑️ {selectedStudentIds.size}명 선택됨
+                    </span>
+                    <div className="flex gap-1.5 flex-wrap ml-auto">
+                      <button onClick={resetPasswordsBulk}
+                        className="text-xs bg-amber-500 text-white px-3 py-1 rounded hover:bg-amber-600 font-medium">
+                        🔑 비밀번호 일괄 초기화
+                      </button>
+                      <button onClick={clearSelection}
+                        className="text-xs text-gray-600 hover:text-gray-800 px-2">
+                        ✕ 선택 해제
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-xs text-gray-500">
-                        <th className="py-2 px-2 w-20">번호</th>
+                        <th className="py-2 px-1 w-8">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() => allSelected ? clearSelection() : selectAll()}
+                            className="w-4 h-4 cursor-pointer"
+                            title="전체 선택"
+                          />
+                        </th>
+                        <th className="py-2 px-2 w-16">번호</th>
                         <th className="py-2 px-2">이름</th>
                         <th className="py-2 px-2 hidden sm:table-cell">아이디</th>
                         <th className="py-2 px-2 text-center w-16">동의서</th>
@@ -948,40 +1173,67 @@ export default function StudentsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {[...students]
-                        .filter(s => showHidden || !s.is_hidden)
-                        .sort((a, b) => {
-                          // 숨김 학생은 아래로
-                          if (a.is_hidden !== b.is_hidden) return a.is_hidden ? 1 : -1
-                          const na = parseInt(a.number) || 999
-                          const nb = parseInt(b.number) || 999
-                          if (na !== nb) return na - nb
-                          return (a.username || '').localeCompare(b.username || '')
-                        }).map(s => {
+                      {visibleStudents.map(s => {
                         const currentNumber = editingNumbers[s.id] !== undefined
                           ? editingNumbers[s.id]
                           : (s.number || '')
-                        const isDirty = editingNumbers[s.id] !== undefined && editingNumbers[s.id] !== (s.number || '')
+                        const isDirtyNum = editingNumbers[s.id] !== undefined && editingNumbers[s.id] !== (s.number || '')
+
+                        const currentUsername = editingExistingUsernames[s.id] !== undefined
+                          ? editingExistingUsernames[s.id]
+                          : (s.username || '')
+                        const isDirtyUsername = editingExistingUsernames[s.id] !== undefined &&
+                          editingExistingUsernames[s.id] !== (s.username || '')
+
+                        const currentRealname = editingRealnames[s.id] !== undefined
+                          ? editingRealnames[s.id]
+                          : (s.realname || '')
+                        const isDirtyName = editingRealnames[s.id] !== undefined &&
+                          editingRealnames[s.id] !== (s.realname || '')
 
                         return (
                           <tr key={s.id}
-                            className={`border-b border-gray-100 hover:bg-gray-50 ${s.is_hidden ? 'opacity-50 bg-gray-50' : ''}`}>
+                            className={`border-b border-gray-100 hover:bg-gray-50 ${
+                              s.is_hidden ? 'opacity-50 bg-gray-50' :
+                              selectedStudentIds.has(s.id) ? 'bg-blue-50' : ''
+                            }`}>
+                            <td className="py-2 px-1">
+                              {!s.is_hidden && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudentIds.has(s.id)}
+                                  onChange={() => toggleStudentSelect(s.id)}
+                                  className="w-4 h-4 cursor-pointer"
+                                />
+                              )}
+                            </td>
                             <td className="py-2 px-2">
                               <input
                                 type="text"
                                 value={currentNumber}
                                 onChange={e => setEditingNumbers(prev => ({ ...prev, [s.id]: e.target.value }))}
-                                onBlur={() => { if (isDirty) saveNumber(s.id) }}
+                                onBlur={() => { if (isDirtyNum) saveNumber(s.id) }}
                                 onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                                 placeholder="-"
                                 className={`w-14 p-1 text-center text-sm border rounded font-mono ${
-                                  isDirty ? 'border-amber-400 bg-amber-50' : 'border-gray-200'
+                                  isDirtyNum ? 'border-amber-400 bg-amber-50' : 'border-gray-200'
                                 }`}
                                 disabled={savingId === s.id || s.is_hidden}
                               />
                             </td>
                             <td className="py-2 px-2 font-medium">
-                              <div>{s.realname}</div>
+                              <input
+                                type="text"
+                                value={currentRealname}
+                                onChange={e => setEditingRealnames(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                onBlur={() => { if (isDirtyName) saveRealname(s.id, s.realname) }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                                className={`w-full max-w-[120px] p-1 text-sm border rounded ${
+                                  isDirtyName ? 'border-amber-400 bg-amber-50' : 'border-transparent hover:border-gray-200 bg-transparent'
+                                }`}
+                                disabled={savingId === s.id || s.is_hidden}
+                                title="클릭해서 이름 수정"
+                              />
                               {s.nickname ? (
                                 <div className="text-[10px] text-purple-600 mt-0.5 flex items-center gap-1 flex-wrap">
                                   <span>🎭 {s.nickname}</span>
@@ -1008,7 +1260,20 @@ export default function StudentsPage() {
                                 <div className="text-xs text-gray-400 mt-0.5">({s.hidden_reason})</div>
                               )}
                             </td>
-                            <td className="py-2 px-2 text-xs text-gray-500 font-mono hidden sm:table-cell">{s.username}</td>
+                            <td className="py-2 px-2 text-xs hidden sm:table-cell">
+                              <input
+                                type="text"
+                                value={currentUsername}
+                                onChange={e => setEditingExistingUsernames(prev => ({ ...prev, [s.id]: e.target.value.toLowerCase() }))}
+                                onBlur={() => { if (isDirtyUsername) saveUsername(s.id, s.username) }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                                className={`w-full max-w-[140px] p-1 text-xs border rounded font-mono ${
+                                  isDirtyUsername ? 'border-amber-400 bg-amber-50' : 'border-transparent hover:border-gray-200 bg-transparent'
+                                }`}
+                                disabled={savingId === s.id || s.is_hidden}
+                                title="클릭해서 아이디 수정"
+                              />
+                            </td>
                             <td className="py-2 px-2 text-center">
                               <button
                                 onClick={() => toggleConsent(s.id, s.consent_received)}
@@ -1054,7 +1319,8 @@ export default function StudentsPage() {
                   </table>
                 </div>
               </>
-            )}
+              )
+            })()}
           </div>
         </main>
         {editingNicknameStudent && (

@@ -42,14 +42,15 @@ export default function StudentLogin() {
     checkSession()
   }, [])
 
-  // 🔗 URL 쿼리로 학급 코드 자동 입력 + 가입 모드 (?code=XXX 또는 ?code=XXX&mode=signup)
+  // 🔗 URL 쿼리로 학급 코드 자동 입력 (?code=XXX)
+  // - 학급 코드만 자동 채움 (로그인/가입은 학생이 선택)
+  // - mode=signup 명시 시에만 가입 모드 자동 전환 (구버전 호환)
   useEffect(() => {
     if (!router.isReady) return
     const { code, mode: qMode } = router.query
     if (code && typeof code === 'string') {
       setClassCode(code.toUpperCase())
-      // QR로 들어온 경우 가입 모드로 자동 전환 (이미 로그인 사용자가 아니면)
-      if (qMode === 'signup' || !username) {
+      if (qMode === 'signup') {
         setMode('signup')
       }
     }
