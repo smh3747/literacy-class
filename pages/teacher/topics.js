@@ -67,6 +67,7 @@ export default function TopicsPage() {
   const [batchExcludeWeekend, setBatchExcludeWeekend] = useState(true)
   const [batchTheme, setBatchTheme] = useState('') // 주제 방향 (선택)
   const [batchGenerating, setBatchGenerating] = useState(false)
+  const [batchProgress, setBatchProgress] = useState('') // 진행 상황 표시
   const [batchPreview, setBatchPreview] = useState(null) // 생성된 주제 리스트 미리보기
   const [batchSaving, setBatchSaving] = useState(false)
   // 등록된 주제 펼침 (평가기준 확인용)
@@ -209,6 +210,7 @@ export default function TopicsPage() {
 
     setBatchGenerating(true)
     setBatchPreview(null)
+    setBatchProgress('AI 호출 준비 중...')
     try {
       const gradeText = classInfo?.grade ? `초등 ${classInfo.grade}학년` : '초등 5학년'
       const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
@@ -244,7 +246,10 @@ export default function TopicsPage() {
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'simple',
         maxTokens: 6000,
-        onProgress: (p) => console.log(p.message)
+        onProgress: (p) => {
+          console.log('진행:', p.message)
+          setBatchProgress(p.message || '')
+        }
       })
 
       let aiTopics = Array.isArray(result.topics) ? result.topics : []
@@ -268,6 +273,7 @@ export default function TopicsPage() {
       alert('생성 실패: ' + (e.message || e))
     }
     setBatchGenerating(false)
+    setBatchProgress('')
   }
 
   // 📅 미리보기 항목 수정
@@ -873,9 +879,16 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                     {batchGenerating ? '🤖 AI가 주제 만드는 중...' : '✨ AI로 주제 일괄 생성'}
                   </button>
                   {batchGenerating && (
-                    <p className="text-xs text-center text-gray-600">
-                      여러 주제를 한 번에 만들어요. 약 10~30초 정도 걸려요.
-                    </p>
+                    <div className="text-xs text-center space-y-1">
+                      <p className="text-gray-600">
+                        여러 주제를 한 번에 만들어요. 약 10~30초 정도 걸려요.
+                      </p>
+                      {batchProgress && (
+                        <p className="text-purple-700 font-medium">
+                          🔄 {batchProgress}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
