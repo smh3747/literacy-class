@@ -122,11 +122,14 @@ export default function TopicsPage() {
 
     // 우리 학급 학생 ID 목록 (숨김 제외) - 제출 카운트 정확하게 계산하기 위해
     const cid = classId || classInfo?.id
+    let visibleStudents = []
     let visibleStudentIds = []
     if (cid) {
       const { data: studs } = await supabase.from('profiles')
-        .select('id, is_hidden').eq('class_id', cid).eq('role', 'student')
-      visibleStudentIds = (studs || []).filter(s => !s.is_hidden).map(s => s.id)
+        .select('id, realname, number, is_hidden').eq('class_id', cid).eq('role', 'student')
+      visibleStudents = (studs || []).filter(s => !s.is_hidden)
+        .sort((a, b) => (a.number || 999) - (b.number || 999))
+      visibleStudentIds = visibleStudents.map(s => s.id)
     }
 
     // 주제별 제출 학생 수 (한 학생이 여러 번 제출해도 1명으로)
@@ -143,11 +146,18 @@ export default function TopicsPage() {
       submitMap[s.topic_id].add(s.user_id)
     })
 
-    const enriched = data.map(t => ({
-      ...t,
-      submitted_count: submitMap[t.id]?.size || 0,
-      total_students: visibleStudentIds.length
-    }))
+    const enriched = data.map(t => {
+      const submittedIds = submitMap[t.id] || new Set()
+      const submittedStudents = visibleStudents.filter(s => submittedIds.has(s.id))
+      const notSubmittedStudents = visibleStudents.filter(s => !submittedIds.has(s.id))
+      return {
+        ...t,
+        submitted_count: submittedIds.size,
+        total_students: visibleStudentIds.length,
+        submitted_students: submittedStudents,
+        not_submitted_students: notSubmittedStudents
+      }
+    })
     setTopics(enriched)
   }
 
@@ -1369,6 +1379,49 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                                   )}
                                 </div>
                               ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 제출/미제출 학생 명단 */}
+                        {t.total_students > 0 && (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* 제출한 학생 */}
+                              <div className="bg-green-50 rounded p-2">
+                                <div className="text-xs font-semibold text-green-800 mb-1.5">
+                                  ✅ 제출 ({t.submitted_students?.length || 0}명)
+                                </div>
+                                {t.submitted_students && t.submitted_students.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {t.submitted_students.map(s => (
+                                      <span key={s.id} className="text-xs bg-white px-1.5 py-0.5 rounded border border-green-200 text-green-900">
+                                        {s.number ? `${s.number}.` : ''}{s.realname}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-500">아직 없어요</p>
+                                )}
+                              </div>
+
+                              {/* 미제출 학생 */}
+                              <div className="bg-amber-50 rounded p-2">
+                                <div className="text-xs font-semibold text-amber-800 mb-1.5">
+                                  ⏳ 미제출 ({t.not_submitted_students?.length || 0}명)
+                                </div>
+                                {t.not_submitted_students && t.not_submitted_students.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {t.not_submitted_students.map(s => (
+                                      <span key={s.id} className="text-xs bg-white px-1.5 py-0.5 rounded border border-amber-200 text-amber-900">
+                                        {s.number ? `${s.number}.` : ''}{s.realname}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-500">전원 제출 완료! 🎉</p>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}
