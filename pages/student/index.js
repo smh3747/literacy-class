@@ -166,6 +166,7 @@ export default function StudentHome() {
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
   const [todayTopic, setTodayTopic] = useState(null)
+  const [todayTopicList, setTodayTopicList] = useState([]) // 오늘 주제가 여러 개일 때
   const [pendingTopics, setPendingTopics] = useState([]) // 지난 미제출 주제들
   const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -283,9 +284,44 @@ export default function StudentHome() {
     // 특정 주제가 없거나 검증 실패 → 오늘 주제로 폴백
     if (!topic) {
       const today = todayStr()
-      const { data } = await supabase.from('topics')
-        .select('*').eq('teacher_id', classData.teacher_id).eq('date', today).maybeSingle()
-      topic = data
+      // 오늘 주제가 여러 개일 수 있음 → 미제출인 것 우선 선택
+      const { data: todayTopics } = await supabase.from('topics')
+        .select('*').eq('teacher_id', classData.teacher_id).eq('date', today)
+        .order('created_at', { ascending: true })
+
+      if (todayTopics && todayTopics.length > 0) {
+        // 학생이 아직 제출 안 한 주제 ID 찾기
+        const topicIds = todayTopics.map(t => t.id)
+        const { data: mySubs } = await supabase.from('submissions')
+          .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', topicIds)
+
+        // 각 주제별로 최대 attempt 계산
+        const maxAttemptByTopic = {}
+        ;(mySubs || []).forEach(s => {
+          const cur = maxAttemptByTopic[s.topic_id] || 0
+          if ((s.attempt || 1) > cur) maxAttemptByTopic[s.topic_id] = s.attempt || 1
+        })
+
+        // 미제출 주제 우선
+        const unsubmitted = todayTopics.filter(t => !maxAttemptByTopic[t.id])
+        if (unsubmitted.length > 0) {
+          topic = unsubmitted[0]
+        } else {
+          // 모두 제출했으면 첫 글만 쓰고 수정 안 한 것 우선
+          const noRewrite = todayTopics.filter(t => maxAttemptByTopic[t.id] === 1)
+          topic = noRewrite[0] || todayTopics[0]
+        }
+
+        // 오늘 주제 여러 개라면 state에 저장 (화면 상단 선택 UI용)
+        if (todayTopics.length > 1) {
+          setTodayTopicList(todayTopics.map(t => ({
+            ...t,
+            myMaxAttempt: maxAttemptByTopic[t.id] || 0
+          })))
+        } else {
+          setTodayTopicList([])
+        }
+      }
 
       // 지난 미제출 주제 목록도 같이 조회
       await loadPendingTopics(profile, classData.teacher_id)
@@ -876,6 +912,60 @@ ${rewriteEssay}
                         {t.description && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{t.description}</div>}
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 오늘 주제가 여러 개일 때 선택 UI */}
+              {todayTopicList.length > 1 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4">
+                  <p className="text-sm font-semibold text-amber-900 mb-2">
+                    📚 오늘 주제가 {todayTopicList.length}개 있어요!
+                  </p>
+                  <div className="space-y-2">
+                    {todayTopicList.map(t => {
+                      const isCurrent = todayTopic?.id === t.id
+                      const submitted = t.myMaxAttempt > 0
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => loadTodayTopic(user, t.id)}
+                          className={`w-full text-left p-3 rounded-lg transition ${
+                            isCurrent
+                              ? 'bg-primary text-white'
+                              : 'bg-white border border-gray-200 hover:border-primary'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm font-medium ${isCurrent ? 'text-white' : 'text-gray-900'}`}>
+                                {t.title}
+                              </div>
+                              {t.description && (
+                                <div className={`text-xs mt-0.5 truncate ${isCurrent ? 'text-white/80' : 'text-gray-500'}`}>
+                                  {t.description}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-shrink-0">
+                              {submitted ? (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  isCurrent ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'
+                                }`}>
+                                  ✅ 제출함
+                                </span>
+                              ) : (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  isCurrent ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  📝 미제출
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}

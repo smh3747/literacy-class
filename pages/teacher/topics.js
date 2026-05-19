@@ -70,6 +70,8 @@ export default function TopicsPage() {
   const [batchSaving, setBatchSaving] = useState(false)
   // 등록된 주제 펼침 (평가기준 확인용)
   const [expandedTopicId, setExpandedTopicId] = useState(null)
+  // 편집 모드 (특정 주제 수정 중인지)
+  const [editingTopicId, setEditingTopicId] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -376,6 +378,41 @@ export default function TopicsPage() {
   }
 
   // 주제 저장
+  // 주제를 편집 폼에 로드
+  const loadTopicForEdit = (t) => {
+    // 단일 모드로 전환
+    setBatchMode(false)
+    setBatchPreview(null)
+    setEditingTopicId(t.id)
+    setDate(t.date)
+    setTitle(t.title || '')
+    setDesc(t.description || '')
+    setRubrics(t.rubrics && t.rubrics.length > 0 ? t.rubrics : DEFAULT_RUBRICS)
+    setLockEnabled(!!t.lock_enabled)
+    setLockStartTime(t.lock_start_time || '09:00')
+    setLockEndTime(t.lock_end_time || '10:00')
+    setMinLength(t.min_length || 30)
+    setMaxRewrites(t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1)
+    setDeadlineEnabled(!!t.deadline_date)
+    setDeadlineDate(t.deadline_date || '')
+    setDeadlineTime(t.deadline_time || '23:59')
+    // 펼침 닫고 위로 스크롤
+    setExpandedTopicId(null)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // 편집 모드 취소
+  const cancelEdit = () => {
+    setEditingTopicId(null)
+    setTitle('')
+    setDesc('')
+    setRubrics(DEFAULT_RUBRICS)
+    setLockEnabled(false)
+    setMinLength(30)
+    setMaxRewrites(1)
+    setDeadlineEnabled(false)
+  }
+
   const saveTopic = async () => {
     if (!date || !title.trim()) return alert('날짜와 주제를 입력해주세요')
     if (rubrics.length === 0) return alert('평가 기준을 1개 이상 추가해주세요')
@@ -392,13 +429,21 @@ export default function TopicsPage() {
 
     setSaving(true)
     try {
-      // 같은 날짜에 이미 있으면 업데이트
-      const { data: existing } = await supabase.from('topics')
-        .select('id').eq('date', date).eq('teacher_id', user.id).maybeSingle()
+      // 기존 주제 수정 모드인지 확인 (편집 버튼으로 진입한 경우만)
+      // 단순히 같은 날짜에 주제가 있다고 해서 자동 덮어쓰기 X
+      // → 하루 여러 주제 등록 가능
+      const isEditMode = !!editingTopicId
+      let existing = null
+      if (isEditMode) {
+        const { data } = await supabase.from('topics')
+          .select('id').eq('id', editingTopicId).maybeSingle()
+        existing = data
+      }
 
       let error
       if (existing) {
         const r = await supabase.from('topics').update({
+          date,
           title: title.trim(),
           description: desc.trim(),
           rubrics: rubrics,
@@ -443,6 +488,7 @@ export default function TopicsPage() {
       setDeadlineEnabled(false)
       setDeadlineDate('')
       setDeadlineTime('23:59')
+      setEditingTopicId(null) // 편집 모드 해제
       await loadTopics(user.id, classInfo?.id)
     } catch(e) {
       alert('저장 실패: ' + e.message)
@@ -884,7 +930,20 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
           {/* 새 주제 등록 (단일 모드) */}
           {!batchMode && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h3 className="font-bold mb-3">✏️ 주제 등록</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold">{editingTopicId ? '✏️ 주제 수정 중' : '✏️ 주제 등록'}</h3>
+              {editingTopicId && (
+                <button onClick={cancelEdit}
+                  className="text-xs text-gray-500 hover:text-gray-800 underline">
+                  취소 (새 주제 모드로)
+                </button>
+              )}
+            </div>
+            {editingTopicId && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3 text-xs text-amber-900">
+                💡 기존 주제를 수정하고 있어요. 저장하면 덮어쓰기 돼요.
+              </div>
+            )}
             <div className="space-y-3">
               <div className="grid sm:grid-cols-3 gap-3">
                 <div>
@@ -1142,7 +1201,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
 
               <button onClick={saveTopic} disabled={saving}
                 className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                {saving ? '저장 중...' : '💾 저장'}
+                {saving ? '저장 중...' : (editingTopicId ? '💾 수정 저장' : '💾 새 주제 등록')}
               </button>
             </div>
           </div>
@@ -1259,6 +1318,15 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                         <div className="text-xs text-gray-500 grid grid-cols-2 gap-2 pt-1 border-t">
                           <div>📏 최소 글자수: <strong>{t.min_length || 30}자</strong></div>
                           <div>🔄 최대 수정 횟수: <strong>{t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1}회</strong></div>
+                        </div>
+
+                        <div className="pt-2 border-t">
+                          <button
+                            onClick={() => loadTopicForEdit(t)}
+                            className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 px-3 py-1.5 rounded font-medium"
+                          >
+                            ✏️ 이 주제 수정하기
+                          </button>
                         </div>
                       </div>
                     )}
