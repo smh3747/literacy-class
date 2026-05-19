@@ -462,8 +462,10 @@ ${todayTopic.description ? '주제 설명: ' + todayTopic.description : ''}
 ${essay}
 
 규칙:
-- scores 배열은 평가기준 순서대로 점수 (각 기준 만점 내에서)
-- total은 점수 합계
+- scores 배열은 평가기준 순서대로 점수
+- ⚠️ 매우 중요: 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨
+  예) 만점 25점인 기준 → 0~25점만 가능 (26점, 28점 등 절대 금지)
+- total은 점수 합계 (전체 만점 초과 금지)
 - overall은 종합의견 (2-3문장, 따뜻하게)
 - good은 잘한 점 (2가지)
 - improve는 발전시킬 점 (2가지, 부드럽게)
@@ -474,7 +476,16 @@ ${essay}
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
+      // 각 점수가 평가기준 만점 넘으면 만점으로 캡 + 음수 방지
+      result.scores = result.scores.map((s, i) => {
+        const max = rubrics[i]?.score || 25
+        const n = Number(s) || 0
+        return Math.max(0, Math.min(n, max))
+      })
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
+      // 총점도 만점 넘으면 캡
+      const totalMaxCalc = rubrics.reduce((s,r) => s + (r.score || 0), 0)
+      result.total = Math.max(0, Math.min(result.total, totalMaxCalc))
       if (!result.overall) result.overall = '글을 잘 써주었어요!'
       if (!result.good) result.good = '열심히 글을 썼어요.'
       if (!result.improve) result.improve = '더 자세하게 써보세요.'
@@ -693,7 +704,9 @@ ${rewriteEssay}
 
 규칙:
 - scores 배열은 평가기준 순서대로 점수
-- total은 합계
+- ⚠️ 매우 중요: 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨
+  예) 만점 25점인 기준 → 0~25점만 가능 (26점, 28점 등 절대 금지)
+- total은 합계 (전체 만점 초과 금지)
 - overall은 종합 의견 (처음보다 어떻게 좋아졌는지 격려, 2-3문장)
 - good은 잘한 점 (2가지)
 - improve는 더 발전시킬 점 (2가지, 부드럽게)
@@ -702,7 +715,15 @@ ${rewriteEssay}
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
+      // 각 점수 만점 캡 + 음수 방지
+      result.scores = result.scores.map((s, i) => {
+        const max = rubrics[i]?.score || 25
+        const n = Number(s) || 0
+        return Math.max(0, Math.min(n, max))
+      })
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
+      const rwTotalMax = rubrics.reduce((s,r) => s + (r.score || 0), 0)
+      result.total = Math.max(0, Math.min(result.total, rwTotalMax))
       if (!result.overall) result.overall = '수정본을 잘 써주었어요!'
       if (!result.good) result.good = '글이 더 좋아졌어요.'
       if (!result.improve) result.improve = '계속 노력해보세요.'

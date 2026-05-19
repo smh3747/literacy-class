@@ -1,10 +1,10 @@
 // 학생 아이디(username) 변경 API
-// - profiles.username + auth.email 둘 다 변경 (가짜 이메일 username@literacy.local)
+// - profiles.username + auth.email 둘 다 변경 (가짜 이메일 username@writing.class)
 // 호출 권한: 같은 학급 담임 교사 또는 admin만
 
 import { createClient } from '@supabase/supabase-js'
 
-const EMAIL_DOMAIN = '@literacy.local' // student/login.js와 동일하게 유지
+const EMAIL_DOMAIN = '@writing.class' // student/login.js와 동일하게 유지
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
