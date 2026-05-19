@@ -423,8 +423,12 @@ export default function StudentHome() {
   const submitEssay = async () => {
     if (submitting) return
     const minLen = todayTopic?.min_length || 30
+    const maxLen = todayTopic?.max_length
     if (essay.trim().length < minLen) {
       return alert(`글을 더 써 주세요! (${minLen}자 이상)\n\n현재 ${essay.trim().length}자`)
+    }
+    if (maxLen && essay.trim().length > maxLen) {
+      return alert(`글이 너무 길어요! (${maxLen}자 이하로 써주세요)\n\n현재 ${essay.trim().length}자`)
     }
 
     // 시간 락 검증
@@ -628,8 +632,12 @@ ${studentEssay}
   const submitRewrite = async () => {
     if (rewriting) return
     const minLen = todayTopic?.min_length || 30
+    const maxLen = todayTopic?.max_length
     if (rewriteEssay.trim().length < minLen) {
       return alert(`글을 더 써 주세요! (${minLen}자 이상)\n\n현재 ${rewriteEssay.trim().length}자`)
+    }
+    if (maxLen && rewriteEssay.trim().length > maxLen) {
+      return alert(`글이 너무 길어요! (${maxLen}자 이하로 써주세요)\n\n현재 ${rewriteEssay.trim().length}자`)
     }
 
     // 시간 락 검증
@@ -1061,8 +1069,16 @@ ${rewriteEssay}
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
                   />
                   <div className="flex justify-between items-center text-xs text-gray-500">
-                    <span className={essay.length >= (todayTopic?.min_length || 30) ? 'text-green-600 font-medium' : ''}>
+                    <span className={`${
+                      essay.length >= (todayTopic?.min_length || 30) &&
+                      (!todayTopic?.max_length || essay.length <= todayTopic.max_length)
+                        ? 'text-green-600 font-medium'
+                        : essay.length > (todayTopic?.max_length || Infinity)
+                          ? 'text-red-600 font-medium'
+                          : ''
+                    }`}>
                       {essay.length}자 / 최소 {todayTopic?.min_length || 30}자
+                      {todayTopic?.max_length && ` · 최대 ${todayTopic.max_length}자`}
                     </span>
                     {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                   </div>
@@ -1233,8 +1249,16 @@ ${rewriteEssay}
                       className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
                     />
                     <div className="flex justify-between items-center text-xs text-gray-500">
-                      <span className={rewriteEssay.length >= (todayTopic?.min_length || 30) ? 'text-green-600 font-medium' : ''}>
+                      <span className={`${
+                        rewriteEssay.length >= (todayTopic?.min_length || 30) &&
+                        (!todayTopic?.max_length || rewriteEssay.length <= todayTopic.max_length)
+                          ? 'text-green-600 font-medium'
+                          : rewriteEssay.length > (todayTopic?.max_length || Infinity)
+                            ? 'text-red-600 font-medium'
+                            : ''
+                      }`}>
                         {rewriteEssay.length}자 / 최소 {todayTopic?.min_length || 30}자
+                        {todayTopic?.max_length && ` · 최대 ${todayTopic.max_length}자`}
                       </span>
                       {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                     </div>

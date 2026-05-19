@@ -34,6 +34,7 @@ export default function TopicsPage() {
   const [lockEndTime, setLockEndTime] = useState('10:00')
   // 글자수 + 재수정 설정
   const [minLength, setMinLength] = useState(30)
+  const [maxLength, setMaxLength] = useState('') // 글 최대 길이 (빈 칸=제한 없음)
   const [maxRewrites, setMaxRewrites] = useState(1)
   // 제출 기한 (옵션)
   const [deadlineEnabled, setDeadlineEnabled] = useState(false)
@@ -392,6 +393,7 @@ export default function TopicsPage() {
     setLockStartTime(t.lock_start_time || '09:00')
     setLockEndTime(t.lock_end_time || '10:00')
     setMinLength(t.min_length || 30)
+    setMaxLength(t.max_length || '')
     setMaxRewrites(t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1)
     setDeadlineEnabled(!!t.deadline_date)
     setDeadlineDate(t.deadline_date || '')
@@ -408,7 +410,7 @@ export default function TopicsPage() {
     setDesc('')
     setRubrics(DEFAULT_RUBRICS)
     setLockEnabled(false)
-    setMinLength(30)
+    setMinLength(30); setMaxLength('')
     setMaxRewrites(1)
     setDeadlineEnabled(false)
   }
@@ -421,6 +423,10 @@ export default function TopicsPage() {
     const minLen = parseInt(minLength)
     if (isNaN(minLen) || minLen < 10 || minLen > 5000) {
       return alert('최소 글자수는 10~5000자 범위로 입력해주세요')
+    }
+    const maxLen = maxLength ? parseInt(maxLength) : null
+    if (maxLen !== null && (isNaN(maxLen) || maxLen < minLen || maxLen > 5000)) {
+      return alert(`최대 글자수는 최소 글자수(${minLen}) 이상, 5000 이하여야 해요`)
     }
     const maxRew = parseInt(maxRewrites)
     if (isNaN(maxRew) || maxRew < 0 || maxRew > 5) {
@@ -451,6 +457,7 @@ export default function TopicsPage() {
           lock_start_time: lockEnabled ? lockStartTime : null,
           lock_end_time: lockEnabled ? lockEndTime : null,
           min_length: minLen,
+          max_length: maxLen,
           max_rewrites: maxRew,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
@@ -467,6 +474,7 @@ export default function TopicsPage() {
           lock_start_time: lockEnabled ? lockStartTime : null,
           lock_end_time: lockEnabled ? lockEndTime : null,
           min_length: minLen,
+          max_length: maxLen,
           max_rewrites: maxRew,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
@@ -483,7 +491,7 @@ export default function TopicsPage() {
       setLockEnabled(false)
       setLockStartTime('09:00')
       setLockEndTime('10:00')
-      setMinLength(30)
+      setMinLength(30); setMaxLength('')
       setMaxRewrites(1)
       setDeadlineEnabled(false)
       setDeadlineDate('')
@@ -1109,6 +1117,42 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                       className="w-20 p-1 border border-gray-200 rounded text-sm" />
                     <span className="text-xs text-gray-500">자 이상</span>
                   </div>
+                </div>
+
+                {/* 최대 글자수 (토큰 절약) */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    최대 글자수 (이보다 길면 제출 안 됨)
+                    <span className="text-gray-400 ml-1">- AI 처리량 절약</span>
+                  </label>
+                  <div className="flex gap-1.5 flex-wrap mb-1.5">
+                    {[
+                      { v: 300, label: '짧게', desc: '300자' },
+                      { v: 500, label: '보통', desc: '500자' },
+                      { v: 800, label: '길게', desc: '800자' },
+                      { v: '', label: '제한 없음', desc: '' }
+                    ].map(p => (
+                      <button key={p.label} onClick={() => setMaxLength(p.v)}
+                        className={`px-2 py-1 rounded text-xs ${
+                          String(maxLength) === String(p.v)
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}>
+                        {p.label} {p.desc && `(${p.desc})`}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">또는 직접 입력:</span>
+                    <input type="number" value={maxLength}
+                      onChange={e => setMaxLength(e.target.value)}
+                      min="50" max="5000" placeholder="빈 칸=제한 없음"
+                      className="w-24 p-1 border border-gray-200 rounded text-sm" />
+                    <span className="text-xs text-gray-500">자 이하</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 짧을수록 AI 호출 한도가 덜 소진돼요. 500자 권장.
+                  </p>
                 </div>
 
                 {/* 최대 재수정 횟수 */}
