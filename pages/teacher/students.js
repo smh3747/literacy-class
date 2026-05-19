@@ -339,6 +339,29 @@ export default function StudentsPage() {
 
       alert(msg)
 
+      // 🆕 학급 로그인 안내 자동 설정 (학생 일괄 등록과 동시에)
+      // 첫 학생의 학년/반 정보로 안내용 접두사 생성 (예: hg + 5 + 1 → hg51)
+      try {
+        if (result.success.length > 0) {
+          const firstAuto = finalStudents.find(s => s._auto && s._grade && s._class)
+          if (firstAuto) {
+            const p = (idPrefix || '').trim().toLowerCase() || 'sch'
+            const g = String(firstAuto._grade).trim()
+            const c = String(firstAuto._class).trim()
+            const hintPrefix = `${p}${g}${c}` // 학생들이 보는 접두사
+            await supabase.from('classes').update({
+              login_hint_enabled: true,
+              login_username_prefix: hintPrefix,
+              login_default_password: '123456',
+              login_number_digits: 2
+            }).eq('id', classInfo.id)
+            console.log('✅ 학급 로그인 안내 자동 저장됨:', hintPrefix)
+          }
+        }
+      } catch (e) {
+        console.warn('학급 안내 자동 저장 실패 (학생 등록은 성공):', e)
+      }
+
       setParsedStudents([])
       setEditingUsernames({})
       setUploadStatus(null)
