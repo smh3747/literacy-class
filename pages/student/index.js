@@ -505,16 +505,18 @@ ${studentEssay}
 규칙:
 - 5학년 학생 수준의 자연스러운 글
 - 원본의 좋은 점은 살리고 부족한 점 보완
-- 350-500자 분량
-- 따뜻하고 진솔한 느낌`
+- 분량: 반드시 400자 이내 (절대 넘지 말 것)
+- 따뜻하고 진솔한 느낌
+- example 필드 하나만 채워서 반환`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 4000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000 })
       if (result.example) {
         setExampleText(result.example)
         await supabase.from('submissions').update({ example_text: result.example }).eq('id', subId)
       }
     } catch(e) {
       console.error('수정본 예시 생성 실패:', e)
+      // 예시 생성 실패는 학생에게 굳이 알리지 않음 (채점은 이미 성공)
     }
     setExampleLoading(false)
   }
@@ -523,7 +525,7 @@ ${studentEssay}
   const generateExample = async (studentEssay, totalMax) => {
     const apiKey = loadApiKey()
     if (!apiKey) return
-    
+
     setExampleLoading(true)
     try {
       const prompt = `초등 5학년 학생이 쓴 다음 글을 더 좋게 다시 쓴 예시를 1편 만들어줘.
@@ -535,10 +537,11 @@ ${studentEssay}
 규칙:
 - 5학년 학생 수준의 자연스러운 글
 - 원본의 좋은 점은 살리고 부족한 점 보완
-- 350-500자 분량
-- 따뜻하고 진솔한 느낌`
+- 분량: 반드시 400자 이내 (절대 넘지 말 것)
+- 따뜻하고 진솔한 느낌
+- example 필드 하나만 채워서 반환`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 4000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000 })
       if (result.example) {
         setExampleText(result.example)
         // DB에도 저장
@@ -548,6 +551,7 @@ ${studentEssay}
       }
     } catch(e) {
       console.error('예시 생성 실패:', e)
+      // 예시 생성 실패는 학생에게 굳이 알리지 않음 (채점은 이미 성공)
     }
     setExampleLoading(false)
   }
