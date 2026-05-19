@@ -232,7 +232,6 @@ export default function ClassSettings({ classInfo, onUpdate }) {
                         login_hint_enabled: true,
                         login_username_prefix: hintPrefix.trim(),
                         login_default_password: hintPassword.trim(),
-                        login_number_digits: 2
                       })
                       setEditingHint(false)
                     }}

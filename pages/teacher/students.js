@@ -353,7 +353,6 @@ export default function StudentsPage() {
               login_hint_enabled: true,
               login_username_prefix: hintPrefix,
               login_default_password: '123456',
-              login_number_digits: 2
             }).eq('id', classInfo.id)
             console.log('✅ 학급 로그인 안내 자동 저장됨:', hintPrefix)
           }
