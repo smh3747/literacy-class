@@ -27,6 +27,8 @@ export default function StudentLogin() {
   // 가입 시 동의 체크 (한 화면에 같이 표시)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [agreePrivacy, setAgreePrivacy] = useState(false)
+  // 🆕 QR 진입 시 학급 로그인 안내 (선생님이 설정한 경우)
+  const [classHint, setClassHint] = useState(null) // { className, prefix, password, school }
 
   useEffect(() => {
     // 저장된 아이디 / 자동 로그인 설정 복원
@@ -45,16 +47,39 @@ export default function StudentLogin() {
   // 🔗 URL 쿼리로 학급 코드 자동 입력 (?code=XXX)
   // - 학급 코드만 자동 채움 (로그인/가입은 학생이 선택)
   // - mode=signup 명시 시에만 가입 모드 자동 전환 (구버전 호환)
+  // - 학급 로그인 안내가 설정되어 있으면 가져와서 표시
   useEffect(() => {
     if (!router.isReady) return
     const { code, mode: qMode } = router.query
     if (code && typeof code === 'string') {
-      setClassCode(code.toUpperCase())
+      const upperCode = code.toUpperCase()
+      setClassCode(upperCode)
       if (qMode === 'signup') {
         setMode('signup')
       }
+      // 학급 정보 가져오기 (로그인 안내 표시용)
+      loadClassHint(upperCode)
     }
   }, [router.isReady, router.query])
+
+  const loadClassHint = async (code) => {
+    try {
+      const { data } = await supabase.from('classes')
+        .select('name, school, login_hint_enabled, login_username_prefix, login_default_password')
+        .eq('code', code)
+        .maybeSingle()
+      if (data && data.login_hint_enabled && data.login_username_prefix) {
+        setClassHint({
+          className: data.name,
+          school: data.school,
+          prefix: data.login_username_prefix,
+          password: data.login_default_password || '123456'
+        })
+      }
+    } catch (e) {
+      console.warn('학급 안내 로드 실패:', e)
+    }
+  }
 
   const checkSession = async () => {
     // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
@@ -240,6 +265,43 @@ export default function StudentLogin() {
                 회원가입
               </button>
             </div>
+
+            {/* 🆕 QR 진입 시 학급 로그인 안내 (선생님이 설정한 경우만 표시) */}
+            {classHint && (() => {
+              const formatNum = (n) => String(n).padStart(2, '0') // 무조건 2자리
+              return (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-bold text-blue-900 flex items-center gap-1">
+                    👋 {classHint.className} 학생이라면
+                  </div>
+                  <div className="text-xs text-blue-800 space-y-2">
+                    <div>
+                      <div className="font-semibold mb-1">🆔 아이디 만들기</div>
+                      <div className="pl-1">
+                        <span className="bg-white px-1.5 py-0.5 rounded font-mono">{classHint.prefix}</span>
+                        {' + '}
+                        <span className="text-blue-700 font-bold">본인 번호 (두 자리)</span>
+                      </div>
+                      <div className="pl-1 mt-1.5 bg-white rounded p-2 space-y-0.5">
+                        <div className="text-blue-900 font-semibold mb-1">📌 예시 (번호 두 자리로 써요!)</div>
+                        <div>• 1번이면 → <span className="font-mono bg-blue-100 px-1 rounded font-bold">{classHint.prefix}{formatNum(1)}</span></div>
+                        <div>• 5번이면 → <span className="font-mono bg-blue-100 px-1 rounded font-bold">{classHint.prefix}{formatNum(5)}</span></div>
+                        <div>• 12번이면 → <span className="font-mono bg-blue-100 px-1 rounded font-bold">{classHint.prefix}{formatNum(12)}</span></div>
+                        <div>• 25번이면 → <span className="font-mono bg-blue-100 px-1 rounded font-bold">{classHint.prefix}{formatNum(25)}</span></div>
+                      </div>
+                      <div className="pl-1 mt-1 text-amber-700">
+                        ⚠️ 1번은 <span className="font-mono">1</span>이 아니라 <span className="font-mono font-bold">01</span>이에요!
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-semibold">🔑 비밀번호:</span>{' '}
+                      <span className="bg-white px-1.5 py-0.5 rounded font-mono">{classHint.password}</span>
+                      <span className="text-blue-600 ml-1">(로그인 후 꼭 바꿔주세요!)</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             <div className="space-y-3">
                 {mode === 'signup' && (
