@@ -242,7 +242,7 @@ export default function TopicsPage() {
 
 위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개${hasTheme ? `, 그리고 모든 주제가 "${batchTheme.trim()}" 방향성을 반영해야 합니다` : ''})`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, {
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'simple',
         maxTokens: 6000,
         onProgress: (p) => console.log(p.message)
       })
@@ -315,6 +315,7 @@ export default function TopicsPage() {
 - category: 카테고리명`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicSuggestion, {
+        taskType: 'simple',
         maxTokens: 1500
       })
 
@@ -565,7 +566,7 @@ export default function TopicsPage() {
 - description: "도전한 일을 써볼까?" (너무 짧고 질문형)
 - description: "재미있게 써보세요" (구체성 없음)`
 
-      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { maxTokens: 4000 })
+      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { taskType: 'simple', maxTokens: 4000 })
       
       const newTitle = result1.title || ''
       const newDesc = result1.description || ''
@@ -619,7 +620,7 @@ ${newDesc ? '주제 설명: ' + newDesc : ''}
 
 각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
 
-          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
+          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.5 })
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
             const cleaned = result2.rubrics.map(r => ({
@@ -657,7 +658,7 @@ ${cleaned.map((r, i) => `${i+1}. ${r.name}`).join('\n')}
 
 JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
                 
-                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.6 })
+                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.6 })
                 if (Array.isArray(hintResult.rubrics)) {
                   // name 매칭으로 hint 채우기
                   cleaned.forEach((r, i) => {
@@ -724,7 +725,7 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
 - 학생이 글 쓰기 막막하지 않도록 친절하게`
 
         try {
-          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { maxTokens: 2000 })
+          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { taskType: 'simple', maxTokens: 2000 })
           if (descResult.description) setDesc(descResult.description)
         } catch(e) {
           console.warn('설명 생성 실패:', e)
@@ -753,7 +754,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
 ✅ hint (부가 설명) - 주제 "${title.trim()}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
 ✅ score: 각 항목 25점, 총 100점`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { maxTokens: 4000, temperature: 0.5 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.5 })
       if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
         const cleaned = result.rubrics.slice(0, 4).map(r => ({
           name: r.name || '평가 기준',

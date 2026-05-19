@@ -315,7 +315,7 @@ ${contents}
         required: ['categories', 'priorityList', 'summary']
       }
 
-      const result = await callGeminiStructured(apiKey, prompt, schema, { maxTokens: 4000 })
+      const result = await callGeminiStructured(apiKey, prompt, schema, { taskType: 'quality', maxTokens: 4000 })
       setAiSummary(result)
     } catch(e) {
       alert('AI 요약 실패: ' + (e.message || e))

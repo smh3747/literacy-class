@@ -470,7 +470,7 @@ ${essay}
 - corrections는 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만)
 - 오류 없으면 corrections는 빈 배열`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, onProgress: (p) => setRetryMessage(p.message) })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -549,7 +549,7 @@ ${studentEssay}
 - 따뜻하고 진솔한 느낌
 - example 필드 하나만 채워서 반환`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000, taskType: 'quality' })
       if (result.example) {
         setExampleText(result.example)
         await supabase.from('submissions').update({ example_text: result.example }).eq('id', subId)
@@ -581,7 +581,7 @@ ${studentEssay}
 - 따뜻하고 진솔한 느낌
 - example 필드 하나만 채워서 반환`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000, taskType: 'quality' })
       if (result.example) {
         setExampleText(result.example)
         // DB에도 저장
@@ -699,7 +699,7 @@ ${rewriteEssay}
 - improve는 더 발전시킬 점 (2가지, 부드럽게)
 - corrections는 명백한 오류만, 없으면 빈 배열`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, onProgress: (p) => setRetryMessage(p.message) })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)

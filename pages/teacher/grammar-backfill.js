@@ -140,7 +140,7 @@ ${sub.essay_text}
 
         const result = await callGeminiStructured(
           apiKey, prompt, SCHEMAS.grammarOnly,
-          { maxTokens: 2000 }
+          { taskType: 'quality', maxTokens: 2000 }
         )
         let corrections = Array.isArray(result.corrections) ? result.corrections : []
 
