@@ -68,6 +68,8 @@ export default function TopicsPage() {
   const [batchGenerating, setBatchGenerating] = useState(false)
   const [batchPreview, setBatchPreview] = useState(null) // 생성된 주제 리스트 미리보기
   const [batchSaving, setBatchSaving] = useState(false)
+  // 등록된 주제 펼침 (평가기준 확인용)
+  const [expandedTopicId, setExpandedTopicId] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -1166,41 +1168,100 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                 const total = t.total_students || 0
                 const allSubmitted = total > 0 && submitted === total
                 const noSubmissions = submitted === 0
+                const isExpanded = expandedTopicId === t.id
                 return (
-                  <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition group">
-                    <Link
-                      href={`/teacher/submissions?topic=${t.id}`}
-                      className="flex-1 cursor-pointer"
-                    >
-                      <div className="font-medium text-sm group-hover:text-primary">{t.title}</div>
-                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>{t.date}</span>
-                        <span>·</span>
-                        <span>평가기준 {t.rubrics?.length || 0}개</span>
-                        {total > 0 && (
-                          <>
-                            <span>·</span>
-                            <span className={`px-1.5 py-0.5 rounded font-medium ${
-                              allSubmitted ? 'bg-green-100 text-green-700' :
-                              noSubmissions ? 'bg-gray-100 text-gray-500' :
-                              'bg-blue-100 text-blue-700'
-                            }`}>
-                              📥 {submitted}/{total}명 제출
-                            </span>
-                          </>
-                        )}
-                        {t.lock_enabled && t.lock_start_time && t.lock_end_time && (
-                          <>
-                            <span>·</span>
-                            <span className="text-amber-700">🔒 {t.lock_start_time}~{t.lock_end_time}</span>
-                          </>
-                        )}
+                  <div key={t.id} className="bg-gray-50 rounded-lg hover:bg-blue-50 transition">
+                    <div className="flex items-center justify-between p-3 group">
+                      <button
+                        onClick={() => setExpandedTopicId(isExpanded ? null : t.id)}
+                        className="flex-1 text-left cursor-pointer"
+                      >
+                        <div className="font-medium text-sm group-hover:text-primary flex items-center gap-1">
+                          <span>{isExpanded ? '▼' : '▶'}</span>
+                          <span>{t.title}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                          <span>{t.date}</span>
+                          <span>·</span>
+                          <span>평가기준 {t.rubrics?.length || 0}개</span>
+                          <span>·</span>
+                          <span>최소 {t.min_length || 30}자</span>
+                          {total > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                allSubmitted ? 'bg-green-100 text-green-700' :
+                                noSubmissions ? 'bg-gray-100 text-gray-500' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>
+                                📥 {submitted}/{total}명 제출
+                              </span>
+                            </>
+                          )}
+                          {t.lock_enabled && t.lock_start_time && t.lock_end_time && (
+                            <>
+                              <span>·</span>
+                              <span className="text-amber-700">🔒 {t.lock_start_time}~{t.lock_end_time}</span>
+                            </>
+                          )}
+                          {t.deadline_date && (
+                            <>
+                              <span>·</span>
+                              <span className="text-emerald-700">📅 마감 {t.deadline_date.slice(5)}</span>
+                            </>
+                          )}
+                        </div>
+                      </button>
+                      <div className="flex gap-1 flex-shrink-0 ml-2">
+                        <Link
+                          href={`/teacher/submissions?topic=${t.id}`}
+                          className="text-xs text-primary hover:bg-primary-light px-2 py-1 rounded"
+                        >
+                          학생글
+                        </Link>
+                        <button onClick={() => deleteTopic(t.id)}
+                          className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded">
+                          삭제
+                        </button>
                       </div>
-                    </Link>
-                    <button onClick={() => deleteTopic(t.id)}
-                      className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded ml-2 flex-shrink-0">
-                      삭제
-                    </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-gray-200 px-3 py-3 space-y-3 bg-white rounded-b-lg">
+                        {t.description && (
+                          <div>
+                            <div className="text-xs font-semibold text-gray-700 mb-1">📋 주제 설명</div>
+                            <p className="text-xs text-gray-700 whitespace-pre-wrap bg-gray-50 p-2 rounded">{t.description}</p>
+                          </div>
+                        )}
+
+                        {t.rubrics && t.rubrics.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold text-gray-700 mb-1">
+                              📊 평가기준 ({t.rubrics.length}개, 총 {t.rubrics.reduce((s,r) => s + (r.score || 0), 0)}점)
+                            </div>
+                            <div className="space-y-1.5">
+                              {t.rubrics.map((r, i) => (
+                                <div key={i} className="text-xs bg-gray-50 rounded p-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">{i + 1}. {r.name}</span>
+                                    <span className="text-gray-600 font-mono">{r.score}점</span>
+                                  </div>
+                                  {r.description && (
+                                    <p className="text-gray-600 mt-1">{r.description}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-xs text-gray-500 grid grid-cols-2 gap-2 pt-1 border-t">
+                          <div>📏 최소 글자수: <strong>{t.min_length || 30}자</strong></div>
+                          <div>🔄 최대 수정 횟수: <strong>{t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1}회</strong></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               }

@@ -103,7 +103,7 @@ export default function StudentHistory() {
       const title = s.topic_title || (s.topics?.title) || '주제 없음'
       const date = (s.topics?.date) || (s.created_at ? s.created_at.slice(0, 10) : '')
       const key = (s.topic_id || 'no') + '_' + title
-      if (!groups[key]) groups[key] = { title, date, items: [] }
+      if (!groups[key]) groups[key] = { title, date, topic_id: s.topic_id, items: [] }
       groups[key].items.push(s)
     })
     setGrouped(Object.values(groups).sort((a,b) => new Date(b.date) - new Date(a.date)))
@@ -189,8 +189,11 @@ export default function StudentHistory() {
             ))}
 
             {canRewrite ? (
-              <Link href="/student" className="block w-full py-3 bg-primary text-white rounded-xl font-semibold text-center">
-                ✏️ {maxAttempt === 1 ? '다시 쓰기 (첫 수정)' : '추가 수정하기 (선생님 허가됨)'}
+              <Link
+                href={g.topic_id ? `/student?topic=${g.topic_id}` : '/student'}
+                className="block w-full py-3 bg-primary text-white rounded-xl font-semibold text-center"
+              >
+                ✏️ {maxAttempt === 1 ? '다시 쓰기 (첫 수정)' : '추가 수정하기 (선생님이 허가함)'}
               </Link>
             ) : maxAttempt >= 2 && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">

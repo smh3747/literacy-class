@@ -194,7 +194,10 @@ export default function StudentHome() {
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
 
-  useEffect(() => { checkAuth() }, [])
+  useEffect(() => {
+    if (!router.isReady) return
+    checkAuth()
+  }, [router.isReady])
   
   // 자동 백업 (5초마다)
   useEffect(() => {
@@ -224,8 +227,10 @@ export default function StudentHome() {
     if (profile.classes?.api_key) {
       saveLocalApiKey(profile.classes.api_key)
     }
-    
-    await loadTodayTopic(profile)
+
+    // URL 쿼리에 topic_id 있으면 그 주제로 진입 (history에서 "추가 수정" 등)
+    const queryTopicId = router.query?.topic
+    await loadTodayTopic(profile, queryTopicId || null)
     setLoading(false)
   }
 
@@ -266,12 +271,17 @@ export default function StudentHome() {
 
     let topic = null
     if (targetTopicId) {
-      // 특정 주제 로드 (지난 주제 선택 시)
+      // 특정 주제 로드 (지난 주제 선택 시 또는 URL ?topic=)
       const { data } = await supabase.from('topics')
         .select('*').eq('id', targetTopicId).maybeSingle()
-      topic = data
-    } else {
-      // 오늘 주제 찾기
+      // 우리 학급 담임 주제인지 검증 (다른 학급 침입 방지)
+      if (data && data.teacher_id === classData.teacher_id) {
+        topic = data
+      }
+    }
+
+    // 특정 주제가 없거나 검증 실패 → 오늘 주제로 폴백
+    if (!topic) {
       const today = todayStr()
       const { data } = await supabase.from('topics')
         .select('*').eq('teacher_id', classData.teacher_id).eq('date', today).maybeSingle()
