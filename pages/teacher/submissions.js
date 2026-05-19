@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
+import { regradeSubmission } from '../../lib/regrade'
+import { loadApiKey } from '../../lib/gemini'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -336,6 +338,103 @@ export default function TeacherSubmissions() {
     openTopic(selectedTopic) // 새로고침
   }
 
+  // 🔄 단일 글 재평가
+  const [regrading, setRegrading] = useState(null) // subId
+  const regradeOne = async (sub, studentName) => {
+    if (!confirm(
+      `🔄 "${studentName}" 학생의 글을 다시 평가할까요?\n\n` +
+      `· AI가 현재 평가기준으로 새로 채점합니다\n` +
+      `· 이전 점수/피드백은 자동 백업됩니다\n` +
+      `· AI 호출 1회 사용`
+    )) return
+
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('AI 기능이 활성화되지 않았어요')
+
+    setRegrading(sub.id)
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
+      if (!result.success) {
+        alert('재평가 실패: ' + result.error)
+      } else {
+        alert(
+          `✅ 재평가 완료!\n\n` +
+          `이전 점수: ${result.oldScore ?? '-'}/${result.maxScore}\n` +
+          `새 점수: ${result.newScore}/${result.maxScore}`
+        )
+        await openTopic(selectedTopic) // 새로고침
+      }
+    } catch (e) {
+      alert('실패: ' + e.message)
+    }
+    setRegrading(null)
+  }
+
+  // 🔄 학급 전체 일괄 재평가
+  const [bulkRegrading, setBulkRegrading] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, current: '', failed: [] })
+  const regradeAll = async () => {
+    if (!selectedTopic) return
+    // 대상: 쓰레기통 제외, 평가기준 변경 반영 위해 모든 attempt 다 재평가
+    const allSubs = []
+    topicStudents.forEach(g => {
+      g.items.forEach(s => allSubs.push({ sub: s, student: g.profile }))
+    })
+    if (allSubs.length === 0) return alert('재평가할 글이 없어요')
+
+    if (!confirm(
+      `🔄 이 주제의 글 ${allSubs.length}개를 모두 다시 평가할까요?\n\n` +
+      `· AI가 현재 평가기준으로 새로 채점\n` +
+      `· 이전 점수는 자동 백업\n` +
+      `· AI 호출 ${allSubs.length}회 사용 (수 분 소요)\n` +
+      `· 일일 한도 부족 시 중간에 멈출 수 있음`
+    )) return
+
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('AI 기능이 활성화되지 않았어요')
+
+    setBulkRegrading(true)
+    setBulkProgress({ done: 0, total: allSubs.length, current: '', failed: [] })
+
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const failed = []
+    for (let i = 0; i < allSubs.length; i++) {
+      const { sub, student } = allSubs[i]
+      setBulkProgress({
+        done: i,
+        total: allSubs.length,
+        current: `${student.realname} (${(sub.attempt||1) === 1 ? '첫 글' : `수정본 ${sub.attempt}`})`,
+        failed
+      })
+      const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
+      if (!result.success) {
+        failed.push({ name: student.realname, attempt: sub.attempt, error: result.error })
+        // 일일 한도 도달이면 중단
+        if (result.error && (result.error.includes('일일 한도') || result.error.includes('per day') || result.error.includes('PerDay'))) {
+          alert(
+            `⚠️ AI 일일 한도 도달!\n\n` +
+            `${i}/${allSubs.length}개 완료\n` +
+            `한국 시간 오후 5시 이후 다시 시도해주세요.`
+          )
+          break
+        }
+      }
+    }
+
+    setBulkProgress({ done: allSubs.length, total: allSubs.length, current: '', failed })
+    setBulkRegrading(false)
+
+    const successCount = allSubs.length - failed.length
+    alert(
+      `✅ 재평가 완료!\n\n` +
+      `성공: ${successCount}개\n` +
+      (failed.length > 0 ? `실패: ${failed.length}개\n  · ${failed.slice(0, 5).map(f => f.name).join(', ')}${failed.length > 5 ? ` 외 ${failed.length - 5}명` : ''}` : '')
+    )
+
+    await openTopic(selectedTopic) // 새로고침
+  }
+
   // 일괄 추가 수정 허용
   const allowAllExtraRewrites = async () => {
     if (!selectedTopic) return
@@ -472,15 +571,44 @@ export default function TeacherSubmissions() {
                         </button>
                       )}
                       {submittedCount > 0 && (
-                        <button onClick={downloadExcel}
-                          className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
-                          📥 Excel 다운로드
-                        </button>
+                        <>
+                          <button onClick={regradeAll} disabled={bulkRegrading}
+                            className="bg-blue-100 border border-blue-300 text-blue-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-200 disabled:opacity-50">
+                            🔄 전체 다시 평가 ({submittedCount}명)
+                          </button>
+                          <button onClick={downloadExcel}
+                            className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
+                            📥 Excel 다운로드
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
                 )
               })()}
+
+              {/* 🔄 일괄 재평가 진행 상황 */}
+              {bulkRegrading && (
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-blue-900">🔄 학급 전체 재평가 진행 중...</span>
+                    <span className="text-xs text-blue-700">{bulkProgress.done}/{bulkProgress.total}</span>
+                  </div>
+                  {/* 진행 바 */}
+                  <div className="w-full bg-blue-100 rounded-full h-2">
+                    <div className="bg-blue-600 h-2 rounded-full transition-all"
+                      style={{ width: `${bulkProgress.total > 0 ? (bulkProgress.done / bulkProgress.total) * 100 : 0}%` }} />
+                  </div>
+                  {bulkProgress.current && (
+                    <p className="text-xs text-blue-800">처리 중: {bulkProgress.current}</p>
+                  )}
+                  {bulkProgress.failed.length > 0 && (
+                    <p className="text-xs text-amber-700">
+                      ⚠️ 실패 {bulkProgress.failed.length}개 (계속 진행 중)
+                    </p>
+                  )}
+                </div>
+              )}
 
               {topicStudents.length === 0 ? (
                 <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
@@ -683,11 +811,44 @@ export default function TeacherSubmissions() {
                       </div>
                     )}
 
-                    {/* 🗑️ 쓰레기통으로 이동 (선생님만) */}
-                    <button onClick={() => moveToTrash(s.id, selectedStudent.profile.realname)}
-                      className="w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-red-100 hover:text-red-700 transition">
-                      🗑️ 이 글을 쓰레기통으로 (30일 후 영구 삭제)
-                    </button>
+                    {/* 🔄 재평가 + 🗑️ 쓰레기통 (선생님만) */}
+                    <div className="flex gap-2">
+                      <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
+                        disabled={regrading === s.id || bulkRegrading}
+                        className="flex-1 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs hover:bg-blue-100 transition disabled:opacity-50">
+                        {regrading === s.id ? '🔄 평가 중...' : '🔄 이 글 다시 평가'}
+                      </button>
+                      <button onClick={() => moveToTrash(s.id, selectedStudent.profile.realname)}
+                        disabled={regrading === s.id || bulkRegrading}
+                        className="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-red-100 hover:text-red-700 transition disabled:opacity-50">
+                        🗑️ 쓰레기통으로
+                      </button>
+                    </div>
+
+                    {/* 재평가된 글이면 이전 점수 표시 */}
+                    {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                          📊 이전 평가 보기 ({s.previous_total_score}/{s.previous_max_score}점)
+                        </summary>
+                        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2 text-gray-700">
+                          <div className="text-xs">
+                            이전 채점: <strong>{s.previous_total_score}/{s.previous_max_score}점</strong>
+                            {s.re_graded_at && (
+                              <span className="ml-2 text-gray-500">
+                                · {new Date(s.re_graded_at).toLocaleString('ko-KR')} 재평가
+                              </span>
+                            )}
+                          </div>
+                          {s.previous_feedback_overall && (
+                            <div>
+                              <div className="font-semibold text-xs mb-0.5">종합의견 (이전)</div>
+                              <p className="whitespace-pre-wrap">{s.previous_feedback_overall}</p>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )
               })}
