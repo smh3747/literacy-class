@@ -21,10 +21,13 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   const rankingEnabled = classInfo.ranking_enabled !== false // 기본값 true
   const boardScope = classInfo.board_scope || 'class'
   const grade = classInfo.grade || ''
-  // 🆕 학생 로그인 안내 (학생 일괄 등록 시 자동 설정됨)
+  // 🆕 학생 로그인 안내 (학생 일괄 등록 시 자동 설정됨, 직접 입력도 가능)
   const loginHintEnabled = !!classInfo.login_hint_enabled
   const loginPrefix = classInfo.login_username_prefix || ''
   const loginPassword = classInfo.login_default_password || ''
+  const [editingHint, setEditingHint] = useState(false)
+  const [hintPrefix, setHintPrefix] = useState(loginPrefix)
+  const [hintPassword, setHintPassword] = useState(loginPassword || '123456')
 
   // 학생 번호는 무조건 2자리로 통일 (01, 02, ... 25)
   const formatNum = (n) => String(n).padStart(2, '0')
@@ -92,11 +95,12 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             </p>
           </div>
 
-          {/* 🆕 학생 로그인 안내 (학생 일괄 등록 시 자동 설정됨) */}
+          {/* 🆕 학생 로그인 안내 (자동 + 수동 둘 다 지원) */}
           <div className="border border-gray-200 rounded-lg p-3 bg-blue-50/30 space-y-2">
             <div className="text-sm font-medium">👋 학생 로그인 안내</div>
 
-            {loginHintEnabled && loginPrefix ? (
+            {/* 현재 활성 상태 표시 */}
+            {loginHintEnabled && loginPrefix && !editingHint && (
               <>
                 <div className="bg-white border border-blue-200 rounded p-2">
                   <p className="text-xs font-semibold text-blue-900 mb-1.5">
@@ -115,32 +119,136 @@ export default function ClassSettings({ classInfo, onUpdate }) {
                     <div>🔑 비밀번호: <span className="font-mono bg-blue-100 px-1 rounded">{loginPassword || '123456'}</span></div>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500">
-                  💡 학생 일괄 등록 시 자동으로 설정돼요. 더 이상 안내가 필요 없으면 끌 수 있어요.
-                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setHintPrefix(loginPrefix)
+                      setHintPassword(loginPassword || '123456')
+                      setEditingHint(true)
+                    }}
+                    disabled={saving}
+                    className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded text-xs font-medium hover:bg-blue-200 disabled:opacity-50"
+                  >
+                    ✏️ 수정
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm('학생 로그인 안내를 끌까요?\n\nQR로 들어오는 학생들에게 안내가 표시되지 않습니다.')) return
+                      await save({
+                        login_hint_enabled: false,
+                        login_username_prefix: null,
+                        login_default_password: null
+                      })
+                    }}
+                    disabled={saving}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded text-xs font-medium hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    🔕 안내 끄기
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* 비활성 상태 - 직접 입력 안내 */}
+            {(!loginHintEnabled || !loginPrefix) && !editingHint && (
+              <>
+                <div className="bg-gray-50 border border-gray-200 rounded p-2">
+                  <p className="text-xs text-gray-600">
+                    ℹ️ 학생 로그인 안내가 아직 설정되지 않았어요.
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 <strong>학생 관리</strong>에서 일괄 등록하면 자동 설정, 또는 아래에서 직접 입력하세요.
+                  </p>
+                </div>
                 <button
-                  onClick={async () => {
-                    if (!confirm('학생 로그인 안내를 끌까요?\n\nQR로 들어오는 학생들에게 안내가 표시되지 않습니다.')) return
-                    await save({
-                      login_hint_enabled: false,
-                      login_username_prefix: null,
-                      login_default_password: null
-                    })
+                  onClick={() => {
+                    setHintPrefix('')
+                    setHintPassword('123456')
+                    setEditingHint(true)
                   }}
                   disabled={saving}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded text-xs font-medium hover:bg-gray-200 disabled:opacity-50"
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
-                  🔕 안내 끄기
+                  ✏️ 직접 입력하기
                 </button>
               </>
-            ) : (
-              <div className="bg-gray-50 border border-gray-200 rounded p-2">
-                <p className="text-xs text-gray-600">
-                  ℹ️ 학생 로그인 안내가 아직 설정되지 않았어요.
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  💡 <strong>학생 관리</strong>에서 학생을 일괄 등록하면 자동으로 안내가 켜집니다.
-                </p>
+            )}
+
+            {/* 입력/수정 모드 */}
+            {editingHint && (
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    아이디 접두사 <span className="text-gray-400">(예: hr51)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={hintPrefix}
+                    onChange={e => setHintPrefix(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                    placeholder="hr51"
+                    maxLength="10"
+                    className="w-full p-2 border border-gray-200 rounded text-sm font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    학생 아이디 = 접두사 + <strong>두 자리 번호</strong> (예: {(hintPrefix || 'hr51')}01, {(hintPrefix || 'hr51')}02, ...)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    초기 비밀번호 <span className="text-gray-400">(예: 123456)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={hintPassword}
+                    onChange={e => setHintPassword(e.target.value)}
+                    placeholder="123456"
+                    maxLength="20"
+                    className="w-full p-2 border border-gray-200 rounded text-sm font-mono"
+                  />
+                </div>
+
+                {/* 입력 중 미리보기 */}
+                {hintPrefix && (
+                  <div className="bg-white border border-blue-200 rounded p-2">
+                    <p className="text-xs font-semibold text-blue-900 mb-1">📱 저장 후 학생들에게 이렇게 보여요:</p>
+                    <div className="text-xs text-blue-800 space-y-0.5">
+                      <div>🆔 아이디: <span className="font-mono bg-blue-100 px-1 rounded">{hintPrefix}</span> + 본인 번호 (두 자리)</div>
+                      <div className="pl-5 text-blue-700">
+                        예: 1번 → <span className="font-mono bg-blue-100 px-1 rounded">{hintPrefix + formatNum(1)}</span>,
+                        12번 → <span className="font-mono bg-blue-100 px-1 rounded">{hintPrefix + formatNum(12)}</span>
+                      </div>
+                      <div>🔑 비밀번호: <span className="font-mono bg-blue-100 px-1 rounded">{hintPassword || '123456'}</span></div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!hintPrefix.trim()) return alert('접두사를 입력해주세요 (예: hr51)')
+                      if (!hintPassword.trim()) return alert('초기 비밀번호를 입력해주세요')
+                      await save({
+                        login_hint_enabled: true,
+                        login_username_prefix: hintPrefix.trim(),
+                        login_default_password: hintPassword.trim(),
+                        login_number_digits: 2
+                      })
+                      setEditingHint(false)
+                    }}
+                    disabled={saving}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    💾 저장
+                  </button>
+                  <button
+                    onClick={() => setEditingHint(false)}
+                    disabled={saving}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded text-xs font-medium hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    취소
+                  </button>
+                </div>
               </div>
             )}
           </div>
