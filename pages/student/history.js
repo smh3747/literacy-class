@@ -95,7 +95,7 @@ export default function StudentHistory() {
     }
     setUser(profile)
     
-    const { data } = await supabase.from('submissions').select('*, topics(title, date)').eq('user_id', profile.id).order('created_at', { ascending: false })
+    const { data } = await supabase.from('submissions').select('*, topics(title, date)').eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false })
     
     // 주제별로 그룹화
     const groups = {}

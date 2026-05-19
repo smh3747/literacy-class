@@ -42,6 +42,7 @@ export default function FeedbackReports() {
       .select('*')
       .in('user_id', ids)
       .eq('reported', true)
+      .is('deleted_at', null)
       .order('reported_at', { ascending: false })
 
     // 학생 정보 매핑

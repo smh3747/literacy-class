@@ -72,6 +72,7 @@ export default function SubmissionStatus() {
       .select('id, user_id, total_score, max_score, created_at, attempt, reported')
       .eq('topic_id', topicId)
       .in('user_id', studentIds)
+      .is('deleted_at', null)
     setSubmissions(subs || [])
   }
 

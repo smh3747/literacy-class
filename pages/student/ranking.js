@@ -73,6 +73,7 @@ export default function StudentRanking() {
     let q = supabase.from('submissions')
       .select('user_id, total_score, max_score, created_at, attempt, topic_id')
       .in('user_id', studentIds)
+      .is('deleted_at', null)
     if (dateFilter) q = q.gte('created_at', dateFilter)
     const { data: allSubs } = await q
 

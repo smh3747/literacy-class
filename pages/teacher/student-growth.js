@@ -37,7 +37,7 @@ export default function StudentGrowth() {
 
       const studentIds = visibleStudents.map(s => s.id)
       if (studentIds.length > 0) {
-        const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).order('created_at')
+        const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).is('deleted_at', null).order('created_at')
         setAllSubmissions(subs || [])
       }
     }

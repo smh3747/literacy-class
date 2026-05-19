@@ -61,6 +61,7 @@ export default function GrammarBackfill() {
       .select('id, user_id, essay_text, corrections, total_score, max_score, attempt, created_at')
       .eq('topic_id', topicId)
       .in('user_id', ids)
+      .is('deleted_at', null)
       .order('created_at')
 
     // 학생 정보 매핑

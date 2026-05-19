@@ -52,6 +52,7 @@ export default function TeacherHome() {
           const { count } = await supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids).eq('reported', true)
+            .is('deleted_at', null)
           reportCount = count || 0
 
           // 오늘 (한국 시간 기준이 아니라 PST 자정 기준 - 한도 리셋 시점)
@@ -68,6 +69,7 @@ export default function TeacherHome() {
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids)
             .gte('created_at', todayStartIso)
+            .is('deleted_at', null)
           // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출
           todayApiCalls = (subCount || 0) * 2
         }
@@ -251,6 +253,11 @@ export default function TeacherHome() {
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">맞춤법 일괄 적용</h3>
               <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
+            </Link>
+            <Link href="/teacher/trash" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">🗑️</div>
+              <h3 className="font-bold mb-1">쓰레기통</h3>
+              <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
             </Link>
             <Link href="/teacher/help" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📖</div>

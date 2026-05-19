@@ -154,7 +154,7 @@ export default function TeacherSubmissions() {
     const studentIds = visibleStudents.map(s => s.id)
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
 
-    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds)
+    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
 
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
@@ -196,7 +196,7 @@ export default function TeacherSubmissions() {
     const studentIds = visibleStudents.map(s => s.id)
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
     
-    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds)
+    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
     
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
@@ -311,6 +311,28 @@ export default function TeacherSubmissions() {
     const { error } = await supabase.from('submissions').update({ extra_rewrite_allowed: true }).eq('id', subId)
     if (error) return alert('실패: ' + error.message)
     alert('✅ 추가 수정이 허용되었어요!')
+    openTopic(selectedTopic) // 새로고침
+  }
+
+  // 🗑️ 쓰레기통으로 이동 (soft delete, 30일 후 자동 영구 삭제)
+  const moveToTrash = async (subId, studentName) => {
+    const reason = prompt(
+      `🗑️ "${studentName}" 학생의 글을 쓰레기통으로 보낼까요?\n\n` +
+      `· 30일 동안 보관 후 자동 영구 삭제\n` +
+      `· 그 전에 학급 설정 > 쓰레기통에서 복원 가능\n` +
+      `· 학생/통계/랭킹에서 사라짐\n\n` +
+      `삭제 사유를 입력해주세요 (선택, 메모용):`,
+      ''
+    )
+    if (reason === null) return // 취소
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('submissions').update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: authUser?.id || null,
+      delete_reason: reason.trim() || null
+    }).eq('id', subId)
+    if (error) return alert('실패: ' + error.message)
+    alert('🗑️ 쓰레기통으로 이동되었어요.\n학급 설정 > 쓰레기통에서 복원 가능합니다.')
     openTopic(selectedTopic) // 새로고침
   }
 
@@ -660,6 +682,12 @@ export default function TeacherSubmissions() {
                         ✓ 추가 수정 허용됨 (학생이 다시 쓰기 가능)
                       </div>
                     )}
+
+                    {/* 🗑️ 쓰레기통으로 이동 (선생님만) */}
+                    <button onClick={() => moveToTrash(s.id, selectedStudent.profile.realname)}
+                      className="w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-red-100 hover:text-red-700 transition">
+                      🗑️ 이 글을 쓰레기통으로 (30일 후 영구 삭제)
+                    </button>
                   </div>
                 )
               })}

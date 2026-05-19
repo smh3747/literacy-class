@@ -138,6 +138,7 @@ export default function TopicsPage() {
       .select('topic_id, user_id')
       .in('topic_id', topicIds)
       .in('user_id', visibleStudentIds.length > 0 ? visibleStudentIds : ['00000000-0000-0000-0000-000000000000'])
+      .is('deleted_at', null)
 
     // topic_id → Set of unique user_id
     const submitMap = {}

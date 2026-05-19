@@ -257,6 +257,7 @@ export default function StudentHome() {
       .select('topic_id')
       .eq('user_id', profile.id)
       .in('topic_id', topicIds)
+      .is('deleted_at', null)
 
     const submittedSet = new Set((mySubs || []).map(s => s.topic_id))
     const pending = pastTopics.filter(t => !submittedSet.has(t.id))
@@ -294,6 +295,7 @@ export default function StudentHome() {
         const topicIds = todayTopics.map(t => t.id)
         const { data: mySubs } = await supabase.from('submissions')
           .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', topicIds)
+          .is('deleted_at', null)
 
         // 각 주제별로 최대 attempt 계산
         const maxAttemptByTopic = {}
@@ -340,6 +342,7 @@ export default function StudentHome() {
     // 이미 제출했나 확인
     const { data: existing } = await supabase.from('submissions')
       .select('*').eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
+      .is('deleted_at', null)
     
     if (existing && existing.length > 0) {
       const sorted = [...existing].sort((a,b) => (b.attempt||1) - (a.attempt||1))
@@ -673,6 +676,7 @@ ${studentEssay}
     // 추가 수정 권한 체크
     const { data: existingSubs } = await supabase.from('submissions')
       .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
+      .is('deleted_at', null)
 
     // max_rewrites: 0이면 수정 불가, N이면 attempt=N+1까지 가능
     const maxRewrites = todayTopic?.max_rewrites !== undefined && todayTopic?.max_rewrites !== null
