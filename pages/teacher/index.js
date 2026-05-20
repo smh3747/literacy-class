@@ -55,15 +55,35 @@ export default function TeacherHome() {
             .is('deleted_at', null)
           reportCount = count || 0
 
-          // 오늘 (한국 시간 기준이 아니라 PST 자정 기준 - 한도 리셋 시점)
-          // PST 자정 = 한국 시간 17:00. 그 이후가 "오늘"
-          const now = new Date()
-          const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
-          const pstOffset = -8 * 3600000 // PST = UTC-8 (DST 무시, 대략적)
-          const pstNow = new Date(utcMs + pstOffset)
-          const pstToday = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate())
-          const pstTodayUtc = pstToday.getTime() - pstOffset
-          const todayStartIso = new Date(pstTodayUtc).toISOString()
+          // 오늘 (PT 자정 기준 - Gemini 한도 리셋 시점)
+          // PT는 PST/PDT 자동 전환되므로 Intl API로 정확히 계산
+          // PT 자정 = 한국 시간 오후 4시 (PDT, 3~11월) / 오후 5시 (PST, 11~3월)
+          const getPTMidnightUTC = () => {
+            const now = new Date()
+            // 현재 PT 시간 컴포넌트 추출
+            const ptFormatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'America/Los_Angeles',
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit', second: '2-digit',
+              hour12: false
+            })
+            const parts = ptFormatter.formatToParts(now)
+            const get = (type) => parts.find(p => p.type === type).value
+            const ptYear = parseInt(get('year'))
+            const ptMonth = parseInt(get('month'))
+            const ptDay = parseInt(get('day'))
+            const ptHour = parseInt(get('hour'))
+            const ptMin = parseInt(get('minute'))
+            const ptSec = parseInt(get('second'))
+
+            // PT 기준으로 "오늘 00:00"이 UTC로 몇 시인지 역산
+            // 현재 PT 시각과 PT 00:00의 차이를 계산
+            const ptElapsedSec = ptHour * 3600 + ptMin * 60 + ptSec
+            // 현재 UTC에서 ptElapsedSec만큼 빼면 PT 자정의 UTC
+            return new Date(now.getTime() - ptElapsedSec * 1000)
+          }
+
+          const todayStartIso = getPTMidnightUTC().toISOString()
 
           const { count: subCount } = await supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
@@ -105,6 +125,30 @@ export default function TeacherHome() {
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
+
+  // 현재 시즌 기준 한국 리셋 시간 계산 (PT 자정 = 한국 오후 4시 PDT / 오후 5시 PST)
+  // Intl API로 자동 계산하므로 매년 서머타임 전환 자동 반영
+  const getKoreanResetTime = () => {
+    // 오늘 PT 00:00이 한국 시간으로 몇 시인지
+    const now = new Date()
+    const ptFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    })
+    const parts = ptFormatter.formatToParts(now)
+    const ptHour = parseInt(parts.find(p => p.type === 'hour').value)
+    const ptMin = parseInt(parts.find(p => p.type === 'minute').value)
+    const ptSec = parseInt(parts.find(p => p.type === 'second').value)
+    const ptElapsedSec = ptHour * 3600 + ptMin * 60 + ptSec
+    const ptMidnightUtc = new Date(now.getTime() - ptElapsedSec * 1000)
+    // 한국 시간으로 표시
+    const kFormatter = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false
+    })
+    const kr = kFormatter.format(ptMidnightUtc) // "16:00" or "17:00"
+    const [h] = kr.split(':')
+    return `오후 ${parseInt(h) - 12}시`
+  }
 
   return (
     <>
@@ -170,9 +214,12 @@ export default function TeacherHome() {
           <ApiKeyManager classId={classInfo?.id} />
 
           {/* 오늘 API 사용량 (추정) */}
-          {/* 사용량 카드: 한도 가까울 때만 표시 (정상 운영 중엔 안 보임) */}
-          {stats.todayApiCalls >= 40 && (() => {
-            const dangerThreshold = 80
+          {/* 사용량 카드: 진짜 한도 임박할 때만 표시
+             합계 한도 약 560 RPD 기준
+             - 300회 이상: 절반 이상 사용 (주황 경계)
+             - 450회 이상: 80% 사용 (빨강 위험) */}
+          {stats.todayApiCalls >= 300 && (() => {
+            const dangerThreshold = 450
             const isDanger = stats.todayApiCalls >= dangerThreshold
             return (
               <div className={`rounded-2xl p-4 shadow-sm border ${
@@ -192,7 +239,7 @@ export default function TeacherHome() {
                       isDanger ? 'text-red-800' : 'text-amber-800'
                     }`}>
                       {isDanger
-                        ? '한도에 가까워졌어요. 한도 도달 시 자동으로 다른 모델로 전환됩니다. 자정(한국 시간 오후 5시)에 자동 리셋돼요.'
+                        ? `한도에 가까워졌어요. 한도 도달 시 자동으로 다른 모델로 전환됩니다. 자정(한국 시간 ${getKoreanResetTime()})에 자동 리셋돼요.`
                         : '사용량이 많아지고 있어요. 한도 도달 시 자동으로 다른 모델로 전환되니 안심하셔도 돼요.'}
                     </p>
                   </div>
