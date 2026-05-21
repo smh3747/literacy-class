@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
+import { toKST, toKSTDate } from '../../lib/timeFormat'
 
 export default function AdminHome() {
   const router = useRouter()
@@ -240,7 +241,7 @@ export default function AdminHome() {
     let md = `# 문해력 수업 - 사용자 의견 모음 (${today})\n\n`
     md += `총 ${fbs.length}건\n\n---\n\n`
     fbs.forEach((f, i) => {
-      const date = f.created_at?.slice(0, 16).replace('T', ' ') || ''
+      const date = toKST(f.created_at) || ''
       md += `## ${i + 1}. ${date}\n\n${f.content}\n\n---\n\n`
     })
     md += `\n위 의견들을 카테고리별로 정리하고, 각 의견에 대한 우선순위와 대응 방안을 제안해주세요.`
@@ -434,7 +435,7 @@ ${contents}
                               {t.role === 'admin' ? '관리자' : '교사'}
                             </span>
                           </td>
-                          <td className="p-2 text-xs text-gray-500">{t.created_at?.slice(0, 10)}</td>
+                          <td className="p-2 text-xs text-gray-500">{toKSTDate(t.created_at)}</td>
                           <td className="p-2">
                             {t.is_banned ? (
                               <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">차단됨</span>
@@ -717,7 +718,7 @@ ${contents}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <div className="text-xs text-gray-500">
-                                  {f.created_at?.slice(0, 16).replace('T', ' ')}
+                                  {toKST(f.created_at)}
                                   {f.is_hidden && <span className="ml-2 bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
                                 </div>
                                 <button onClick={() => toggleHideFeedback(f)}
@@ -828,7 +829,7 @@ function AdminSubmissionsInner() {
                   {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {s.topic_title || s.topics?.title || '-'} · {s.created_at?.slice(0, 16).replace('T', ' ')}
+                  {s.topic_title || s.topics?.title || '-'} · {toKST(s.created_at)}
                 </div>
               </div>
               <div className="text-sm font-bold ml-3">{s.total_score}/{s.max_score}</div>

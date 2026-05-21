@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
 import { loadApiKey } from '../../lib/gemini'
+import { toKST } from '../../lib/timeFormat'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -257,7 +258,7 @@ export default function TeacherSubmissions() {
           (s.attempt||1) === 1 ? '첫 글' : `수정본 ${s.attempt}`,
           s.total_score,
           s.max_score,
-          s.created_at?.slice(0, 16).replace('T', ' '),
+          toKST(s.created_at),
           s.paste_detected ? `Y(${s.paste_count})` : 'N',
           s.essay_text || ''
         ]

@@ -482,7 +482,12 @@ ${essay}
 - overall: 종합의견 (2-3문장, 격려하되 솔직하게)
 - good: 잘한 점 2가지 (구체적으로)
 - improve: 발전시킬 점 2가지 (구체적이고 실행 가능하게)
-- corrections: 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만, 없으면 빈 배열)`
+- corrections: 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만, 없으면 빈 배열)
+  ⚠️ corrections 작성 규칙 (꼭 지켜주세요):
+  1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 적기 (한 글자도 다르면 안 됨)
+  2. 학생이 이미 마침표/쉼표/물음표를 찍은 부분은 절대 "마침표 누락"으로 잡지 말 것
+  3. 띄어쓰기 오류는 학생 글에 실제로 띄어쓰기가 없는 경우에만
+  4. 확실하지 않으면 빈 배열로 반환 (오탐보다 미탐이 나음)`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
 

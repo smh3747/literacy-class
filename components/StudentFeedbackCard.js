@@ -1,4 +1,5 @@
 import useGrammarTooltip from '../lib/useGrammarTooltip'
+import { toKST } from '../lib/timeFormat'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -6,13 +7,33 @@ function escapeHtml(s) {
   }[m]))
 }
 
+// 🛡️ AI corrections 오탐 필터
+export function filterValidCorrections(essayText, corrections) {
+  if (!essayText || !Array.isArray(corrections)) return []
+  return corrections.filter(c => {
+    const original = c.original || c.error || c.wrong || ''
+    const correction = c.correction || c.fixed || c.suggestion || ''
+    const reason = (c.reason || c.type || c.category || '').toLowerCase()
+    if (!original) return false
+    if (!essayText.includes(original)) return false
+    if (reason.includes('마침표') || reason.includes('문장 끝') || reason.includes('온점') || reason.includes('찍어')) {
+      if (/[.!?。]$/.test(original)) return false
+    }
+    if (original === correction) return false
+    return true
+  })
+}
+
 // 글에 맞춤법 빨간 밑줄 적용
 export function applyGrammarHighlights(essayText, corrections) {
   if (!essayText) return ''
   if (!corrections || corrections.length === 0) return escapeHtml(essayText).replace(/\n/g, '<br>')
 
+  const filtered = filterValidCorrections(essayText, corrections)
+  if (filtered.length === 0) return escapeHtml(essayText).replace(/\n/g, '<br>')
+
   const matches = []
-  corrections.forEach(c => {
+  filtered.forEach(c => {
     const original = c.original || c.error || c.wrong || ''
     const correction = c.correction || c.fixed || c.suggestion || ''
     const reason = c.reason || c.type || c.category || ''
@@ -58,7 +79,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
 
   const rubrics = topic?.rubrics || sub.rubrics || []
   const scores = sub.rubric_scores || sub.scores || []
-  const corrections = sub.corrections || []
+  const corrections = filterValidCorrections(sub.essay_text, sub.corrections || [])
   const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0) || sub.max_score || 100
 
   return (
@@ -66,7 +87,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
       {headerLabel && (
         <div className="flex items-center justify-between border-b pb-3">
           <h3 className="font-bold text-primary">{headerLabel}</h3>
-          <span className="text-xs text-gray-500">{sub.created_at?.slice(0, 16).replace('T', ' ')}</span>
+          <span className="text-xs text-gray-500">{toKST(sub.created_at)}</span>
         </div>
       )}
 

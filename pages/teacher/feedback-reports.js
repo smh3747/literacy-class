@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import { toKST } from '../../lib/timeFormat'
 
 export default function FeedbackReports() {
   const router = useRouter()
@@ -105,7 +106,7 @@ export default function FeedbackReports() {
                         <span className="text-gray-500 ml-2 text-xs">({r.student?.username})</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        주제: {r.topic_title || '?'} · 신고일: {r.reported_at?.slice(0, 16).replace('T', ' ')}
+                        주제: {r.topic_title || '?'} · 신고일: {toKST(r.reported_at)}
                       </div>
                     </div>
                     <button onClick={() => dismissReport(r.id)}
