@@ -458,7 +458,7 @@ export default function StudentHome() {
         `${i+1}. ${r.name} (${r.score}점)${r.hint ? `\n   → 평가 포인트: ${r.hint}` : ''}`
       ).join('\n')
 
-      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생의 글을 엄정하게 평가해주세요.
+      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생의 글을 일관되고 엄정하게 평가해주세요.
 
 📌 글쓰기 주제: ${todayTopic.title}
 ${todayTopic.description ? '📝 주제 설명: ' + todayTopic.description : ''}
@@ -469,18 +469,20 @@ ${rubricText}
 ✍️ 학생이 쓴 글:
 ${essay}
 
-⚠️ 매우 중요한 채점 원칙:
-1. 학생 글이 위 "글쓰기 주제"와 관련 있는지 먼저 확인하세요. 주제와 무관한 글이면 점수를 낮게 주세요.
-2. 각 평가 기준의 "평가 포인트"를 글이 실제로 충족했는지 구체적으로 확인하세요.
-3. **만점(25점)은 정말 뛰어난 글에만 주세요.** 평범하게 잘 쓴 글은 70~85% 수준(18-21점), 보통 글은 60~70% 수준(15-17점)이 적절합니다.
-4. 5학년 수준이지만 채점은 엄정하게. "잘 썼다"의 기준을 높게 잡아주세요.
-5. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨 (26점, 28점 등 절대 금지).
+⚠️ 채점 원칙 (꼭 지켜주세요):
+1. 각 평가 기준의 "평가 포인트"를 글이 실제로 충족했는지 하나하나 확인하세요.
+2. 평가 포인트를 모두 충족했으면 만점, 일부만 충족했으면 비례하여 감점.
+3. 주제와 무관한 글이면 점수를 크게 낮추세요.
+4. **글의 완성도가 평가의 핵심입니다.** 글자 수가 아니라 글이 얼마나 잘 짜여 있고 의미 있는지를 보세요.
+5. 짧아도 잘 쓴 글은 높은 점수, 길어도 부실한 글은 낮은 점수.
+6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요. 채점 일관성이 가장 중요합니다.
+7. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
 📤 응답 형식:
 - scores: 평가기준 순서대로 점수 배열
 - total: 합계 (만점 초과 금지)
 - overall: 종합의견 (2-3문장, 격려하되 솔직하게)
-- good: 잘한 점 2가지 (구체적으로)
+- good: 잘한 점 2가지 (구체적으로, 글의 어떤 부분이 좋았는지)
 - improve: 발전시킬 점 2가지 (구체적이고 실행 가능하게)
 - corrections: 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만, 없으면 빈 배열)
   ⚠️ corrections 작성 규칙 (꼭 지켜주세요):
@@ -489,7 +491,7 @@ ${essay}
   3. 띄어쓰기 오류는 학생 글에 실제로 띄어쓰기가 없는 경우에만
   4. 확실하지 않으면 빈 배열로 반환 (오탐보다 미탐이 나음)`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -514,6 +516,10 @@ ${essay}
         result.corrections = mergeCorrections(result.corrections, essay)
       } catch(e) { console.warn('규칙 검사 실패:', e) }
 
+      // 🆕 채점에 사용된 모델 정보
+      const usedModel = result.__usedModel || 'unknown'
+      const isFallback = usedModel !== 'gemini-3.1-flash-lite'
+
       // DB 저장
       const { data: sub, error } = await supabase.from('submissions').insert({
         user_id: user.id,
@@ -529,6 +535,8 @@ ${essay}
         feedback_good: result.good,
         feedback_improve: result.improve,
         corrections: result.corrections,
+        graded_with_model: usedModel,
+        is_fallback_graded: isFallback,
         paste_detected: pasteDetectedRef.current,
         paste_count: pasteCountRef.current,
         is_final: false
@@ -725,12 +733,14 @@ ${rubricText}
 ✍️ 학생 수정본:
 ${rewriteEssay}
 
-⚠️ 매우 중요한 채점 원칙:
-1. 수정본이 위 "글쓰기 주제"와 관련 있는지 확인하세요. 주제와 무관하면 점수를 낮게 주세요.
-2. 각 평가 기준의 "평가 포인트"를 실제로 충족했는지 확인하세요.
-3. **만점(25점)은 정말 뛰어난 글에만 주세요.** 평범하게 잘 쓴 수정본은 75~88% 수준(19-22점)이 적절합니다.
-4. 처음 글보다 어떻게 좋아졌는지를 평가에 반영해주세요.
-5. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
+⚠️ 채점 원칙 (꼭 지켜주세요):
+1. 각 평가 기준의 "평가 포인트"를 수정본이 실제로 충족했는지 하나하나 확인하세요.
+2. 평가 포인트를 모두 충족했으면 만점, 일부만 충족했으면 비례하여 감점.
+3. 주제와 무관하면 점수를 크게 낮추세요.
+4. **글의 완성도가 평가의 핵심입니다.** 글자 수가 아니라 글이 얼마나 잘 짜여 있고 의미 있는지를 보세요.
+5. 처음 글보다 좋아진 점을 종합의견에 반영하되, 점수는 수정본 자체의 완성도로만 평가하세요.
+6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요.
+7. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
 📤 응답 형식:
 - scores: 평가기준 순서대로 점수 배열
@@ -740,7 +750,7 @@ ${rewriteEssay}
 - improve: 더 발전시킬 점 2가지 (구체적이고 실행 가능하게)
 - corrections: 명백한 오류만, 없으면 빈 배열`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'quality', onProgress: (p) => setRetryMessage(p.message) })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       // 각 점수 만점 캡 + 음수 방지
@@ -763,6 +773,10 @@ ${rewriteEssay}
         result.corrections = mergeCorrections(result.corrections, rewriteEssay)
       } catch(e) { console.warn('규칙 검사 실패:', e) }
 
+      // 🆕 채점에 사용된 모델 정보
+      const rwUsedModel = result.__usedModel || 'unknown'
+      const rwIsFallback = rwUsedModel !== 'gemini-3.1-flash-lite'
+
       const { data: newSub, error } = await supabase.from('submissions').insert({
         user_id: user.id,
         topic_id: todayTopic.id,
@@ -777,6 +791,8 @@ ${rewriteEssay}
         feedback_good: result.good,
         feedback_improve: result.improve,
         corrections: result.corrections,
+        graded_with_model: rwUsedModel,
+        is_fallback_graded: rwIsFallback,
         paste_detected: pasteDetectedRef.current,
         paste_count: pasteCountRef.current,
         is_final: true,

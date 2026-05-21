@@ -657,6 +657,11 @@ export default function TeacherSubmissions() {
                             <div className="font-medium text-sm">
                               {g.profile.realname}
                               {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
+                              {sorted.some(s => s.is_fallback_graded) && (
+                                <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
+                                  🔁 보조 채점
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
                           </div>
@@ -710,6 +715,11 @@ export default function TeacherSubmissions() {
                       </h3>
                       <div className="flex items-center gap-2 flex-wrap">
                         {s.paste_detected && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">⚠️ 복붙 {s.paste_count || 1}회</span>}
+                        {s.is_fallback_graded && (
+                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title={`채점 모델: ${s.graded_with_model || '?'} - 메인 모델 한도로 보조 모델 사용. 재평가 권장.`}>
+                            🔁 보조 채점
+                          </span>
+                        )}
                         {isHighlySuspicious && (
                           <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-bold">
                             🚨 예시 유사도 {Math.round(similarity.score * 100)}%
