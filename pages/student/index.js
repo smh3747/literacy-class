@@ -9,6 +9,7 @@ import PasswordChangeModal from '../../components/PasswordChangeModal'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import StudentTutorial from '../../components/StudentTutorial'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
+import { splitFeedbackItems } from '../../lib/feedbackFormat'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -61,26 +62,10 @@ function checkTimeLock(topic) {
 }
 
 // HTML 이스케이프
-// 피드백 텍스트를 리스트로 시각화 (- 로 시작하는 항목들 자동 분리)
+// 피드백 텍스트를 리스트로 시각화 (lib/feedbackFormat의 분리 헬퍼 사용)
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
-  
-  // "- "로 분리, 또는 "•"로 분리
-  let items = []
-  
-  // 패턴 1: "- A. - B. - C." 형태 → 각 "- " 기준 분리
-  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
-    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
-    // 첫 항목이 "- "로 시작 안 하면 (= 시작 부분에 일반 텍스트가 있으면) 그것도 살림
-    if (items.length === 1) {
-      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
-    }
-  } else {
-    items = [text]
-  }
-  
-  // 너무 길거나 빈 항목 제거, 끝에 "." 추가
-  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  const items = splitFeedbackItems(text)
   
   const colorClasses = {
     green: 'text-green-900',
@@ -482,8 +467,12 @@ ${essay}
 - scores: 평가기준 순서대로 점수 배열
 - total: 합계 (만점 초과 금지)
 - overall: 종합의견 (2-3문장, 격려하되 솔직하게)
-- good: 잘한 점 2가지 (구체적으로, 글의 어떤 부분이 좋았는지)
-- improve: 발전시킬 점 2가지 (구체적이고 실행 가능하게)
+- good: 잘한 점 2가지를 반드시 다음 형식으로 (각 항목은 한 문장씩, 50자 내외):
+  "- 첫 번째 잘한 점\n- 두 번째 잘한 점"
+  ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
+- improve: 발전시킬 점 2가지를 반드시 다음 형식으로 (각 항목은 한 문장씩, 60자 내외):
+  "- 첫 번째 발전점\n- 두 번째 발전점"
+  ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
 - corrections: 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만, 없으면 빈 배열)
   ⚠️ corrections 작성 규칙 (꼭 지켜주세요):
   1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 적기 (한 글자도 다르면 안 됨)
@@ -746,8 +735,8 @@ ${rewriteEssay}
 - scores: 평가기준 순서대로 점수 배열
 - total: 합계 (만점 초과 금지)
 - overall: 종합 의견 (처음보다 어떻게 좋아졌는지 격려, 2-3문장)
-- good: 잘한 점 2가지 (구체적으로)
-- improve: 더 발전시킬 점 2가지 (구체적이고 실행 가능하게)
+- good: 잘한 점 2가지, "- 항목1\n- 항목2" 형식 (반드시 하이픈+공백 시작)
+- improve: 더 발전시킬 점 2가지, "- 항목1\n- 항목2" 형식 (반드시 하이픈+공백 시작)
 - corrections: 명백한 오류만, 없으면 빈 배열`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })

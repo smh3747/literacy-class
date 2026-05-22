@@ -8,19 +8,11 @@ import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
 import { loadApiKey } from '../../lib/gemini'
 import { toKST } from '../../lib/timeFormat'
+import { splitFeedbackItems } from '../../lib/feedbackFormat'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
-  let items = []
-  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
-    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
-    if (items.length === 1) {
-      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
-    }
-  } else {
-    items = [text]
-  }
-  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  const items = splitFeedbackItems(text)
   
   const colorClasses = { green: 'text-green-900', amber: 'text-amber-900', blue: 'text-blue-900', gray: 'text-gray-700' }
   const dotClasses = { green: 'bg-green-600', amber: 'bg-amber-600', blue: 'bg-blue-600', gray: 'bg-gray-400' }
@@ -732,6 +724,15 @@ export default function TeacherSubmissions() {
                         )}
                         <span className="text-base font-bold">{s.total_score}/{s.max_score}점</span>
                       </div>
+                    </div>
+
+                    {/* 🆕 채점 시각 (작게) */}
+                    <div className="text-[11px] text-gray-500 -mt-2">
+                      {s.re_graded_at ? (
+                        <>🔄 재평가: {toKST(s.re_graded_at)}{s.graded_with_model && ` · ${s.graded_with_model}`}</>
+                      ) : (
+                        <>🤖 AI 채점: {toKST(s.created_at)}{s.graded_with_model && ` · ${s.graded_with_model}`}</>
+                      )}
                     </div>
 
                     {/* 베껴쓰기 의심 경고 */}

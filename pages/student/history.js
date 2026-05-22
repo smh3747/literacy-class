@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
+import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -12,16 +13,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
-  let items = []
-  if (text.match(/-\s+/g) && text.match(/-\s+/g).length >= 1) {
-    items = text.split(/(?:^|\.\s+)-\s+/).filter(s => s.trim().length > 0)
-    if (items.length === 1) {
-      items = text.split(/-\s+/).filter(s => s.trim().length > 0)
-    }
-  } else {
-    items = [text]
-  }
-  items = items.map(s => s.trim().replace(/^["'`]|["'`]$/g, '').trim()).filter(s => s.length > 0)
+  const items = splitFeedbackItems(text)
   
   const colorClasses = { green: 'text-green-900', amber: 'text-amber-900', blue: 'text-blue-900', gray: 'text-gray-700' }
   const dotClasses = { green: 'bg-green-600', amber: 'bg-amber-600', blue: 'bg-blue-600', gray: 'bg-gray-400' }

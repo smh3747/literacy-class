@@ -1,5 +1,6 @@
 import useGrammarTooltip from '../lib/useGrammarTooltip'
 import { toKST } from '../lib/timeFormat'
+import { splitFeedbackItems } from '../lib/feedbackFormat'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -96,6 +97,14 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
         <div className="text-2xl font-bold text-primary-dark">
           {sub.total_score ?? 0} <span className="text-base font-normal">/ {totalMax}점</span>
         </div>
+        {/* 🆕 채점 시각 (재평가 우선, 없으면 최초 채점=제출 시각) */}
+        <div className="text-[11px] text-gray-500 mt-1">
+          {sub.re_graded_at ? (
+            <>🔄 재평가 {toKST(sub.re_graded_at)}</>
+          ) : (
+            <>🤖 AI 채점 {toKST(sub.created_at)}</>
+          )}
+        </div>
       </div>
 
       {/* 항목별 점수 */}
@@ -153,14 +162,40 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
       {sub.feedback_good && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
           <h4 className="text-sm font-semibold text-green-900 mb-1">⭐ 잘한 점</h4>
-          <p className="text-sm text-green-800 whitespace-pre-wrap">{sub.feedback_good}</p>
+          {(() => {
+            const items = splitFeedbackItems(sub.feedback_good)
+            if (items.length <= 1) return <p className="text-sm text-green-800 whitespace-pre-wrap">{items[0] || sub.feedback_good}</p>
+            return (
+              <ul className="space-y-1.5">
+                {items.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-green-800">
+                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-600 mt-2"></span>
+                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          })()}
         </div>
       )}
 
       {sub.feedback_improve && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
           <h4 className="text-sm font-semibold text-amber-900 mb-1">🌱 발전시킬 점</h4>
-          <p className="text-sm text-amber-800 whitespace-pre-wrap">{sub.feedback_improve}</p>
+          {(() => {
+            const items = splitFeedbackItems(sub.feedback_improve)
+            if (items.length <= 1) return <p className="text-sm text-amber-800 whitespace-pre-wrap">{items[0] || sub.feedback_improve}</p>
+            return (
+              <ul className="space-y-1.5">
+                {items.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-amber-800">
+                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-600 mt-2"></span>
+                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          })()}
         </div>
       )}
 
