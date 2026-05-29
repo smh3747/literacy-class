@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -12,6 +14,7 @@ export default function StudentsPage() {
   const [classInfo, setClassInfo] = useState(null)
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
   const [uploadStatus, setUploadStatus] = useState(null)
   const [parsedStudents, setParsedStudents] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -34,12 +37,12 @@ export default function StudentsPage() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', authUser.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes(id, name, code)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -64,7 +67,10 @@ export default function StudentsPage() {
     setStudents(data || [])
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   // 자동 아이디 생성 (prefix 기반)
   // prefix가 있으면 그걸 사용, 비어있으면 학교 초성 사용
@@ -895,10 +901,11 @@ export default function StudentsPage() {
     <>
       <Head><title>학생 관리 - 문해력 수업</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation("/teacher")} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">학생 관리</h1>
           </div>
 
@@ -908,6 +915,13 @@ export default function StudentsPage() {
               <div className="text-sm text-primary-dark">
                 <strong>{classInfo.name}</strong> · 학생 가입 코드: <span className="font-mono font-bold tracking-widest">{classInfo.code}</span>
               </div>
+            </div>
+          )}
+
+          {/* 🆕 임퍼소네이션 안내 */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              📖 읽기 전용입니다. 학생 등록/수정/삭제, 비밀번호 초기화 등 모든 변경 작업은 차단되어 있어요.
             </div>
           )}
 

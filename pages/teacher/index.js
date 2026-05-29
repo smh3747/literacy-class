@@ -9,6 +9,8 @@ import ClassSettings from '../../components/ClassSettings'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
 import QrCodeModal from '../../components/QrCodeModal'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -19,16 +21,21 @@ export default function TeacherHome() {
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showQrModal, setShowQrModal] = useState(false)
+  // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
+  const [isImpersonating, setIsImpersonating] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password)').eq('id', authUser.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // 🆕 임퍼소네이션 고려한 profile 조회
+    const { profile, isImpersonating: imp } = await getEffectiveProfile(
+      '*, classes(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password)'
+    )
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
     
@@ -99,7 +106,11 @@ export default function TeacherHome() {
     setLoading(false)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    // 임퍼소네이션 중에는 로그아웃 대신 관리자 페이지로 (실제 로그아웃 방지)
+    if (isImpersonating) { router.push('/admin'); return }
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   const regenerateClassCode = async () => {
     if (!classInfo) return
@@ -154,6 +165,7 @@ export default function TeacherHome() {
     <>
       <Head><title>선생님 화면 - 문해력 수업</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
           <div className="flex items-start justify-between flex-wrap gap-2">
@@ -164,12 +176,16 @@ export default function TeacherHome() {
                 {user.school && <span className="ml-2 text-gray-500">· {user.school}</span>}
               </p>
               <div className="flex gap-2 mt-2">
-                <button onClick={() => setShowProfileModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
-                  ✏️ 내 정보 수정
-                </button>
-                <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
-                  🔐 비밀번호 변경
-                </button>
+                {!isImpersonating && (
+                  <>
+                    <button onClick={() => setShowProfileModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                      ✏️ 내 정보 수정
+                    </button>
+                    <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                      🔐 비밀번호 변경
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             {user.role === 'admin' && (
@@ -201,17 +217,19 @@ export default function TeacherHome() {
                     className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light font-medium">
                     📱 QR코드 보기
                   </button>
-                  <button onClick={regenerateClassCode}
-                    className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
-                    🔄 코드 재발급
-                  </button>
+                  {!isImpersonating && (
+                    <button onClick={regenerateClassCode}
+                      className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
+                      🔄 코드 재발급
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* API 키 관리 */}
-          <ApiKeyManager classId={classInfo?.id} />
+          {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}
+          {!isImpersonating && <ApiKeyManager classId={classInfo?.id} />}
 
           {/* 오늘 API 사용량 (추정) */}
           {/* 사용량 카드: 진짜 한도 임박할 때만 표시
@@ -249,41 +267,41 @@ export default function TeacherHome() {
           })()}
 
           {/* 학급 설정 (랭킹/게시판) */}
-          {classInfo && <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />}
+          {classInfo && !isImpersonating && <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />}
 
           {/* 메뉴 */}
           <div className="grid sm:grid-cols-2 gap-3">
-            <Link href="/teacher/topics" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📚</div>
               <h3 className="font-bold mb-1">주제 관리</h3>
               <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
             </Link>
-            <Link href="/teacher/students" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">👥</div>
               <h3 className="font-bold mb-1">학생 관리</h3>
               <p className="text-xs text-gray-500">학급명렬표 일괄 등록</p>
             </Link>
-            <Link href="/teacher/status" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📋</div>
               <h3 className="font-bold mb-1">제출 현황</h3>
               <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
             </Link>
-            <Link href="/teacher/submissions" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/submissions")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">학생 글 보기</h3>
               <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
             </Link>
-            <Link href="/teacher/parent-consent" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/parent-consent")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📋</div>
               <h3 className="font-bold mb-1">학부모 동의서</h3>
               <p className="text-xs text-gray-500">인쇄 / PDF 다운로드</p>
             </Link>
-            <Link href="/teacher/student-growth" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📊</div>
               <h3 className="font-bold mb-1">학생 성장 그래프</h3>
               <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
             </Link>
-            <Link href="/teacher/feedback-reports" className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
+            <Link href={withImpersonation("/teacher/feedback-reports")} className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
               stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
             } relative`}>
               <div className="text-3xl mb-2">🚨</div>
@@ -296,17 +314,17 @@ export default function TeacherHome() {
               </h3>
               <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
             </Link>
-            <Link href="/teacher/grammar-backfill" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/grammar-backfill")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">맞춤법 일괄 적용</h3>
               <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
             </Link>
-            <Link href="/teacher/trash" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/trash")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">🗑️</div>
               <h3 className="font-bold mb-1">쓰레기통</h3>
               <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
             </Link>
-            <Link href="/teacher/help" className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/help")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📖</div>
               <h3 className="font-bold mb-1">도움말 / FAQ</h3>
               <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>

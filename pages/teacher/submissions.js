@@ -9,6 +9,8 @@ import { regradeSubmission } from '../../lib/regrade'
 import { loadApiKey } from '../../lib/gemini'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -111,16 +113,17 @@ export default function TeacherSubmissions() {
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [topicStudents, setTopicStudents] = useState([])
   const [selectedStudent, setSelectedStudent] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
-    if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code)').eq('id', au.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes(id, name, code)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
     
@@ -178,7 +181,10 @@ export default function TeacherSubmissions() {
     setView('topicStudents')
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   const openTopic = async (topic) => {
     setSelectedTopic(topic)
@@ -486,13 +492,14 @@ export default function TeacherSubmissions() {
         .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
       `}</style>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
           
           {view === 'topics' && (
             <>
               <div className="flex items-center gap-3">
-                <Link href="/teacher" className="text-gray-600">←</Link>
+                <Link href={withImpersonation("/teacher")} className="text-gray-600">←</Link>
                 <h1 className="text-xl font-bold">학생 글 보기</h1>
               </div>
               <div className="bg-white rounded-2xl p-5 shadow-sm">

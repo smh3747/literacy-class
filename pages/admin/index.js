@@ -684,10 +684,20 @@ ${contents}
                             )}
                           </td>
                           <td className="p-2 text-center">
-                            <button onClick={() => toggleClassActive(c)}
-                              className={`text-xs px-3 py-1 rounded ${c.is_active === false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
-                              {c.is_active === false ? '활성화' : '비활성화'}
-                            </button>
+                            <div className="flex items-center gap-1 justify-center flex-wrap">
+                              {c.teacher_id && (
+                                <a href={`/teacher?as=${c.teacher_id}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="text-xs px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                  title="새 탭에서 담임 선생님 화면 그대로 보기 (담임에게 알리지 않음)">
+                                  🔍 엿보기
+                                </a>
+                              )}
+                              <button onClick={() => toggleClassActive(c)}
+                                className={`text-xs px-3 py-1 rounded ${c.is_active === false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+                                {c.is_active === false ? '활성화' : '비활성화'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         )
