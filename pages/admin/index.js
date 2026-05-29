@@ -16,6 +16,7 @@ export default function AdminHome() {
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
+  const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
@@ -480,11 +481,33 @@ ${contents}
             ))}
           </div>
 
-          {tab === 'overview' && (
+          {tab === 'overview' && (() => {
+            // 🆕 차단된 선생님 필터링
+            const visibleTeachers = showBannedTeachers
+              ? teachers
+              : teachers.filter(t => !t.is_banned)
+            const bannedCount = teachers.filter(t => t.is_banned).length
+
+            return (
             <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold mb-3">👨‍🏫 가입한 선생님 ({teachers.length}명)</h3>
-              {teachers.length === 0 ? (
-                <p className="text-sm text-gray-500 py-8 text-center">가입한 선생님이 없어요</p>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h3 className="font-bold">
+                  👨‍🏫 가입한 선생님 ({visibleTeachers.length}명
+                  {!showBannedTeachers && bannedCount > 0 && (
+                    <span className="text-xs text-gray-500"> + 차단 {bannedCount}명 숨김</span>
+                  )})
+                </h3>
+                {bannedCount > 0 && (
+                  <button onClick={() => setShowBannedTeachers(!showBannedTeachers)}
+                    className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
+                    {showBannedTeachers ? '👁️ 정상 계정만 보기' : `🔍 차단 포함 보기 (${bannedCount})`}
+                  </button>
+                )}
+              </div>
+              {visibleTeachers.length === 0 ? (
+                <p className="text-sm text-gray-500 py-8 text-center">
+                  {teachers.length === 0 ? '가입한 선생님이 없어요' : '정상 계정이 없어요. "차단 포함 보기"를 눌러주세요.'}
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -501,7 +524,7 @@ ${contents}
                       </tr>
                     </thead>
                     <tbody>
-                      {teachers.map(t => (
+                      {visibleTeachers.map(t => (
                         <tr key={t.id} className={`border-b border-gray-100 ${t.is_banned ? 'bg-red-50' : ''}`}>
                           <td className="p-2 font-medium">{t.realname}</td>
                           <td className="p-2 text-gray-600">{t.school || '-'}</td>
@@ -553,7 +576,8 @@ ${contents}
                 </div>
               )}
             </div>
-          )}
+            )
+          })()}
 
           {tab === 'classes' && (() => {
             // 🆕 비활성 학급 필터링 (와이프 피드백 9번)
@@ -934,73 +958,246 @@ function AdminSubmissions() {
 function AdminSubmissionsInner() {
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  // 🆕 그룹화 모드: 'flat' | 'school' | 'class' | 'topic' | 'student'
+  const [groupBy, setGroupBy] = useState('flat')
   const [selectedClass, setSelectedClass] = useState('all')
   const [classList, setClassList] = useState([])
-  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  const [expandedGroups, setExpandedGroups] = useState(new Set())  // 펼쳐진 그룹 ID
+
+  // 🆕 보조 데이터: 학생 → 학급 → 학교 매핑
+  const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
+  const [classMap, setClassMap] = useState({})      // { classId: { name, teacher_school } }
 
   useEffect(() => { load() }, [selectedClass])
 
   const load = async () => {
     setLoading(true)
-    const { data: classData } = await supabase.from('classes').select('id, name')
+    // 학급 목록 + 담임 학교 정보 (학교별 그룹화에 필요)
+    const { data: classData } = await supabase.from('classes').select('id, name, teacher_id')
     setClassList(classData || [])
-    
-    let query = supabase.from('submissions')
+    // 담임 학교 매핑
+    const teacherIds = [...new Set((classData || []).map(c => c.teacher_id).filter(Boolean))]
+    let teacherSchoolMap = {}
+    if (teacherIds.length > 0) {
+      const { data: tProfiles } = await supabase.from('profiles')
+        .select('id, school').in('id', teacherIds)
+      ;(tProfiles || []).forEach(t => { teacherSchoolMap[t.id] = t.school || '학교 미설정' })
+    }
+    const cMap = {}
+    ;(classData || []).forEach(c => {
+      cMap[c.id] = { name: c.name, teacher_school: teacherSchoolMap[c.teacher_id] || '학교 미설정' }
+    })
+    setClassMap(cMap)
+
+    // 학생글 (최근 200건 — 그룹화 위해 좀 더 가져옴)
+    const { data } = await supabase.from('submissions')
       .select('*, profiles!submissions_user_id_fkey(realname, username, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
-      .limit(100)
-    
-    const { data } = await query
+      .limit(200)
+
     let filtered = data || []
-    
     if (selectedClass !== 'all') {
       filtered = filtered.filter(s => s.profiles?.class_id === selectedClass)
     }
-    
+
+    // 학생 매핑 만들기
+    const sMap = {}
+    filtered.forEach(s => {
+      if (s.user_id && s.profiles) {
+        sMap[s.user_id] = {
+          realname: s.profiles.realname,
+          username: s.profiles.username,
+          class_id: s.profiles.class_id
+        }
+      }
+    })
+    setStudentMap(sMap)
     setSubmissions(filtered)
     setLoading(false)
+  }
+
+  const toggleGroup = (gid) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(gid)) next.delete(gid)
+      else next.add(gid)
+      return next
+    })
   }
 
   if (selectedSubmission) {
     return <SubmissionDetail sub={selectedSubmission} onBack={() => setSelectedSubmission(null)} />
   }
 
+  // 🆕 그룹화 로직
+  const buildGroups = () => {
+    if (groupBy === 'flat') return null  // flat은 그룹 안 만듦
+
+    const groups = {}  // { groupKey: { label, subLabel, items: [] } }
+
+    submissions.forEach(s => {
+      let key, label, subLabel = ''
+      if (groupBy === 'school') {
+        const cls = classMap[s.profiles?.class_id]
+        key = cls?.teacher_school || '(학교 정보 없음)'
+        label = `🏫 ${key}`
+      } else if (groupBy === 'class') {
+        const cls = classMap[s.profiles?.class_id]
+        key = s.profiles?.class_id || 'no-class'
+        label = `📚 ${cls?.name || '(학급 정보 없음)'}`
+        subLabel = cls?.teacher_school || ''
+      } else if (groupBy === 'topic') {
+        key = s.topic_id || s.topic_title || 'no-topic'
+        label = `📝 ${s.topic_title || s.topics?.title || '(주제 없음)'}`
+        if (s.topics?.date) subLabel = s.topics.date
+      } else if (groupBy === 'student') {
+        key = s.user_id || 'no-user'
+        const stu = studentMap[s.user_id]
+        label = `👤 ${stu?.realname || s.profiles?.realname || '(이름 없음)'}`
+        const cls = classMap[stu?.class_id]
+        subLabel = cls?.name || ''
+      }
+      if (!groups[key]) groups[key] = { key, label, subLabel, items: [] }
+      groups[key].items.push(s)
+    })
+    // 그룹을 글 수 많은 순으로 정렬
+    return Object.values(groups).sort((a, b) => b.items.length - a.items.length)
+  }
+
+  const groups = buildGroups()
+
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold">📝 학생 글 (최근 100건)</h3>
-        <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
-          className="text-sm border border-gray-200 rounded p-2">
-          <option value="all">모든 학급</option>
-          {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-bold">📝 학생 글 (최근 {submissions.length}건)</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 🆕 그룹화 모드 셀렉터 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <span className="text-xs text-gray-600 px-2">묶음:</span>
+            {[
+              { v: 'flat', l: '전체' },
+              { v: 'school', l: '학교별' },
+              { v: 'class', l: '학급별' },
+              { v: 'topic', l: '주제별' },
+              { v: 'student', l: '학생별' }
+            ].map(opt => (
+              <button key={opt.v}
+                onClick={() => { setGroupBy(opt.v); setExpandedGroups(new Set()) }}
+                className={`text-xs px-2.5 py-1 rounded ${
+                  groupBy === opt.v
+                    ? 'bg-white shadow-sm font-semibold text-primary'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+          {/* 학급 필터 (flat·topic·school·student에서 의미 있음) */}
+          {groupBy !== 'class' && (
+            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
+              className="text-sm border border-gray-200 rounded p-2">
+              <option value="all">모든 학급</option>
+              {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8 text-center">로딩 중...</p>
       ) : submissions.length === 0 ? (
         <p className="text-sm text-gray-500 py-8 text-center">학생 글이 없어요</p>
-      ) : (
+      ) : groupBy === 'flat' ? (
+        // ─── flat: 기존 동작 (시간순 평면 리스트) ───
         <div className="space-y-2">
           {submissions.map(s => (
-            <button key={s.id} onClick={() => setSelectedSubmission(s)}
-              className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">
-                  {s.profiles?.realname || '?'} 
-                  <span className="text-xs text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : '수정본'})</span>
-                  {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {s.topic_title || s.topics?.title || '-'} · {toKST(s.created_at)}
-                </div>
-              </div>
-              <div className="text-sm font-bold ml-3">{s.total_score}/{s.max_score}</div>
-            </button>
+            <SubmissionRow key={s.id} s={s} onClick={() => setSelectedSubmission(s)} />
           ))}
+        </div>
+      ) : (
+        // ─── 그룹화 뷰 ───
+        <div className="space-y-2">
+          {groups.map(g => {
+            const isExpanded = expandedGroups.has(g.key)
+            // 그룹 통계
+            const total = g.items.length
+            const avgScore = total > 0
+              ? Math.round(g.items.reduce((sum, s) => sum + (s.total_score || 0), 0) / total * 10) / 10
+              : 0
+            const fallbackCount = g.items.filter(s => s.is_fallback_graded).length
+            const pasteCount = g.items.filter(s => s.paste_detected).length
+
+            return (
+              <div key={g.key} className="border border-gray-200 rounded-lg overflow-hidden">
+                <button onClick={() => toggleGroup(g.key)}
+                  className="w-full bg-gray-50 hover:bg-gray-100 px-3 py-2.5 flex items-center justify-between text-left">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold">
+                      {g.label}
+                      <span className="ml-2 text-xs font-normal text-gray-500">({total}건)</span>
+                    </div>
+                    {g.subLabel && (
+                      <div className="text-xs text-gray-500 mt-0.5">{g.subLabel}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span>평균 <strong>{avgScore}</strong>점</span>
+                    {fallbackCount > 0 && (
+                      <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">폴백 {fallbackCount}</span>
+                    )}
+                    {pasteCount > 0 && (
+                      <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded">복붙 {pasteCount}</span>
+                    )}
+                    <span className="text-gray-400">{isExpanded ? '▼' : '▶'}</span>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="bg-white p-2 space-y-1.5 border-t border-gray-200">
+                    {g.items.map(s => (
+                      <SubmissionRow key={s.id} s={s}
+                        onClick={() => setSelectedSubmission(s)}
+                        hideField={groupBy === 'topic' ? 'topic' : groupBy === 'student' ? 'student' : null} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
+  )
+}
+
+// 학생글 한 줄 (재사용 컴포넌트)
+function SubmissionRow({ s, onClick, hideField }) {
+  return (
+    <button onClick={onClick}
+      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium">
+          {hideField !== 'student' && (
+            <>
+              {s.profiles?.realname || '?'}
+              <span className="text-xs text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : '수정본'})</span>
+            </>
+          )}
+          {hideField === 'student' && (
+            <span>{s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}`}</span>
+          )}
+          {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
+          {s.is_fallback_graded && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">폴백</span>}
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          {hideField !== 'topic' && (
+            <>{s.topic_title || s.topics?.title || '-'} · </>
+          )}
+          {toKST(s.created_at)}
+        </div>
+      </div>
+      <div className="text-sm font-bold ml-3">{s.total_score}/{s.max_score}</div>
+    </button>
   )
 }
 
