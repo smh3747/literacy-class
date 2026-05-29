@@ -10,7 +10,12 @@ export default function FeedbackModal({ onClose }) {
     if (content.trim().length < 5) return alert('의견을 자세히 써주세요!')
     setSubmitting(true)
     try {
-      const { error } = await supabase.from('feedback').insert({ content: content.trim() })
+      // 로그인 상태면 작성자 ID 첨부 (와이프 피드백 2번: 누가 줬는지 추적)
+      const { data: { user } } = await supabase.auth.getUser()
+      const payload = { content: content.trim() }
+      if (user?.id) payload.user_id = user.id
+
+      const { error } = await supabase.from('feedback').insert(payload)
       if (error) throw error
       setDone(true)
       setTimeout(() => onClose(), 1500)

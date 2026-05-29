@@ -15,6 +15,7 @@ export default function AdminHome() {
   const [classes, setClasses] = useState([])
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
+  const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
@@ -77,11 +78,75 @@ export default function AdminHome() {
         countMap[s.class_id] = (countMap[s.class_id] || 0) + 1
       })
       classes.forEach(c => { c.student_count = countMap[c.id] || 0 })
+
+      // 🆕 학급별 채점 모델 통계 (와이프 피드백 1번: 다른 학급도 어떤 모델로 채점했는지)
+      // 학급 → 학생 → 제출 → graded_with_model 집계
+      const studentIdByClass = {}  // { classId: [studentId, ...] }
+      ;(studentCounts || []).forEach(s => {
+        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
+      })
+      // 다시 학생 ID도 가져옴 (위에선 class_id만 가져왔음)
+      const { data: studentsWithClass } = await supabase.from('profiles')
+        .select('id, class_id').in('class_id', classIds).eq('role', 'student')
+      ;(studentsWithClass || []).forEach(s => {
+        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
+        studentIdByClass[s.class_id].push(s.id)
+      })
+      // 모든 학생의 제출물에서 모델 정보만 가져오기
+      const allStudentIds = (studentsWithClass || []).map(s => s.id)
+      if (allStudentIds.length > 0) {
+        const { data: subs } = await supabase.from('submissions')
+          .select('user_id, graded_with_model, is_fallback_graded')
+          .in('user_id', allStudentIds)
+        // user_id → class_id 역매핑
+        const classByStudent = {}
+        ;(studentsWithClass || []).forEach(s => { classByStudent[s.id] = s.class_id })
+        // 학급별 모델 카운트
+        const modelStatsByClass = {}  // { classId: { 'gemini-3.1-flash-lite': 12, 'gemini-2.5-flash': 2, ... }, fallbackCount }
+        ;(subs || []).forEach(sub => {
+          const cid = classByStudent[sub.user_id]
+          if (!cid) return
+          if (!modelStatsByClass[cid]) modelStatsByClass[cid] = { models: {}, total: 0, fallback: 0 }
+          const m = sub.graded_with_model || '(미기록)'
+          modelStatsByClass[cid].models[m] = (modelStatsByClass[cid].models[m] || 0) + 1
+          modelStatsByClass[cid].total++
+          if (sub.is_fallback_graded) modelStatsByClass[cid].fallback++
+        })
+        classes.forEach(c => {
+          c.model_stats = modelStatsByClass[c.id] || { models: {}, total: 0, fallback: 0 }
+        })
+      } else {
+        classes.forEach(c => { c.model_stats = { models: {}, total: 0, fallback: 0 } })
+      }
+    }
+
+    // 🆕 의견 작성자 정보 조회 (와이프 피드백 2번)
+    let feedbacksWithAuthor = feedbackRes.data || []
+    const feedbackUserIds = [...new Set(feedbacksWithAuthor.map(f => f.user_id).filter(Boolean))]
+    if (feedbackUserIds.length > 0) {
+      const { data: authorProfiles } = await supabase.from('profiles')
+        .select('id, realname, role, school, username, class_id').in('id', feedbackUserIds)
+      // class_id → 학급 이름 매핑
+      const authorClassIds = [...new Set((authorProfiles || []).map(p => p.class_id).filter(Boolean))]
+      let classNameMap = {}
+      if (authorClassIds.length > 0) {
+        const { data: authorClasses } = await supabase.from('classes')
+          .select('id, name').in('id', authorClassIds)
+        ;(authorClasses || []).forEach(c => { classNameMap[c.id] = c.name })
+      }
+      const authorMap = {}
+      ;(authorProfiles || []).forEach(p => {
+        authorMap[p.id] = { ...p, class_name: classNameMap[p.class_id] || null }
+      })
+      feedbacksWithAuthor = feedbacksWithAuthor.map(f => ({
+        ...f,
+        author: f.user_id ? authorMap[f.user_id] : null
+      }))
     }
 
     setTeachers(teachersRes.data || [])
     setClasses(classes)
-    setFeedbacks(feedbackRes.data || [])
+    setFeedbacks(feedbacksWithAuthor)
 
     setStats({
       teachers: (teachersRes.data || []).filter(t => t.role !== 'admin').length,
@@ -242,7 +307,19 @@ export default function AdminHome() {
     md += `총 ${fbs.length}건\n\n---\n\n`
     fbs.forEach((f, i) => {
       const date = toKST(f.created_at) || ''
-      md += `## ${i + 1}. ${date}\n\n${f.content}\n\n---\n\n`
+      // 🆕 작성자 정보 포함
+      let authorInfo = '익명/구버전'
+      if (f.author) {
+        const roleLabel = f.author.role === 'admin' ? '관리자'
+                       : f.author.role === 'teacher' ? '선생님'
+                       : '학생'
+        const name = f.author.realname || f.author.username || '이름없음'
+        const extra = f.author.role === 'student' && f.author.class_name
+          ? ` (${f.author.class_name})`
+          : (f.author.school ? ` (${f.author.school})` : '')
+        authorInfo = `${roleLabel} ${name}${extra}`
+      }
+      md += `## ${i + 1}. ${date} — ${authorInfo}\n\n${f.content}\n\n---\n\n`
     })
     md += `\n위 의견들을 카테고리별로 정리하고, 각 의견에 대한 우선순위와 대응 방안을 제안해주세요.`
     return md
@@ -478,11 +555,33 @@ ${contents}
             </div>
           )}
 
-          {tab === 'classes' && (
+          {tab === 'classes' && (() => {
+            // 🆕 비활성 학급 필터링 (와이프 피드백 9번)
+            const visibleClasses = showInactiveClasses
+              ? classes
+              : classes.filter(c => c.is_active !== false)
+            const inactiveCount = classes.filter(c => c.is_active === false).length
+
+            return (
             <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold mb-3">🏫 학급 목록 ({classes.length}개)</h3>
-              {classes.length === 0 ? (
-                <p className="text-sm text-gray-500 py-8 text-center">학급이 없어요</p>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h3 className="font-bold">
+                  🏫 학급 목록 ({visibleClasses.length}개
+                  {!showInactiveClasses && inactiveCount > 0 && (
+                    <span className="text-xs text-gray-500"> + 비활성 {inactiveCount}개 숨김</span>
+                  )})
+                </h3>
+                {inactiveCount > 0 && (
+                  <button onClick={() => setShowInactiveClasses(!showInactiveClasses)}
+                    className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
+                    {showInactiveClasses ? '👁️ 활성만 보기' : `🔍 비활성 포함 보기 (${inactiveCount})`}
+                  </button>
+                )}
+              </div>
+              {visibleClasses.length === 0 ? (
+                <p className="text-sm text-gray-500 py-8 text-center">
+                  {classes.length === 0 ? '학급이 없어요' : '활성 학급이 없어요. "비활성 포함 보기"를 눌러주세요.'}
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -494,12 +593,26 @@ ${contents}
                         <th className="p-2 text-center">학생수</th>
                         <th className="p-2 text-left">코드</th>
                         <th className="p-2 text-left">API 키</th>
+                        <th className="p-2 text-left">채점 모델</th>
                         <th className="p-2 text-left">상태</th>
                         <th className="p-2 text-center">작업</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {classes.map(c => (
+                      {visibleClasses.map(c => {
+                        // 채점 모델 분포 텍스트 만들기 (와이프 피드백 1번)
+                        const ms = c.model_stats || { models: {}, total: 0, fallback: 0 }
+                        const modelEntries = Object.entries(ms.models).sort((a, b) => b[1] - a[1])
+                        // 모델 짧은 이름 ('gemini-3.1-flash-lite' → '3.1F-lite')
+                        const shortName = (m) => {
+                          if (!m || m === '(미기록)') return '미기록'
+                          return m
+                            .replace('gemini-', '')
+                            .replace('-flash-lite', 'F-lite')
+                            .replace('-flash-preview', 'F-prev')
+                            .replace('-flash', 'F')
+                        }
+                        return (
                         <tr key={c.id} className={`border-b border-gray-100 ${c.is_active === false ? 'bg-gray-100 opacity-60' : ''}`}>
                           <td className="p-2 font-medium">{c.name}</td>
                           <td className="p-2 text-gray-600">{c.teacher_profile?.realname || '-'}</td>
@@ -511,6 +624,32 @@ ${contents}
                               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">✅</span>
                             ) : (
                               <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">미등록</span>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            {ms.total === 0 ? (
+                              <span className="text-xs text-gray-400">-</span>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <div className="text-xs text-gray-700">
+                                  총 <strong>{ms.total}</strong>건
+                                  {ms.fallback > 0 && (
+                                    <span className="ml-1 text-orange-700">
+                                      (폴백 {ms.fallback})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {modelEntries.slice(0, 3).map(([m, count]) => (
+                                    <span key={m} className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded" title={m}>
+                                      {shortName(m)} {count}
+                                    </span>
+                                  ))}
+                                  {modelEntries.length > 3 && (
+                                    <span className="text-[10px] text-gray-500">+{modelEntries.length - 3}</span>
+                                  )}
+                                </div>
+                              </div>
                             )}
                           </td>
                           <td className="p-2">
@@ -527,13 +666,15 @@ ${contents}
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-          )}
+            )
+          })()}
 
           {tab === 'submissions' && <AdminSubmissions />}
 
@@ -717,9 +858,31 @@ ${contents}
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2 mb-1">
-                                <div className="text-xs text-gray-500">
-                                  {toKST(f.created_at)}
-                                  {f.is_hidden && <span className="ml-2 bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
+                                <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                                  {/* 🆕 작성자 정보 (와이프 피드백 2번) */}
+                                  {f.author ? (
+                                    <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                      f.author.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+                                      f.author.role === 'teacher' ? 'bg-blue-100 text-blue-800' :
+                                      'bg-green-100 text-green-800'
+                                    }`}>
+                                      {f.author.role === 'admin' ? '🛡️ ' :
+                                       f.author.role === 'teacher' ? '👨‍🏫 ' : '👤 '}
+                                      {f.author.realname || f.author.username || '이름 없음'}
+                                      {f.author.role === 'student' && f.author.class_name && (
+                                        <span className="ml-1 opacity-80">· {f.author.class_name}</span>
+                                      )}
+                                      {(f.author.role === 'teacher' || f.author.role === 'admin') && f.author.school && (
+                                        <span className="ml-1 opacity-80">· {f.author.school}</span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                      🕵️ 익명/구버전
+                                    </span>
+                                  )}
+                                  <span>{toKST(f.created_at)}</span>
+                                  {f.is_hidden && <span className="bg-gray-200 px-1.5 py-0.5 rounded">숨김</span>}
                                 </div>
                                 <button onClick={() => toggleHideFeedback(f)}
                                   className="text-xs text-gray-500 hover:text-gray-800 underline whitespace-nowrap">
