@@ -10,6 +10,7 @@ import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
 import QrCodeModal from '../../components/QrCodeModal'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 export default function TeacherHome() {
@@ -17,6 +18,7 @@ export default function TeacherHome() {
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
   const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0, todayApiCalls: 0 })
+  const [studentSamples, setStudentSamples] = useState([])  // 🆕 안내 카드용 학생 일부
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -40,12 +42,16 @@ export default function TeacherHome() {
     setClassInfo(profile.classes)
     
     if (profile.classes?.id) {
-      const [s, t] = await Promise.all([
+      const [s, t, samples] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true })
           .eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false'),
-        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id)
+        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id),
+        // 🆕 안내 카드용 학생 username 일부 (최대 5명)
+        supabase.from('profiles').select('username').eq('class_id', profile.classes.id).eq('role', 'student')
+          .or('is_hidden.is.null,is_hidden.eq.false').limit(5)
       ])
+      setStudentSamples(samples?.data || [])
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
       // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
@@ -226,6 +232,15 @@ export default function TeacherHome() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
+          {classInfo && (
+            <StudentLoginInfoCard
+              classInfo={classInfo}
+              students={studentSamples}
+              isImpersonating={isImpersonating}
+            />
           )}
 
           {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}

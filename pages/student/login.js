@@ -29,6 +29,8 @@ export default function StudentLogin() {
   const [agreePrivacy, setAgreePrivacy] = useState(false)
   // 🆕 QR 진입 시 학급 로그인 안내 (선생님이 설정한 경우)
   const [classHint, setClassHint] = useState(null) // { className, prefix, password, school }
+  // 🆕 로그인 모드에서 "아이디 잊어버렸어요?" 토글 (학급 코드로 안내 받기)
+  const [showHintLookup, setShowHintLookup] = useState(false)
 
   useEffect(() => {
     // 저장된 아이디 / 자동 로그인 설정 복원
@@ -75,11 +77,23 @@ export default function StudentLogin() {
           prefix: data.login_username_prefix,
           password: data.login_default_password || '123456'
         })
+      } else {
+        setClassHint(null)
       }
     } catch (e) {
       console.warn('학급 안내 로드 실패:', e)
     }
   }
+
+  // 🆕 학급 코드를 입력하는 즉시 안내 로드 (코드 없이 들어와도 동작)
+  useEffect(() => {
+    const trimmed = (classCode || '').trim().toUpperCase()
+    if (trimmed.length >= 4) {
+      loadClassHint(trimmed)
+    } else if (classHint) {
+      setClassHint(null)
+    }
+  }, [classCode])
 
   const checkSession = async () => {
     // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
@@ -317,6 +331,31 @@ export default function StudentLogin() {
                       maxLength="6"
                       inputMode="numeric"
                     />
+                  </div>
+                )}
+
+                {/* 🆕 로그인 모드: 학급 코드 입력 옵션 (잊어버린 아이디 찾기) */}
+                {mode === 'login' && !classHint && !showHintLookup && (
+                  <button type="button"
+                    onClick={() => setShowHintLookup(true)}
+                    className="w-full text-xs text-gray-500 hover:text-blue-600 underline py-1">
+                    아이디 잊어버렸어요? 학급 코드로 찾기
+                  </button>
+                )}
+                {mode === 'login' && showHintLookup && !classHint && (
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <label className="block text-xs font-medium mb-1 text-gray-700">학급 코드 입력</label>
+                    <input
+                      type="text"
+                      placeholder="선생님께 받은 4자리"
+                      value={classCode}
+                      onChange={e => setClassCode(e.target.value)}
+                      className="w-full p-2 border border-gray-200 rounded text-center tracking-widest font-mono text-sm"
+                      maxLength="6"
+                      inputMode="numeric"
+                      autoFocus
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">코드 입력하면 아래에 아이디 만드는 방법이 나와요</p>
                   </div>
                 )}
                 <div>

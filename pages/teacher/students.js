@@ -65,6 +65,19 @@ export default function StudentsPage() {
     if (!classId) return
     const { data } = await supabase.from('profiles').select('*').eq('class_id', classId).eq('role', 'student').order('username')
     setStudents(data || [])
+
+    // 🆕 학생이 이미 있는데 학급 안내가 비어있으면 자동 백필
+    // (구버전에서 등록된 학급, 또는 _auto 조건이 안 맞았던 학급 구제)
+    if (data && data.length >= 2 && !isImpersonating) {
+      try {
+        const { ensureLoginHint } = await import('../../lib/loginHint')
+        await ensureLoginHint(classId, {
+          existingUsernames: data.map(s => s.username).filter(Boolean)
+        })
+      } catch(e) {
+        console.warn('학급 안내 백필 실패:', e)
+      }
+    }
   }
 
   const logout = async () => {
@@ -346,22 +359,24 @@ export default function StudentsPage() {
       alert(msg)
 
       // 🆕 학급 로그인 안내 자동 설정 (학생 일괄 등록과 동시에)
-      // 첫 학생의 학년/반 정보로 안내용 접두사 생성 (예: hg + 5 + 1 → hg51)
+      // ⓑ: _auto 조건이 안 맞아도 등록된 아이디들에서 공통 접두사 자동 추출
       try {
         if (result.success.length > 0) {
           const firstAuto = finalStudents.find(s => s._auto && s._grade && s._class)
-          if (firstAuto) {
-            const p = (idPrefix || '').trim().toLowerCase() || 'sch'
-            const g = String(firstAuto._grade).trim()
-            const c = String(firstAuto._class).trim()
-            const hintPrefix = `${p}${g}${c}` // 학생들이 보는 접두사
-            await supabase.from('classes').update({
-              login_hint_enabled: true,
-              login_username_prefix: hintPrefix,
-              login_default_password: '123456',
-            }).eq('id', classInfo.id)
-            console.log('✅ 학급 로그인 안내 자동 저장됨:', hintPrefix)
-          }
+          // 방금 등록된 학생들의 아이디 모음 (fallback용)
+          const registeredUsernames = finalStudents
+            .map(s => s.username)
+            .filter(Boolean)
+
+          const { ensureLoginHint } = await import('../../lib/loginHint')
+          await ensureLoginHint(classInfo.id, {
+            autoMeta: firstAuto ? {
+              prefix: idPrefix,
+              grade: firstAuto._grade,
+              class: firstAuto._class
+            } : null,
+            existingUsernames: registeredUsernames
+          })
         }
       } catch (e) {
         console.warn('학급 안내 자동 저장 실패 (학생 등록은 성공):', e)
