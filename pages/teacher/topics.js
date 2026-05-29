@@ -224,7 +224,8 @@ export default function TopicsPage() {
     setBatchProgress('AI 호출 준비 중...')
     try {
       const gradeText = classInfo?.grade ? `초등 ${classInfo.grade}학년` : '초등 5학년'
-      const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
+      // 최근 30개까지 중복 회피 (15개로는 부족)
+      const recentTitles = topics.slice(0, 30).map(t => t.title).join(', ')
 
       const hasTheme = batchTheme && batchTheme.trim()
 
@@ -248,6 +249,15 @@ export default function TopicsPage() {
 - description: 70-100자의 글쓰기 안내 (질문형 X, 안내/지시형으로)
 - category: 카테고리명${hasTheme ? ' (큰 방향성에 맞는 세부 카테고리)' : ' (예: "일상 경험", "상상력", "가족과 친구" 등)'}
 
+🚫 절대 피할 작문 클리셰 (학생들이 매번 봐서 식상해함):
+- "나의 아지트", "비밀의 장소", "나만의 공간" 류
+- "내가 만약 ~라면", "내가 만든 세상" 류 (너무 추상적·일반적)
+- "소중한 ~", "특별한 ~", "잊지 못할 ~" 류 (감상적·뻔함)
+- "행복했던 순간", "기억에 남는 일" 류 (너무 광범위)
+✅ 좋은 주제의 특징:
+- 학생이 "아, 그거!" 하고 바로 떠올릴 구체적 장면/상황
+- 글로 쓸 거리가 명확히 잡히는 구체성
+
 좋은 예시${hasTheme ? ` (방향성 "${batchTheme.trim()}"에 맞춘 예시는 아니고 형식만 참고)` : ''}:
 - title: "내 인생의 첫 도전"
   description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
@@ -255,7 +265,7 @@ export default function TopicsPage() {
 
 위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개${hasTheme ? `, 그리고 모든 주제가 "${batchTheme.trim()}" 방향성을 반영해야 합니다` : ''})`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'simple',
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative',
         maxTokens: 6000,
         onProgress: (p) => {
           console.log('진행:', p.message)
@@ -332,7 +342,7 @@ export default function TopicsPage() {
 - category: 카테고리명`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicSuggestion, {
-        taskType: 'simple',
+        taskType: 'creative',
         maxTokens: 1500
       })
 
@@ -540,14 +550,17 @@ export default function TopicsPage() {
     setAiSuggesting(true)
     try {
       // 카테고리: 사용자 선택 우선, 비어있으면 랜덤
+      // ⚠️ 5학년이 실제로 와닿게 쓸 수 있는 구체적 카테고리 위주로 구성
+      // ("비밀의 장소", "내가 만든 세상" 같이 추상적인 건 클리셰 주제 양산 원인이라 제거)
       const categories = [
         '일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화',
         '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음',
-        '상상력', '내가 만든 세상', '시간 여행', '비밀의 장소', '미래의 나',
+        '상상력', '시간 여행', '미래의 나',
         '신비한 일', '재미있는 발견', '동물 친구', '사회와 환경', '교과 연계'
       ]
       const cat = aiCategory || categories[Math.floor(Math.random() * categories.length)]
-      const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
+      // 최근 30개까지 중복 회피 (15개로는 부족했음)
+      const recentTitles = topics.slice(0, 30).map(t => t.title).join(', ')
 
       // 학년 - 미입력 시 5학년 기본값
       const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
@@ -575,15 +588,30 @@ export default function TopicsPage() {
   ⚠️ "무엇을 떠올리고", "어떻게 쓰면 좋을지" 구체적으로 알려주기
   ⚠️ 70-100자 정도로 충분히 자세하게
 
+🚫 절대 피할 작문 클리셰 (이런 주제는 학생들이 매번 봐서 식상해함):
+- "나의 아지트는 어딘가요" / "비밀의 장소" / "나만의 공간" 류
+- "내가 만약 ~라면" 류 (지나치게 일반적, 너무 추상적)
+- "내가 만든 세상" / "상상의 나라" 류 (구체성 없음)
+- "소중한 ~" / "특별한 ~" / "잊지 못할 ~" 류 (감상적·뻔함)
+- "행복했던 순간" / "기억에 남는 일" 류 (너무 광범위)
+✅ 좋은 주제의 특징:
+- 학생이 "아, 그거 있어!" 하고 바로 떠올릴 구체적 장면/상황
+- 글로 쓸 거리가 명확히 잡히는 구체성
+- 5학년이 실제로 겪었거나 상상 가능한 범위
+
 좋은 예시:
 - title: "내 인생의 첫 도전"
   description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
+- title: "급식 시간의 작은 사건"
+  description: "급식 먹다가 일어났던 재미있거나 당황스러웠던 일을 떠올려보세요. 그날 무슨 음식이 나왔는지, 누구랑 있었는지, 어떻게 됐는지 자세히 써보세요."
 
 나쁜 예시:
+- title: "나의 아지트는 어딘가요" (클리셰)
+- title: "내가 만든 세상" (추상적)
 - description: "도전한 일을 써볼까?" (너무 짧고 질문형)
 - description: "재미있게 써보세요" (구체성 없음)`
 
-      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { taskType: 'simple', maxTokens: 4000 })
+      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { taskType: 'creative', maxTokens: 4000 })
       
       const newTitle = result1.title || ''
       const newDesc = result1.description || ''
@@ -637,7 +665,7 @@ ${newDesc ? '주제 설명: ' + newDesc : ''}
 
 각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
 
-          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.5 })
+          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
           
           if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
             const cleaned = result2.rubrics.map(r => ({
@@ -675,7 +703,7 @@ ${cleaned.map((r, i) => `${i+1}. ${r.name}`).join('\n')}
 
 JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
                 
-                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.6 })
+                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.6 })
                 if (Array.isArray(hintResult.rubrics)) {
                   // name 매칭으로 hint 채우기
                   cleaned.forEach((r, i) => {
@@ -742,7 +770,7 @@ JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
 - 학생이 글 쓰기 막막하지 않도록 친절하게`
 
         try {
-          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { taskType: 'simple', maxTokens: 2000 })
+          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { taskType: 'creative', maxTokens: 2000 })
           if (descResult.description) setDesc(descResult.description)
         } catch(e) {
           console.warn('설명 생성 실패:', e)
@@ -771,7 +799,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
 ✅ hint (부가 설명) - 주제 "${title.trim()}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
 ✅ score: 각 항목 25점, 총 100점`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'simple', maxTokens: 4000, temperature: 0.5 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
       if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
         const cleaned = result.rubrics.slice(0, 4).map(r => ({
           name: r.name || '평가 기준',
