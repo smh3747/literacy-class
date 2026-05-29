@@ -80,6 +80,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
 
   const rubrics = topic?.rubrics || sub.rubrics || []
   const scores = sub.rubric_scores || sub.scores || []
+  const reasons = Array.isArray(sub.rubric_reasons) ? sub.rubric_reasons : []
   const corrections = filterValidCorrections(sub.essay_text, sub.corrections || [])
   const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0) || sub.max_score || 100
 
@@ -107,15 +108,25 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
         </div>
       </div>
 
-      {/* 항목별 점수 */}
+      {/* 항목별 점수 + 점수 근거 */}
       {rubrics.length > 0 && scores.length > 0 && (
-        <div className="space-y-1.5">
-          {rubrics.map((r, i) => (
-            <div key={i} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg p-2">
-              <span>{r.name}</span>
-              <span className="font-semibold">{scores[i] ?? 0} / {r.score}점</span>
-            </div>
-          ))}
+        <div className="space-y-2">
+          {rubrics.map((r, i) => {
+            const reason = reasons[i]
+            return (
+              <div key={i} className="bg-gray-50 rounded-lg p-2.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{r.name}</span>
+                  <span className="font-semibold">{scores[i] ?? 0} / {r.score}점</span>
+                </div>
+                {reason && (
+                  <p className="text-xs text-gray-600 mt-1.5 leading-relaxed break-keep">
+                    💡 {reason}
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

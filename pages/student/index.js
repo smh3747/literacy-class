@@ -457,28 +457,41 @@ ${essay}
 ⚠️ 채점 원칙 (꼭 지켜주세요):
 1. 각 평가 기준의 "평가 포인트"를 글이 실제로 충족했는지 하나하나 확인하세요.
 2. 평가 포인트를 모두 충족했으면 만점, 일부만 충족했으면 비례하여 감점.
-3. 주제와 무관한 글이면 점수를 크게 낮추세요.
-4. **글의 완성도가 평가의 핵심입니다.** 글자 수가 아니라 글이 얼마나 잘 짜여 있고 의미 있는지를 보세요.
-5. 짧아도 잘 쓴 글은 높은 점수, 길어도 부실한 글은 낮은 점수.
+3. **평가 기준의 의도를 그대로 따르세요.**
+   - 기준 이름이 "상상력", "창의성", "기발함" 등이면 → 비현실적이거나 엉뚱한 설정 자체는 절대 감점 사유로 삼지 마세요. 오히려 신선한 발상을 높게 보세요.
+   - 기준 이름이 "논리력", "근거", "설득력" 등이면 → 그때만 현실성/타당성을 보세요.
+   - 평가 기준이 요구하지 않은 잣대(예: 상상 글에 "현실적이지 않다")로 깎으면 안 됩니다.
+4. 주제와 완전히 무관한 글이면 점수를 크게 낮추세요.
+5. **글의 완성도가 평가의 핵심**입니다. 글자 수가 아니라 짜임새와 의미를 보세요. 짧아도 잘 쓴 글은 높은 점수, 길어도 부실한 글은 낮은 점수.
 6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요. 채점 일관성이 가장 중요합니다.
 7. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
 📤 응답 형식:
 - scores: 평가기준 순서대로 점수 배열
+- rubric_reasons: 평가기준 순서대로 점수 근거 배열 (scores와 길이 같아야 함)
+   ⚠️ 각 항목은 "왜 이 점수가 나왔는지" 한 문장 (40-80자)
+   ⚠️ 반드시 학생 글의 구체적인 부분을 짚어주세요 (예: "외계인 학교라는 설정은 신선했지만 친구들의 모습 묘사가 단조로워 2점 감점")
+   ⚠️ "잘했어요" 같은 두루뭉술한 말 금지. 어떤 부분이 좋았고/아쉬웠는지 명확히.
 - total: 합계 (만점 초과 금지)
-- overall: 종합의견 (2-3문장, 격려하되 솔직하게)
-- good: 잘한 점 2가지를 반드시 다음 형식으로 (각 항목은 한 문장씩, 50자 내외):
+- overall: 종합의견 3-4문장
+   ⚠️ 5학년이 알아듣는 쉬운 말로 (어려운 한자어, 어려운 표현 금지)
+   ⚠️ 학생 글에서 인상 깊었던 부분을 구체적으로 언급
+   ⚠️ 따뜻하게 격려하되 솔직하게
+- good: 잘한 점 2가지를 반드시 다음 형식으로 (각 항목 한 문장, 50-70자):
   "- 첫 번째 잘한 점\n- 두 번째 잘한 점"
   ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
-- improve: 발전시킬 점 2가지를 반드시 다음 형식으로 (각 항목은 한 문장씩, 60자 내외):
+  ⚠️ 어떤 부분이 왜 좋았는지 구체적으로 (그냥 "잘 썼어요" 금지)
+- improve: 발전시킬 점 2가지를 반드시 다음 형식으로 (각 항목 한 문장, 60-80자):
   "- 첫 번째 발전점\n- 두 번째 발전점"
   ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
-- corrections: 명백한 맞춤법/띄어쓰기 오류만 (학생 글에 정확히 등장하는 표현만, 없으면 빈 배열)
+  ⚠️ "다음에 어떻게 하면 더 좋을지" 구체적인 방법까지 (예: "비유를 한두 개 넣어보면 글이 더 생생해져요")
+- corrections: 맞춤법/띄어쓰기 오류 — **명백한 오류는 빠짐없이 모두 잡아내세요.**
   ⚠️ corrections 작성 규칙 (꼭 지켜주세요):
-  1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 적기 (한 글자도 다르면 안 됨)
+  1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 (한 글자도 다르면 안 됨)
   2. 학생이 이미 마침표/쉼표/물음표를 찍은 부분은 절대 "마침표 누락"으로 잡지 말 것
   3. 띄어쓰기 오류는 학생 글에 실제로 띄어쓰기가 없는 경우에만
-  4. 확실하지 않으면 빈 배열로 반환 (오탐보다 미탐이 나음)`
+  4. 한국어 표준어/맞춤법에 명백히 어긋난 것만 (자연스러운 구어체 표현이나 문체는 건드리지 말 것)
+  5. 같은 오류가 여러 번 나오면 각각 다 잡아주세요 (학생이 패턴을 알 수 있게)`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
@@ -499,6 +512,14 @@ ${essay}
       if (!result.improve) result.improve = '더 자세하게 써보세요.'
       if (!Array.isArray(result.corrections)) result.corrections = []
 
+      // 🆕 rubric_reasons 검증: scores와 길이 맞추기
+      if (!Array.isArray(result.rubric_reasons)) result.rubric_reasons = []
+      // 부족하면 빈 문자열로 채우고, 넘치면 자름
+      while (result.rubric_reasons.length < result.scores.length) {
+        result.rubric_reasons.push('')
+      }
+      result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
+
       // 규칙 기반 보강: AI가 놓치는 패턴들 (.그래서 등 띄어쓰기) 추가로 잡기
       try {
         const { mergeCorrections } = await import('../../lib/koreanRules')
@@ -518,6 +539,7 @@ ${essay}
         attempt: 1,
         essay_text: essay,
         scores: result.scores,
+        rubric_reasons: result.rubric_reasons,
         total_score: result.total,
         max_score: totalMax,
         feedback_overall: result.overall,
@@ -725,19 +747,30 @@ ${rewriteEssay}
 ⚠️ 채점 원칙 (꼭 지켜주세요):
 1. 각 평가 기준의 "평가 포인트"를 수정본이 실제로 충족했는지 하나하나 확인하세요.
 2. 평가 포인트를 모두 충족했으면 만점, 일부만 충족했으면 비례하여 감점.
-3. 주제와 무관하면 점수를 크게 낮추세요.
-4. **글의 완성도가 평가의 핵심입니다.** 글자 수가 아니라 글이 얼마나 잘 짜여 있고 의미 있는지를 보세요.
-5. 처음 글보다 좋아진 점을 종합의견에 반영하되, 점수는 수정본 자체의 완성도로만 평가하세요.
-6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요.
-7. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
+3. **평가 기준의 의도를 그대로 따르세요.**
+   - 기준 이름이 "상상력", "창의성", "기발함" 등이면 → 비현실적이거나 엉뚱한 설정 자체는 절대 감점 사유로 삼지 마세요.
+   - 기준 이름이 "논리력", "근거", "설득력" 등이면 → 그때만 현실성/타당성을 보세요.
+4. 주제와 무관하면 점수를 크게 낮추세요.
+5. **글의 완성도가 평가의 핵심**입니다. 글자 수가 아니라 짜임새와 의미를 보세요.
+6. 처음 글보다 좋아진 점을 종합의견에 반영하되, 점수는 수정본 자체의 완성도로만 평가하세요.
+7. **모든 학급/모든 학생에게 같은 기준을 적용**하세요.
+8. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
 📤 응답 형식:
 - scores: 평가기준 순서대로 점수 배열
+- rubric_reasons: 평가기준 순서대로 점수 근거 배열 (scores와 길이 같아야 함)
+   ⚠️ 각 항목은 한 문장 (40-80자). 수정본의 구체적 부분을 짚어주세요.
 - total: 합계 (만점 초과 금지)
-- overall: 종합 의견 (처음보다 어떻게 좋아졌는지 격려, 2-3문장)
-- good: 잘한 점 2가지, "- 항목1\n- 항목2" 형식 (반드시 하이픈+공백 시작)
-- improve: 더 발전시킬 점 2가지, "- 항목1\n- 항목2" 형식 (반드시 하이픈+공백 시작)
-- corrections: 명백한 오류만, 없으면 빈 배열`
+- overall: 종합 의견 3-4문장
+   ⚠️ 처음 글보다 어떻게 좋아졌는지 격려
+   ⚠️ 5학년이 알아듣는 쉬운 말로
+- good: 잘한 점 2가지, "- 항목1\n- 항목2" 형식 (50-70자, 구체적으로)
+- improve: 더 발전시킬 점 2가지, "- 항목1\n- 항목2" 형식 (60-80자, 다음에 어떻게 하면 좋을지까지)
+- corrections: 맞춤법/띄어쓰기 오류 — **명백한 오류는 빠짐없이 모두 잡아내세요.**
+  1. original은 수정본에 "정확히 그대로 등장하는" 문자열만
+  2. 이미 마침표/쉼표/물음표 찍힌 부분은 "마침표 누락"으로 잡지 말 것
+  3. 띄어쓰기 오류는 실제로 띄어쓰기가 없는 경우에만
+  4. 같은 오류가 여러 번 나오면 각각 다 잡아주세요`
 
       const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
@@ -755,6 +788,13 @@ ${rewriteEssay}
       if (!result.good) result.good = '글이 더 좋아졌어요.'
       if (!result.improve) result.improve = '계속 노력해보세요.'
       if (!Array.isArray(result.corrections)) result.corrections = []
+
+      // 🆕 rubric_reasons 검증
+      if (!Array.isArray(result.rubric_reasons)) result.rubric_reasons = []
+      while (result.rubric_reasons.length < result.scores.length) {
+        result.rubric_reasons.push('')
+      }
+      result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
 
       // 규칙 기반 보강
       try {
@@ -774,6 +814,7 @@ ${rewriteEssay}
         attempt: nextAttempt,
         essay_text: rewriteEssay,
         scores: result.scores,
+        rubric_reasons: result.rubric_reasons,
         total_score: result.total,
         max_score: totalMax,
         feedback_overall: result.overall,
