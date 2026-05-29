@@ -240,6 +240,7 @@ export default function TeacherHome() {
               classInfo={classInfo}
               students={studentSamples}
               isImpersonating={isImpersonating}
+              onUpdate={checkAuth}
             />
           )}
 
