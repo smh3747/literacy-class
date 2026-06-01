@@ -852,7 +852,7 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
 
 각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
 
-      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
+      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
 
       if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
         const cleaned = result2.rubrics.map(r => ({
@@ -965,7 +965,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
 ✅ hint (부가 설명) - 주제 "${title.trim()}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
 ✅ score: 각 항목 25점, 총 100점`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
       if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
         const cleaned = result.rubrics.slice(0, 4).map(r => ({
           name: r.name || '평가 기준',
