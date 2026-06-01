@@ -85,6 +85,7 @@ export default function TopicsPage() {
   // 🆕 AI 추천 로그 보기 (와이프 피드백)
   const [showSuggestionLogs, setShowSuggestionLogs] = useState(false)
   const [suggestionLogs, setSuggestionLogs] = useState([])
+  const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 다른 선생님 공유 추천
   const [logsLoading, setLogsLoading] = useState(false)
   // 🆕 마지막에 선택된 추천 로그 ID (주제 등록 시 link 위해)
   const [lastSelectedLogId, setLastSelectedLogId] = useState(null)
@@ -944,13 +945,33 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
     if (!uid) return
     setLogsLoading(true)
     try {
-      const { data, error } = await supabase.from('topic_suggestion_logs')
+      // 본인 로그 (모든 상태)
+      const ownPromise = supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date)')
         .eq('teacher_id', uid)
         .order('created_at', { ascending: false })
         .limit(50)
-      if (error) throw error
-      setSuggestionLogs(data || [])
+
+      // 🆕 다른 선생님이 학급에 실제로 등록한 추천 (공유)
+      // resulting_topic_id가 있고 본인 것 아님
+      const sharedPromise = supabase.from('topic_suggestion_logs')
+        .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school)')
+        .neq('teacher_id', uid)
+        .not('resulting_topic_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100)  // 공유는 더 많이 (한도 50개)
+
+      const [ownRes, sharedRes] = await Promise.all([ownPromise, sharedPromise])
+      if (ownRes.error) throw ownRes.error
+      setSuggestionLogs(ownRes.data || [])
+
+      // shared는 에러 나도 본인 것은 보여줘야 함
+      if (sharedRes.error) {
+        console.warn('공유 추천 로드 실패 (본인 것만 표시):', sharedRes.error)
+        setSharedSuggestionLogs([])
+      } else {
+        setSharedSuggestionLogs(sharedRes.data || [])
+      }
     } catch(e) {
       console.error('로그 로드 실패:', e)
     }
@@ -1965,6 +1986,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
         {/* 🆕 사이드 추천 로그 패널 (와이프 피드백) */}
         <SuggestionLogPanel
           logs={suggestionLogs}
+          sharedLogs={sharedSuggestionLogs}
           loading={logsLoading}
           onSelect={applyFromLog}
           onRefresh={() => loadSuggestionLogs()}
