@@ -150,6 +150,42 @@ export default function StudentHistory() {
                   <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
                 )}
 
+                {/* 🆕 항목별 점수 + 점수 근거 (와이프 피드백: 왜 감점됐는지) */}
+                {Array.isArray(s.scores) && Array.isArray(g.rubrics) && g.rubrics.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-bold text-gray-800">📊 항목별 점수와 이유</h4>
+                    {s.scores.map((sc, idx) => {
+                      const r = g.rubrics[idx] || { name: `기준 ${idx+1}`, score: 25 }
+                      const pct = Math.round((sc / r.score) * 100)
+                      const isFull = sc >= r.score
+                      const reason = Array.isArray(s.rubric_reasons) ? s.rubric_reasons[idx] : null
+                      const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
+                      return (
+                        <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-800 font-semibold">
+                              {r.name}
+                              {isFull && <span className="ml-1 text-green-600">✓</span>}
+                            </span>
+                            <span className={`font-bold ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
+                              {sc}/{r.score}점
+                            </span>
+                          </div>
+                          <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div className={`${barColor} h-full transition-all`} style={{width: pct + '%'}} />
+                          </div>
+                          {reason ? (
+                            <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200 mt-2">
+                              <span className="font-semibold text-gray-800">💡 이유: </span>
+                              {reason}
+                            </p>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
                 <div className="space-y-3 text-sm">
                   <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                     <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
@@ -169,6 +205,35 @@ export default function StudentHistory() {
                     </h4>
                     <FeedbackList text={s.feedback_improve} color="amber" />
                   </div>
+
+                  {/* 🆕 발전점 구체 예시 */}
+                  {Array.isArray(s.improve_examples) && s.improve_examples.length > 0 && (
+                    <div className="bg-purple-50 rounded-xl p-3 border-2 border-purple-200">
+                      <h4 className="font-bold mb-2 text-purple-900 flex items-center gap-1.5">
+                        <span>✏️</span> 이렇게 바꿔보면 어떨까요?
+                      </h4>
+                      <p className="text-xs text-purple-700 mb-2">예시예요. 참고만 하세요!</p>
+                      <div className="space-y-2">
+                        {s.improve_examples.map((ex, exIdx) => (
+                          <div key={exIdx} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                            <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                              <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
+                              <p className="text-sm text-gray-800 break-keep">{ex.original}</p>
+                            </div>
+                            <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                              <div className="text-[11px] text-green-700 font-semibold mb-0.5">예시</div>
+                              <p className="text-sm text-gray-900 break-keep leading-relaxed">{ex.suggested}</p>
+                            </div>
+                            {ex.reason && (
+                              <div className="px-3 py-1.5 bg-purple-50 border-t border-purple-100">
+                                <p className="text-[11px] text-purple-700 break-keep">💡 {ex.reason}</p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {s.example_text && (i === items.length - 1) && (

@@ -1307,22 +1307,41 @@ ${rewriteEssay}
                       )}
                     </div>
 
-                    {/* 점수 막대 */}
+                    {/* 점수 막대 + 점수 근거 (와이프 피드백: 왜 감점됐는지 학생이 납득해야 함) */}
                     {Array.isArray(feedbackResult.scores) && (
                       <div className="space-y-3 overflow-hidden">
                         {feedbackResult.scores.map((s, i) => {
                           const r = todayTopic.rubrics[i] || { name: `기준 ${i+1}`, score: 25 }
                           const pct = Math.round((s / r.score) * 100)
+                          const isFull = s >= r.score
+                          const reason = Array.isArray(feedbackResult.rubric_reasons) ? feedbackResult.rubric_reasons[i] : null
+                          const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
                           return (
-                            <div key={i} className="min-w-0">
-                              <div className="flex justify-between gap-2 text-xs mb-1">
-                                <span className="text-gray-700 font-medium break-keep">{r.name}</span>
-                                <span className="font-medium flex-shrink-0">{s}/{r.score}</span>
+                            <div key={i} className="min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                              <div className="flex justify-between gap-2 text-sm mb-1">
+                                <span className="text-gray-800 font-semibold break-keep">
+                                  {r.name}
+                                  {isFull && <span className="ml-1 text-green-600">✓</span>}
+                                </span>
+                                <span className={`font-bold flex-shrink-0 ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
+                                  {s}/{r.score}점
+                                </span>
                               </div>
-                              {r.hint && <div className="text-xs text-gray-500 mb-1 break-keep">💡 {r.hint}</div>}
-                              <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
-                                <div className="bg-primary h-full" style={{width: pct + '%'}} />
+                              {r.hint && <div className="text-xs text-gray-500 mb-1.5 break-keep">📌 {r.hint}</div>}
+                              <div className="bg-gray-200 rounded-full h-2 overflow-hidden mb-2">
+                                <div className={`${barColor} h-full transition-all`} style={{width: pct + '%'}} />
                               </div>
+                              {/* 🆕 점수 근거 (와이프 피드백: 왜 감점됐는지) */}
+                              {reason ? (
+                                <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200 mt-2">
+                                  <span className="font-semibold text-gray-800">💡 이유: </span>
+                                  {reason}
+                                </p>
+                              ) : !isFull ? (
+                                <p className="text-xs text-amber-700 leading-relaxed bg-amber-50 rounded p-2 border border-amber-200 mt-2">
+                                  ⚠️ 이번에는 점수 근거가 나오지 않았어요. 위의 발전점을 참고해주세요.
+                                </p>
+                              ) : null}
                             </div>
                           )
                         })}
@@ -1354,6 +1373,35 @@ ${rewriteEssay}
                         </h4>
                         <FeedbackList text={feedbackResult.improve} color="amber" />
                       </div>
+
+                      {/* 🆕 발전점 구체 예시 (와이프 피드백: 어떻게 고치면 좋을지) */}
+                      {Array.isArray(feedbackResult.improve_examples) && feedbackResult.improve_examples.length > 0 && (
+                        <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
+                          <h4 className="text-sm font-bold mb-2 text-purple-900 flex items-center gap-1.5">
+                            <span>✏️</span> 이렇게 바꿔보면 어떨까요?
+                          </h4>
+                          <p className="text-xs text-purple-700 mb-3">아래는 예시예요. 똑같이 쓰지 말고 참고만 하세요!</p>
+                          <div className="space-y-3">
+                            {feedbackResult.improve_examples.map((ex, i) => (
+                              <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                                <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                                  <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
+                                  <p className="text-sm text-gray-800 break-keep">{ex.original}</p>
+                                </div>
+                                <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                                  <div className="text-[11px] text-green-700 font-semibold mb-0.5">예시</div>
+                                  <p className="text-sm text-gray-900 break-keep leading-relaxed">{ex.suggested}</p>
+                                </div>
+                                {ex.reason && (
+                                  <div className="px-3 py-1.5 bg-purple-50 border-t border-purple-100">
+                                    <p className="text-[11px] text-purple-700 break-keep">💡 {ex.reason}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* 피드백 신고 버튼 - 카드 하단에 작게 */}
