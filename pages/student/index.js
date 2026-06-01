@@ -8,6 +8,7 @@ import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import StudentTutorial from '../../components/StudentTutorial'
+import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 
@@ -443,7 +444,7 @@ export default function StudentHome() {
         `${i+1}. ${r.name} (${r.score}점)${r.hint ? `\n   → 평가 포인트: ${r.hint}` : ''}`
       ).join('\n')
 
-      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생의 글을 일관되고 엄정하게 평가해주세요.
+      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생의 글을 평가하고, 학생이 어떻게 더 잘 쓸 수 있을지 자세하고 친절한 피드백을 주세요.
 
 📌 글쓰기 주제: ${todayTopic.title}
 ${todayTopic.description ? '📝 주제 설명: ' + todayTopic.description : ''}
@@ -460,40 +461,74 @@ ${essay}
 3. **평가 기준의 의도를 그대로 따르세요.**
    - 기준 이름이 "상상력", "창의성", "기발함" 등이면 → 비현실적이거나 엉뚱한 설정 자체는 절대 감점 사유로 삼지 마세요. 오히려 신선한 발상을 높게 보세요.
    - 기준 이름이 "논리력", "근거", "설득력" 등이면 → 그때만 현실성/타당성을 보세요.
-   - 평가 기준이 요구하지 않은 잣대(예: 상상 글에 "현실적이지 않다")로 깎으면 안 됩니다.
+   - 평가 기준이 요구하지 않은 잣대로 깎으면 안 됩니다.
 4. 주제와 완전히 무관한 글이면 점수를 크게 낮추세요.
-5. **글의 완성도가 평가의 핵심**입니다. 글자 수가 아니라 짜임새와 의미를 보세요. 짧아도 잘 쓴 글은 높은 점수, 길어도 부실한 글은 낮은 점수.
-6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요. 채점 일관성이 가장 중요합니다.
+5. 글의 완성도가 평가 핵심. 글자 수가 아니라 짜임새와 의미를 보세요.
+6. **모든 학급/모든 학생에게 같은 기준을 적용**하세요.
 7. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
-📤 응답 형식:
-- scores: 평가기준 순서대로 점수 배열
-- rubric_reasons: 평가기준 순서대로 점수 근거 배열 (scores와 길이 같아야 함)
-   ⚠️ 각 항목은 "왜 이 점수가 나왔는지" 한 문장 (40-80자)
-   ⚠️ 반드시 학생 글의 구체적인 부분을 짚어주세요 (예: "외계인 학교라는 설정은 신선했지만 친구들의 모습 묘사가 단조로워 2점 감점")
-   ⚠️ "잘했어요" 같은 두루뭉술한 말 금지. 어떤 부분이 좋았고/아쉬웠는지 명확히.
-- total: 합계 (만점 초과 금지)
-- overall: 종합의견 3-4문장
-   ⚠️ 5학년이 알아듣는 쉬운 말로 (어려운 한자어, 어려운 표현 금지)
-   ⚠️ 학생 글에서 인상 깊었던 부분을 구체적으로 언급
-   ⚠️ 따뜻하게 격려하되 솔직하게
-- good: 잘한 점 2가지를 반드시 다음 형식으로 (각 항목 한 문장, 50-70자):
-  "- 첫 번째 잘한 점\n- 두 번째 잘한 점"
-  ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
-  ⚠️ 어떤 부분이 왜 좋았는지 구체적으로 (그냥 "잘 썼어요" 금지)
-- improve: 발전시킬 점 2가지를 반드시 다음 형식으로 (각 항목 한 문장, 60-80자):
-  "- 첫 번째 발전점\n- 두 번째 발전점"
-  ⚠️ 반드시 "- "(하이픈+공백)로 시작하고 \n으로 줄바꿈 구분
-  ⚠️ "다음에 어떻게 하면 더 좋을지" 구체적인 방법까지 (예: "비유를 한두 개 넣어보면 글이 더 생생해져요")
-- corrections: 맞춤법/띄어쓰기 오류 — **명백한 오류는 빠짐없이 모두 잡아내세요.**
-  ⚠️ corrections 작성 규칙 (꼭 지켜주세요):
-  1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 (한 글자도 다르면 안 됨)
-  2. 학생이 이미 마침표/쉼표/물음표를 찍은 부분은 절대 "마침표 누락"으로 잡지 말 것
-  3. 띄어쓰기 오류는 학생 글에 실제로 띄어쓰기가 없는 경우에만
-  4. 한국어 표준어/맞춤법에 명백히 어긋난 것만 (자연스러운 구어체 표현이나 문체는 건드리지 말 것)
-  5. 같은 오류가 여러 번 나오면 각각 다 잡아주세요 (학생이 패턴을 알 수 있게)`
+💝 피드백 원칙 (이게 정말 중요해요):
+이 학생은 5학년이고, 자기 점수가 왜 그렇게 나왔는지 이해해야 다음에 더 잘 쓸 수 있습니다.
+- 🙏 **반드시 존댓말로 쓰세요** ("~했어요", "~좋아요", "~보세요"). 반말 절대 금지.
+- "잘했어요", "좋아요" 같은 빈말 절대 금지
+- 반드시 학생 글의 **구체적인 부분을 직접 인용**해서 짚어주세요
+- 어려운 한자어, 어른 같은 표현 금지. 5학년이 일상에서 쓰는 말로.
+- 따뜻하게, 격려하되, 솔직하게
+- "이렇게 하면 더 좋아질 거예요" 식으로 다음 행동을 제시
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
+📤 응답 형식:
+
+▶ scores: 평가기준 순서대로 점수 배열
+
+▶ rubric_reasons: 각 평가기준에 대한 점수 근거 (배열, scores와 길이 같음)
+   필수 형식: "[학생 글의 구체 부분] 때문에 +N점. [부족한 부분] 때문에 -M점."
+   - 80-150자, 학생이 점수를 납득하도록 충실하게
+   - 만점 받았으면 어디가 특히 좋았는지
+   - 감점됐으면 어디가 부족했는지 정확히 짚어주기
+   예시: "'할머니 손이 거칠지만 따뜻했다'에서 감각적 표현이 살아있어요(+15점). 다만 거친 손에 대한 묘사가 한 줄뿐이라 더 자세히 썼으면 좋았어요(-5점)."
+
+▶ total: 합계 (만점 초과 금지)
+
+▶ overall: 종합 의견 (4-6문장)
+   - 첫 문장: 글 전체의 인상을 따뜻하게 (인용 포함)
+   - 중간: 인상 깊었던 부분 + 어떤 점이 빛났는지 구체적으로
+   - 마지막: 다음번에 어떻게 하면 더 좋을지 한 마디로 격려
+   - 어려운 단어 금지. "구체적", "묘사" 같은 단어는 OK지만 "수사", "구성미" 같은 한자어는 X
+
+▶ good: 잘한 점 2가지. 형식 엄수:
+   "- 첫 번째 잘한 점\\n- 두 번째 잘한 점"
+   - 각 80-120자
+   - 반드시 학생 글에서 그 부분을 직접 따옴표로 인용 ("학생 글: '...' 부분이 ...")
+   - 왜 그게 좋은지 설명 (어떤 능력이 보였는지)
+   - 예시: "- '엄마 김치찌개의 매콤하고 시큰한 냄새'처럼 음식의 맛과 향을 살려서 표현한 부분이 정말 생생해요. 읽는 사람도 그 식탁 앞에 앉은 기분이 들 정도예요."
+
+▶ improve: 발전시킬 점 2가지. 형식 엄수:
+   "- 첫 번째 발전점\\n- 두 번째 발전점"
+   - 각 100-150자
+   - 학생 글의 어디가 아쉬운지 + 어떻게 바꾸면 좋을지 구체적 방법까지
+   - "더 자세히 써보세요" 같은 막연한 말 금지
+   - 예시: "- '재미있었다'로 끝나는 부분이 많아요. 어떻게 재미있었는지 한두 문장 더 풀어 써보세요. 예를 들어 '친구가 갑자기 떡볶이를 두 그릇이나 시켜서 모두 놀랐다'처럼 구체적인 장면으로 보여주면 훨씬 생생해져요."
+
+▶ improve_examples: 발전점에 대한 구체 예시 (배열, 2-3개)
+   - 학생 글에서 고치면 좋을 부분 1-2개 골라서, 어떻게 바꾸면 좋을지 직접 보여주기
+   - original: 학생 글에 정확히 등장하는 문장 (있는 그대로)
+   - suggested: 이렇게 바꿔보면 어떨까 하는 한국어 예시
+   - reason: 왜 이렇게 바꾸면 좋은지 30-60자
+   - 예시:
+     { original: "오늘 김치찌개를 먹었다. 맛있었다.",
+       suggested: "오늘 점심에 엄마가 끓여준 김치찌개를 먹었다. 시큰한 김치 냄새가 코를 콕 찌르고, 한 숟갈 떠먹자마자 매콤한 맛이 입안 가득 퍼졌다.",
+       reason: "맛을 어떻게 느꼈는지 감각으로 풀어 쓰면 글이 더 생생해져요." }
+
+▶ corrections: 맞춤법/띄어쓰기 오류 — **명백한 오류는 빠짐없이 모두 잡아내세요.**
+   1. original 필드에는 학생 글에 "정확히 그대로 등장하는" 문자열만 (한 글자도 다르면 안 됨)
+   2. 이미 마침표/쉼표/물음표가 찍힌 부분은 "마침표 누락"으로 잡지 말 것
+   3. 띄어쓰기 오류는 학생 글에 실제로 띄어쓰기가 없는 경우에만
+   4. 한국어 표준 맞춤법에 명백히 어긋난 것만 (자연스러운 구어체는 건드리지 말 것)
+   5. reason은 5학년이 알아듣게 ("'안 되다'는 띄어 써요")
+
+🎯 최종 목표: 이 학생이 피드백을 읽고 "아, 그래서 점수가 그랬구나. 다음엔 이렇게 써봐야지" 하고 행동할 수 있게.`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 12000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -514,11 +549,17 @@ ${essay}
 
       // 🆕 rubric_reasons 검증: scores와 길이 맞추기
       if (!Array.isArray(result.rubric_reasons)) result.rubric_reasons = []
-      // 부족하면 빈 문자열로 채우고, 넘치면 자름
       while (result.rubric_reasons.length < result.scores.length) {
         result.rubric_reasons.push('')
       }
       result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
+
+      // 🆕 improve_examples 검증 (학생 글에 실제 등장 + 유효한 객체만)
+      if (!Array.isArray(result.improve_examples)) result.improve_examples = []
+      result.improve_examples = result.improve_examples
+        .filter(ex => ex && typeof ex === 'object' && ex.original && ex.suggested)
+        .filter(ex => essay.includes(ex.original))  // 학생 글에 정확히 있는 것만
+        .slice(0, 3)  // 최대 3개
 
       // 규칙 기반 보강: AI가 놓치는 패턴들 (.그래서 등 띄어쓰기) 추가로 잡기
       try {
@@ -545,6 +586,7 @@ ${essay}
         feedback_overall: result.overall,
         feedback_good: result.good,
         feedback_improve: result.improve,
+        improve_examples: result.improve_examples,
         corrections: result.corrections,
         graded_with_model: usedModel,
         is_fallback_graded: isFallback,
@@ -733,7 +775,7 @@ ${studentEssay}
         `${i+1}. ${r.name} (${r.score}점)${r.hint ? `\n   → 평가 포인트: ${r.hint}` : ''}`
       ).join('\n')
 
-      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생이 다시 쓴 수정본을 엄정하게 평가해주세요.
+      const prompt = `당신은 초등 5학년 글쓰기 선생님입니다. 학생이 다시 쓴 수정본을 평가하고, 다음에 더 잘 쓸 수 있도록 자세하고 친절한 피드백을 주세요.
 
 📌 글쓰기 주제: ${todayTopic.title}
 ${todayTopic.description ? '📝 주제 설명: ' + todayTopic.description : ''}
@@ -748,31 +790,62 @@ ${rewriteEssay}
 1. 각 평가 기준의 "평가 포인트"를 수정본이 실제로 충족했는지 하나하나 확인하세요.
 2. 평가 포인트를 모두 충족했으면 만점, 일부만 충족했으면 비례하여 감점.
 3. **평가 기준의 의도를 그대로 따르세요.**
-   - 기준 이름이 "상상력", "창의성", "기발함" 등이면 → 비현실적이거나 엉뚱한 설정 자체는 절대 감점 사유로 삼지 마세요.
-   - 기준 이름이 "논리력", "근거", "설득력" 등이면 → 그때만 현실성/타당성을 보세요.
+   - 상상력 기준은 비현실적 설정을 감점 사유로 삼지 마세요.
+   - 논리/근거 기준일 때만 현실성을 봅니다.
 4. 주제와 무관하면 점수를 크게 낮추세요.
-5. **글의 완성도가 평가의 핵심**입니다. 글자 수가 아니라 짜임새와 의미를 보세요.
-6. 처음 글보다 좋아진 점을 종합의견에 반영하되, 점수는 수정본 자체의 완성도로만 평가하세요.
+5. 글의 완성도가 평가의 핵심.
+6. 처음 글보다 좋아진 점을 종합의견에 반영하되, 점수는 수정본 자체의 완성도로 평가.
 7. **모든 학급/모든 학생에게 같은 기준을 적용**하세요.
 8. 각 점수는 절대 해당 기준의 만점을 넘으면 안 됨.
 
-📤 응답 형식:
-- scores: 평가기준 순서대로 점수 배열
-- rubric_reasons: 평가기준 순서대로 점수 근거 배열 (scores와 길이 같아야 함)
-   ⚠️ 각 항목은 한 문장 (40-80자). 수정본의 구체적 부분을 짚어주세요.
-- total: 합계 (만점 초과 금지)
-- overall: 종합 의견 3-4문장
-   ⚠️ 처음 글보다 어떻게 좋아졌는지 격려
-   ⚠️ 5학년이 알아듣는 쉬운 말로
-- good: 잘한 점 2가지, "- 항목1\n- 항목2" 형식 (50-70자, 구체적으로)
-- improve: 더 발전시킬 점 2가지, "- 항목1\n- 항목2" 형식 (60-80자, 다음에 어떻게 하면 좋을지까지)
-- corrections: 맞춤법/띄어쓰기 오류 — **명백한 오류는 빠짐없이 모두 잡아내세요.**
-  1. original은 수정본에 "정확히 그대로 등장하는" 문자열만
-  2. 이미 마침표/쉼표/물음표 찍힌 부분은 "마침표 누락"으로 잡지 말 것
-  3. 띄어쓰기 오류는 실제로 띄어쓰기가 없는 경우에만
-  4. 같은 오류가 여러 번 나오면 각각 다 잡아주세요`
+💝 피드백 원칙 (정말 중요):
+- 🙏 **반드시 존댓말로 쓰세요** ("~했어요", "~좋아요", "~보세요"). 반말 절대 금지.
+- "잘했어요", "좋아요" 같은 빈말 절대 금지
+- 반드시 수정본의 **구체적 부분을 직접 인용**해서 짚어주기
+- 어려운 한자어 금지, 5학년 일상 말로
+- 따뜻하게, 솔직하게
+- 처음 글에서 어떻게 좋아졌는지 격려
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 8000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
+📤 응답 형식:
+
+▶ scores: 평가기준 순서대로 점수 배열
+
+▶ rubric_reasons: 각 평가기준 점수 근거 (scores와 길이 같음)
+   - 80-150자, 학생이 점수를 납득하도록
+   - 만점이면 어디가 좋았는지, 감점됐으면 어디가 부족한지
+   - 수정본의 구체적 부분을 직접 인용
+
+▶ total: 합계
+
+▶ overall: 종합 의견 (4-6문장)
+   - 처음 글에서 어떻게 좋아졌는지 구체적으로 짚어주기
+   - 5학년이 알아듣는 쉬운 말로
+   - 격려와 솔직함 함께
+
+▶ good: 잘한 점 2가지, "- 항목1\\n- 항목2" 형식
+   - 각 80-120자
+   - 수정본에서 그 부분을 직접 인용
+   - 왜 좋은지 설명
+
+▶ improve: 더 발전시킬 점 2가지, "- 항목1\\n- 항목2" 형식
+   - 각 100-150자
+   - 어디가 아쉬운지 + 어떻게 바꾸면 좋을지 구체적 방법
+   - 막연한 말 금지
+
+▶ improve_examples: 발전점 구체 예시 (배열, 2-3개)
+   - original: 수정본에 정확히 등장하는 문장
+   - suggested: 어떻게 바꿔보면 좋을지 예시
+   - reason: 왜 30-60자
+
+▶ corrections: 맞춤법/띄어쓰기 오류 — 명백한 오류는 빠짐없이.
+  1. original은 수정본에 정확히 그대로 등장하는 문자열만
+  2. 이미 찍힌 마침표는 잡지 말 것
+  3. 띄어쓰기는 실제 띄어쓰기 없는 경우만
+  4. 같은 오류 여러 번 나오면 각각 다 잡기
+
+🎯 최종 목표: 학생이 피드백 보고 "이렇게 더 발전하면 되겠구나" 알 수 있게.`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.essayFeedback, { maxTokens: 12000, taskType: 'grading', temperature: 0.2, onProgress: (p) => setRetryMessage(p.message) })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       // 각 점수 만점 캡 + 음수 방지
@@ -795,6 +868,13 @@ ${rewriteEssay}
         result.rubric_reasons.push('')
       }
       result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
+
+      // 🆕 improve_examples 검증 (수정본에 실제 등장하는 문장만)
+      if (!Array.isArray(result.improve_examples)) result.improve_examples = []
+      result.improve_examples = result.improve_examples
+        .filter(ex => ex && typeof ex === 'object' && ex.original && ex.suggested)
+        .filter(ex => rewriteEssay.includes(ex.original))
+        .slice(0, 3)
 
       // 규칙 기반 보강
       try {
@@ -820,6 +900,7 @@ ${rewriteEssay}
         feedback_overall: result.overall,
         feedback_good: result.good,
         feedback_improve: result.improve,
+        improve_examples: result.improve_examples,
         corrections: result.corrections,
         graded_with_model: rwUsedModel,
         is_fallback_graded: rwIsFallback,
@@ -876,7 +957,9 @@ ${rewriteEssay}
       `}</style>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
-        <main className="max-w-3xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
+        <main className={`mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 ${
+          step === 'rewrite' ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'
+        }`}>
 
           {/* 백업 복원 알림 배너 */}
           {restoredBackup && (
@@ -1316,62 +1399,91 @@ ${rewriteEssay}
 
               {step === 'rewrite' && (
                 <>
-                  {/* 처음 쓴 글 (맞춤법 표시) */}
-                  <div className="bg-white rounded-2xl p-5 shadow-sm">
-                    <h3 className="font-bold mb-2 text-sm">📝 처음 쓴 내 글</h3>
-                    <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
-                      dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult?.corrections)}} />
-                    <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하면 올바른 표기 확인</p>
+                  {/* 다음 단계 안내 (와이프 피드백) */}
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4">
+                    <h3 className="font-bold text-amber-900 mb-1">✏️ 이제 글을 더 좋게 다듬어 봐요!</h3>
+                    <p className="text-sm text-amber-800 leading-relaxed break-keep">
+                      아래 피드백을 잘 읽고, 특히 <strong className="text-amber-900">🌱 다음엔 이렇게 해봐요</strong>와
+                      {' '}<strong className="text-amber-900">✏️ 이렇게 바꿔보면 어떨까요</strong> 부분을 참고해서 다시 써보세요.
+                      <br />
+                      <span className="text-xs text-amber-700 mt-1 inline-block">💡 똑같이 베끼지 말고, 자기 표현으로 바꿔서 써야 점수가 잘 나와요!</span>
+                    </p>
                   </div>
-                  
-                  {/* 예시 작품 */}
+
+                  {/* 첫 글 피드백 카드 (전체 폭) */}
+                  <StudentFeedbackCard
+                    sub={currentSub || { ...feedbackResult, essay_text: essay, total_score: feedbackResult?.total, max_score: todayTopic?.rubrics?.reduce((s,r)=>s+r.score,0) || 100, rubric_reasons: feedbackResult?.rubric_reasons, improve_examples: feedbackResult?.improve_examples, feedback_overall: feedbackResult?.overall, feedback_good: feedbackResult?.good, feedback_improve: feedbackResult?.improve, corrections: feedbackResult?.corrections, scores: feedbackResult?.scores }}
+                    topic={todayTopic}
+                    headerLabel="📋 처음 쓴 글 피드백 (참고용)"
+                  />
+
+                  {/* 🆕 좌우 분할: 왼쪽 첫 글, 오른쪽 수정본 입력 (와이프 피드백) */}
+                  {/* 데스크탑(lg)에서만 좌우, 모바일·태블릿은 위아래 */}
+                  <div className="grid lg:grid-cols-2 gap-3 lg:gap-4">
+                    {/* 왼쪽 (또는 위쪽): 처음 쓴 글 + 맞춤법 밑줄 */}
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                      <h3 className="font-bold mb-2 text-sm flex items-center gap-1">
+                        📝 처음 쓴 글
+                        <span className="text-xs font-normal text-gray-500">(참고용)</span>
+                      </h3>
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed border border-gray-200 max-h-[500px] lg:max-h-[600px] overflow-y-auto"
+                        dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult?.corrections)}} />
+                      <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄에 마우스 올리거나 탭하면 올바른 표기를 볼 수 있어요</p>
+                    </div>
+
+                    {/* 오른쪽 (또는 아래쪽): 수정본 입력 */}
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border-2 border-primary/30">
+                      <h3 className="font-bold mb-2 text-sm flex items-center gap-1">
+                        ✏️ 다시 쓰기
+                        <span className="text-xs font-normal text-primary">(여기에 새로 써요)</span>
+                      </h3>
+                      <textarea
+                        value={rewriteEssay}
+                        onChange={e => setRewriteEssay(e.target.value)}
+                        onPaste={() => handlePaste('rewrite')}
+                        placeholder={`처음 쓴 글의 발전점을 참고해서 새로 써 보세요... (${todayTopic?.min_length || 30}자 이상)`}
+                        className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed resize-none focus:border-primary focus:outline-none"
+                        style={{ height: '500px' }}
+                      />
+                      <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
+                        <span className={`${
+                          rewriteEssay.length >= (todayTopic?.min_length || 30) &&
+                          (!todayTopic?.max_length || rewriteEssay.length <= todayTopic.max_length)
+                            ? 'text-green-600 font-medium'
+                            : rewriteEssay.length > (todayTopic?.max_length || Infinity)
+                              ? 'text-red-600 font-medium'
+                              : ''
+                        }`}>
+                          {rewriteEssay.length}자 / 최소 {todayTopic?.min_length || 30}자
+                          {todayTopic?.max_length && ` · 최대 ${todayTopic.max_length}자`}
+                        </span>
+                        {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => setStep('feedback')}
+                          className="flex-1 py-3 border border-gray-200 rounded-xl text-sm">취소</button>
+                        <button onClick={submitRewrite} disabled={rewriting}
+                          className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                          {rewriting ? '🤖 AI 검토 중...' : '수정본 제출 →'}
+                        </button>
+                      </div>
+                      {rewriting && retryMessage && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2 mt-3">
+                          <span>⏳</span>
+                          <span>{retryMessage}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 예시 작품 (전체 폭, 아래쪽) */}
                   {exampleText && (
                     <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5">
-                      <h3 className="font-bold text-purple-900 mb-2 text-sm">📖 AI 예시 작품 (참고)</h3>
-                      <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed">{exampleText}</p>
+                      <h3 className="font-bold text-purple-900 mb-2 text-sm">📖 AI 예시 작품 (참고만)</h3>
+                      <p className="text-xs text-purple-700 mb-2">⚠️ 베끼지 마세요! 어떻게 쓰는지만 참고하고 자기 글로 새로 써야 해요.</p>
+                      <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed break-keep">{exampleText}</p>
                     </div>
                   )}
-
-                  {/* 다시 쓰기 입력 */}
-                  <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-                    <h3 className="font-bold">✏️ 다시 쓰기</h3>
-                    <textarea
-                      value={rewriteEssay}
-                      onChange={e => setRewriteEssay(e.target.value)}
-                      onPaste={() => handlePaste('rewrite')}
-                      rows="12"
-                      placeholder={`수정본을 써 주세요... (${todayTopic?.min_length || 30}자 이상)`}
-                      className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
-                    />
-                    <div className="flex justify-between items-center text-xs text-gray-500">
-                      <span className={`${
-                        rewriteEssay.length >= (todayTopic?.min_length || 30) &&
-                        (!todayTopic?.max_length || rewriteEssay.length <= todayTopic.max_length)
-                          ? 'text-green-600 font-medium'
-                          : rewriteEssay.length > (todayTopic?.max_length || Infinity)
-                            ? 'text-red-600 font-medium'
-                            : ''
-                      }`}>
-                        {rewriteEssay.length}자 / 최소 {todayTopic?.min_length || 30}자
-                        {todayTopic?.max_length && ` · 최대 ${todayTopic.max_length}자`}
-                      </span>
-                      {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setStep('feedback')}
-                        className="flex-1 py-3 border border-gray-200 rounded-xl text-sm">취소</button>
-                      <button onClick={submitRewrite} disabled={rewriting}
-                        className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                        {rewriting ? '🤖 AI 검토 중...' : '수정본 제출 →'}
-                      </button>
-                    </div>
-                    {rewriting && retryMessage && (
-                      <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
-                        <span>⏳</span>
-                        <span>{retryMessage}</span>
-                      </div>
-                    )}
-                  </div>
                 </>
               )}
             </>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import Header from '../../components/Header'
+import SuggestionLogPanel from '../../components/SuggestionLogPanel'
 
 const DEFAULT_RUBRICS = [
   { name: '주제에 맞는 내용', hint: '주제에서 벗어나지 않고 핵심을 잘 표현', score: 25 },
@@ -50,6 +51,8 @@ export default function TopicsPage() {
   const [aiUserRequest, setAiUserRequest] = useState('') // 사용자 자유 요청
   // 🆕 3개 추천 결과 (와이프 피드백): { id (log id), suggestions: [{title, description, category}] }
   const [aiPicker, setAiPicker] = useState(null)
+  // 🆕 한 번에 받을 추천 개수 (1·2·3)
+  const [aiCount, setAiCount] = useState(3)
   // 🆕 한 카드만 다시 추천 시 어느 카드가 로딩 중인지 (-1: 없음)
   const [refreshingIdx, setRefreshingIdx] = useState(-1)
   // 🆕 카드별 카테고리 (다시 추천할 때 이 카드 카테고리 유지/변경)
@@ -117,6 +120,7 @@ export default function TopicsPage() {
     }
 
     await loadTopics(profile.id, profile.classes?.id)
+    await loadSuggestionLogs(profile.id)  // 🆕 사이드 패널용 미리 로드
     setLoading(false)
   }
 
@@ -579,31 +583,30 @@ export default function TopicsPage() {
         '상상력', '시간 여행', '미래의 나',
         '신비한 일', '재미있는 발견', '동물 친구', '사회와 환경', '교과 연계'
       ]
-      // 골고루 모드면 → 모델한테 3개 서로 다른 카테고리 지시
+      // 골고루 모드면 → 모델한테 N개 서로 다른 카테고리 지시
       // 카테고리 지정 모드면 → 지정된 1개 카테고리로 통일
       // 둘 다 아니면 → 단일 카테고리 (랜덤)
-      const useCategorySpread = diverseMode && !aiCategory
+      // aiCount=1이면 골고루 의미 없음 → 자동 단일
+      const useCategorySpread = diverseMode && !aiCategory && aiCount >= 2
       let cat, recentTitles
       if (useCategorySpread) {
-        // 최근 출제 주제에서 자주 나온 카테고리 빼고 3개 무작위 선택
+        // aiCount개 무작위 카테고리
         const shuffled = [...categories].sort(() => Math.random() - 0.5)
-        cat = shuffled.slice(0, 3).join(' / ')  // 프롬프트에 셋 다 전달
+        cat = shuffled.slice(0, aiCount).join(' / ')
       } else {
         cat = aiCategory || categories[Math.floor(Math.random() * categories.length)]
       }
-      // 최근 30개까지 중복 회피 (15개로는 부족했음)
+      // 최근 30개까지 중복 회피
       recentTitles = topics.slice(0, 30).map(t => t.title).join(', ')
 
       const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
       const levelText = aiLevel || '보통'
 
-      // 3개 주제를 한 번에 받기 — topicBatch 스키마 재사용
-      let prompt = `${gradeText} 글쓰기 주제 3개를 만들어줘. 선생님이 그중 마음에 드는 것 하나를 고를 거야.
+      // N개 주제 한 번에 받기 — topicBatch 스키마 재사용
+      const N = aiCount
+      let prompt = `${gradeText} 글쓰기 주제 ${N}개를 만들어줘.${N >= 2 ? ' 선생님이 그중 마음에 드는 것 하나를 고를 거야.' : ''}
 ${useCategorySpread
-  ? `카테고리 지시 (중요!): 3개 주제는 반드시 서로 다른 카테고리에서 하나씩. 다음 3개 카테고리를 각각 사용해주세요 → ${cat}
-   · 1번 주제 → 첫 번째 카테고리
-   · 2번 주제 → 두 번째 카테고리
-   · 3번 주제 → 세 번째 카테고리`
+  ? `카테고리 지시 (중요!): ${N}개 주제는 반드시 서로 다른 카테고리에서 하나씩. 다음 ${N}개 카테고리를 각각 사용해주세요 → ${cat}`
   : `카테고리: ${cat}`}
 난이도: ${levelText}
 최근 출제한 주제 (중복 절대 금지): ${recentTitles || '없음'}
@@ -625,21 +628,21 @@ ${useCategorySpread
 
 예시: "급식 시간의 작은 사건" / "내 인생의 첫 도전" / "쉬는 시간 5분 동안 일어난 일"
 
-반드시 3개 모두 완성해서 보내주세요. description 끝까지 다 쓰기.`
+반드시 ${N}개 모두 완성해서 보내주세요. description 끝까지 다 쓰기.`
 
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: 8000 })
+      // 개수에 따라 토큰 조정 (1개: 3000, 2개: 5500, 3개: 8000)
+      const tokenBudget = 3000 + (N - 1) * 2500
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: tokenBudget })
 
       if (!Array.isArray(result.topics) || result.topics.length === 0) {
         throw new Error('추천 결과가 비어있어요. 다시 시도해주세요.')
       }
 
-      // 잘린 주제 필터링: title이나 description이 부자연스럽게 끊긴 경우 제거
+      // 잘린 주제 필터링
       const validTopics = result.topics.filter(t => {
         if (!t.title || !t.title.trim()) return false
-        // description이 너무 짧거나 미완 종결로 끝나면 잘림 의심
         const desc = (t.description || '').trim()
-        if (desc.length > 0 && desc.length < 20) return false  // 너무 짧음
-        // 마지막 글자가 한국어 종결 어미가 아니면 잘림 가능성
+        if (desc.length > 0 && desc.length < 20) return false
         if (desc.length > 0 && !/[\.\!\?다요세죠나]$/.test(desc.slice(-1))) {
           console.warn(`[추천] 잘림 의심 주제 제외: "${t.title}" desc="${desc.slice(-20)}"`)
           return false
@@ -651,8 +654,8 @@ ${useCategorySpread
         throw new Error('추천 응답이 잘렸어요. 다시 시도해주세요.')
       }
 
-      // 최대 3개로 자르기 (잘린 항목은 위에서 이미 제거됨)
-      const suggestions = validTopics.slice(0, 3).map(t => ({
+      // N개로 자르기 (사용자가 요청한 만큼만)
+      const suggestions = validTopics.slice(0, N).map(t => ({
         title: t.title || '',
         description: t.description || '',
         category: t.category || cat
@@ -792,6 +795,63 @@ ${useCategorySpread
     }
     setRefreshingIdx(-1)
   }
+  // 🆕 사이드 패널에서 과거 추천 항목을 바로 적용 (와이프 피드백)
+  const applyFromLog = async (sug) => {
+    if (!sug || !sug.title) return
+    setTitle(sug.title)
+    setDesc(sug.description || '')
+    setLastSelectedLogId(null)
+
+    const apiKey = loadApiKey()
+    if (!apiKey) {
+      // 평가기준 없이도 폼은 채워짐
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
+
+    setGeneratingRubrics(true)
+    try {
+      const prompt2 = `주제 "${sug.title}"
+${sug.description ? '주제 설명: ' + sug.description : ''}
+
+위 주제에 어울리는 ${gradeText} 평가 기준 4개.
+
+⚠️ 주제 분석:
+- 경험 회상 → "솔직한 표현", "자세한 묘사"
+- 상상력 → "창의성", "상상력"
+- 논리/주장 → "주장과 근거", "논리성"
+- 감정 전달 → "솔직한 표현", "감각적 표현"
+
+✅ name 카테고리: [내용/형식/표현/기본]
+✅ hint: 주제 "${sug.title}" 맥락에서 무엇을 잘 표현해야 하는지, 15-30자, 4개 서로 다름
+배점: 합계 100점, 주제 핵심 35-40점, 다음 25-30점, 다음 15-25점, 맞춤법 10-20점
+
+각 항목 {name, hint, score} 모두 채울 것.`
+
+      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
+      if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
+        const cleaned = result2.rubrics.map(r => ({
+          name: r.name || '평가 기준',
+          hint: (r.hint && r.hint.trim()) ? r.hint.trim() : '이 항목에서 무엇을 잘 표현해야 하는지',
+          score: Number(r.score) || 25
+        }))
+        const total = cleaned.reduce((s, r) => s + r.score, 0)
+        if (total !== 100 && total > 0) {
+          cleaned.forEach(r => { r.score = Math.round((r.score / total) * 100) })
+          const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
+          if (newTotal !== 100) cleaned[cleaned.length - 1].score += (100 - newTotal)
+        }
+        setRubrics(cleaned)
+      }
+    } catch(e) {
+      console.error('평가 기준 생성 실패:', e)
+    }
+    setGeneratingRubrics(false)
+
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const applySuggestion = async (idx) => {
     if (!aiPicker || !aiPicker.suggestions[idx]) return
     const picked = aiPicker.suggestions[idx]
@@ -879,20 +939,20 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
   }
 
   // 🆕 추천 로그 불러오기 (와이프 피드백: AI 추천 기록 보기)
-  const loadSuggestionLogs = async () => {
-    if (!user) return
+  const loadSuggestionLogs = async (uidArg) => {
+    const uid = uidArg || user?.id
+    if (!uid) return
     setLogsLoading(true)
     try {
       const { data, error } = await supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date)')
-        .eq('teacher_id', user.id)
+        .eq('teacher_id', uid)
         .order('created_at', { ascending: false })
         .limit(50)
       if (error) throw error
       setSuggestionLogs(data || [])
     } catch(e) {
       console.error('로그 로드 실패:', e)
-      alert('로그를 불러오지 못했어요: ' + e.message)
     }
     setLogsLoading(false)
   }
@@ -1181,8 +1241,16 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                 <div className="sm:col-span-2 flex items-end gap-2">
                   <button onClick={suggestTopic} disabled={aiSuggesting || generatingRubrics}
                     className="flex-1 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 disabled:opacity-50">
-                    {aiSuggesting ? '추천 중...' : generatingRubrics ? '평가기준 만드는 중...' : '✨ AI 주제 추천 (3개)'}
+                    {aiSuggesting ? '추천 중...' : generatingRubrics ? '평가기준 만드는 중...' : `✨ AI 주제 추천 (${aiCount}개)`}
                   </button>
+                  <select value={aiCount} onChange={e => setAiCount(Number(e.target.value))}
+                    disabled={aiSuggesting || generatingRubrics}
+                    className="py-2 px-2 border border-purple-200 text-purple-700 rounded-lg text-sm bg-white disabled:opacity-50"
+                    title="한 번에 추천받을 주제 개수">
+                    <option value="1">1개</option>
+                    <option value="2">2개</option>
+                    <option value="3">3개</option>
+                  </select>
                   <button onClick={() => setShowAiOptions(!showAiOptions)}
                     className="px-3 py-2 border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50 text-sm">
                     {showAiOptions ? '▲ 옵션' : '▼ 옵션'}
@@ -1257,7 +1325,9 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                 <div className="bg-purple-50 border-2 border-purple-300 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
-                      <h4 className="font-bold text-purple-900">✨ 마음에 드는 것을 고르세요</h4>
+                      <h4 className="font-bold text-purple-900">
+                        ✨ {aiPicker.suggestions.length}개 중에 골라보세요
+                      </h4>
                       <p className="text-xs text-purple-700/80 mt-0.5">
                         클릭하면 주제·설명·평가기준이 자동 입력됩니다. 카드 옆 🔄로 그 칸만 바꿀 수 있어요.
                       </p>
@@ -1267,7 +1337,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                         onClick={() => suggestTopic()}
                         disabled={aiSuggesting || generatingRubrics || refreshingIdx >= 0}
                         className="text-xs px-3 py-1.5 bg-white border border-purple-300 text-purple-700 rounded hover:bg-purple-100 disabled:opacity-50">
-                        🔄 3개 다시
+                        🔄 다시 받기
                       </button>
                       <button
                         onClick={() => setAiPicker(null)}
@@ -1277,8 +1347,8 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                     </div>
                   </div>
 
-                  {/* 골고루 토글 — 카테고리 미지정일 때만 의미 있음 */}
-                  {!aiCategory && (
+                  {/* 골고루 토글 — 카테고리 미지정 + 2개 이상일 때만 의미 있음 */}
+                  {!aiCategory && aiPicker.suggestions.length >= 2 && (
                     <label className="flex items-center gap-2 text-xs text-purple-800 bg-white border border-purple-200 rounded px-2 py-1.5 cursor-pointer hover:bg-purple-50 w-fit">
                       <input
                         type="checkbox"
@@ -1286,7 +1356,7 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                         onChange={e => setDiverseMode(e.target.checked)}
                         className="accent-purple-600"
                       />
-                      🌈 3개를 서로 다른 카테고리에서 받기
+                      🌈 서로 다른 카테고리에서 받기
                     </label>
                   )}
 
@@ -1891,6 +1961,15 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
             })()}
           </div>
         </main>
+
+        {/* 🆕 사이드 추천 로그 패널 (와이프 피드백) */}
+        <SuggestionLogPanel
+          logs={suggestionLogs}
+          loading={logsLoading}
+          onSelect={applyFromLog}
+          onRefresh={() => loadSuggestionLogs()}
+          disabled={false}
+        />
       </div>
     </>
   )

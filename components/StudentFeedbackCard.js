@@ -8,21 +8,31 @@ function escapeHtml(s) {
   }[m]))
 }
 
-// 🛡️ AI corrections 오탐 필터
+// 🛡️ AI corrections 오탐 필터 + 중복 제거
+// 와이프 피드백: "맞춤법 2개 밑줄인데 카운트는 3개" 문제 해결
+// 원인: 같은 위치/같은 오류가 여러 번 들어오면 밑줄은 1개로 보이는데 카운트는 따로 셈
+// 해결: 같은 original+correction 조합은 1회만, 화면에 실제 표시 가능한 것만 카운트
 export function filterValidCorrections(essayText, corrections) {
   if (!essayText || !Array.isArray(corrections)) return []
-  return corrections.filter(c => {
+  const seen = new Set()  // 중복 키
+  const valid = []
+  for (const c of corrections) {
     const original = c.original || c.error || c.wrong || ''
     const correction = c.correction || c.fixed || c.suggestion || ''
     const reason = (c.reason || c.type || c.category || '').toLowerCase()
-    if (!original) return false
-    if (!essayText.includes(original)) return false
+    if (!original) continue
+    if (!essayText.includes(original)) continue
     if (reason.includes('마침표') || reason.includes('문장 끝') || reason.includes('온점') || reason.includes('찍어')) {
-      if (/[.!?。]$/.test(original)) return false
+      if (/[.!?。]$/.test(original)) continue
     }
-    if (original === correction) return false
-    return true
-  })
+    if (original === correction) continue
+    // 🆕 중복 제거 키: original + correction 조합
+    const key = `${original}::${correction}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    valid.push(c)
+  }
+  return valid
 }
 
 // 글에 맞춤법 빨간 밑줄 적용
@@ -68,12 +78,13 @@ export function applyGrammarHighlights(essayText, corrections) {
 }
 
 /**
- * 학생 피드백 카드 - 학생 화면과 동일하게 표시
- * @param {object} sub - submission 객체 (essay_text, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, rubric_scores, rubrics?)
- * @param {object} topic - 주제 정보 (rubrics, title 등) - 옵션
- * @param {string} headerLabel - "첫 글", "수정본 1회" 등
+ * 학생 피드백 카드
+ * @param {object} sub - submission
+ * @param {object} topic - 주제 정보
+ * @param {string} headerLabel
+ * @param {object} previousSub - 이전 시도(첫 글) 비교용 (선택, 수정본일 때)
  */
-export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
+export default function StudentFeedbackCard({ sub, topic, headerLabel, previousSub }) {
   useGrammarTooltip()
 
   if (!sub) return null
@@ -81,11 +92,25 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
   const rubrics = topic?.rubrics || sub.rubrics || []
   const scores = sub.rubric_scores || sub.scores || []
   const reasons = Array.isArray(sub.rubric_reasons) ? sub.rubric_reasons : []
+  const improveExamples = Array.isArray(sub.improve_examples) ? sub.improve_examples : []
   const corrections = filterValidCorrections(sub.essay_text, sub.corrections || [])
   const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0) || sub.max_score || 100
 
+  // 🆕 점수 향상 계산 (수정본일 때만)
+  const scoreImproved = previousSub
+    && typeof previousSub.total_score === 'number'
+    && typeof sub.total_score === 'number'
+    && sub.total_score > previousSub.total_score
+  const scoreDelta = scoreImproved ? (sub.total_score - previousSub.total_score) : 0
+
+  // 점수에 따른 색상 (낮을수록 빨강 계열)
+  const scorePercent = totalMax > 0 ? (sub.total_score / totalMax) * 100 : 0
+  const scoreColor = scorePercent >= 80 ? 'from-green-50 to-emerald-50 border-green-200'
+                  : scorePercent >= 60 ? 'from-blue-50 to-indigo-50 border-blue-200'
+                  : 'from-amber-50 to-orange-50 border-amber-200'
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-4">
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-5">
       {headerLabel && (
         <div className="flex items-center justify-between border-b pb-3">
           <h3 className="font-bold text-primary">{headerLabel}</h3>
@@ -93,13 +118,17 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
         </div>
       )}
 
-      {/* 점수 */}
-      <div className="bg-primary-light rounded-xl p-3 text-center">
-        <div className="text-2xl font-bold text-primary-dark">
-          {sub.total_score ?? 0} <span className="text-base font-normal">/ {totalMax}점</span>
+      {/* 점수 (색 강화 + 점수 향상 배지) */}
+      <div className={`bg-gradient-to-br ${scoreColor} border-2 rounded-xl p-4 text-center`}>
+        <div className="text-3xl font-bold text-gray-900">
+          {sub.total_score ?? 0} <span className="text-lg font-normal text-gray-600">/ {totalMax}점</span>
         </div>
-        {/* 🆕 채점 시각 (재평가 우선, 없으면 최초 채점=제출 시각) */}
-        <div className="text-[11px] text-gray-500 mt-1">
+        {scoreImproved && (
+          <div className="mt-2 inline-flex items-center gap-1 bg-white text-green-700 px-3 py-1 rounded-full text-sm font-semibold border border-green-200">
+            🎉 처음 글보다 +{scoreDelta}점 올랐어요!
+          </div>
+        )}
+        <div className="text-[11px] text-gray-500 mt-1.5">
           {sub.re_graded_at ? (
             <>🔄 재평가 {toKST(sub.re_graded_at)}</>
           ) : (
@@ -108,33 +137,140 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
         </div>
       </div>
 
-      {/* 항목별 점수 + 점수 근거 */}
+      {/* 종합 의견 — 맨 위로 강조 이동 */}
+      {sub.feedback_overall && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-4">
+          <h4 className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-1">
+            💬 선생님 한 마디
+          </h4>
+          <p className="text-sm text-blue-900 leading-relaxed whitespace-pre-wrap break-keep">
+            {sub.feedback_overall}
+          </p>
+        </div>
+      )}
+
+      {/* 항목별 점수 + 점수 근거 (강화) */}
       {rubrics.length > 0 && scores.length > 0 && (
-        <div className="space-y-2">
-          {rubrics.map((r, i) => {
-            const reason = reasons[i]
-            return (
-              <div key={i} className="bg-gray-50 rounded-lg p-2.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{r.name}</span>
-                  <span className="font-semibold">{scores[i] ?? 0} / {r.score}점</span>
+        <div>
+          <h4 className="text-sm font-bold text-gray-800 mb-2">📊 항목별 점수와 이유</h4>
+          <div className="space-y-2.5">
+            {rubrics.map((r, i) => {
+              const reason = reasons[i]
+              const score = scores[i] ?? 0
+              const max = r.score || 25
+              const pct = max > 0 ? (score / max) * 100 : 0
+              const isFull = score >= max
+              const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="font-semibold text-gray-800">
+                      {r.name}
+                      {isFull && <span className="ml-1 text-green-600">✓</span>}
+                    </span>
+                    <span className={`font-bold ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
+                      {score} / {max}점
+                    </span>
+                  </div>
+                  {/* 점수 막대 */}
+                  <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+                    <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }}></div>
+                  </div>
+                  {reason && (
+                    <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-100">
+                      <span className="font-semibold text-gray-800">💡 이유: </span>
+                      {reason}
+                    </p>
+                  )}
                 </div>
-                {reason && (
-                  <p className="text-xs text-gray-600 mt-1.5 leading-relaxed break-keep">
-                    💡 {reason}
-                  </p>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 잘한 점 */}
+      {sub.feedback_good && (
+        <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+          <h4 className="text-sm font-bold text-green-900 mb-2 flex items-center gap-1">
+            ⭐ 잘한 점
+          </h4>
+          {(() => {
+            const items = splitFeedbackItems(sub.feedback_good)
+            if (items.length <= 1) return <p className="text-sm text-green-900 whitespace-pre-wrap leading-relaxed break-keep">{items[0] || sub.feedback_good}</p>
+            return (
+              <ul className="space-y-2.5">
+                {items.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-green-900">
+                    <span className="flex-shrink-0 text-green-600 font-bold">★</span>
+                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* 발전시킬 점 */}
+      {sub.feedback_improve && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
+          <h4 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-1">
+            🌱 다음엔 이렇게 해봐요
+          </h4>
+          {(() => {
+            const items = splitFeedbackItems(sub.feedback_improve)
+            if (items.length <= 1) return <p className="text-sm text-amber-900 whitespace-pre-wrap leading-relaxed break-keep">{items[0] || sub.feedback_improve}</p>
+            return (
+              <ul className="space-y-2.5">
+                {items.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-amber-900">
+                    <span className="flex-shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 text-xs font-bold">{i + 1}</span>
+                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* 🆕 발전점 구체 예시 — 학생이 어떻게 고치면 좋을지 직접 보여주기 */}
+      {improveExamples.length > 0 && (
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+          <h4 className="text-sm font-bold text-purple-900 mb-2 flex items-center gap-1">
+            ✏️ 이렇게 바꿔보면 어떨까요?
+          </h4>
+          <p className="text-xs text-purple-700 mb-3">아래는 예시예요. 똑같이 쓰지 말고 참고만 하세요!</p>
+          <div className="space-y-3">
+            {improveExamples.map((ex, i) => (
+              <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                  <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
+                  <p className="text-sm text-gray-800 break-keep">{ex.original}</p>
+                </div>
+                <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                  <div className="text-[11px] text-green-700 font-semibold mb-0.5">예시</div>
+                  <p className="text-sm text-gray-900 break-keep leading-relaxed">{ex.suggested}</p>
+                </div>
+                {ex.reason && (
+                  <div className="px-3 py-1.5 bg-purple-50 border-t border-purple-100">
+                    <p className="text-[11px] text-purple-700 break-keep">
+                      💡 {ex.reason}
+                    </p>
+                  </div>
                 )}
               </div>
-            )
-          })}
+            ))}
+          </div>
         </div>
       )}
 
       {/* 학생 글 (맞춤법 빨간 밑줄 적용) */}
       <div>
-        <h4 className="text-sm font-semibold mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올리면 안내)` : ''}</h4>
+        <h4 className="text-sm font-bold text-gray-800 mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올려보세요)` : ''}</h4>
         <div
-          className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap"
+          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-keep border border-gray-200"
           dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
         />
         {sub.paste_detected && (
@@ -146,77 +282,30 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel }) {
 
       {/* 맞춤법 오류 목록 */}
       {corrections.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-          <h4 className="text-sm font-semibold text-red-900 mb-2">
-            🔍 맞춤법/띄어쓰기 ({corrections.length}개)
+        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+          <h4 className="text-sm font-bold text-red-900 mb-2">
+            🔍 맞춤법·띄어쓰기 ({corrections.length}개)
           </h4>
-          <ul className="text-xs space-y-1">
+          <ul className="text-sm space-y-2">
             {corrections.map((c, i) => (
-              <li key={i} className="text-red-800">
-                <span className="line-through">{c.original}</span>
-                {c.correction && <span className="text-green-700 font-semibold"> → {c.correction}</span>}
-                {c.reason && <span className="text-gray-600"> ({c.reason})</span>}
+              <li key={i} className="text-red-900 bg-white rounded p-2 border border-red-100">
+                <span className="line-through text-red-600">{c.original}</span>
+                {c.correction && <span className="mx-1.5 text-gray-400">→</span>}
+                {c.correction && <span className="text-green-700 font-bold">{c.correction}</span>}
+                {c.reason && <div className="text-xs text-gray-600 mt-1">💡 {c.reason}</div>}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* AI 피드백 */}
-      {sub.feedback_overall && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <h4 className="text-sm font-semibold text-blue-900 mb-1">💬 종합</h4>
-          <p className="text-sm text-blue-800 whitespace-pre-wrap">{sub.feedback_overall}</p>
-        </div>
-      )}
-
-      {sub.feedback_good && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-          <h4 className="text-sm font-semibold text-green-900 mb-1">⭐ 잘한 점</h4>
-          {(() => {
-            const items = splitFeedbackItems(sub.feedback_good)
-            if (items.length <= 1) return <p className="text-sm text-green-800 whitespace-pre-wrap">{items[0] || sub.feedback_good}</p>
-            return (
-              <ul className="space-y-1.5">
-                {items.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-green-800">
-                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-600 mt-2"></span>
-                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            )
-          })()}
-        </div>
-      )}
-
-      {sub.feedback_improve && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-          <h4 className="text-sm font-semibold text-amber-900 mb-1">🌱 발전시킬 점</h4>
-          {(() => {
-            const items = splitFeedbackItems(sub.feedback_improve)
-            if (items.length <= 1) return <p className="text-sm text-amber-800 whitespace-pre-wrap">{items[0] || sub.feedback_improve}</p>
-            return (
-              <ul className="space-y-1.5">
-                {items.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-amber-800">
-                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-600 mt-2"></span>
-                    <span className="flex-1 break-keep leading-relaxed">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            )
-          })()}
-        </div>
-      )}
-
       {/* 예시 글 */}
       {sub.example_text && (
-        <details className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-          <summary className="text-sm font-semibold text-purple-900 cursor-pointer">
-            ✨ AI 예시 작품 보기
+        <details className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+          <summary className="text-sm font-semibold text-indigo-900 cursor-pointer">
+            ✨ AI가 쓴 예시 작품 보기
           </summary>
-          <p className="text-sm text-purple-800 whitespace-pre-wrap mt-2">{sub.example_text}</p>
+          <p className="text-sm text-indigo-900 whitespace-pre-wrap mt-2 leading-relaxed break-keep">{sub.example_text}</p>
         </details>
       )}
     </div>
