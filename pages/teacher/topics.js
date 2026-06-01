@@ -48,6 +48,8 @@ export default function TopicsPage() {
   const [aiLevel, setAiLevel] = useState('보통') // 쉬움/보통/어려움
   const [aiCategory, setAiCategory] = useState('') // 빈 값이면 랜덤
   const [aiUserRequest, setAiUserRequest] = useState('') // 사용자 자유 요청
+  // 🆕 3개 추천 결과 (와이프 피드백): { id (log id), suggestions: [{title, description, category}] }
+  const [aiPicker, setAiPicker] = useState(null)
   // 역방향: 주제 → 평가기준 자동 생성
   const [generatingRubrics, setGeneratingRubrics] = useState(false)
 
@@ -72,6 +74,12 @@ export default function TopicsPage() {
   const [batchSaving, setBatchSaving] = useState(false)
   // 등록된 주제 펼침 (평가기준 확인용)
   const [expandedTopicId, setExpandedTopicId] = useState(null)
+  // 🆕 AI 추천 로그 보기 (와이프 피드백)
+  const [showSuggestionLogs, setShowSuggestionLogs] = useState(false)
+  const [suggestionLogs, setSuggestionLogs] = useState([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  // 🆕 마지막에 선택된 추천 로그 ID (주제 등록 시 link 위해)
+  const [lastSelectedLogId, setLastSelectedLogId] = useState(null)
   // 편집 모드 (특정 주제 수정 중인지)
   const [editingTopicId, setEditingTopicId] = useState(null)
 
@@ -506,8 +514,17 @@ export default function TopicsPage() {
           max_rewrites: maxRew,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
-        })
+        }).select('id').single()
         error = r.error
+        // 🆕 AI 추천에서 온 주제면 로그에 resulting_topic_id 연결
+        if (!error && r.data?.id && lastSelectedLogId) {
+          try {
+            await supabase.from('topic_suggestion_logs')
+              .update({ resulting_topic_id: r.data.id })
+              .eq('id', lastSelectedLogId)
+          } catch(e) { console.warn('로그 연결 실패:', e) }
+          setLastSelectedLogId(null)
+        }
       }
 
       if (error) throw error
@@ -539,7 +556,7 @@ export default function TopicsPage() {
     await loadTopics(user.id, classInfo?.id)
   }
 
-  // AI 주제 추천 (Structured Output - JSON 깨질 일 없음)
+  // AI 주제 추천 — 3개 받아서 와이프가 고름 (와이프 피드백)
   const suggestTopic = async () => {
     const apiKey = loadApiKey()
     if (!apiKey) {
@@ -548,10 +565,9 @@ export default function TopicsPage() {
     }
 
     setAiSuggesting(true)
+    setAiPicker(null)  // 기존 카드 닫음 (다시 추천하는 경우)
     try {
-      // 카테고리: 사용자 선택 우선, 비어있으면 랜덤
-      // ⚠️ 5학년이 실제로 와닿게 쓸 수 있는 구체적 카테고리 위주로 구성
-      // ("비밀의 장소", "내가 만든 세상" 같이 추상적인 건 클리셰 주제 양산 원인이라 제거)
+      // 카테고리 풀
       const categories = [
         '일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화',
         '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음',
@@ -559,26 +575,26 @@ export default function TopicsPage() {
         '신비한 일', '재미있는 발견', '동물 친구', '사회와 환경', '교과 연계'
       ]
       const cat = aiCategory || categories[Math.floor(Math.random() * categories.length)]
-      // 최근 30개까지 중복 회피 (15개로는 부족했음)
       const recentTitles = topics.slice(0, 30).map(t => t.title).join(', ')
 
-      // 학년 - 미입력 시 5학년 기본값
       const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
       const levelText = aiLevel || '보통'
 
-      // 1단계: 주제 + 설명
-      let prompt1 = `${gradeText} 글쓰기 주제 1개를 만들어줘.
+      // 3개 주제를 한 번에 받기 — topicBatch 스키마 재사용
+      let prompt = `${gradeText} 글쓰기 주제 3개를 만들어줘. 선생님이 그중 마음에 드는 것 하나를 고를 거야.
 카테고리: ${cat}
 난이도: ${levelText}
-최근 주제 (중복 절대 금지): ${recentTitles || '없음'}
+최근 출제한 주제 (중복 절대 금지): ${recentTitles || '없음'}
 `
       if (aiUserRequest && aiUserRequest.trim()) {
-        prompt1 += `\n선생님 요청 사항: ${aiUserRequest.trim()}\n위 요청을 반드시 반영해주세요.\n`
+        prompt += `\n선생님 요청 사항: ${aiUserRequest.trim()}\n위 요청을 반드시 반영해주세요.\n`
       }
-      prompt1 += `
+      prompt += `
 규칙:
-- title: 10-15자, 흥미롭고 ${gradeText} 학생들이 재미있어할 주제
-- 주제는 ${cat} 카테고리에 잘 맞아야 함
+- 3개 주제는 서로 충분히 다른 결로 만들기 (선생님이 고를 보람이 있게)
+  · 같은 카테고리 안에서도 접근 각도가 다르도록
+  · 예: 카테고리가 "학교 생활"이면 → 경험 회상형 1개, 관찰형 1개, 상상형 1개 등
+- title: 각각 10-15자, ${gradeText} 학생들이 재미있어할 주제
 - 난이도 "${levelText}" 수준에 맞추기:
   · 쉬움: 학생이 경험한 일이나 좋아하는 것에 대해 쓰기 쉬운 주제
   · 보통: 약간의 사고/상상력이 필요한 주제
@@ -587,8 +603,9 @@ export default function TopicsPage() {
   ⚠️ 질문형(?)으로 끝나면 안 됨, 안내/지시형으로
   ⚠️ "무엇을 떠올리고", "어떻게 쓰면 좋을지" 구체적으로 알려주기
   ⚠️ 70-100자 정도로 충분히 자세하게
+- category: ${cat}
 
-🚫 절대 피할 작문 클리셰 (이런 주제는 학생들이 매번 봐서 식상해함):
+🚫 절대 피할 작문 클리셰 (학생들이 매번 봐서 식상해함):
 - "나의 아지트는 어딘가요" / "비밀의 장소" / "나만의 공간" 류
 - "내가 만약 ~라면" 류 (지나치게 일반적, 너무 추상적)
 - "내가 만든 세상" / "상상의 나라" 류 (구체성 없음)
@@ -609,21 +626,86 @@ export default function TopicsPage() {
 - title: "나의 아지트는 어딘가요" (클리셰)
 - title: "내가 만든 세상" (추상적)
 - description: "도전한 일을 써볼까?" (너무 짧고 질문형)
-- description: "재미있게 써보세요" (구체성 없음)`
+- description: "재미있게 써보세요" (구체성 없음)
 
-      const result1 = await callGeminiStructured(apiKey, prompt1, SCHEMAS.topicSuggestion, { taskType: 'creative', maxTokens: 4000 })
-      
-      const newTitle = result1.title || ''
-      const newDesc = result1.description || ''
-      
-      if (newTitle) setTitle(newTitle)
-      if (newDesc) setDesc(newDesc)
-      
-      // 2단계: 평가 기준
-      if (newTitle) {
-        try {
-          const prompt2 = `주제 "${newTitle}"
-${newDesc ? '주제 설명: ' + newDesc : ''}
+반드시 3개를 모두 만들어주세요.`
+
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: 6000 })
+
+      if (!Array.isArray(result.topics) || result.topics.length === 0) {
+        throw new Error('추천 결과가 비어있어요. 다시 시도해주세요.')
+      }
+
+      // 최대 3개로 자르기 (혹시 모델이 더 많이 보낸 경우 대비)
+      const suggestions = result.topics.slice(0, 3).map(t => ({
+        title: t.title || '',
+        description: t.description || '',
+        category: t.category || cat
+      })).filter(s => s.title)
+
+      if (suggestions.length === 0) {
+        throw new Error('유효한 추천 주제가 없어요. 다시 시도해주세요.')
+      }
+
+      // 로그 저장 (실패해도 추천 흐름은 계속)
+      let logId = null
+      try {
+        const { data: logRow } = await supabase.from('topic_suggestion_logs').insert({
+          teacher_id: user.id,
+          class_id: classInfo?.id || null,
+          request_category: cat,
+          request_level: levelText,
+          request_user_message: aiUserRequest?.trim() || null,
+          suggestions: suggestions,
+          model_used: result.__usedModel || null
+        }).select('id').single()
+        logId = logRow?.id || null
+      } catch(logErr) {
+        console.warn('추천 로그 저장 실패:', logErr)
+      }
+
+      // 화면에 카드 표시
+      setAiPicker({ logId, suggestions })
+    } catch(e) {
+      console.error('AI 추천 오류:', e)
+      alert(getFriendlyErrorMessage(e))
+    }
+    setAiSuggesting(false)
+  }
+
+  // 추천 3개 중 하나 선택 → 폼에 채우고 평가기준 자동 생성
+  const applySuggestion = async (idx) => {
+    if (!aiPicker || !aiPicker.suggestions[idx]) return
+    const picked = aiPicker.suggestions[idx]
+
+    // 폼에 채우기
+    setTitle(picked.title)
+    setDesc(picked.description)
+    // 카드는 닫음 (재선택은 다시 추천 받으면 됨)
+    setAiPicker(null)
+    // 등록 시 로그와 연결할 수 있게 보관
+    setLastSelectedLogId(aiPicker.logId || null)
+
+    // 로그 업데이트 (선택 인덱스 기록)
+    if (aiPicker.logId) {
+      try {
+        await supabase.from('topic_suggestion_logs')
+          .update({ selected_index: idx })
+          .eq('id', aiPicker.logId)
+      } catch(e) {
+        console.warn('선택 기록 실패:', e)
+      }
+    }
+
+    // 평가기준 자동 생성
+    const apiKey = loadApiKey()
+    if (!apiKey) return
+    const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
+
+    setGeneratingRubrics(true)
+    try {
+      const prompt2 = `주제 "${picked.title}"
+${picked.description ? '주제 설명: ' + picked.description : ''}
 
 위 주제에 정말 어울리는 ${gradeText} 글쓰기 평가 기준 4개를 만들어줘.
 
@@ -642,22 +724,9 @@ ${newDesc ? '주제 설명: ' + newDesc : ''}
 
 ✅ hint (부가 설명) - 매우 중요!:
 - 반드시 채워야 함 (빈 값 절대 금지)
-- 주제 "${newTitle}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
+- 주제 "${picked.title}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
 - 15-30자
 - 4개 hint가 모두 서로 다른 내용이어야 함
-- 주제와 직접 연결된 단어 사용
-
-예시 (주제: "내 인생 첫 도전"):
-- name: "솔직한 표현", hint: "도전할 때의 떨림과 망설임을 진솔하게"
-- name: "구체적인 내용", hint: "어떤 도전이었는지 상황을 자세하게"
-- name: "글의 짜임새", hint: "도전 전-중-후의 흐름이 자연스러운가"
-- name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
-
-예시 (주제: "맛있는 추억 레시피"):
-- name: "감각적 표현", hint: "음식의 맛, 향, 온도를 생생하게"
-- name: "솔직한 표현", hint: "그 음식과 함께한 추억과 감정"
-- name: "글의 짜임새", hint: "음식 소개-추억-느낌 흐름"
-- name: "맞춤법과 문법", hint: "정확한 표기와 띄어쓰기"
 
 배점 규칙:
 - 합계 100점, 각 항목 10~40점 범위
@@ -665,78 +734,57 @@ ${newDesc ? '주제 설명: ' + newDesc : ''}
 
 각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
 
-          const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
-          
-          if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
-            const cleaned = result2.rubrics.map(r => ({
-              name: r.name || '평가 기준',
-              hint: (r.hint && r.hint.trim()) ? r.hint.trim() : '',
-              score: Number(r.score) || 25
-            }))
-            // 합계가 100이 아니면 비율 유지하며 보정
-            const total = cleaned.reduce((s, r) => s + r.score, 0)
-            if (total !== 100 && total > 0) {
-              cleaned.forEach(r => {
-                r.score = Math.round((r.score / total) * 100)
-              })
-              const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
-              if (newTotal !== 100) {
-                cleaned[cleaned.length - 1].score += (100 - newTotal)
-              }
-            }
-            
-            // ★ hint가 비어있으면 한 번 더 보충 호출
-            const emptyHints = cleaned.filter(r => !r.hint).length
-            if (emptyHints > 0) {
-              try {
-                const hintPrompt = `주제: "${newTitle}"
-이 주제의 글쓰기 평가 기준 ${cleaned.length}개에 대해 각각 부가 설명(hint)을 만들어줘.
+      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.5 })
 
-평가 기준:
-${cleaned.map((r, i) => `${i+1}. ${r.name}`).join('\n')}
-
-각 hint는:
-- 학생이 "이 항목에서 무엇을 잘 표현해야 하는지" 알려주는 힌트
-- 주제와 관련된 구체적 내용 포함
-- 15-30자
-- 서로 다른 내용
-
-JSON 형식 (rubrics 배열, 각 {name, hint, score}):`
-                
-                const hintResult = await callGeminiStructured(apiKey, hintPrompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 4000, temperature: 0.6 })
-                if (Array.isArray(hintResult.rubrics)) {
-                  // name 매칭으로 hint 채우기
-                  cleaned.forEach((r, i) => {
-                    if (!r.hint) {
-                      const matched = hintResult.rubrics.find(h => h.name === r.name) || hintResult.rubrics[i]
-                      if (matched && matched.hint) r.hint = matched.hint.trim()
-                    }
-                  })
-                }
-              } catch(hintErr) {
-                console.log('hint 보충 실패, 진행:', hintErr.message)
-              }
-            }
-            
-            // 그래도 비어있으면 기본 hint
-            cleaned.forEach(r => {
-              if (!r.hint) {
-                r.hint = '이 항목에서 무엇을 잘 표현해야 하는지'
-              }
-            })
-            
-            setRubrics(cleaned)
+      if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
+        const cleaned = result2.rubrics.map(r => ({
+          name: r.name || '평가 기준',
+          hint: (r.hint && r.hint.trim()) ? r.hint.trim() : '이 항목에서 무엇을 잘 표현해야 하는지',
+          score: Number(r.score) || 25
+        }))
+        // 합계 100 보정
+        const total = cleaned.reduce((s, r) => s + r.score, 0)
+        if (total !== 100 && total > 0) {
+          cleaned.forEach(r => { r.score = Math.round((r.score / total) * 100) })
+          const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
+          if (newTotal !== 100) {
+            cleaned[cleaned.length - 1].score += (100 - newTotal)
           }
-        } catch(rubricErr) {
-          console.error('평가 기준 생성 실패 (주제는 유지):', rubricErr)
-          alert('주제는 추천됐지만 평가 기준 생성은 실패했어요.\n\n' + getFriendlyErrorMessage(rubricErr))
         }
+        setRubrics(cleaned)
       }
     } catch(e) {
-      console.error('AI 추천 오류:', e)
-      alert(getFriendlyErrorMessage(e))
+      console.error('평가 기준 생성 실패 (주제는 유지):', e)
+      alert('주제는 채워졌지만 평가 기준 생성은 실패했어요.\n기본 평가기준을 사용하거나 다시 시도해주세요.\n\n' + getFriendlyErrorMessage(e))
     }
-    setAiSuggesting(false)
+    setGeneratingRubrics(false)
+  }
+
+  // 🆕 추천 로그 불러오기 (와이프 피드백: AI 추천 기록 보기)
+  const loadSuggestionLogs = async () => {
+    if (!user) return
+    setLogsLoading(true)
+    try {
+      const { data, error } = await supabase.from('topic_suggestion_logs')
+        .select('*, resulting_topic:topics(id, title, date)')
+        .eq('teacher_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      setSuggestionLogs(data || [])
+    } catch(e) {
+      console.error('로그 로드 실패:', e)
+      alert('로그를 불러오지 못했어요: ' + e.message)
+    }
+    setLogsLoading(false)
+  }
+
+  const toggleSuggestionLogs = async () => {
+    const next = !showSuggestionLogs
+    setShowSuggestionLogs(next)
+    if (next && suggestionLogs.length === 0) {
+      await loadSuggestionLogs()
+    }
   }
 
   // 역방향 기능: 선생님이 주제만 입력 → AI가 설명 + 평가기준 자동 생성
@@ -1013,9 +1061,9 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                     className="w-full p-2 border border-gray-200 rounded-lg" />
                 </div>
                 <div className="sm:col-span-2 flex items-end gap-2">
-                  <button onClick={suggestTopic} disabled={aiSuggesting}
+                  <button onClick={suggestTopic} disabled={aiSuggesting || generatingRubrics}
                     className="flex-1 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 disabled:opacity-50">
-                    {aiSuggesting ? '추천 중...' : '✨ AI 주제 추천'}
+                    {aiSuggesting ? '추천 중...' : generatingRubrics ? '평가기준 만드는 중...' : '✨ AI 주제 추천 (3개)'}
                   </button>
                   <button onClick={() => setShowAiOptions(!showAiOptions)}
                     className="px-3 py-2 border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50 text-sm">
@@ -1085,6 +1133,63 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                   </div>
                 </div>
               )}
+
+              {/* 🆕 3개 추천 카드 (와이프 피드백) */}
+              {aiPicker && aiPicker.suggestions && aiPicker.suggestions.length > 0 && (
+                <div className="bg-purple-50 border-2 border-purple-300 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h4 className="font-bold text-purple-900">✨ 3가지 중에 선택하세요</h4>
+                      <p className="text-xs text-purple-700/80 mt-0.5">
+                        클릭하면 주제·설명이 자동 입력되고 평가기준도 함께 생성됩니다.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={suggestTopic}
+                        disabled={aiSuggesting || generatingRubrics}
+                        className="text-xs px-3 py-1.5 bg-white border border-purple-300 text-purple-700 rounded hover:bg-purple-100 disabled:opacity-50">
+                        🔄 다시 추천
+                      </button>
+                      <button
+                        onClick={() => setAiPicker(null)}
+                        className="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50">
+                        ✖ 닫기
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {aiPicker.suggestions.map((s, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => applySuggestion(idx)}
+                        disabled={generatingRubrics}
+                        className="w-full text-left bg-white hover:bg-purple-50 border border-purple-200 hover:border-purple-400 rounded-lg p-3 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-7 h-7 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-sm font-bold">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900">{s.title}</div>
+                            {s.description && (
+                              <div className="text-xs text-gray-600 mt-1 leading-relaxed break-keep">
+                                {s.description}
+                              </div>
+                            )}
+                            {s.category && (
+                              <div className="text-[11px] text-purple-600 mt-1">
+                                #{s.category}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium mb-1">주제</label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -1303,6 +1408,118 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
             </div>
           </div>
           )}
+
+          {/* 🆕 AI 주제 추천 기록 (와이프 피드백: 어떤 주제를 추천받고 어떤 걸 골랐는지) */}
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={toggleSuggestionLogs}
+              className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition">
+              <div className="text-left">
+                <h3 className="font-bold flex items-center gap-2">
+                  🤖 AI 추천 기록
+                  <span className="text-xs font-normal text-gray-500">
+                    {showSuggestionLogs ? '' : '(누르면 펼침)'}
+                  </span>
+                </h3>
+                {!showSuggestionLogs && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    AI가 추천한 주제 목록과 선생님이 선택한 주제를 확인할 수 있어요
+                  </p>
+                )}
+              </div>
+              <span className="text-gray-400 text-sm">{showSuggestionLogs ? '▲' : '▼'}</span>
+            </button>
+
+            {showSuggestionLogs && (
+              <div className="px-5 pb-5">
+                {logsLoading ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
+                ) : suggestionLogs.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">
+                    아직 AI 추천 기록이 없어요.<br />
+                    "✨ AI 주제 추천" 버튼을 사용하면 여기에 기록됩니다.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {suggestionLogs.map(log => {
+                      const date = new Date(log.created_at).toLocaleString('ko-KR', {
+                        year: '2-digit', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit'
+                      })
+                      const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+                      const picked = log.selected_index !== null && log.selected_index !== undefined
+                      return (
+                        <div key={log.id} className="border border-gray-200 rounded-lg p-3">
+                          <div className="flex items-start justify-between flex-wrap gap-2 mb-2">
+                            <div className="text-xs text-gray-500">
+                              {date}
+                              {log.request_category && (
+                                <span className="ml-2 bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">
+                                  {log.request_category}
+                                </span>
+                              )}
+                              {log.request_level && (
+                                <span className="ml-1 bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                  {log.request_level}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs">
+                              {picked ? (
+                                log.resulting_topic ? (
+                                  <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                                    ✅ 등록됨: {log.resulting_topic.title}
+                                  </span>
+                                ) : (
+                                  <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                    👆 {log.selected_index + 1}번 선택 (등록 안 함)
+                                  </span>
+                                )
+                              ) : (
+                                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                  선택 안 함
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {log.request_user_message && (
+                            <div className="text-xs text-gray-600 mb-2 pl-2 border-l-2 border-purple-200">
+                              💭 요청: {log.request_user_message}
+                            </div>
+                          )}
+                          <div className="space-y-1.5">
+                            {sugs.map((s, idx) => (
+                              <div key={idx}
+                                className={`text-xs p-2 rounded ${
+                                  log.selected_index === idx
+                                    ? 'bg-green-50 border border-green-200'
+                                    : 'bg-gray-50'
+                                }`}>
+                                <div className="font-medium text-gray-900">
+                                  <span className="inline-block w-5 text-center text-gray-500">{idx + 1}.</span>
+                                  {s.title}
+                                  {log.selected_index === idx && <span className="ml-1 text-green-700">←</span>}
+                                </div>
+                                {s.description && (
+                                  <div className="text-gray-600 mt-0.5 pl-5 leading-snug">
+                                    {s.description}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <p className="text-xs text-gray-400 text-center pt-2">
+                      최근 50건까지 표시됩니다
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* 주제 목록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
