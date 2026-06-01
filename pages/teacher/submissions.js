@@ -339,6 +339,7 @@ export default function TeacherSubmissions() {
 
   // 🔄 단일 글 재평가
   const [regrading, setRegrading] = useState(null) // subId
+  const [regradeResult, setRegradeResult] = useState(null) // { oldScore, newScore, maxScore } 화면 내 안내용
   const regradeOne = async (sub, studentName) => {
     if (!confirm(
       `🔄 "${studentName}" 학생의 글을 다시 평가할까요?\n\n` +
@@ -351,18 +352,25 @@ export default function TeacherSubmissions() {
     if (!apiKey) return alert('AI 기능이 활성화되지 않았어요')
 
     setRegrading(sub.id)
+    setRegradeResult(null)
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser()
       const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
       if (!result.success) {
         alert('재평가 실패: ' + result.error)
       } else {
-        alert(
-          `✅ 재평가 완료!\n\n` +
-          `이전 점수: ${result.oldScore ?? '-'}/${result.maxScore}\n` +
-          `새 점수: ${result.newScore}/${result.maxScore}`
-        )
-        await openTopic(selectedTopic) // 새로고침
+        // 🆕 현재 보고 있던 학생 ID 기억해서 재진입 후 그대로 유지 (와이프 피드백)
+        const currentStudentId = selectedStudent?.profile?.id
+        await openTopic(selectedTopic, currentStudentId)
+        // 화면 내 결과 안내 (alert 대신 — 와이프 피드백: 화면 그대로 유지)
+        setRegradeResult({
+          subId: sub.id,
+          oldScore: result.oldScore,
+          newScore: result.newScore,
+          maxScore: result.maxScore
+        })
+        // 5초 후 자동 사라짐
+        setTimeout(() => setRegradeResult(prev => prev?.subId === sub.id ? null : prev), 5000)
       }
     } catch (e) {
       alert('실패: ' + e.message)
@@ -891,6 +899,31 @@ export default function TeacherSubmissions() {
                         🗑️ 쓰레기통으로
                       </button>
                     </div>
+
+                    {/* 🆕 재평가 결과 안내 (와이프 피드백: 화면 그대로 유지) */}
+                    {regradeResult && regradeResult.subId === s.id && (
+                      <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 animate-pulse">
+                        <div className="text-sm font-bold text-green-900 mb-1">✅ 재평가 완료!</div>
+                        <div className="text-xs text-green-800 flex items-center gap-2 flex-wrap">
+                          <span>이전: <strong>{regradeResult.oldScore ?? '-'}</strong>/{regradeResult.maxScore}</span>
+                          <span className="text-green-600">→</span>
+                          <span>새 점수: <strong>{regradeResult.newScore}</strong>/{regradeResult.maxScore}</span>
+                          {typeof regradeResult.oldScore === 'number' && (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              regradeResult.newScore > regradeResult.oldScore ? 'bg-green-200 text-green-900' :
+                              regradeResult.newScore < regradeResult.oldScore ? 'bg-red-200 text-red-900' :
+                              'bg-gray-200 text-gray-700'
+                            }`}>
+                              {regradeResult.newScore > regradeResult.oldScore ? '↑' :
+                               regradeResult.newScore < regradeResult.oldScore ? '↓' : '='}
+                              {regradeResult.newScore - regradeResult.oldScore !== 0 && (
+                                ` ${regradeResult.newScore - regradeResult.oldScore > 0 ? '+' : ''}${regradeResult.newScore - regradeResult.oldScore}점`
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 재평가된 글이면 이전 점수 표시 */}
                     {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (

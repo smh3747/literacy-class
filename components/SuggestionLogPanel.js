@@ -17,6 +17,7 @@ export default function SuggestionLogPanel({
   loading,
   onSelect,
   onRefresh,
+  onToggleShare,  // 🆕 (logId, isShared) => void - 본인 로그 공유 토글
   disabled,
 }) {
   const [open, setOpen] = useState(() => {
@@ -58,12 +59,16 @@ export default function SuggestionLogPanel({
       const isSelected = log.selected_index === idx
       flatMine.push({
         key: `${log.id}-${idx}`,
+        logId: log.id,           // 🆕 공유 토글에 필요
+        suggestionIdx: idx,
         title: s.title,
         description: s.description,
         category: s.category,
         createdAt: log.created_at,
         usedDate: isSelected && log.resulting_topic?.date,
         wasSelected: isSelected,
+        isShared: !!log.is_shared,             // 🆕 명시 공유 상태
+        isAutoShared: !!log.resulting_topic_id // 🆕 등록되어 자동 공유 중
       })
     })
   }
@@ -190,52 +195,83 @@ export default function SuggestionLogPanel({
                       })()
                     : null
                   return (
-                    <button
+                    <div
                       key={item.key}
-                      onClick={() => {
-                        if (disabled) return
-                        onSelect?.({
-                          title: item.title,
-                          description: item.description,
-                          category: item.category
-                        })
-                      }}
-                      disabled={disabled}
-                      className="w-full text-left bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50 rounded-lg p-2.5 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div className="text-xs text-gray-400">{dateLabel} 추천</div>
-                        {usedLabel && (
-                          <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
-                            ✓ {usedLabel} 사용
-                          </span>
+                      className="bg-white border border-gray-200 hover:border-purple-300 rounded-lg overflow-hidden transition">
+                      <button
+                        onClick={() => {
+                          if (disabled) return
+                          onSelect?.({
+                            title: item.title,
+                            description: item.description,
+                            category: item.category
+                          })
+                        }}
+                        disabled={disabled}
+                        className="w-full text-left p-2.5 hover:bg-purple-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="text-xs text-gray-400">{dateLabel} 추천</div>
+                          {usedLabel && (
+                            <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
+                              ✓ {usedLabel} 사용
+                            </span>
+                          )}
+                          {!usedLabel && item.wasSelected && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                              👆 선택만
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900 leading-tight">
+                          {item.title}
+                        </div>
+                        {item.description && (
+                          <div className="text-[11px] text-gray-600 mt-1 leading-snug line-clamp-3">
+                            {item.description}
+                          </div>
                         )}
-                        {!usedLabel && item.wasSelected && (
-                          <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                            👆 선택만
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900 leading-tight">
-                        {item.title}
-                      </div>
-                      {item.description && (
-                        <div className="text-[11px] text-gray-600 mt-1 leading-snug line-clamp-3">
-                          {item.description}
+                        <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
+                          {item.category && (
+                            <span className="text-[10px] text-purple-600">#{item.category}</span>
+                          )}
+                          {tab === 'shared' && item.authorName && (
+                            <span className="text-[10px] text-gray-500 ml-auto">
+                              👤 {item.authorName}
+                              {item.authorSchool && <span className="opacity-70"> · {item.authorSchool}</span>}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      {/* 🆕 본인 카드: 공유 토글 (와이프 피드백) */}
+                      {tab === 'mine' && onToggleShare && (
+                        <div className="border-t border-gray-100 px-2.5 py-1.5 flex items-center justify-between bg-gray-50">
+                          {item.isAutoShared ? (
+                            <span className="text-[10px] text-green-700">🌐 등록되어 자동 공유 중</span>
+                          ) : item.isShared ? (
+                            <>
+                              <span className="text-[10px] text-purple-700">🔗 공유 중</span>
+                              <button
+                                onClick={() => onToggleShare(item.logId, false)}
+                                disabled={disabled}
+                                className="text-[10px] text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
+                                공유 해제
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[10px] text-gray-500">나만 보임</span>
+                              <button
+                                onClick={() => onToggleShare(item.logId, true)}
+                                disabled={disabled}
+                                className="text-[10px] text-purple-700 hover:bg-purple-100 px-2 py-0.5 rounded disabled:opacity-50">
+                                🔗 다른 선생님에게도 공유
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
-                      <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
-                        {item.category && (
-                          <span className="text-[10px] text-purple-600">#{item.category}</span>
-                        )}
-                        {/* 🆕 공유 카드: 출처 표시 */}
-                        {tab === 'shared' && item.authorName && (
-                          <span className="text-[10px] text-gray-500 ml-auto">
-                            👤 {item.authorName}
-                            {item.authorSchool && <span className="opacity-70"> · {item.authorSchool}</span>}
-                          </span>
-                        )}
-                      </div>
-                    </button>
+                    </div>
                   )
                 })
               )}

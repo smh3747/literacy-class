@@ -952,14 +952,15 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
         .order('created_at', { ascending: false })
         .limit(50)
 
-      // 🆕 다른 선생님이 학급에 실제로 등록한 추천 (공유)
-      // resulting_topic_id가 있고 본인 것 아님
+      // 🆕 다른 선생님이 공유한 추천 (와이프 피드백: 등록 + 명시 공유 둘 다)
+      // 1) resulting_topic_id가 있음 (학급에 등록한 것, 자동 공유)
+      // 2) 또는 is_shared = true (명시적으로 공유 토글)
       const sharedPromise = supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school)')
         .neq('teacher_id', uid)
-        .not('resulting_topic_id', 'is', null)
+        .or('resulting_topic_id.not.is.null,is_shared.eq.true')
         .order('created_at', { ascending: false })
-        .limit(100)  // 공유는 더 많이 (한도 50개)
+        .limit(100)
 
       const [ownRes, sharedRes] = await Promise.all([ownPromise, sharedPromise])
       if (ownRes.error) throw ownRes.error
@@ -983,6 +984,23 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
     setShowSuggestionLogs(next)
     if (next && suggestionLogs.length === 0) {
       await loadSuggestionLogs()
+    }
+  }
+
+  // 🆕 본인 추천 카드 공유 토글 (와이프 피드백)
+  const toggleShareSuggestion = async (logId, isShared) => {
+    if (!logId) return
+    try {
+      const { error } = await supabase.from('topic_suggestion_logs')
+        .update({ is_shared: isShared })
+        .eq('id', logId)
+      if (error) throw error
+      // 화면 즉시 갱신 (재로드 안 해도 됨)
+      setSuggestionLogs(prev => prev.map(l =>
+        l.id === logId ? { ...l, is_shared: isShared } : l
+      ))
+    } catch(e) {
+      alert('공유 상태 변경 실패: ' + e.message)
     }
   }
 
@@ -1339,6 +1357,16 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
                     <p className="text-xs text-purple-700 mt-1">💡 원하는 분야나 키워드를 자유롭게 적어주세요</p>
                   </div>
                 </div>
+              )}
+
+              {/* 🆕 추천 기록 인라인 미리보기 (와이프 피드백: 추천 전에 기록을 쭉 보기) */}
+              {!aiPicker && (suggestionLogs.length > 0 || sharedSuggestionLogs.length > 0) && (
+                <InlineSuggestionPreview
+                  myLogs={suggestionLogs}
+                  sharedLogs={sharedSuggestionLogs}
+                  onSelect={applyFromLog}
+                  generating={generatingRubrics}
+                />
               )}
 
               {/* 🆕 3개 추천 카드 (와이프 피드백) */}
@@ -1990,9 +2018,169 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
           loading={logsLoading}
           onSelect={applyFromLog}
           onRefresh={() => loadSuggestionLogs()}
+          onToggleShare={toggleShareSuggestion}
           disabled={false}
         />
       </div>
     </>
   )
 }
+
+// ============================================
+// 🆕 인라인 추천 기록 미리보기 (와이프 피드백)
+// AI 추천 영역 바로 옆에 기록을 미리 보여줘서 추천 전에 빠르게 훑어볼 수 있게
+// ============================================
+function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
+  const [tab, setTab] = useState('mine')
+  const [expanded, setExpanded] = useState(false)  // 접힘/펼침
+
+  // 평탄화 (사이드 패널과 같은 로직)
+  const flatMine = []
+  for (const log of myLogs || []) {
+    const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+    sugs.forEach((s, idx) => {
+      flatMine.push({
+        key: `${log.id}-${idx}`,
+        title: s.title,
+        description: s.description,
+        category: s.category,
+        usedDate: log.selected_index === idx && log.resulting_topic?.date,
+        wasSelected: log.selected_index === idx,
+      })
+    })
+  }
+
+  const flatShared = []
+  for (const log of sharedLogs || []) {
+    if (log.selected_index === null || log.selected_index === undefined) {
+      // 명시 공유만 있고 선택 안 한 경우 — 모든 추천을 표시
+      if (!log.is_shared) continue
+      const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+      sugs.forEach((s, idx) => {
+        if (!s.title) return
+        flatShared.push({
+          key: `s-${log.id}-${idx}`,
+          title: s.title,
+          description: s.description,
+          category: s.category,
+          authorName: log.author?.realname || '익명',
+          authorSchool: log.author?.school || '',
+        })
+      })
+      continue
+    }
+    const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+    const picked = sugs[log.selected_index]
+    if (!picked || !picked.title) continue
+    flatShared.push({
+      key: `s-${log.id}`,
+      title: picked.title,
+      description: picked.description,
+      category: picked.category,
+      usedDate: log.resulting_topic?.date,
+      authorName: log.author?.realname || '익명',
+      authorSchool: log.author?.school || '',
+    })
+  }
+
+  const list = tab === 'mine' ? flatMine : flatShared
+  // 접힘 상태에서는 6개만, 펼치면 다
+  const displayList = expanded ? list : list.slice(0, 6)
+
+  return (
+    <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/50 border border-purple-200 rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-purple-900">📚 추천 기록</span>
+          <div className="flex bg-white rounded-lg p-0.5 gap-0.5 text-xs">
+            <button
+              onClick={() => setTab('mine')}
+              className={`px-2.5 py-1 rounded ${
+                tab === 'mine' ? 'bg-purple-100 text-purple-900 font-semibold' : 'text-gray-600'
+              }`}>
+              내 추천 {flatMine.length > 0 && `(${flatMine.length})`}
+            </button>
+            <button
+              onClick={() => setTab('shared')}
+              className={`px-2.5 py-1 rounded ${
+                tab === 'shared' ? 'bg-purple-100 text-purple-900 font-semibold' : 'text-gray-600'
+              }`}>
+              다른 선생님 {flatShared.length > 0 && `(${flatShared.length})`}
+            </button>
+          </div>
+        </div>
+        <span className="text-[11px] text-purple-700/70">
+          {tab === 'mine'
+            ? '클릭하면 폼에 자동 입력돼요'
+            : '다른 선생님이 등록·공유한 주제'}
+        </span>
+      </div>
+
+      {list.length === 0 ? (
+        <p className="text-xs text-gray-500 py-3 text-center">
+          {tab === 'mine'
+            ? '아직 추천받은 주제가 없어요. 아래 "AI 주제 추천" 버튼을 눌러보세요.'
+            : '다른 선생님이 등록·공유한 추천이 아직 없어요.'}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {displayList.map(item => {
+              const usedLabel = item.usedDate
+                ? (() => {
+                    const parts = String(item.usedDate).split('-')
+                    return parts.length === 3 ? `${parseInt(parts[1])}/${parseInt(parts[2])}` : item.usedDate
+                  })()
+                : null
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => onSelect?.({
+                    title: item.title,
+                    description: item.description,
+                    category: item.category
+                  })}
+                  disabled={generating}
+                  className="text-left bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50 rounded-lg p-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  <div className="flex items-start justify-between gap-1 mb-0.5">
+                    <div className="text-xs font-semibold text-gray-900 line-clamp-1 flex-1">
+                      {item.title}
+                    </div>
+                    {usedLabel && (
+                      <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded flex-shrink-0">
+                        ✓{usedLabel}
+                      </span>
+                    )}
+                  </div>
+                  {item.description && (
+                    <div className="text-[11px] text-gray-600 line-clamp-2 leading-snug">
+                      {item.description}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-1 mt-1">
+                    {item.category && (
+                      <span className="text-[10px] text-purple-600">#{item.category}</span>
+                    )}
+                    {tab === 'shared' && item.authorName && (
+                      <span className="text-[10px] text-gray-500 ml-auto truncate">
+                        👤 {item.authorName}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          {list.length > 6 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="w-full text-xs text-purple-700 hover:bg-purple-100 py-1 rounded mt-1">
+              {expanded ? `▲ 접기 (${list.length}개 중 6개만 보기)` : `▼ 전체 ${list.length}개 보기`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
