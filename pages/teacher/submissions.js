@@ -925,6 +925,14 @@ export default function TeacherSubmissions() {
                       </div>
                     )}
 
+                    {/* 🆕 담임 코멘트 (와이프 피드백) */}
+                    <TeacherCommentBox
+                      submission={s}
+                      studentName={selectedStudent.profile.realname}
+                      onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
+                      disabled={isImpersonating}
+                    />
+
                     {/* 재평가된 글이면 이전 점수 표시 */}
                     {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (
                       <details className="text-xs">
@@ -959,3 +967,147 @@ export default function TeacherSubmissions() {
     </>
   )
 }
+
+// ============================================
+// 🆕 담임 코멘트 박스 (와이프 피드백)
+// 학생 글 1편당 코멘트 1개. 작성·수정·삭제 가능.
+// 임퍼소네이션 중에는 작성 차단 (disabled prop).
+// ============================================
+function TeacherCommentBox({ submission, studentName, onUpdated, disabled }) {
+  const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState(submission.teacher_comment || '')
+  const [saving, setSaving] = useState(false)
+
+  // submission 바뀌면 초기값 동기화
+  useEffect(() => {
+    setContent(submission.teacher_comment || '')
+    setEditing(false)
+  }, [submission.id, submission.teacher_comment])
+
+  const hasComment = !!submission.teacher_comment
+  const updatedAt = submission.teacher_comment_at
+
+  const save = async () => {
+    if (disabled) return
+    const trimmed = content.trim()
+    if (!trimmed) return alert('코멘트를 입력해주세요!')
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('submissions').update({
+        teacher_comment: trimmed,
+        teacher_comment_at: new Date().toISOString()
+      }).eq('id', submission.id)
+      if (error) throw error
+      setEditing(false)
+      if (onUpdated) await onUpdated()
+    } catch (e) {
+      alert('저장 실패: ' + e.message)
+    }
+    setSaving(false)
+  }
+
+  const remove = async () => {
+    if (disabled) return
+    if (!confirm(`${studentName} 학생의 코멘트를 지울까요?`)) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('submissions').update({
+        teacher_comment: null,
+        teacher_comment_at: null
+      }).eq('id', submission.id)
+      if (error) throw error
+      setContent('')
+      setEditing(false)
+      if (onUpdated) await onUpdated()
+    } catch (e) {
+      alert('삭제 실패: ' + e.message)
+    }
+    setSaving(false)
+  }
+
+  // 작성 모드
+  if (editing) {
+    return (
+      <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-bold text-yellow-900">💬 선생님 코멘트 {hasComment ? '수정' : '작성'}</h4>
+          <span className="text-[10px] text-yellow-700">학생에게 그대로 보입니다</span>
+        </div>
+        <textarea
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          placeholder={`${studentName} 학생에게 하고 싶은 말을 적어주세요...\n(예: 비유 표현이 정말 좋았어요! 다음엔 결말을 좀 더 자세히 써보면 어떨까요?)`}
+          rows="4"
+          className="w-full p-2 border border-yellow-200 rounded text-sm leading-relaxed bg-white"
+          autoFocus
+        />
+        <div className="flex justify-between items-center gap-2">
+          <span className={`text-[11px] ${content.length > 1000 ? 'text-red-600' : 'text-gray-500'}`}>
+            {content.length}자 {content.length > 1000 && '(너무 길어요)'}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setContent(submission.teacher_comment || ''); setEditing(false) }}
+              disabled={saving}
+              className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
+              취소
+            </button>
+            <button
+              onClick={save}
+              disabled={saving || !content.trim() || content.length > 1000}
+              className="text-xs px-3 py-1.5 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-700 disabled:opacity-50">
+              {saving ? '저장 중...' : '💾 저장'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 코멘트 있음 - 표시 모드
+  if (hasComment) {
+    return (
+      <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between flex-wrap gap-1">
+          <h4 className="text-sm font-bold text-yellow-900">💬 선생님 코멘트</h4>
+          <div className="flex items-center gap-2">
+            {updatedAt && (
+              <span className="text-[10px] text-yellow-700">
+                {new Date(updatedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            {!disabled && (
+              <>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="text-[11px] text-yellow-800 hover:bg-yellow-200 px-2 py-0.5 rounded">
+                  ✏️ 수정
+                </button>
+                <button
+                  onClick={remove}
+                  disabled={saving}
+                  className="text-[11px] text-gray-500 hover:bg-gray-200 px-2 py-0.5 rounded disabled:opacity-50">
+                  🗑️ 지우기
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep">
+          {submission.teacher_comment}
+        </p>
+      </div>
+    )
+  }
+
+  // 코멘트 없음 - 작성 안내 (담임만)
+  if (disabled) return null  // 임퍼소네이션 중엔 안 보임
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="w-full py-2 border-2 border-dashed border-yellow-300 rounded-lg text-sm text-yellow-700 hover:bg-yellow-50 hover:border-yellow-400 transition">
+      💬 이 글에 직접 코멘트 달기
+    </button>
+  )
+}
+

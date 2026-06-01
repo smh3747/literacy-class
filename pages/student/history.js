@@ -187,6 +187,25 @@ export default function StudentHistory() {
                 )}
 
                 <div className="space-y-3 text-sm">
+                  {/* 🆕 담임 선생님 코멘트 (최상단 강조 - 와이프 피드백) */}
+                  {s.teacher_comment && (
+                    <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
+                      <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
+                        <h4 className="font-bold text-yellow-900 flex items-center gap-1.5">
+                          <span>💛</span> 선생님이 직접 남긴 코멘트
+                        </h4>
+                        {s.teacher_comment_at && (
+                          <span className="text-[11px] text-yellow-700">
+                            {new Date(s.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep">
+                        {s.teacher_comment}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                     <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
                       <span>💬</span> 종합 의견

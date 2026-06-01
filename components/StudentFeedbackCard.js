@@ -164,11 +164,30 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
         </div>
       </div>
 
-      {/* 종합 의견 — 맨 위로 강조 이동 */}
+      {/* 🆕 담임 선생님 코멘트 (최상단 강조 - 와이프 피드백) */}
+      {sub.teacher_comment && (
+        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
+          <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
+            <h4 className="text-sm font-bold text-yellow-900 flex items-center gap-1.5">
+              💛 선생님이 직접 남긴 코멘트
+            </h4>
+            {sub.teacher_comment_at && (
+              <span className="text-[11px] text-yellow-700">
+                {new Date(sub.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep">
+            {sub.teacher_comment}
+          </p>
+        </div>
+      )}
+
+      {/* 종합 의견 — AI 피드백 */}
       {sub.feedback_overall && (
         <div className="bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-4">
           <h4 className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-1">
-            💬 선생님 한 마디
+            💬 AI 종합 의견
           </h4>
           <p className="text-sm text-blue-900 leading-relaxed whitespace-pre-wrap break-keep">
             {sub.feedback_overall}
