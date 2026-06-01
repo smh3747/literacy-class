@@ -8,27 +8,54 @@ function escapeHtml(s) {
   }[m]))
 }
 
-// 🛡️ AI corrections 오탐 필터 + 중복 제거
+// 🛡️ AI corrections 오탐 필터 + 중복 제거 + 실제 표시 가능한 것만
 // 와이프 피드백: "맞춤법 2개 밑줄인데 카운트는 3개" 문제 해결
-// 원인: 같은 위치/같은 오류가 여러 번 들어오면 밑줄은 1개로 보이는데 카운트는 따로 셈
-// 해결: 같은 original+correction 조합은 1회만, 화면에 실제 표시 가능한 것만 카운트
+// 핵심: 카운트와 실제 밑줄 수가 항상 일치해야 함
+// → 필터 통과 = 실제로 본문에 밑줄을 그릴 수 있는 것만
 export function filterValidCorrections(essayText, corrections) {
   if (!essayText || !Array.isArray(corrections)) return []
-  const seen = new Set()  // 중복 키
+  const seen = new Set()
+  // 본문에서 이미 다른 correction이 차지한 구간을 추적 (start, end)
+  const claimed = []
   const valid = []
+
   for (const c of corrections) {
     const original = c.original || c.error || c.wrong || ''
     const correction = c.correction || c.fixed || c.suggestion || ''
     const reason = (c.reason || c.type || c.category || '').toLowerCase()
+
     if (!original) continue
     if (!essayText.includes(original)) continue
     if (reason.includes('마침표') || reason.includes('문장 끝') || reason.includes('온점') || reason.includes('찍어')) {
       if (/[.!?。]$/.test(original)) continue
     }
     if (original === correction) continue
-    // 🆕 중복 제거 키: original + correction 조합
+
+    // 중복 제거 키 (original + correction)
     const key = `${original}::${correction}`
     if (seen.has(key)) continue
+
+    // 🆕 본문에서 다른 claimed 구간과 안 겹치는 자리를 찾을 수 있는지 검사
+    // applyGrammarHighlights와 같은 로직: 첫 번째로 안 겹치는 위치 찾기
+    let placedStart = -1
+    let placedEnd = -1
+    let from = 0
+    while (true) {
+      const idx = essayText.indexOf(original, from)
+      if (idx === -1) break
+      const end = idx + original.length
+      const overlaps = claimed.some(([s, e]) => idx < e && end > s)
+      if (!overlaps) {
+        placedStart = idx
+        placedEnd = end
+        break
+      }
+      from = idx + 1
+    }
+    // 자리 못 찾으면 실제 화면에 밑줄 안 그려지므로 카운트에서도 제외
+    if (placedStart === -1) continue
+
+    claimed.push([placedStart, placedEnd])
     seen.add(key)
     valid.push(c)
   }
