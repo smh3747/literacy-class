@@ -615,53 +615,44 @@ ${useCategorySpread
 규칙:
 ${useCategorySpread
   ? '- 3개 주제는 각각 위에 지시된 카테고리에 충실하게'
-  : `- 3개 주제는 서로 충분히 다른 결로 만들기 (선생님이 고를 보람이 있게)
-  · 같은 카테고리 안에서도 접근 각도가 다르도록
-  · 예: 카테고리가 "학교 생활"이면 → 경험 회상형 1개, 관찰형 1개, 상상형 1개 등`}
-- title: 각각 10-15자, ${gradeText} 학생들이 재미있어할 주제
-- 난이도 "${levelText}" 수준에 맞추기:
-  · 쉬움: 학생이 경험한 일이나 좋아하는 것에 대해 쓰기 쉬운 주제
-  · 보통: 약간의 사고/상상력이 필요한 주제
-  · 어려움: 의견 제시, 비교, 분석 등 한 단계 깊은 사고를 요구하는 주제
-- description: 학생에게 글쓰기 방법을 알려주는 안내문
-  ⚠️ 질문형(?)으로 끝나면 안 됨, 안내/지시형으로
-  ⚠️ "무엇을 떠올리고", "어떻게 쓰면 좋을지" 구체적으로 알려주기
-  ⚠️ 70-100자 정도로 충분히 자세하게
+  : '- 3개 주제는 서로 다른 접근 각도로 (경험/관찰/상상 등)'}
+- title: 10-15자, ${gradeText}이 재미있어할 구체적 주제
+- description: 70-100자, 안내/지시형 (질문형 X), 학생이 무엇을 떠올리고 어떻게 쓸지 안내
 - category: ${useCategorySpread ? '각 주제가 받은 카테고리명' : cat}
 
-🚫 절대 피할 작문 클리셰 (학생들이 매번 봐서 식상해함):
-- "나의 아지트는 어딘가요" / "비밀의 장소" / "나만의 공간" 류
-- "내가 만약 ~라면" 류 (지나치게 일반적, 너무 추상적)
-- "내가 만든 세상" / "상상의 나라" 류 (구체성 없음)
-- "소중한 ~" / "특별한 ~" / "잊지 못할 ~" 류 (감상적·뻔함)
-- "행복했던 순간" / "기억에 남는 일" 류 (너무 광범위)
-✅ 좋은 주제의 특징:
-- 학생이 "아, 그거 있어!" 하고 바로 떠올릴 구체적 장면/상황
-- 글로 쓸 거리가 명확히 잡히는 구체성
-- 5학년이 실제로 겪었거나 상상 가능한 범위
+🚫 클리셰 금지: "아지트", "비밀의 장소", "내가 만든 세상", "내가 만약 ~라면", "소중한/특별한/잊지 못할 ~", "행복했던 순간", "기억에 남는 일"
+✅ 좋은 주제: 학생이 "아, 그거!" 하고 떠올릴 구체적 장면
 
-좋은 예시:
-- title: "내 인생의 첫 도전"
-  description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
-- title: "급식 시간의 작은 사건"
-  description: "급식 먹다가 일어났던 재미있거나 당황스러웠던 일을 떠올려보세요. 그날 무슨 음식이 나왔는지, 누구랑 있었는지, 어떻게 됐는지 자세히 써보세요."
+예시: "급식 시간의 작은 사건" / "내 인생의 첫 도전" / "쉬는 시간 5분 동안 일어난 일"
 
-나쁜 예시:
-- title: "나의 아지트는 어딘가요" (클리셰)
-- title: "내가 만든 세상" (추상적)
-- description: "도전한 일을 써볼까?" (너무 짧고 질문형)
-- description: "재미있게 써보세요" (구체성 없음)
+반드시 3개 모두 완성해서 보내주세요. description 끝까지 다 쓰기.`
 
-반드시 3개를 모두 만들어주세요.`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: 6000 })
+      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: 8000 })
 
       if (!Array.isArray(result.topics) || result.topics.length === 0) {
         throw new Error('추천 결과가 비어있어요. 다시 시도해주세요.')
       }
 
-      // 최대 3개로 자르기 (혹시 모델이 더 많이 보낸 경우 대비)
-      const suggestions = result.topics.slice(0, 3).map(t => ({
+      // 잘린 주제 필터링: title이나 description이 부자연스럽게 끊긴 경우 제거
+      const validTopics = result.topics.filter(t => {
+        if (!t.title || !t.title.trim()) return false
+        // description이 너무 짧거나 미완 종결로 끝나면 잘림 의심
+        const desc = (t.description || '').trim()
+        if (desc.length > 0 && desc.length < 20) return false  // 너무 짧음
+        // 마지막 글자가 한국어 종결 어미가 아니면 잘림 가능성
+        if (desc.length > 0 && !/[\.\!\?다요세죠나]$/.test(desc.slice(-1))) {
+          console.warn(`[추천] 잘림 의심 주제 제외: "${t.title}" desc="${desc.slice(-20)}"`)
+          return false
+        }
+        return true
+      })
+
+      if (validTopics.length === 0) {
+        throw new Error('추천 응답이 잘렸어요. 다시 시도해주세요.')
+      }
+
+      // 최대 3개로 자르기 (잘린 항목은 위에서 이미 제거됨)
+      const suggestions = validTopics.slice(0, 3).map(t => ({
         title: t.title || '',
         description: t.description || '',
         category: t.category || cat
@@ -669,6 +660,11 @@ ${useCategorySpread
 
       if (suggestions.length === 0) {
         throw new Error('유효한 추천 주제가 없어요. 다시 시도해주세요.')
+      }
+
+      // 3개 미만이면 알림 (2개라도 보여주되 안내)
+      if (suggestions.length < 3) {
+        console.log(`[추천] ${suggestions.length}개만 받았어요 (응답 일부 잘림). 표시는 계속.`)
       }
 
       // 로그 저장 (실패해도 추천 흐름은 계속) — RLS RETURNING 이슈 회피를 위해 두 단계
