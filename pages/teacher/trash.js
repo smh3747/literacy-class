@@ -22,7 +22,7 @@ export default function TeacherTrash() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
     const { data: profile } = await supabase.from('profiles')
-      .select('*, classes(id, name, code, trash_retention_days)')
+      .select('*, classes:class_id(id, name, code, trash_retention_days)')
       .eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return

@@ -37,7 +37,7 @@ export default function StudentsPage() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes(id, name, code)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return

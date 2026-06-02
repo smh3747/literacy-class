@@ -36,7 +36,7 @@ export default function StudentRanking() {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/student/login'); return }
     const { data: profile } = await supabase.from('profiles')
-      .select('*, classes(id, name, ranking_enabled)').eq('id', au.id).maybeSingle()
+      .select('*, classes:class_id(id, name, ranking_enabled)').eq('id', au.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
