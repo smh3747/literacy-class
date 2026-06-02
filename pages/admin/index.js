@@ -13,6 +13,8 @@ export default function AdminHome() {
   const [stats, setStats] = useState({ teachers: 0, classes: 0, students: 0, submissions: 0, today: 0 })
   const [teachers, setTeachers] = useState([])
   const [classes, setClasses] = useState([])
+  const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
+  const [trashedClasses, setTrashedClasses] = useState([])
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
@@ -44,7 +46,7 @@ export default function AdminHome() {
     const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes] = await Promise.all([
       supabase.from('profiles').select('*, classes(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
       supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayKr + 'T00:00:00'),
       supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200)
@@ -145,13 +147,22 @@ export default function AdminHome() {
       }))
     }
 
-    setTeachers(teachersRes.data || [])
-    setClasses(classes)
+    // 🆕 활성·휴지통 분리 (B4)
+    const allTeachers = teachersRes.data || []
+    const activeTeachers = allTeachers.filter(t => !t.deleted_at)
+    const trashedTeachers = allTeachers.filter(t => t.deleted_at)
+    const activeClasses = classes.filter(c => !c.deleted_at)
+    const trashedClasses = classes.filter(c => c.deleted_at)
+
+    setTeachers(activeTeachers)
+    setClasses(activeClasses)
+    setTrashedTeachers(trashedTeachers)
+    setTrashedClasses(trashedClasses)
     setFeedbacks(feedbacksWithAuthor)
 
     setStats({
-      teachers: (teachersRes.data || []).filter(t => t.role !== 'admin').length,
-      classes: classes.length,
+      teachers: activeTeachers.filter(t => t.role !== 'admin').length,
+      classes: activeClasses.length,
       students: studentsRes.count || 0,
       submissions: submissionsRes.count || 0,
       today: todayRes.count || 0
@@ -168,6 +179,139 @@ export default function AdminHome() {
     const { error } = await supabase.from('profiles').update({ is_banned: !teacher.is_banned }).eq('id', teacher.id)
     if (error) return alert('실패: ' + error.message)
     alert(`${action} 완료!`)
+    await loadAll()
+  }
+
+  // 🗑️ 선생님 휴지통으로 (B4)
+  const trashTeacher = async (teacher) => {
+    if (teacher.id === user?.id) {
+      return alert('⚠️ 본인 계정은 휴지통에 넣을 수 없어요.')
+    }
+    if (teacher.role === 'admin') {
+      const activeAdmins = teachers.filter(t => t.role === 'admin' && !t.deleted_at)
+      if (activeAdmins.length <= 1) {
+        return alert('⚠️ 마지막 관리자는 삭제할 수 없어요. 다른 선생님께 관리자 권한을 먼저 부여하세요.')
+      }
+    }
+
+    // 영향 범위 안내
+    const myClasses = classes.filter(c => c.teacher_id === teacher.id)
+    let warning = `🗑️ ${teacher.realname} 선생님을 휴지통으로 보낼까요?\n\n`
+    warning += `· 30일 후 영구 삭제됩니다 (그 전엔 복원 가능)\n`
+    warning += `· 선생님 본인은 로그인 차단됩니다\n`
+    if (myClasses.length > 0) {
+      warning += `· 담임 학급 ${myClasses.length}개는 그대로 유지됩니다 (학생 데이터 보호)\n`
+    }
+    warning += `\n계속하려면 선생님 이름을 입력하세요: ${teacher.realname}`
+    const answer = prompt(warning)
+    if (answer !== teacher.realname) {
+      if (answer !== null) alert('이름이 일치하지 않아 취소되었어요.')
+      return
+    }
+
+    const reason = prompt('삭제 사유 (선택 — 그냥 OK 눌러도 됨):') || null
+
+    const { error } = await supabase.from('profiles').update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: user.id,
+      delete_reason: reason
+    }).eq('id', teacher.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('휴지통으로 보냈어요.')
+    await loadAll()
+  }
+
+  const restoreTeacher = async (teacher) => {
+    if (!confirm(`${teacher.realname} 선생님을 복원할까요?\n\n복원하면 다시 로그인 가능해져요.`)) return
+    const { error } = await supabase.from('profiles').update({
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null
+    }).eq('id', teacher.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('복원 완료!')
+    await loadAll()
+  }
+
+  const purgeTeacher = async (teacher) => {
+    let warning = `⚠️ ${teacher.realname} 선생님을 영구 삭제할까요?\n\n`
+    warning += `이 작업은 되돌릴 수 없어요.\n\n`
+    warning += `계속하려면 다음 문구를 그대로 입력하세요:\n"영구삭제 ${teacher.realname}"`
+    const expected = `영구삭제 ${teacher.realname}`
+    const answer = prompt(warning)
+    if (answer !== expected) {
+      if (answer !== null) alert('문구가 일치하지 않아 취소되었어요.')
+      return
+    }
+    // profile만 삭제 (auth.users는 별도, SET NULL인 FK는 자동 처리)
+    const { error } = await supabase.from('profiles').delete().eq('id', teacher.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('영구 삭제 완료')
+    await loadAll()
+  }
+
+  // 🗑️ 학급 휴지통으로 (B4)
+  const trashClass = async (cls) => {
+    let warning = `🗑️ "${cls.name}" 학급을 휴지통으로 보낼까요?\n\n`
+    warning += `· 30일 후 영구 삭제됩니다 (그 전엔 복원 가능)\n`
+    warning += `· 학생들이 이 학급으로 가입할 수 없게 됩니다\n`
+    warning += `· 영구 삭제 시 학급의 모든 주제·제출물도 함께 삭제됩니다\n\n`
+    warning += `계속하려면 학급명을 입력하세요: ${cls.name}`
+    const answer = prompt(warning)
+    if (answer !== cls.name) {
+      if (answer !== null) alert('학급명이 일치하지 않아 취소되었어요.')
+      return
+    }
+
+    const reason = prompt('삭제 사유 (선택):') || null
+
+    const { error } = await supabase.from('classes').update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: user.id,
+      delete_reason: reason
+    }).eq('id', cls.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('휴지통으로 보냈어요.')
+    await loadAll()
+  }
+
+  const restoreClass = async (cls) => {
+    if (!confirm(`"${cls.name}" 학급을 복원할까요?`)) return
+    const { error } = await supabase.from('classes').update({
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null
+    }).eq('id', cls.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('복원 완료!')
+    await loadAll()
+  }
+
+  const purgeClass = async (cls) => {
+    let warning = `⚠️ "${cls.name}" 학급을 영구 삭제할까요?\n\n`
+    warning += `· 학급의 모든 주제·제출물이 함께 삭제됩니다\n`
+    warning += `· 이 작업은 되돌릴 수 없어요\n\n`
+    warning += `계속하려면 다음 문구를 그대로 입력하세요:\n"영구삭제 ${cls.name}"`
+    const expected = `영구삭제 ${cls.name}`
+    const answer = prompt(warning)
+    if (answer !== expected) {
+      if (answer !== null) alert('문구가 일치하지 않아 취소되었어요.')
+      return
+    }
+    // 종속 데이터 cascade
+    // 1. 학급의 주제 ID 모음
+    const { data: classTopics } = await supabase.from('topics').select('id').eq('teacher_id', cls.teacher_id)
+    const topicIds = (classTopics || []).map(t => t.id)
+    // 2. 그 주제의 제출물 삭제
+    if (topicIds.length > 0) {
+      await supabase.from('submissions').delete().in('topic_id', topicIds)
+    }
+    // 3. 학급 학생 profile.class_id null
+    await supabase.from('profiles').update({ class_id: null }).eq('class_id', cls.id)
+    // 4. 학급 삭제
+    const { error } = await supabase.from('classes').delete().eq('id', cls.id)
+    if (error) return alert('실패: ' + error.message)
+    alert('영구 삭제 완료')
     await loadAll()
   }
 
@@ -472,7 +616,8 @@ ${contents}
               { id: 'overview', label: '👥 선생님' },
               { id: 'classes', label: '🏫 학급' },
               { id: 'submissions', label: '📝 학생 글' },
-              { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` }
+              { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` },
+              { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex-1 min-w-fit py-2 px-3 rounded-lg text-sm font-medium whitespace-nowrap ${tab === t.id ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
@@ -565,6 +710,14 @@ ${contents}
                                       : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                                   }`}>
                                   {t.role === 'admin' ? '관리자 해제' : '관리자 부여'}
+                                </button>
+                              )}
+                              {/* 🆕 휴지통 (B4) */}
+                              {t.id !== user?.id && (
+                                <button onClick={() => trashTeacher(t)}
+                                  className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                                  title="휴지통으로 보내기 (30일 후 영구삭제)">
+                                  🗑️
                                 </button>
                               )}
                             </div>
@@ -696,6 +849,12 @@ ${contents}
                               <button onClick={() => toggleClassActive(c)}
                                 className={`text-xs px-3 py-1 rounded ${c.is_active === false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
                                 {c.is_active === false ? '활성화' : '비활성화'}
+                              </button>
+                              {/* 🆕 휴지통 (B4) */}
+                              <button onClick={() => trashClass(c)}
+                                className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                                title="휴지통으로 보내기 (30일 후 영구삭제)">
+                                🗑️
                               </button>
                             </div>
                           </td>
@@ -934,6 +1093,117 @@ ${contents}
               </div>
             )
           })()}
+
+          {/* 🆕 휴지통 탭 (B4) */}
+          {tab === 'trash' && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+                <p className="font-semibold mb-1">🗑️ 휴지통</p>
+                <p className="text-xs">
+                  · 휴지통에 보낸 선생님·학급은 <strong>30일 후 자동으로 영구 삭제</strong>됩니다.
+                  · 그 전까지는 언제든 복원 가능합니다.
+                  · 영구 삭제 시 학급의 모든 주제·제출물도 함께 삭제되며 되돌릴 수 없습니다.
+                </p>
+              </div>
+
+              {/* 삭제된 선생님 */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <h3 className="font-bold mb-3 text-sm">
+                  👥 삭제된 선생님 ({trashedTeachers.length})
+                </h3>
+                {trashedTeachers.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-6">휴지통이 비어있어요</p>
+                ) : (
+                  <div className="space-y-2">
+                    {trashedTeachers.map(t => {
+                      const deletedAt = new Date(t.deleted_at)
+                      const daysLeft = Math.ceil((deletedAt.getTime() + 30 * 86400000 - Date.now()) / 86400000)
+                      const dDay = daysLeft <= 0 ? '곧 영구삭제' : `D-${daysLeft}`
+                      const dDayColor = daysLeft <= 3 ? 'text-red-700 bg-red-50' : daysLeft <= 7 ? 'text-orange-700 bg-orange-50' : 'text-gray-600 bg-gray-50'
+                      return (
+                        <div key={t.id} className="border border-gray-200 rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-gray-900">{t.realname}</span>
+                              <span className="text-xs text-gray-500">{t.username}</span>
+                              {t.role === 'admin' && (
+                                <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">관리자</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {t.school || '학교 미입력'}
+                              {t.delete_reason && <span className="ml-2">· 사유: {t.delete_reason}</span>}
+                            </div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">
+                              삭제일: {deletedAt.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <span className={`text-xs font-bold px-2 py-1 rounded ${dDayColor}`}>{dDay}</span>
+                          <div className="flex gap-2">
+                            <button onClick={() => restoreTeacher(t)}
+                              className="text-xs px-3 py-1.5 rounded bg-green-100 text-green-700 hover:bg-green-200">
+                              ↩️ 복원
+                            </button>
+                            <button onClick={() => purgeTeacher(t)}
+                              className="text-xs px-3 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200">
+                              영구삭제
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 삭제된 학급 */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <h3 className="font-bold mb-3 text-sm">
+                  🏫 삭제된 학급 ({trashedClasses.length})
+                </h3>
+                {trashedClasses.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-6">휴지통이 비어있어요</p>
+                ) : (
+                  <div className="space-y-2">
+                    {trashedClasses.map(c => {
+                      const deletedAt = new Date(c.deleted_at)
+                      const daysLeft = Math.ceil((deletedAt.getTime() + 30 * 86400000 - Date.now()) / 86400000)
+                      const dDay = daysLeft <= 0 ? '곧 영구삭제' : `D-${daysLeft}`
+                      const dDayColor = daysLeft <= 3 ? 'text-red-700 bg-red-50' : daysLeft <= 7 ? 'text-orange-700 bg-orange-50' : 'text-gray-600 bg-gray-50'
+                      return (
+                        <div key={c.id} className="border border-gray-200 rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-gray-900">{c.name}</span>
+                              <span className="text-xs text-gray-500 font-mono">{c.code}</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {c.school || '학교 미입력'}
+                              {c.delete_reason && <span className="ml-2">· 사유: {c.delete_reason}</span>}
+                            </div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">
+                              삭제일: {deletedAt.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <span className={`text-xs font-bold px-2 py-1 rounded ${dDayColor}`}>{dDay}</span>
+                          <div className="flex gap-2">
+                            <button onClick={() => restoreClass(c)}
+                              className="text-xs px-3 py-1.5 rounded bg-green-100 text-green-700 hover:bg-green-200">
+                              ↩️ 복원
+                            </button>
+                            <button onClick={() => purgeClass(c)}
+                              className="text-xs px-3 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200">
+                              영구삭제
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         </main>
       </div>

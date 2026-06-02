@@ -205,9 +205,15 @@ export default function StudentLogin() {
         persistOptions()
         router.push('/student')
       } else {
-        const { data: classData } = await supabase.from('classes').select('id, name, is_active, school').eq('code', classCode).maybeSingle()
+        const { data: classData } = await supabase.from('classes').select('id, name, is_active, school, deleted_at').eq('code', classCode).maybeSingle()
         if (!classData) {
           setError('학급 코드가 잘못됐어요. 선생님께 확인해주세요')
+          setLoading(false)
+          return
+        }
+        // 🆕 삭제된 학급은 가입 차단 (B4)
+        if (classData.deleted_at) {
+          setError('이 학급은 삭제되었어요. 선생님께 문의해주세요.')
           setLoading(false)
           return
         }
