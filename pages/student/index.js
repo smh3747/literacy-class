@@ -203,7 +203,7 @@ export default function StudentHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key, school)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, school)').eq('id', authUser.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }

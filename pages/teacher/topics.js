@@ -97,7 +97,7 @@ export default function TopicsPage() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name, code, api_key, grade)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, grade)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }

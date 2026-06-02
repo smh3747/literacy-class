@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -15,6 +15,7 @@ export default function AdminHome() {
   const [classes, setClasses] = useState([])
   const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
   const [trashedClasses, setTrashedClasses] = useState([])
+  const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
@@ -44,7 +45,7 @@ export default function AdminHome() {
     const todayKr = new Date(today.getTime() + (9 * 3600 * 1000) - (today.getTimezoneOffset() * 60 * 1000)).toISOString().slice(0, 10)
 
     const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes] = await Promise.all([
-      supabase.from('profiles').select('*, classes(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
@@ -153,6 +154,40 @@ export default function AdminHome() {
     const trashedTeachers = allTeachers.filter(t => t.deleted_at)
     const activeClasses = classes.filter(c => !c.deleted_at)
     const trashedClasses = classes.filter(c => c.deleted_at)
+
+    // 🆕 학급별 제출 통계 + 마지막 활동 시각
+    const activeClassIds = activeClasses.map(c => c.id)
+    if (activeClassIds.length > 0) {
+      // 학급에 속한 모든 학생 id
+      const { data: studentsForActivity } = await supabase.from('profiles')
+        .select('id, class_id').in('class_id', activeClassIds).eq('role', 'student')
+      const studentToClass = {}
+      ;(studentsForActivity || []).forEach(s => { studentToClass[s.id] = s.class_id })
+      const allActiveStudentIds = (studentsForActivity || []).map(s => s.id)
+
+      if (allActiveStudentIds.length > 0) {
+        // 제출물 카운트 + 최근 제출 시각 (학생 단위로 집계 후 학급 단위로 묶음)
+        const { data: subStats } = await supabase.from('submissions')
+          .select('user_id, created_at')
+          .in('user_id', allActiveStudentIds)
+          .order('created_at', { ascending: false })
+
+        const classSubCount = {}     // { classId: 제출 수 }
+        const classLastActivity = {} // { classId: 최근 제출 시각 }
+        ;(subStats || []).forEach(sub => {
+          const cid = studentToClass[sub.user_id]
+          if (!cid) return
+          classSubCount[cid] = (classSubCount[cid] || 0) + 1
+          if (!classLastActivity[cid] || sub.created_at > classLastActivity[cid]) {
+            classLastActivity[cid] = sub.created_at
+          }
+        })
+        activeClasses.forEach(c => {
+          c.submission_count = classSubCount[c.id] || 0
+          c.last_activity_at = classLastActivity[c.id] || null
+        })
+      }
+    }
 
     setTeachers(activeTeachers)
     setClasses(activeClasses)
@@ -658,10 +693,11 @@ ${contents}
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
+                        <th className="p-2 text-left w-6"></th>
                         <th className="p-2 text-left">이름</th>
                         <th className="p-2 text-left">학교</th>
                         <th className="p-2 text-left">아이디</th>
-                        <th className="p-2 text-left">학급</th>
+                        <th className="p-2 text-left">운영 학급</th>
                         <th className="p-2 text-left">권한</th>
                         <th className="p-2 text-left">가입일</th>
                         <th className="p-2 text-left">상태</th>
@@ -669,45 +705,83 @@ ${contents}
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleTeachers.map(t => (
-                        <tr key={t.id} className={`border-b border-gray-100 ${t.is_banned ? 'bg-red-50' : ''}`}>
-                          <td className="p-2 font-medium">{t.realname}</td>
-                          <td className="p-2 text-gray-600">{t.school || '-'}</td>
-                          <td className="p-2 text-gray-600 font-mono text-xs">{t.username}</td>
-                          <td className="p-2 text-gray-600">{t.classes?.name || '-'}</td>
-                          <td className="p-2">
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${t.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {t.role === 'admin' ? '관리자' : '교사'}
-                            </span>
-                          </td>
-                          <td className="p-2 text-xs text-gray-500">{toKSTDate(t.created_at)}</td>
-                          <td className="p-2">
-                            {t.is_banned ? (
-                              <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">차단됨</span>
-                            ) : (
-                              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">정상</span>
-                            )}
-                          </td>
-                          <td className="p-2 text-center">
-                            <div className="flex flex-col sm:flex-row gap-1 justify-center">
-                              {t.role !== 'admin' && !t.is_banned && (
-                                <button onClick={() => toggleTeacherBan(t)}
-                                  className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">
-                                  차단
-                                </button>
-                              )}
-                              {t.role !== 'admin' && t.is_banned && (
-                                <button onClick={() => toggleTeacherBan(t)}
-                                  className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200">
-                                  차단 해제
-                                </button>
-                              )}
-                              {!t.is_banned && (
-                                <button onClick={() => toggleAdmin(t)}
-                                  className={`text-xs px-2 py-1 rounded ${
-                                    t.role === 'admin'
-                                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                      {visibleTeachers.map(t => {
+                        // 🆕 이 선생님이 담임으로 운영하는 학급들
+                        const myClasses = classes.filter(c => c.teacher_id === t.id)
+                        const totalStudents = myClasses.reduce((sum, c) => sum + (c.student_count || 0), 0)
+                        const totalSubs = myClasses.reduce((sum, c) => sum + (c.submission_count || 0), 0)
+                        const lastActivity = myClasses.reduce((max, c) => {
+                          if (!c.last_activity_at) return max
+                          return !max || c.last_activity_at > max ? c.last_activity_at : max
+                        }, null)
+                        const isExpanded = expandedTeacherId === t.id
+
+                        // 활동 라벨
+                        let activityLabel = '활동 없음'
+                        let activityColor = 'text-gray-400'
+                        if (lastActivity) {
+                          const diffDays = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
+                          if (diffDays === 0) { activityLabel = '오늘 활동'; activityColor = 'text-green-700' }
+                          else if (diffDays === 1) { activityLabel = '어제 활동'; activityColor = 'text-green-700' }
+                          else if (diffDays <= 7) { activityLabel = `${diffDays}일 전`; activityColor = 'text-blue-700' }
+                          else if (diffDays <= 30) { activityLabel = `${diffDays}일 전`; activityColor = 'text-gray-600' }
+                          else { activityLabel = `${diffDays}일 전`; activityColor = 'text-amber-700' }
+                        }
+
+                        return (
+                          <React.Fragment key={t.id}>
+                            <tr
+                              className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${t.is_banned ? 'bg-red-50' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
+                              onClick={() => setExpandedTeacherId(isExpanded ? null : t.id)}>
+                              <td className="p-2 text-gray-400 select-none">{isExpanded ? '▼' : '▶'}</td>
+                              <td className="p-2 font-medium">{t.realname}</td>
+                              <td className="p-2 text-gray-600">{t.school || '-'}</td>
+                              <td className="p-2 text-gray-600 font-mono text-xs">{t.username}</td>
+                              <td className="p-2 text-gray-600">
+                                {myClasses.length === 0 ? (
+                                  <span className="text-xs text-gray-400">운영 학급 없음</span>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-xs">
+                                      🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건
+                                    </span>
+                                    <span className={`text-[11px] ${activityColor}`}>{activityLabel}</span>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${t.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {t.role === 'admin' ? '관리자' : '교사'}
+                                </span>
+                              </td>
+                              <td className="p-2 text-xs text-gray-500">{toKSTDate(t.created_at)}</td>
+                              <td className="p-2">
+                                {t.is_banned ? (
+                                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">차단됨</span>
+                                ) : (
+                                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">정상</span>
+                                )}
+                              </td>
+                              <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
+                                <div className="flex flex-col sm:flex-row gap-1 justify-center">
+                                  {t.role !== 'admin' && !t.is_banned && (
+                                    <button onClick={() => toggleTeacherBan(t)}
+                                      className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">
+                                      차단
+                                    </button>
+                                  )}
+                                  {t.role !== 'admin' && t.is_banned && (
+                                    <button onClick={() => toggleTeacherBan(t)}
+                                      className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200">
+                                      차단 해제
+                                    </button>
+                                  )}
+                                  {!t.is_banned && (
+                                    <button onClick={() => toggleAdmin(t)}
+                                      className={`text-xs px-2 py-1 rounded ${
+                                        t.role === 'admin'
+                                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                          : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                                   }`}>
                                   {t.role === 'admin' ? '관리자 해제' : '관리자 부여'}
                                 </button>
@@ -723,7 +797,75 @@ ${contents}
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        {/* 🆕 펼침 행 — 운영 학급 상세 */}
+                        {isExpanded && (
+                          <tr className="bg-blue-50/30 border-b border-gray-200">
+                            <td></td>
+                            <td colSpan={8} className="p-3">
+                              {myClasses.length === 0 ? (
+                                <div className="text-sm text-gray-500 py-2">
+                                  운영 중인 학급이 없어요.
+                                  {t.role === 'admin' && ' (관리자 계정은 학급 없이도 작동해요)'}
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="text-xs text-gray-600 font-semibold mb-1">
+                                    운영 학급 {myClasses.length}개 · 총 학생 {totalStudents}명 · 총 제출 {totalSubs}건
+                                  </div>
+                                  {myClasses.map(c => {
+                                    const lastAct = c.last_activity_at
+                                    let lastLabel = '활동 없음'
+                                    let lastColor = 'text-gray-400'
+                                    if (lastAct) {
+                                      const d = Math.floor((Date.now() - new Date(lastAct).getTime()) / 86400000)
+                                      if (d === 0) { lastLabel = '오늘'; lastColor = 'text-green-700' }
+                                      else if (d <= 7) { lastLabel = `${d}일 전`; lastColor = 'text-blue-700' }
+                                      else { lastLabel = `${d}일 전`; lastColor = 'text-gray-600' }
+                                    }
+                                    return (
+                                      <div key={c.id} className={`bg-white border ${c.is_active === false ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200'} rounded-lg p-3 flex items-center gap-3 flex-wrap`}>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-semibold text-gray-900">{c.name}</span>
+                                            <span className="text-xs text-gray-500 font-mono">{c.code}</span>
+                                            {c.is_active === false && (
+                                              <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">비활성</span>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-gray-600 mt-1 flex gap-3 flex-wrap">
+                                            <span>👥 학생 <strong>{c.student_count || 0}</strong>명</span>
+                                            <span>📝 제출 <strong>{c.submission_count || 0}</strong>건</span>
+                                            <span className={lastColor}>⏱️ {lastLabel}</span>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-1 flex-wrap">
+                                          <a href={`/teacher?as=${t.id}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                            title="새 탭에서 담임 화면 그대로 보기">
+                                            🔍 엿보기
+                                          </a>
+                                          <button onClick={() => toggleClassActive(c)}
+                                            className={`text-xs px-2 py-1 rounded ${c.is_active === false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+                                            {c.is_active === false ? '활성화' : '비활성화'}
+                                          </button>
+                                          <button onClick={() => trashClass(c)}
+                                            className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                                            title="학급 휴지통으로">
+                                            🗑️
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                          </React.Fragment>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

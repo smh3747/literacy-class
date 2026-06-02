@@ -46,25 +46,51 @@ export default function TeacherLogin() {
   }, [])
 
   const checkSession = async () => {
-    // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
-    if (typeof window !== 'undefined') {
-      const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
-      const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
-      if (noAutoLogin && !sessionActive) {
-        await supabase.auth.signOut()
-        setCheckingAuth(false)
-        return
+    try {
+      // 자동 로그인 OFF + 새 브라우저 세션 → 강제 로그아웃
+      if (typeof window !== 'undefined') {
+        const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
+        const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
+        if (noAutoLogin && !sessionActive) {
+          await supabase.auth.signOut()
+          setCheckingAuth(false)
+          return
+        }
       }
-    }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const { data: profile } = await supabase.from('profiles')
-        .select('role').eq('id', session.user.id).maybeSingle()
-      if (profile?.role === 'teacher' || profile?.role === 'admin') {
-        router.replace('/teacher')
-        return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        const { data: profile, error: profileErr } = await supabase.from('profiles')
+          .select('role, deleted_at').eq('id', session.user.id).maybeSingle()
+
+        // 🆕 자동 복구: 세션은 있는데 profile이 없거나 조회 실패 → 깨끗하게 로그아웃
+        if (profileErr || !profile) {
+          console.warn('[auto-recovery] 세션은 있지만 profile 없음 → 정리:', profileErr?.message)
+          await supabase.auth.signOut()
+          setCheckingAuth(false)
+          return
+        }
+
+        // 🆕 삭제된 계정은 강제 로그아웃
+        if (profile.deleted_at) {
+          await supabase.auth.signOut()
+          setError('이 계정은 관리자에 의해 삭제되었어요.\n관리자에게 문의해주세요.')
+          setCheckingAuth(false)
+          return
+        }
+
+        // 🆕 자동 복구: 역할이 학생 등 잘못된 경우도 정리
+        if (profile.role === 'teacher' || profile.role === 'admin') {
+          router.replace('/teacher')
+          return
+        }
+        // 그 외 (student 등) → signOut 후 로그인 폼
+        console.warn('[auto-recovery] role 불일치 → 정리:', profile.role)
+        await supabase.auth.signOut()
       }
+    } catch (e) {
+      console.error('checkSession 오류 → 깨끗한 상태로 복구:', e)
+      try { await supabase.auth.signOut() } catch(_) {}
     }
     setCheckingAuth(false)
   }

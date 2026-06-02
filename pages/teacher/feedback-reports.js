@@ -18,7 +18,7 @@ export default function FeedbackReports() {
   const checkAuth = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes(id, name)').eq('id', au.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name)').eq('id', au.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
