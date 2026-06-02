@@ -69,7 +69,7 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
     if (!open || editing) return
     if (!qrCanvasRef.current || !loginUrl) return
     QRCode.toCanvas(qrCanvasRef.current, loginUrl, {
-      width: 96,
+      width: 120,
       margin: 1,
       color: { dark: '#1f2937', light: '#ffffff' }
     }).catch(() => {})
@@ -210,27 +210,29 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
             <>
               <div className="bg-white rounded-xl p-4 border border-blue-200">
                 <div className="space-y-2 text-sm">
-                  <div className="flex items-start gap-3">
-                    <span className="text-blue-600 font-bold flex-shrink-0">1.</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-gray-700">아래 링크 또는 QR로 접속</div>
-                      <div className="font-mono text-xs bg-gray-50 px-2 py-1 rounded mt-1 break-all">
-                        {loginUrl}
+                  <div className="flex flex-col sm:flex-row items-start gap-3">
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      <span className="text-blue-600 font-bold flex-shrink-0">1.</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-gray-700">아래 링크 또는 QR로 접속</div>
+                        <div className="font-mono text-xs bg-gray-50 px-2 py-1 rounded mt-1 break-all">
+                          {loginUrl}
+                        </div>
                       </div>
                     </div>
-                    {/* 🆕 미니 QR + 크게 보기 (와이프 피드백 통합) */}
-                    <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                    {/* 🆕 미니 QR + 크게 보기 */}
+                    <div className="flex-shrink-0 flex flex-col items-center gap-1 mx-auto sm:mx-0">
                       <button
                         type="button"
                         onClick={() => setShowQrModal(true)}
-                        className="bg-white border border-gray-200 rounded-lg p-1.5 hover:border-blue-400 hover:shadow-md transition"
+                        className="bg-white border border-gray-200 rounded-lg p-2 hover:border-blue-400 hover:shadow-md transition"
                         title="QR 코드 크게 보기 / 다운로드 / 인쇄">
                         <canvas ref={qrCanvasRef} className="block" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowQrModal(true)}
-                        className="text-[10px] text-blue-700 hover:bg-blue-50 px-2 py-0.5 rounded">
+                        className="text-xs text-blue-700 hover:bg-blue-50 px-2 py-0.5 rounded">
                         🔍 크게·인쇄
                       </button>
                     </div>

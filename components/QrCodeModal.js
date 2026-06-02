@@ -36,12 +36,28 @@ export default function QrCodeModal({ classCode, className, onClose }) {
     }
   }, [classCode])
 
-  const downloadQr = () => {
-    if (!canvasRef.current) return
-    const link = document.createElement('a')
-    link.download = `학급_${classCode}_QR.png`
-    link.href = canvasRef.current.toDataURL()
-    link.click()
+  const downloadQr = async () => {
+    if (!url) return
+    // 고해상도로 새로 생성 (화면용 256px을 그대로 다운받으면 작음)
+    try {
+      const highRes = await QRCode.toDataURL(url, {
+        width: 1024,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+      })
+      const link = document.createElement('a')
+      link.download = `학급_${classCode}_QR.png`
+      link.href = highRes
+      link.click()
+    } catch (e) {
+      // 폴백
+      if (!canvasRef.current) return
+      const link = document.createElement('a')
+      link.download = `학급_${classCode}_QR.png`
+      link.href = canvasRef.current.toDataURL()
+      link.click()
+    }
   }
 
   const copyUrl = async () => {
@@ -52,19 +68,56 @@ export default function QrCodeModal({ classCode, className, onClose }) {
     } catch(e) {}
   }
 
-  const printQr = () => {
-    if (!canvasRef.current) return
-    const dataUrl = canvasRef.current.toDataURL()
+  const printQr = async () => {
+    if (!url) return
+    // 인쇄용 고해상도 QR을 새로 생성 (화면용 256px 그대로 키우면 흐려짐)
+    let highResDataUrl = ''
+    try {
+      highResDataUrl = await QRCode.toDataURL(url, {
+        width: 1024,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+      })
+    } catch (e) {
+      // 폴백: 화면 캔버스 사용
+      if (canvasRef.current) highResDataUrl = canvasRef.current.toDataURL()
+    }
+    if (!highResDataUrl) return
+
     const win = window.open('', '_blank')
     win.document.write(`
       <html>
-        <head><title>${className || classCode} QR</title></head>
-        <body style="margin: 0; padding: 40px; text-align: center; font-family: sans-serif;">
-          <h1 style="font-size: 28px;">${className || '우리 학급'}</h1>
-          <p style="font-size: 16px; color: #555;">아래 QR을 카메라로 찍거나 코드를 입력하세요</p>
-          <img src="${dataUrl}" style="max-width: 400px; margin: 20px auto;" />
-          <div style="font-size: 32px; font-family: monospace; letter-spacing: 8px; font-weight: bold;">${classCode}</div>
-          <p style="font-size: 14px; color: #888; margin-top: 30px;">${url}</p>
+        <head>
+          <title>${className || classCode} QR</title>
+          <style>
+            @page { margin: 1.5cm; }
+            body {
+              margin: 0;
+              padding: 0;
+              text-align: center;
+              font-family: 'Noto Sans KR', sans-serif;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            h1 { font-size: 36px; margin: 20px 0 10px; }
+            .sub { font-size: 18px; color: #555; margin-bottom: 24px; }
+            .qr-wrap { margin: 0 auto; width: 14cm; max-width: 90%; }
+            .qr-wrap img { width: 100%; height: auto; display: block; }
+            .code { font-size: 48px; font-family: 'Courier New', monospace; letter-spacing: 12px; font-weight: bold; margin: 24px 0 12px; }
+            .url { font-size: 14px; color: #888; word-break: break-all; padding: 0 2cm; }
+            .footer { margin-top: 32px; font-size: 13px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <h1>${className || '우리 학급'}</h1>
+          <p class="sub">📱 QR 코드를 카메라로 찍거나 아래 코드를 입력하세요</p>
+          <div class="qr-wrap">
+            <img src="${highResDataUrl}" alt="학급 QR" />
+          </div>
+          <div class="code">${classCode}</div>
+          <p class="url">${url}</p>
+          <p class="footer">문해력 수업 · 학급 가입 안내</p>
         </body>
       </html>
     `)
