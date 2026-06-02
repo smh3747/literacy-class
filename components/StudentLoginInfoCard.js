@@ -5,9 +5,11 @@
 // + 카드가 너무 커서 접기 가능하게
 // + ClassSettings의 "학생 로그인 안내"와 통합 (한 곳에서 모든 설정)
 // ============================================
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
 import { ensureLoginHint } from '../lib/loginHint'
+import QrCodeModal from './QrCodeModal'
 
 const STORAGE_KEY = 'lc-login-info-card-open'
 
@@ -18,6 +20,9 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
   const [editPrefix, setEditPrefix] = useState('')
   const [editPassword, setEditPassword] = useState('123456')
   const [saving, setSaving] = useState(false)
+  // 🆕 QR 통합 (큰 모달은 별도 컴포넌트)
+  const [showQrModal, setShowQrModal] = useState(false)
+  const qrCanvasRef = useRef(null)
 
   const loginHintEnabled = !!classInfo?.login_hint_enabled
   const prefix = classInfo?.login_username_prefix || ''
@@ -49,9 +54,26 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
 
   if (!classInfo) return null
 
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-  const loginUrl = `${baseUrl}/student/login?code=${classInfo.code}`
+  // QrCodeModal과 같은 origin 결정 로직
+  let origin = ''
+  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SITE_URL) {
+    origin = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
+  } else if (typeof window !== 'undefined') {
+    origin = window.location.origin
+  }
+  const loginUrl = `${origin}/student/login?code=${classInfo.code}`
   const formatNum = (n) => String(n).padStart(2, '0')
+
+  // 🆕 카드 펼쳐졌을 때만 미니 QR 그리기
+  useEffect(() => {
+    if (!open || editing) return
+    if (!qrCanvasRef.current || !loginUrl) return
+    QRCode.toCanvas(qrCanvasRef.current, loginUrl, {
+      width: 96,
+      margin: 1,
+      color: { dark: '#1f2937', light: '#ffffff' }
+    }).catch(() => {})
+  }, [open, editing, loginUrl])
 
   const buildAnnouncementText = () => {
     const lines = [
@@ -188,13 +210,29 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
             <>
               <div className="bg-white rounded-xl p-4 border border-blue-200">
                 <div className="space-y-2 text-sm">
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-3">
                     <span className="text-blue-600 font-bold flex-shrink-0">1.</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-gray-700">아래 링크로 접속</div>
+                      <div className="text-gray-700">아래 링크 또는 QR로 접속</div>
                       <div className="font-mono text-xs bg-gray-50 px-2 py-1 rounded mt-1 break-all">
                         {loginUrl}
                       </div>
+                    </div>
+                    {/* 🆕 미니 QR + 크게 보기 (와이프 피드백 통합) */}
+                    <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowQrModal(true)}
+                        className="bg-white border border-gray-200 rounded-lg p-1.5 hover:border-blue-400 hover:shadow-md transition"
+                        title="QR 코드 크게 보기 / 다운로드 / 인쇄">
+                        <canvas ref={qrCanvasRef} className="block" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowQrModal(true)}
+                        className="text-[10px] text-blue-700 hover:bg-blue-50 px-2 py-0.5 rounded">
+                        🔍 크게·인쇄
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
@@ -352,6 +390,15 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
             </div>
           )}
         </div>
+      )}
+
+      {/* 🆕 QR 모달 (크게 보기 / 다운로드 / 인쇄) */}
+      {showQrModal && (
+        <QrCodeModal
+          classCode={classInfo.code}
+          className={classInfo.name}
+          onClose={() => setShowQrModal(false)}
+        />
       )}
     </div>
   )

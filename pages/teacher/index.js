@@ -8,9 +8,8 @@ import ApiKeyManager from '../../components/ApiKeyManager'
 import ClassSettings from '../../components/ClassSettings'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
-import QrCodeModal from '../../components/QrCodeModal'
-import ImpersonationBanner from '../../components/ImpersonationBanner'
 import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 export default function TeacherHome() {
@@ -22,7 +21,6 @@ export default function TeacherHome() {
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
-  const [showQrModal, setShowQrModal] = useState(false)
   // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
   const [isImpersonating, setIsImpersonating] = useState(false)
 
@@ -217,12 +215,8 @@ export default function TeacherHome() {
                 </div>
               </div>
               <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
-                <p className="text-xs text-gray-700">학생들에게 위 코드를 알려주세요</p>
+                <p className="text-xs text-gray-700">👇 아래 학생 안내 카드에 QR · 로그인 방법이 함께 있어요</p>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowQrModal(true)}
-                    className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light font-medium">
-                    📱 QR코드 보기
-                  </button>
                   {!isImpersonating && (
                     <button onClick={regenerateClassCode}
                       className="text-xs bg-white border border-primary text-primary px-3 py-1 rounded-full hover:bg-primary-light">
@@ -349,13 +343,6 @@ export default function TeacherHome() {
         </main>
         {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
         {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
-        {showQrModal && classInfo && (
-          <QrCodeModal
-            classCode={classInfo.code}
-            className={classInfo.name}
-            onClose={() => setShowQrModal(false)}
-          />
-        )}
       </div>
     </>
   )
