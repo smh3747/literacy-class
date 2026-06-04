@@ -87,8 +87,7 @@ export default function SuggestionLogPanel({
       category: picked.category,
       createdAt: log.created_at,
       usedDate: log.resulting_topic?.date,
-      authorName: log.author?.realname || '익명',
-      authorSchool: log.author?.school || '',
+      // 익명 — 다른 선생님 이름·학교 보호 (이름 노출 안 함)
     })
   }
 
@@ -234,10 +233,10 @@ export default function SuggestionLogPanel({
                           {item.category && (
                             <span className="text-[10px] text-purple-600">#{item.category}</span>
                           )}
-                          {tab === 'shared' && item.authorName && (
-                            <span className="text-[10px] text-gray-500 ml-auto">
-                              👤 {item.authorName}
-                              {item.authorSchool && <span className="opacity-70"> · {item.authorSchool}</span>}
+                          {/* 🆕 다른 선생님 카드: 익명 표시 (이름·학교 보호) */}
+                          {tab === 'shared' && (
+                            <span className="text-[10px] text-gray-400 ml-auto">
+                              👤 다른 선생님
                             </span>
                           )}
                         </div>

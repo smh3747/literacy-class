@@ -953,10 +953,9 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
         .limit(50)
 
       // 🆕 다른 선생님이 공유한 추천 (와이프 피드백: 등록 + 명시 공유 둘 다)
-      // 1) resulting_topic_id가 있음 (학급에 등록한 것, 자동 공유)
-      // 2) 또는 is_shared = true (명시적으로 공유 토글)
+      // 익명 공유 — author 정보는 가져오지 않음 (다른 선생님 이름·학교 보호)
       const sharedPromise = supabase.from('topic_suggestion_logs')
-        .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school)')
+        .select('*, resulting_topic:topics(id, title, date)')
         .neq('teacher_id', uid)
         .or('resulting_topic_id.not.is.null,is_shared.eq.true')
         .order('created_at', { ascending: false })
@@ -2063,8 +2062,6 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
           title: s.title,
           description: s.description,
           category: s.category,
-          authorName: log.author?.realname || '익명',
-          authorSchool: log.author?.school || '',
         })
       })
       continue
@@ -2078,8 +2075,6 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
       description: picked.description,
       category: picked.category,
       usedDate: log.resulting_topic?.date,
-      authorName: log.author?.realname || '익명',
-      authorSchool: log.author?.school || '',
     })
   }
 
@@ -2161,9 +2156,9 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
                     {item.category && (
                       <span className="text-[10px] text-purple-600">#{item.category}</span>
                     )}
-                    {tab === 'shared' && item.authorName && (
-                      <span className="text-[10px] text-gray-500 ml-auto truncate">
-                        👤 {item.authorName}
+                    {tab === 'shared' && (
+                      <span className="text-[10px] text-gray-400 ml-auto">
+                        👤 다른 선생님
                       </span>
                     )}
                   </div>
