@@ -6,6 +6,7 @@
 // 2. API 키 등록
 // 3. 학생 등록
 // 4. 첫 주제 만들기
+//
 // 모든 단계 완료되면 자동 숨김 (localStorage로 "다시 안 보기"도 가능)
 // ============================================
 import { useState } from 'react'
@@ -13,7 +14,7 @@ import Link from 'next/link'
 
 const HIDE_KEY = 'lc-setup-checklist-hidden'
 
-export default function SetupChecklist({ classInfo, hasApiKey, studentCount, topicCount, onScrollToApi }) {
+export default function SetupChecklist({ classInfo, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint }) {
   const [hidden, setHidden] = useState(() => {
     if (typeof window === 'undefined') return false
     try { return localStorage.getItem(HIDE_KEY) === '1' } catch { return false }
@@ -53,6 +54,19 @@ export default function SetupChecklist({ classInfo, hasApiKey, studentCount, top
         type: 'link',
         href: '/teacher/students',
         text: studentCount > 0 ? '학생 관리' : '👥 지금 등록하기'
+      }
+    },
+    {
+      id: 'login-hint',
+      label: '학생 로그인 안내 설정',
+      done: !!hasLoginHint,
+      detail: hasLoginHint
+        ? '학생 아이디 자동 안내 사용 중'
+        : '학생들이 "내 아이디 뭐예요?" 안 묻게 만들기',
+      action: {
+        type: 'scroll',
+        text: hasLoginHint ? '안내 확인' : '📋 지금 설정하기',
+        onClick: onScrollToLoginHint
       }
     },
     {

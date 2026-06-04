@@ -21,15 +21,26 @@ export default function TeacherHome() {
   const [studentSamples, setStudentSamples] = useState([])  // 🆕 안내 카드용 학생 일부
   const [topicCount, setTopicCount] = useState(0)            // 🆕 셋업 체크리스트용
   const [studentCountTotal, setStudentCountTotal] = useState(0)  // 🆕 셋업 체크리스트용
+  const [hasApiKey, setHasApiKey] = useState(false)          // 🆕 셋업 체크리스트용 (값 자체는 안 가져옴)
   const apiKeyRef = useRef(null)                              // 🆕 셋업 체크리스트에서 스크롤
+  const loginHintRef = useRef(null)                           // 🆕 로그인 안내 카드 스크롤
 
   const scrollToApiKey = () => {
     if (apiKeyRef.current) {
       apiKeyRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // 잠시 강조 (border 깜빡임)
       apiKeyRef.current.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
       setTimeout(() => {
         if (apiKeyRef.current) apiKeyRef.current.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
+      }, 2000)
+    }
+  }
+
+  const scrollToLoginHint = () => {
+    if (loginHintRef.current) {
+      loginHintRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      loginHintRef.current.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
+      setTimeout(() => {
+        if (loginHintRef.current) loginHintRef.current.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
       }, 2000)
     }
   }
@@ -82,6 +93,15 @@ export default function TeacherHome() {
           .select('id', { count: 'exact', head: true })
           .eq('teacher_id', profile.id)
         setTopicCount(tc || 0)
+
+        // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)
+        try {
+          const { data: keyCheck } = await supabase.from('classes')
+            .select('api_key').eq('id', profile.classes.id).maybeSingle()
+          setHasApiKey(!!keyCheck?.api_key)
+        } catch(e) {
+          setHasApiKey(false)
+        }
 
         if (studentIds && studentIds.length > 0) {
           const ids = studentIds.map(x => x.id)
@@ -257,21 +277,25 @@ export default function TeacherHome() {
           {!isImpersonating && (
             <SetupChecklist
               classInfo={classInfo}
-              hasApiKey={!!(classInfo?.api_key)}
+              hasApiKey={hasApiKey}
               studentCount={studentCountTotal}
               topicCount={topicCount}
+              hasLoginHint={!!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)}
               onScrollToApi={scrollToApiKey}
+              onScrollToLoginHint={scrollToLoginHint}
             />
           )}
 
           {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
           {classInfo && (
-            <StudentLoginInfoCard
-              classInfo={classInfo}
-              students={studentSamples}
-              isImpersonating={isImpersonating}
-              onUpdate={checkAuth}
-            />
+            <div ref={loginHintRef} className="rounded-2xl transition-all">
+              <StudentLoginInfoCard
+                classInfo={classInfo}
+                students={studentSamples}
+                isImpersonating={isImpersonating}
+                onUpdate={checkAuth}
+              />
+            </div>
           )}
 
           {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}

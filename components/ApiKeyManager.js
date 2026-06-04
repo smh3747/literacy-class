@@ -9,11 +9,17 @@ export default function ApiKeyManager({ classId, onChange }) {
   const [showInput, setShowInput] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)  // 🆕 카드 열고 닫기 (키 등록되어 있으면 기본 닫힘)
 
   useEffect(() => {
     if (classId) loadKey()
     else setLoading(false)
   }, [classId])
+
+  // 키 로드 후 — 미등록이면 자동으로 열어둠 (선생님이 바로 등록할 수 있게)
+  useEffect(() => {
+    if (!loading && !savedKey) setOpen(true)
+  }, [loading, savedKey])
 
   const loadKey = async () => {
     setLoading(true)
@@ -91,21 +97,45 @@ export default function ApiKeyManager({ classId, onChange }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h3 className="font-bold text-gray-900">🔑 학급 Gemini API 키</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            {hasKey ? '✅ 등록됨 (학급 모든 학생이 사용)' : '⚠️ 미등록 (학생들이 AI 피드백 못 받음)'}
-          </p>
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* 헤더 — 클릭하면 열고 닫힘 */}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition text-left">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+            🔑 학급 Gemini API 키
+            {hasKey ? (
+              <span className="text-xs font-normal bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                ✅ 등록됨
+              </span>
+            ) : (
+              <span className="text-xs font-normal bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                ⚠️ 미등록 — AI 채점 불가
+              </span>
+            )}
+          </h3>
+          {!open && (
+            <p className="text-xs text-gray-500 mt-1">
+              {hasKey ? '클릭하면 키 확인·변경·삭제' : '클릭하면 API 키 등록 (학생들이 AI 피드백 받으려면 필요)'}
+            </p>
+          )}
         </div>
+        <span className="text-gray-400 text-sm ml-2 flex-shrink-0">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {/* 펼친 영역 */}
+      {open && (
+      <div className="px-5 pb-5">
+      <div className="flex items-center justify-end mb-2">
         <Link href="/api-key-guide" target="_blank" className="text-xs text-primary hover:underline">
           발급 방법 →
         </Link>
       </div>
 
       {hasKey && !showInput ? (
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <code className="flex-1 min-w-0 bg-gray-50 px-3 py-2 rounded text-xs text-gray-600 break-all">
             {showKey ? savedKey : masked}
           </code>
@@ -120,7 +150,7 @@ export default function ApiKeyManager({ classId, onChange }) {
           </button>
         </div>
       ) : (
-        <div className="mt-3 space-y-2">
+        <div className="space-y-2">
           {hasKey && (
             <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded">
               💡 새 API 키를 입력하면 기존 키가 교체됩니다
@@ -199,6 +229,8 @@ export default function ApiKeyManager({ classId, onChange }) {
             </div>
           </details>
         </>
+      )}
+      </div>
       )}
     </div>
   )

@@ -184,19 +184,19 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
             📋 학생 로그인 안내
             {loginHintEnabled && prefix ? (
               <span className="text-xs font-normal bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                ✅ 설정됨 · {prefix}
+                ✅ 자동 안내 사용 중 · 아이디 {prefix}OO
               </span>
             ) : (
               <span className="text-xs font-normal bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                ⚠️ 미설정
+                ⚠️ 아이디 안내 미설정
               </span>
             )}
           </div>
           {!open && (
             <p className="text-xs text-blue-700/80 mt-0.5">
               {loginHintEnabled && prefix
-                ? `클릭하면 안내문 복사·수정 가능`
-                : `클릭해서 설정하면 학생이 "내 아이디 뭐예요?" 안 물어봐요`}
+                ? `클릭하면 학생 안내문 복사·수정·QR 출력 가능`
+                : `학생들이 "내 아이디 뭐예요?" 안 묻게 하려면 클릭해서 아이디 접두사를 설정해주세요`}
             </p>
           )}
         </div>
