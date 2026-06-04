@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -9,6 +9,7 @@ import ClassSettings from '../../components/ClassSettings'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
 import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
+import SetupChecklist from '../../components/SetupChecklist'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
@@ -18,6 +19,20 @@ export default function TeacherHome() {
   const [classInfo, setClassInfo] = useState(null)
   const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0, todayApiCalls: 0 })
   const [studentSamples, setStudentSamples] = useState([])  // 🆕 안내 카드용 학생 일부
+  const [topicCount, setTopicCount] = useState(0)            // 🆕 셋업 체크리스트용
+  const [studentCountTotal, setStudentCountTotal] = useState(0)  // 🆕 셋업 체크리스트용
+  const apiKeyRef = useRef(null)                              // 🆕 셋업 체크리스트에서 스크롤
+
+  const scrollToApiKey = () => {
+    if (apiKeyRef.current) {
+      apiKeyRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // 잠시 강조 (border 깜빡임)
+      apiKeyRef.current.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
+      setTimeout(() => {
+        if (apiKeyRef.current) apiKeyRef.current.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
+      }, 2000)
+    }
+  }
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -58,6 +73,16 @@ export default function TeacherHome() {
         const { data: studentIds } = await supabase.from('profiles')
           .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false')
+
+        // 🆕 셋업 체크리스트용 학생 수
+        setStudentCountTotal(studentIds?.length || 0)
+
+        // 🆕 셋업 체크리스트용 주제 수
+        const { count: tc } = await supabase.from('topics')
+          .select('id', { count: 'exact', head: true })
+          .eq('teacher_id', profile.id)
+        setTopicCount(tc || 0)
+
         if (studentIds && studentIds.length > 0) {
           const ids = studentIds.map(x => x.id)
           const { count } = await supabase.from('submissions')
@@ -228,6 +253,17 @@ export default function TeacherHome() {
             </div>
           )}
 
+          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내) */}
+          {!isImpersonating && (
+            <SetupChecklist
+              classInfo={classInfo}
+              hasApiKey={!!(classInfo?.api_key)}
+              studentCount={studentCountTotal}
+              topicCount={topicCount}
+              onScrollToApi={scrollToApiKey}
+            />
+          )}
+
           {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
           {classInfo && (
             <StudentLoginInfoCard
@@ -239,7 +275,11 @@ export default function TeacherHome() {
           )}
 
           {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}
-          {!isImpersonating && <ApiKeyManager classId={classInfo?.id} />}
+          {!isImpersonating && (
+            <div ref={apiKeyRef} className="rounded-2xl transition-all">
+              <ApiKeyManager classId={classInfo?.id} />
+            </div>
+          )}
 
           {/* 오늘 API 사용량 (추정) */}
           {/* 사용량 카드: 진짜 한도 임박할 때만 표시
