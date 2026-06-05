@@ -1548,15 +1548,29 @@ function AdminSubmissionsInner() {
     setClassMap(cMap)
 
     // 학생글 (최근 200건 — 그룹화 위해 좀 더 가져옴)
-    const { data } = await supabase.from('submissions')
+    // 🆕 특정 학급 선택 시: 그 학급 학생들의 글만 서버에서 직접 조회
+    // (기존엔 전체 최근 200건에서 클라이언트 필터 → 다른 반 글이 많으면
+    //  이 학급 글이 200건 밖으로 밀려나 "0건"으로 보이는 버그)
+    let query = supabase.from('submissions')
       .select('*, profiles!submissions_user_id_fkey(realname, username, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
       .limit(200)
 
-    let filtered = data || []
     if (selectedClass !== 'all') {
-      filtered = filtered.filter(s => s.profiles?.class_id === selectedClass)
+      const { data: classStudents } = await supabase.from('profiles')
+        .select('id').eq('class_id', selectedClass).eq('role', 'student')
+      const studentIds = (classStudents || []).map(x => x.id)
+      if (studentIds.length === 0) {
+        setStudentMap({})
+        setSubmissions([])
+        setLoading(false)
+        return
+      }
+      query = query.in('user_id', studentIds)
     }
+
+    const { data } = await query
+    const filtered = data || []
 
     // 학생 매핑 만들기
     const sMap = {}
@@ -1627,7 +1641,14 @@ function AdminSubmissionsInner() {
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-bold">📝 학생 글 (최근 {submissions.length}건)</h3>
+        <h3 className="font-bold">
+          📝 학생 글 (최근 {submissions.length}건)
+          {selectedClass === 'all' && (
+            <span className="text-[10px] text-gray-400 font-normal ml-1.5">
+              전체 모드는 최근 200건만 — 특정 학급 글을 모두 보려면 학급을 선택하세요
+            </span>
+          )}
+        </h3>
         <div className="flex items-center gap-2 flex-wrap">
           {/* 🆕 그룹화 모드 셀렉터 */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
