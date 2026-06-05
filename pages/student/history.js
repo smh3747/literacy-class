@@ -122,7 +122,7 @@ export default function StudentHistory() {
         `}</style>
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />
-          <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+          <main className={`mx-auto px-4 py-6 space-y-4 ${items.length >= 2 ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'}`}>
             <button onClick={() => setSelectedIdx(null)} className="text-sm text-gray-600">← 목록으로</button>
             
             <div className="bg-primary-light rounded-2xl p-4">
@@ -130,6 +130,8 @@ export default function StudentHistory() {
               <h2 className="text-lg font-bold text-primary-dark">{g.title}</h2>
             </div>
 
+            {/* 🆕 첫 글·수정본 좌우 병렬 (데스크탑), 모바일은 위아래 */}
+            <div className={`grid gap-4 items-start ${items.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
             {items.map((s, i) => (
               <div key={s.id} className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
                 <div className="flex justify-between items-center">
@@ -263,6 +265,7 @@ export default function StudentHistory() {
                 )}
               </div>
             ))}
+            </div>
 
             {canRewrite ? (
               <Link

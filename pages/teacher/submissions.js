@@ -701,6 +701,10 @@ export default function TeacherSubmissions() {
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
 
+              {/* 🆕 첫 글·수정본 좌우 병렬 (글 2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
+              <div className={`grid gap-4 items-start ${
+                selectedStudent.items.length >= 2 ? 'lg:grid-cols-2' : ''
+              }`}>
               {[...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1)).map((s, i, arr) => {
                 const isLast = i === arr.length - 1
                 const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
@@ -960,6 +964,7 @@ export default function TeacherSubmissions() {
                   </div>
                 )
               })}
+              </div>
             </>
           )}
         </main>
