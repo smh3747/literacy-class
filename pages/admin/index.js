@@ -208,7 +208,7 @@ export default function AdminHome() {
     try {
       const { data: sharedLogs } = await supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school, role)')
-        .or('resulting_topic_id.not.is.null,is_shared.eq.true')
+        .or('resulting_topic_id.not.is.null,is_shared.eq.true,shared_indexes.neq.[]')
         .order('created_at', { ascending: false })
         .limit(200)
       setSharedSuggestionLogs(sharedLogs || [])
@@ -1274,7 +1274,8 @@ ${contents}
                         ? sugs[log.selected_index]
                         : null
                       const isRegistered = !!log.resulting_topic_id
-                      const isExplicit = !!log.is_shared
+                      const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
+                      const isExplicit = !!log.is_shared || sharedIdxs.length > 0
                       const dateStr = log.created_at
                         ? new Date(log.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
                         : ''
@@ -1291,7 +1292,7 @@ ${contents}
                               )}
                               {isExplicit && (
                                 <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                                  🔗 명시 공유
+                                  🔗 개별 공유 {sharedIdxs.length > 0 ? `${sharedIdxs.length}개` : ''}
                                 </span>
                               )}
                             </div>
@@ -1333,9 +1334,19 @@ ${contents}
                               <div className="mt-2 space-y-1.5">
                                 {sugs.map((s, idx) => {
                                   if (picked && idx === log.selected_index) return null
+                                  const isSharedCard = sharedIdxs.includes(idx)
                                   return (
-                                    <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-2">
-                                      <div className="font-medium text-gray-800">{idx + 1}. {s.title}</div>
+                                    <div key={idx} className={`rounded p-2 border ${
+                                      isSharedCard
+                                        ? 'bg-purple-50 border-purple-300'
+                                        : 'bg-gray-50 border-gray-200'
+                                    }`}>
+                                      <div className="font-medium text-gray-800">
+                                        {idx + 1}. {s.title}
+                                        {isSharedCard && (
+                                          <span className="ml-1 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">🔗 공유됨</span>
+                                        )}
+                                      </div>
                                       {s.description && (
                                         <div className="text-gray-600 mt-0.5">{s.description}</div>
                                       )}

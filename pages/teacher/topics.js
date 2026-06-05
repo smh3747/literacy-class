@@ -951,12 +951,12 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
         .order('created_at', { ascending: false })
         .limit(50)
 
-      // 🆕 다른 선생님이 공유한 추천 (와이프 피드백: 등록 + 명시 공유 둘 다)
-      // 익명 공유 — author 정보는 가져오지 않음 (다른 선생님 이름·학교 보호)
+      // 다른 선생님이 공유한 추천 (등록 자동 공유 + 개별 카드 공유)
+      // 익명 — author 정보는 가져오지 않음
       const sharedPromise = supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date)')
         .neq('teacher_id', uid)
-        .or('resulting_topic_id.not.is.null,is_shared.eq.true')
+        .or('resulting_topic_id.not.is.null,is_shared.eq.true,shared_indexes.neq.[]')
         .order('created_at', { ascending: false })
         .limit(100)
 
@@ -978,16 +978,25 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
   }
 
   // 🆕 본인 추천 카드 공유 토글 (와이프 피드백)
-  const toggleShareSuggestion = async (logId, isShared) => {
-    if (!logId) return
+  // 🆕 개별 추천 공유 토글 (카드 단위 — 묶음 전체가 아님)
+  const toggleShareSuggestion = async (logId, suggestionIdx, share) => {
+    if (!logId || suggestionIdx === undefined || suggestionIdx === null) return
     try {
+      // 현재 로그의 shared_indexes 가져와서 추가/제거
+      const log = suggestionLogs.find(l => l.id === logId)
+      if (!log) return
+      const current = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
+      const next = share
+        ? [...new Set([...current, suggestionIdx])]
+        : current.filter(i => i !== suggestionIdx)
+
       const { error } = await supabase.from('topic_suggestion_logs')
-        .update({ is_shared: isShared })
+        .update({ shared_indexes: next })
         .eq('id', logId)
       if (error) throw error
-      // 화면 즉시 갱신 (재로드 안 해도 됨)
+      // 화면 즉시 갱신
       setSuggestionLogs(prev => prev.map(l =>
-        l.id === logId ? { ...l, is_shared: isShared } : l
+        l.id === logId ? { ...l, shared_indexes: next } : l
       ))
     } catch(e) {
       alert('공유 상태 변경 실패: ' + e.message)
@@ -1931,31 +1940,38 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
 
   const flatShared = []
   for (const log of sharedLogs || []) {
-    if (log.selected_index === null || log.selected_index === undefined) {
-      // 명시 공유만 있고 선택 안 한 경우 — 모든 추천을 표시
-      if (!log.is_shared) continue
-      const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
-      sugs.forEach((s, idx) => {
-        if (!s.title) return
-        flatShared.push({
-          key: `s-${log.id}-${idx}`,
-          title: s.title,
-          description: s.description,
-          category: s.category,
-        })
-      })
-      continue
-    }
     const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
-    const picked = sugs[log.selected_index]
-    if (!picked || !picked.title) continue
-    flatShared.push({
-      key: `s-${log.id}`,
-      title: picked.title,
-      description: picked.description,
-      category: picked.category,
-      usedDate: log.resulting_topic?.date,
-    })
+    const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
+    const seen = new Set()
+
+    // 등록된 주제 (자동 공유)
+    if (log.resulting_topic_id && log.selected_index !== null && log.selected_index !== undefined) {
+      const picked = sugs[log.selected_index]
+      if (picked && picked.title) {
+        flatShared.push({
+          key: `s-${log.id}-${log.selected_index}`,
+          title: picked.title,
+          description: picked.description,
+          category: picked.category,
+          usedDate: log.resulting_topic?.date,
+        })
+        seen.add(log.selected_index)
+      }
+    }
+
+    // 개별 공유된 카드
+    for (const idx of sharedIdxs) {
+      if (seen.has(idx)) continue
+      const s = sugs[idx]
+      if (!s || !s.title) continue
+      flatShared.push({
+        key: `s-${log.id}-${idx}`,
+        title: s.title,
+        description: s.description,
+        category: s.category,
+      })
+      seen.add(idx)
+    }
   }
 
   const list = tab === 'mine' ? flatMine : flatShared

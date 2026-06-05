@@ -55,6 +55,7 @@ export default function SuggestionLogPanel({
   const flatMine = []
   for (const log of logs || []) {
     const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+    const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
     sugs.forEach((s, idx) => {
       const isSelected = log.selected_index === idx
       flatMine.push({
@@ -67,28 +68,51 @@ export default function SuggestionLogPanel({
         createdAt: log.created_at,
         usedDate: isSelected && log.resulting_topic?.date,
         wasSelected: isSelected,
-        isShared: !!log.is_shared,             // 🆕 명시 공유 상태
-        isAutoShared: !!log.resulting_topic_id // 🆕 등록되어 자동 공유 중
+        isShared: sharedIdxs.includes(idx),                    // 🆕 이 카드만 공유 중인지
+        isAutoShared: isSelected && !!log.resulting_topic_id   // 🆕 등록된 카드만 자동 공유
       })
     })
   }
 
-  // 평탄화 (공유 - 선택된 것만, 즉 등록된 주제 1개씩)
+  // 평탄화 (공유 탭 — 다른 선생님)
+  // 1) 등록된 주제 (selected_index + resulting_topic_id)
+  // 2) 개별 공유된 카드 (shared_indexes에 포함)
   const flatShared = []
   for (const log of sharedLogs || []) {
-    if (log.selected_index === null || log.selected_index === undefined) continue
     const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
-    const picked = sugs[log.selected_index]
-    if (!picked || !picked.title) continue
-    flatShared.push({
-      key: `shared-${log.id}`,
-      title: picked.title,
-      description: picked.description,
-      category: picked.category,
-      createdAt: log.created_at,
-      usedDate: log.resulting_topic?.date,
-      // 익명 — 다른 선생님 이름·학교 보호 (이름 노출 안 함)
-    })
+    const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
+    const seen = new Set()
+
+    // 등록된 주제
+    if (log.resulting_topic_id && log.selected_index !== null && log.selected_index !== undefined) {
+      const picked = sugs[log.selected_index]
+      if (picked && picked.title) {
+        flatShared.push({
+          key: `shared-${log.id}-${log.selected_index}`,
+          title: picked.title,
+          description: picked.description,
+          category: picked.category,
+          createdAt: log.created_at,
+          usedDate: log.resulting_topic?.date,
+        })
+        seen.add(log.selected_index)
+      }
+    }
+
+    // 개별 공유된 카드 (등록된 것과 중복되지 않게)
+    for (const idx of sharedIdxs) {
+      if (seen.has(idx)) continue
+      const s = sugs[idx]
+      if (!s || !s.title) continue
+      flatShared.push({
+        key: `shared-${log.id}-${idx}`,
+        title: s.title,
+        description: s.description,
+        category: s.category,
+        createdAt: log.created_at,
+      })
+      seen.add(idx)
+    }
   }
 
   const currentList = tab === 'mine' ? flatMine : flatShared
@@ -242,16 +266,16 @@ export default function SuggestionLogPanel({
                         </div>
                       </button>
 
-                      {/* 🆕 본인 카드: 공유 토글 (와이프 피드백) */}
+                      {/* 🆕 본인 카드: 개별 공유 토글 (이 주제 하나만) */}
                       {tab === 'mine' && onToggleShare && (
                         <div className="border-t border-gray-100 px-2.5 py-1.5 flex items-center justify-between bg-gray-50">
                           {item.isAutoShared ? (
                             <span className="text-[10px] text-green-700">🌐 등록되어 자동 공유 중</span>
                           ) : item.isShared ? (
                             <>
-                              <span className="text-[10px] text-purple-700">🔗 공유 중</span>
+                              <span className="text-[10px] text-purple-700">🔗 이 주제 공유 중</span>
                               <button
-                                onClick={() => onToggleShare(item.logId, false)}
+                                onClick={() => onToggleShare(item.logId, item.suggestionIdx, false)}
                                 disabled={disabled}
                                 className="text-[10px] text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
                                 공유 해제
@@ -261,10 +285,10 @@ export default function SuggestionLogPanel({
                             <>
                               <span className="text-[10px] text-gray-500">나만 보임</span>
                               <button
-                                onClick={() => onToggleShare(item.logId, true)}
+                                onClick={() => onToggleShare(item.logId, item.suggestionIdx, true)}
                                 disabled={disabled}
                                 className="text-[10px] text-purple-700 hover:bg-purple-100 px-2 py-0.5 rounded disabled:opacity-50">
-                                🔗 다른 선생님에게도 공유
+                                🔗 이 주제만 공유
                               </button>
                             </>
                           )}
