@@ -24,26 +24,32 @@ export default function TeacherHome() {
   const [hasApiKey, setHasApiKey] = useState(false)          // 🆕 셋업 체크리스트용 (값 자체는 안 가져옴)
   const apiKeyRef = useRef(null)                              // 🆕 셋업 체크리스트에서 스크롤
   const loginHintRef = useRef(null)                           // 🆕 로그인 안내 카드 스크롤
+  const [apiOpenSignal, setApiOpenSignal] = useState(0)       // 🆕 카드 자동 펼침 신호
+  const [loginHintOpenSignal, setLoginHintOpenSignal] = useState(0)
+  const [guideTarget, setGuideTarget] = useState(null)        // 🆕 손가락 포인터 대상 ('api'|'loginHint')
 
-  const scrollToApiKey = () => {
-    if (apiKeyRef.current) {
-      apiKeyRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      apiKeyRef.current.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
+  // 공통: 카드로 스크롤 + 자동 펼침 + 빨간 깜빡임 + 손가락 포인터
+  const guideToCard = (ref, which) => {
+    if (!ref.current) return
+    // 1) 자동 펼침 신호
+    if (which === 'api') setApiOpenSignal(s => s + 1)
+    if (which === 'loginHint') setLoginHintOpenSignal(s => s + 1)
+    // 2) 펼침 후 위치 안정되면 스크롤 (살짝 딜레이)
+    setTimeout(() => {
+      if (!ref.current) return
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // 3) 빨간 테두리 깜빡임 + 손가락
+      ref.current.classList.add('guide-highlight')
+      setGuideTarget(which)
       setTimeout(() => {
-        if (apiKeyRef.current) apiKeyRef.current.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
-      }, 2000)
-    }
+        if (ref.current) ref.current.classList.remove('guide-highlight')
+        setGuideTarget(null)
+      }, 4500)
+    }, 150)
   }
 
-  const scrollToLoginHint = () => {
-    if (loginHintRef.current) {
-      loginHintRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      loginHintRef.current.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
-      setTimeout(() => {
-        if (loginHintRef.current) loginHintRef.current.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
-      }, 2000)
-    }
-  }
+  const scrollToApiKey = () => guideToCard(apiKeyRef, 'api')
+  const scrollToLoginHint = () => guideToCard(loginHintRef, 'loginHint')
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -288,20 +294,23 @@ export default function TeacherHome() {
 
           {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
           {classInfo && (
-            <div ref={loginHintRef} className="rounded-2xl transition-all">
+            <div ref={loginHintRef} className="rounded-2xl transition-all relative">
+              {guideTarget === 'loginHint' && <div className="guide-pointer">👇</div>}
               <StudentLoginInfoCard
                 classInfo={classInfo}
                 students={studentSamples}
                 isImpersonating={isImpersonating}
                 onUpdate={checkAuth}
+                openSignal={loginHintOpenSignal}
               />
             </div>
           )}
 
           {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}
           {!isImpersonating && (
-            <div ref={apiKeyRef} className="rounded-2xl transition-all">
-              <ApiKeyManager classId={classInfo?.id} />
+            <div ref={apiKeyRef} className="rounded-2xl transition-all relative">
+              {guideTarget === 'api' && <div className="guide-pointer">👇</div>}
+              <ApiKeyManager classId={classInfo?.id} openSignal={apiOpenSignal} />
             </div>
           )}
 

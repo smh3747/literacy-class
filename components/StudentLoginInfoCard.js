@@ -13,7 +13,7 @@ import QrCodeModal from './QrCodeModal'
 
 const STORAGE_KEY = 'lc-login-info-card-open'
 
-export default function StudentLoginInfoCard({ classInfo, students, isImpersonating, onUpdate }) {
+export default function StudentLoginInfoCard({ classInfo, students, isImpersonating, onUpdate, openSignal }) {
   const [copied, setCopied] = useState(false)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -27,6 +27,11 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
   const loginHintEnabled = !!classInfo?.login_hint_enabled
   const prefix = classInfo?.login_username_prefix || ''
   const password = classInfo?.login_default_password || '123456'
+
+  // 🆕 외부(셋업 체크리스트)에서 열기 신호 받으면 펼침
+  useEffect(() => {
+    if (openSignal) setOpen(true)
+  }, [openSignal])
 
   // 학급별 접기 상태 복원
   useEffect(() => {

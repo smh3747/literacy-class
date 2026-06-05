@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { supabase } from '../lib/supabase'
 import { saveApiKey as saveLocal, deleteApiKey as deleteLocal } from '../lib/gemini'
 
-export default function ApiKeyManager({ classId, onChange }) {
+export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const [savedKey, setSavedKey] = useState('')
   const [inputKey, setInputKey] = useState('')
   const [showInput, setShowInput] = useState(false)
@@ -20,6 +20,11 @@ export default function ApiKeyManager({ classId, onChange }) {
   useEffect(() => {
     if (!loading && !savedKey) setOpen(true)
   }, [loading, savedKey])
+
+  // 🆕 외부(셋업 체크리스트)에서 열기 신호 받으면 펼침
+  useEffect(() => {
+    if (openSignal) setOpen(true)
+  }, [openSignal])
 
   const loadKey = async () => {
     setLoading(true)
