@@ -161,7 +161,9 @@ export default function StudentHistory() {
                     맞춤법/띄어쓰기 {s.corrections.length}개
                   </span>
                 )}
-                <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
+                <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed ${
+                  items.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
+                }`}
                   dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
                 {s.corrections?.length > 0 && (
                   <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
