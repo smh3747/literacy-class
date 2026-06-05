@@ -502,7 +502,9 @@ export default function TeacherSubmissions() {
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+        <main className={`mx-auto px-4 py-6 space-y-4 ${
+          view === 'studentDetail' ? 'max-w-4xl xl:max-w-[1600px] xl:px-8' : 'max-w-4xl'
+        }`}>
           
           {view === 'topics' && (
             <>
@@ -702,7 +704,7 @@ export default function TeacherSubmissions() {
               </div>
 
               {/* 🆕 첫 글·수정본 좌우 병렬 (글 2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
-              <div className={`grid gap-4 items-start ${
+              <div className={`grid gap-4 items-stretch ${
                 selectedStudent.items.length >= 2 ? 'lg:grid-cols-2' : ''
               }`}>
               {[...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1)).map((s, i, arr) => {
@@ -806,7 +808,7 @@ export default function TeacherSubmissions() {
                           const reason = Array.isArray(s.rubric_reasons) ? s.rubric_reasons[idx] : null
                           const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
                           return (
-                            <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                            <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100 lg:min-h-[150px]">
                               <div className="flex justify-between text-sm mb-1">
                                 <span className="text-gray-800 font-semibold">
                                   {r.name}
@@ -1041,42 +1043,54 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled }) {
     setSaving(false)
   }
 
-  // 작성 모드
+  // 작성 모드 — 🆕 화면 하단 고정 (AI 피드백 스크롤하며 참고 가능)
   if (editing) {
     return (
-      <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-bold text-yellow-900">💬 선생님 코멘트 {hasComment ? '수정' : '작성'}</h4>
-          <span className="text-[10px] text-yellow-700">학생에게 그대로 보입니다</span>
+      <>
+        {/* 제자리 표시 (어느 글의 코멘트인지) */}
+        <div className="bg-yellow-50 border-2 border-dashed border-yellow-300 rounded-lg p-3 text-sm text-yellow-800">
+          ✍️ 화면 아래에서 코멘트 작성 중... 위아래 스크롤하며 AI 피드백을 참고하세요.
         </div>
-        <textarea
-          value={content}
-          onChange={e => setContent(e.target.value)}
-          placeholder={`${studentName} 학생에게 하고 싶은 말을 적어주세요...\n(예: 비유 표현이 정말 좋았어요! 다음엔 결말을 좀 더 자세히 써보면 어떨까요?)`}
-          rows="4"
-          className="w-full p-2 border border-yellow-200 rounded text-sm leading-relaxed bg-white"
-          autoFocus
-        />
-        <div className="flex justify-between items-center gap-2">
-          <span className={`text-[11px] ${content.length > 1000 ? 'text-red-600' : 'text-gray-500'}`}>
-            {content.length}자 {content.length > 1000 && '(너무 길어요)'}
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setContent(submission.teacher_comment || ''); setEditing(false) }}
-              disabled={saving}
-              className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
-              취소
-            </button>
-            <button
-              onClick={save}
-              disabled={saving || !content.trim() || content.length > 1000}
-              className="text-xs px-3 py-1.5 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-700 disabled:opacity-50">
-              {saving ? '저장 중...' : '💾 저장'}
-            </button>
+
+        {/* 하단 고정 작성 패널 */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-yellow-50 border-t-2 border-yellow-400 shadow-[0_-8px_24px_rgba(0,0,0,0.12)]">
+          <div className="max-w-3xl mx-auto p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-yellow-900">
+                💬 {studentName} {(submission.attempt||1) === 1 ? '첫 글' : `수정본`} 코멘트 {hasComment ? '수정' : '작성'}
+              </h4>
+              <span className="text-[10px] text-yellow-700">학생에게 그대로 보입니다</span>
+            </div>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              placeholder={`${studentName} 학생에게 하고 싶은 말을 적어주세요...\n(예: 비유 표현이 정말 좋았어요! 다음엔 결말을 좀 더 자세히 써보면 어떨까요?)`}
+              rows="3"
+              className="w-full p-2 border border-yellow-300 rounded text-sm leading-relaxed bg-white"
+              autoFocus
+            />
+            <div className="flex justify-between items-center gap-2">
+              <span className={`text-[11px] ${content.length > 1000 ? 'text-red-600' : 'text-gray-500'}`}>
+                {content.length}자 {content.length > 1000 && '(너무 길어요)'}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setContent(submission.teacher_comment || ''); setEditing(false) }}
+                  disabled={saving}
+                  className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50">
+                  취소
+                </button>
+                <button
+                  onClick={save}
+                  disabled={saving || !content.trim() || content.length > 1000}
+                  className="text-xs px-4 py-1.5 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-700 disabled:opacity-50">
+                  {saving ? '저장 중...' : '💾 저장'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     )
   }
 

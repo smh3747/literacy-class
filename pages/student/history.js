@@ -137,7 +137,7 @@ export default function StudentHistory() {
         `}</style>
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />
-          <main className={`mx-auto px-4 py-6 space-y-4 ${items.length >= 2 ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'}`}>
+          <main className={`mx-auto px-4 py-6 space-y-4 ${items.length >= 2 ? 'max-w-3xl xl:max-w-[1500px] xl:px-8' : 'max-w-3xl'}`}>
             <button onClick={() => setSelectedIdx(null)} className="text-sm text-gray-600">← 목록으로</button>
             
             <div className="bg-primary-light rounded-2xl p-4">
@@ -146,7 +146,7 @@ export default function StudentHistory() {
             </div>
 
             {/* 🆕 첫 글·수정본 좌우 병렬 (데스크탑), 모바일은 위아래 */}
-            <div className={`grid gap-4 items-start ${items.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
+            <div className={`grid gap-4 items-stretch ${items.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
             {items.map((s, i) => (
               <div key={s.id} className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
                 <div className="flex justify-between items-center">
@@ -205,7 +205,7 @@ export default function StudentHistory() {
                       const reason = Array.isArray(s.rubric_reasons) ? s.rubric_reasons[idx] : null
                       const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
                       return (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100 lg:min-h-[150px]">
                           <div className="flex justify-between text-sm mb-1">
                             <span className="text-gray-800 font-semibold">
                               {r.name}
