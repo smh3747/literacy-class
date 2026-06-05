@@ -1532,20 +1532,27 @@ function AdminSubmissionsInner() {
     setLoading(true)
     // 학급 목록 + 담임 학교 정보 (학교별 그룹화에 필요)
     const { data: classData } = await supabase.from('classes').select('id, name, teacher_id')
-    setClassList(classData || [])
     // 담임 학교 매핑
     const teacherIds = [...new Set((classData || []).map(c => c.teacher_id).filter(Boolean))]
     let teacherSchoolMap = {}
+    let teacherNameMap = {}
     if (teacherIds.length > 0) {
       const { data: tProfiles } = await supabase.from('profiles')
-        .select('id, school').in('id', teacherIds)
-      ;(tProfiles || []).forEach(t => { teacherSchoolMap[t.id] = t.school || '학교 미설정' })
+        .select('id, school, realname').in('id', teacherIds)
+      ;(tProfiles || []).forEach(t => {
+        teacherSchoolMap[t.id] = t.school || '학교 미설정'
+        teacherNameMap[t.id] = t.realname || ''
+      })
     }
     const cMap = {}
     ;(classData || []).forEach(c => {
       cMap[c.id] = { name: c.name, teacher_school: teacherSchoolMap[c.teacher_id] || '학교 미설정' }
+      // 🆕 드롭다운 구분용: 학교·담임 정보를 classList 항목에 직접 부착
+      c.school = teacherSchoolMap[c.teacher_id] || '학교 미설정'
+      c.teacher_name = teacherNameMap[c.teacher_id] || ''
     })
     setClassMap(cMap)
+    setClassList(classData || [])
 
     // 학생글 (최근 200건 — 그룹화 위해 좀 더 가져옴)
     // 🆕 특정 학급 선택 시: 그 학급 학생들의 글만 서버에서 직접 조회
@@ -1674,9 +1681,25 @@ function AdminSubmissionsInner() {
           {/* 학급 필터 (flat·topic·school·student에서 의미 있음) */}
           {groupBy !== 'class' && (
             <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
-              className="text-sm border border-gray-200 rounded p-2">
+              className="text-sm border border-gray-200 rounded p-2 max-w-[280px]">
               <option value="all">모든 학급</option>
-              {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {/* 🆕 학교별 그룹 + 담임명으로 같은 반 이름 구분 */}
+              {Object.entries(
+                classList.reduce((acc, c) => {
+                  const school = c.school || '학교 미설정'
+                  if (!acc[school]) acc[school] = []
+                  acc[school].push(c)
+                  return acc
+                }, {})
+              ).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([school, list]) => (
+                <optgroup key={school} label={`🏫 ${school}`}>
+                  {[...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko')).map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}{c.teacher_name ? ` (${c.teacher_name})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           )}
         </div>
