@@ -781,6 +781,22 @@ export default function TeacherSubmissions() {
                     <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                       dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
 
+                    {/* 🆕 담임 코멘트 — 학생 글 바로 아래 (가까이) */}
+                    <TeacherCommentBox
+                      submission={s}
+                      studentName={selectedStudent.profile.realname}
+                      onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
+                      disabled={isImpersonating}
+                    />
+
+                    {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
+                    <details open className="group">
+                      <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-1 select-none list-none">
+                        <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                        🤖 AI 점수·피드백 보기
+                      </summary>
+                      <div className="space-y-3 mt-2">
+
                     {Array.isArray(s.scores) && (
                       <div className="space-y-2">
                         {s.scores.map((sc, idx) => {
@@ -863,6 +879,9 @@ export default function TeacherSubmissions() {
                       )}
                     </div>
 
+                      </div>
+                    </details>
+
                     {/* 이 글이 학생에게 제공한 AI 예시 작품 */}
                     {s.example_text && (
                       <details className="pt-3 border-t">
@@ -928,14 +947,6 @@ export default function TeacherSubmissions() {
                         </div>
                       </div>
                     )}
-
-                    {/* 🆕 담임 코멘트 (와이프 피드백) */}
-                    <TeacherCommentBox
-                      submission={s}
-                      studentName={selectedStudent.profile.realname}
-                      onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
-                      disabled={isImpersonating}
-                    />
 
                     {/* 재평가된 글이면 이전 점수 표시 */}
                     {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (

@@ -152,7 +152,34 @@ export default function StudentHistory() {
                   <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
                 )}
 
-                {/* 🆕 항목별 점수 + 점수 근거 (와이프 피드백: 왜 감점됐는지) */}
+                {/* 🆕 담임 선생님 코멘트 — 글 바로 아래 (가까이) */}
+                {s.teacher_comment && (
+                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
+                    <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
+                      <h4 className="font-bold text-yellow-900 flex items-center gap-1.5">
+                        <span>💛</span> 선생님이 직접 남긴 코멘트
+                      </h4>
+                      {s.teacher_comment_at && (
+                        <span className="text-[11px] text-yellow-700">
+                          {new Date(s.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep text-sm">
+                      {s.teacher_comment}
+                    </p>
+                  </div>
+                )}
+
+                {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
+                <details open className="group">
+                  <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-1 select-none list-none">
+                    <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                    🤖 AI 점수·피드백 보기
+                  </summary>
+                  <div className="space-y-3 mt-2">
+
+                {/* 항목별 점수 + 점수 근거 */}
                 {Array.isArray(s.scores) && Array.isArray(g.rubrics) && g.rubrics.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-bold text-gray-800">📊 항목별 점수와 이유</h4>
@@ -189,25 +216,6 @@ export default function StudentHistory() {
                 )}
 
                 <div className="space-y-3 text-sm">
-                  {/* 🆕 담임 선생님 코멘트 (최상단 강조 - 와이프 피드백) */}
-                  {s.teacher_comment && (
-                    <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
-                      <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
-                        <h4 className="font-bold text-yellow-900 flex items-center gap-1.5">
-                          <span>💛</span> 선생님이 직접 남긴 코멘트
-                        </h4>
-                        {s.teacher_comment_at && (
-                          <span className="text-[11px] text-yellow-700">
-                            {new Date(s.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep">
-                        {s.teacher_comment}
-                      </p>
-                    </div>
-                  )}
-
                   <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                     <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
                       <span>💬</span> 종합 의견
@@ -256,6 +264,9 @@ export default function StudentHistory() {
                     </div>
                   )}
                 </div>
+
+                  </div>
+                </details>
 
                 {s.example_text && (i === items.length - 1) && (
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
