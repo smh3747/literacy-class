@@ -15,6 +15,7 @@ export default function AdminHome() {
   const [classes, setClasses] = useState([])
   const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
   const [trashedClasses, setTrashedClasses] = useState([])
+  const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -202,6 +203,19 @@ export default function AdminHome() {
       submissions: submissionsRes.count || 0,
       today: todayRes.count || 0
     })
+
+    // 🆕 공유 추천 로드 (관리자 추적용 — 누가 뭘 공유했는지)
+    try {
+      const { data: sharedLogs } = await supabase.from('topic_suggestion_logs')
+        .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school, role)')
+        .or('resulting_topic_id.not.is.null,is_shared.eq.true')
+        .order('created_at', { ascending: false })
+        .limit(200)
+      setSharedSuggestionLogs(sharedLogs || [])
+    } catch(e) {
+      console.warn('공유 추천 로드 실패:', e)
+      setSharedSuggestionLogs([])
+    }
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
@@ -652,6 +666,7 @@ ${contents}
               { id: 'classes', label: '🏫 학급' },
               { id: 'submissions', label: '📝 학생 글' },
               { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` },
+              { id: 'shared-suggestions', label: `📚 추천 공유${sharedSuggestionLogs.length > 0 ? ` (${sharedSuggestionLogs.length})` : ''}` },
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -1235,6 +1250,115 @@ ${contents}
               </div>
             )
           })()}
+
+          {/* 🆕 공유 추천 탭 (관리자 추적용 — 누가 뭘 공유했는지) */}
+          {tab === 'shared-suggestions' && (
+            <div className="space-y-4">
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-900">
+                <p className="font-semibold mb-1">📚 공유 추천 현황</p>
+                <p className="text-xs">
+                  · 학급에 실제로 등록된 추천(자동 공유) + 명시적으로 공유 토글한 추천 모두 표시
+                  · 일반 선생님 화면에선 공유자 정보 익명("👤 다른 선생님")
+                  · 여기선 누가 공유했는지 확인 가능
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                {sharedSuggestionLogs.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-8">아직 공유된 추천이 없어요</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sharedSuggestionLogs.map(log => {
+                      const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+                      const picked = log.selected_index !== null && log.selected_index !== undefined
+                        ? sugs[log.selected_index]
+                        : null
+                      const isRegistered = !!log.resulting_topic_id
+                      const isExplicit = !!log.is_shared
+                      const dateStr = log.created_at
+                        ? new Date(log.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
+                        : ''
+
+                      return (
+                        <div key={log.id} className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50">
+                          <div className="flex items-start justify-between gap-2 flex-wrap mb-2">
+                            <div className="flex items-center gap-2 flex-wrap text-xs">
+                              <span className="text-gray-500">{dateStr}</span>
+                              {isRegistered && (
+                                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                  🌐 학급 등록
+                                </span>
+                              )}
+                              {isExplicit && (
+                                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                                  🔗 명시 공유
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-700 font-medium">
+                              👤 {log.author?.realname || '(삭제된 계정)'}
+                              {log.author?.role === 'admin' && (
+                                <span className="ml-1 text-purple-600 text-[10px]">[관리자]</span>
+                              )}
+                              {log.author?.school && (
+                                <span className="ml-1 text-gray-500">· {log.author.school}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 선택된 주제 (등록된 경우 그게 메인) */}
+                          {picked && (
+                            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded p-2 mb-2">
+                              <div className="text-sm font-semibold text-gray-900">
+                                {isRegistered ? '✅ 등록한 주제: ' : '👆 선택만 한 주제: '}{picked.title}
+                              </div>
+                              {picked.description && (
+                                <div className="text-xs text-gray-600 mt-0.5">{picked.description}</div>
+                              )}
+                              {picked.category && (
+                                <span className="text-[10px] text-purple-600 mt-1 inline-block">#{picked.category}</span>
+                              )}
+                              {log.resulting_topic?.date && (
+                                <span className="text-[10px] text-gray-500 ml-2">사용일: {log.resulting_topic.date}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 나머지 추천 카드 (명시 공유로 모두 공개되는 경우) */}
+                          {isExplicit && sugs.length > 0 && (
+                            <details className="text-xs">
+                              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                                ▼ 이 추천 묶음의 다른 주제 {sugs.length - (picked ? 1 : 0)}개 보기
+                              </summary>
+                              <div className="mt-2 space-y-1.5">
+                                {sugs.map((s, idx) => {
+                                  if (picked && idx === log.selected_index) return null
+                                  return (
+                                    <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-2">
+                                      <div className="font-medium text-gray-800">{idx + 1}. {s.title}</div>
+                                      {s.description && (
+                                        <div className="text-gray-600 mt-0.5">{s.description}</div>
+                                      )}
+                                      {s.category && (
+                                        <span className="text-[10px] text-purple-600">#{s.category}</span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <p className="text-xs text-gray-400 text-center pt-2">
+                      최근 200건까지 표시
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 🆕 휴지통 탭 (B4) */}
           {tab === 'trash' && (
