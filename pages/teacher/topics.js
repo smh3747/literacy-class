@@ -82,8 +82,7 @@ export default function TopicsPage() {
   const [batchSaving, setBatchSaving] = useState(false)
   // 등록된 주제 펼침 (평가기준 확인용)
   const [expandedTopicId, setExpandedTopicId] = useState(null)
-  // 🆕 AI 추천 로그 보기 (와이프 피드백)
-  const [showSuggestionLogs, setShowSuggestionLogs] = useState(false)
+  // 🆕 AI 추천 로그
   const [suggestionLogs, setSuggestionLogs] = useState([])
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 다른 선생님 공유 추천
   const [logsLoading, setLogsLoading] = useState(false)
@@ -978,14 +977,6 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
     setLogsLoading(false)
   }
 
-  const toggleSuggestionLogs = async () => {
-    const next = !showSuggestionLogs
-    setShowSuggestionLogs(next)
-    if (next && suggestionLogs.length === 0) {
-      await loadSuggestionLogs()
-    }
-  }
-
   // 🆕 본인 추천 카드 공유 토글 (와이프 피드백)
   const toggleShareSuggestion = async (logId, isShared) => {
     if (!logId) return
@@ -1696,117 +1687,6 @@ ${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
           </div>
           )}
 
-          {/* 🆕 AI 주제 추천 기록 (와이프 피드백: 어떤 주제를 추천받고 어떤 걸 골랐는지) */}
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <button
-              type="button"
-              onClick={toggleSuggestionLogs}
-              className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition">
-              <div className="text-left">
-                <h3 className="font-bold flex items-center gap-2">
-                  🤖 AI 추천 기록
-                  <span className="text-xs font-normal text-gray-500">
-                    {showSuggestionLogs ? '' : '(누르면 펼침)'}
-                  </span>
-                </h3>
-                {!showSuggestionLogs && (
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    AI가 추천한 주제 목록과 선생님이 선택한 주제를 확인할 수 있어요
-                  </p>
-                )}
-              </div>
-              <span className="text-gray-400 text-sm">{showSuggestionLogs ? '▲' : '▼'}</span>
-            </button>
-
-            {showSuggestionLogs && (
-              <div className="px-5 pb-5">
-                {logsLoading ? (
-                  <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
-                ) : suggestionLogs.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-6 text-center">
-                    아직 AI 추천 기록이 없어요.<br />
-                    "✨ AI 주제 추천" 버튼을 사용하면 여기에 기록됩니다.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {suggestionLogs.map(log => {
-                      const date = new Date(log.created_at).toLocaleString('ko-KR', {
-                        year: '2-digit', month: '2-digit', day: '2-digit',
-                        hour: '2-digit', minute: '2-digit'
-                      })
-                      const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
-                      const picked = log.selected_index !== null && log.selected_index !== undefined
-                      return (
-                        <div key={log.id} className="border border-gray-200 rounded-lg p-3">
-                          <div className="flex items-start justify-between flex-wrap gap-2 mb-2">
-                            <div className="text-xs text-gray-500">
-                              {date}
-                              {log.request_category && (
-                                <span className="ml-2 bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">
-                                  {log.request_category}
-                                </span>
-                              )}
-                              {log.request_level && (
-                                <span className="ml-1 bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                  {log.request_level}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs">
-                              {picked ? (
-                                log.resulting_topic ? (
-                                  <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                                    ✅ 등록됨: {log.resulting_topic.title}
-                                  </span>
-                                ) : (
-                                  <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                                    👆 {log.selected_index + 1}번 선택 (등록 안 함)
-                                  </span>
-                                )
-                              ) : (
-                                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                                  선택 안 함
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {log.request_user_message && (
-                            <div className="text-xs text-gray-600 mb-2 pl-2 border-l-2 border-purple-200">
-                              💭 요청: {log.request_user_message}
-                            </div>
-                          )}
-                          <div className="space-y-1.5">
-                            {sugs.map((s, idx) => (
-                              <div key={idx}
-                                className={`text-xs p-2 rounded ${
-                                  log.selected_index === idx
-                                    ? 'bg-green-50 border border-green-200'
-                                    : 'bg-gray-50'
-                                }`}>
-                                <div className="font-medium text-gray-900">
-                                  <span className="inline-block w-5 text-center text-gray-500">{idx + 1}.</span>
-                                  {s.title}
-                                  {log.selected_index === idx && <span className="ml-1 text-green-700">←</span>}
-                                </div>
-                                {s.description && (
-                                  <div className="text-gray-600 mt-0.5 pl-5 leading-snug">
-                                    {s.description}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })}
-                    <p className="text-xs text-gray-400 text-center pt-2">
-                      최근 50건까지 표시됩니다
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
 
           {/* 주제 목록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
