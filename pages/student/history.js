@@ -78,6 +78,21 @@ export default function StudentHistory() {
 
   useEffect(() => { checkAuth() }, [])
 
+  // 🆕 디테일 화면 진입 시 — 그 주제의 미확인 담임 코멘트 읽음 처리
+  useEffect(() => {
+    if (selectedIdx === null || !grouped[selectedIdx]) return
+    const g = grouped[selectedIdx]
+    const unreadIds = (g.items || [])
+      .filter(s => s.teacher_comment && !s.teacher_comment_read_at)
+      .map(s => s.id)
+    if (unreadIds.length === 0) return
+    supabase.from('submissions')
+      .update({ teacher_comment_read_at: new Date().toISOString() })
+      .in('id', unreadIds)
+      .then(() => {})
+      .catch(() => {})  // 실패해도 무시 (다음에 또 시도됨)
+  }, [selectedIdx])
+
   const checkAuth = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/student/login'); return }

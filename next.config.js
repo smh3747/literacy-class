@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 
-// 🆕 빌드마다 고유 ID 생성 — 클라이언트 자동 최신화 감지용
-const BUILD_ID = Date.now().toString(36)
+// 🆕 배포마다 고유 ID — Vercel 커밋 SHA 기반 (빌드 내내 고정)
+// Date.now()를 쓰면 API 함수 cold start 때 재평가되어 항상 불일치 → 배너 무한 표시 버그
+const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA || 'dev').slice(0, 12)
 
 const nextConfig = {
   reactStrictMode: true,
@@ -15,7 +16,6 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // 모든 HTML 페이지: 캐시 절대 안 함 (브라우저는 매번 새 HTML 받음)
         source: '/((?!_next/static|_next/image|favicon).*)',
         headers: [
           {

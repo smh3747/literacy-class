@@ -1,16 +1,14 @@
 // ============================================
-// 🆕 새 버전 자동 감지 배너
+// 새 버전 자동 감지 + 자동 새로고침
 // ============================================
 // 번들에 박힌 NEXT_PUBLIC_BUILD_ID와 서버의 /api/version을 비교.
-// 다르면 = 새 배포가 나간 것 → 하단에 "새 버전" 배너 표시.
+// 다르면 = 새 배포가 나간 것.
 //
-// 자동 강제 새로고침은 안 함 — 학생이 글 쓰는 중에 새로고침되면
-// 글이 날아가므로, 사용자가 직접 버튼을 누르게 함.
+// 1) 하단에 "새 버전" 배너 표시 (즉시 새로고침 가능)
+// 2) 탭이 백그라운드로 가면 자동 새로고침 (사용자가 안 보는 동안)
+//    단, 글 쓰는 중(textarea 30자+)이면 보류 — 글 날아가면 안 됨
 //
-// 확인 시점:
-// - 페이지 로드 5초 후 1회
-// - 이후 5분마다
-// - 탭이 다시 활성화될 때 (visibilitychange)
+// 확인 시점: 로드 5초 후 / 5분마다 / 탭 재활성화 시
 // ============================================
 import { useState, useEffect, useRef } from 'react'
 
@@ -18,18 +16,32 @@ const CHECK_INTERVAL = 5 * 60 * 1000 // 5분
 
 export default function VersionChecker() {
   const [newVersionAvailable, setNewVersionAvailable] = useState(false)
+  const newVersionRef = useRef(false)
   const myBuildId = process.env.NEXT_PUBLIC_BUILD_ID
   const checkingRef = useRef(false)
 
+  // 글 쓰는 중인지 — textarea에 의미 있는 입력이 있으면 true
+  const isWriting = () => {
+    try {
+      const areas = document.querySelectorAll('textarea')
+      for (const t of areas) {
+        if ((t.value || '').trim().length >= 30) return true
+      }
+    } catch (e) {}
+    return false
+  }
+
   const check = async () => {
-    if (checkingRef.current || !myBuildId) return
+    // dev 환경(SHA 없음)에선 비교 안 함
+    if (checkingRef.current || !myBuildId || myBuildId === 'dev') return
     checkingRef.current = true
     try {
       const res = await fetch('/api/version', { cache: 'no-store' })
       if (res.ok) {
         const { buildId } = await res.json()
-        if (buildId && buildId !== 'unknown' && buildId !== myBuildId) {
+        if (buildId && buildId !== 'unknown' && buildId !== 'dev' && buildId !== myBuildId) {
           setNewVersionAvailable(true)
+          newVersionRef.current = true
         }
       }
     } catch (e) {
@@ -39,13 +51,18 @@ export default function VersionChecker() {
   }
 
   useEffect(() => {
-    // 로드 5초 후 1회 + 5분마다
     const initial = setTimeout(check, 5000)
     const interval = setInterval(check, CHECK_INTERVAL)
 
-    // 탭 다시 볼 때
     const onVisible = () => {
-      if (document.visibilityState === 'visible') check()
+      if (document.visibilityState === 'visible') {
+        check()
+      } else if (document.visibilityState === 'hidden') {
+        // 🆕 새 버전이 있고 + 글 쓰는 중이 아니면 → 백그라운드에서 자동 새로고침
+        if (newVersionRef.current && !isWriting()) {
+          window.location.reload()
+        }
+      }
     }
     document.addEventListener('visibilitychange', onVisible)
 
@@ -69,9 +86,9 @@ export default function VersionChecker() {
           새로고침
         </button>
         <button
-          onClick={() => setNewVersionAvailable(false)}
+          onClick={() => { setNewVersionAvailable(false); newVersionRef.current = false }}
           className="flex-shrink-0 text-gray-400 hover:text-white text-xs"
-          title="나중에 (글 쓰는 중이면 다 쓰고 새로고침하세요)">
+          title="나중에 (다른 탭 갔다 오면 자동으로 새로고침돼요)">
           ✕
         </button>
       </div>

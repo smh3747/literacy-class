@@ -154,6 +154,7 @@ export default function StudentHome() {
   const [todayTopic, setTodayTopic] = useState(null)
   const [todayTopicList, setTodayTopicList] = useState([]) // 오늘 주제가 여러 개일 때
   const [pendingTopics, setPendingTopics] = useState([]) // 지난 미제출 주제들
+  const [unreadComments, setUnreadComments] = useState([]) // 🆕 미확인 담임 코멘트
   const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   
@@ -250,6 +251,23 @@ export default function StudentHome() {
     setPendingTopics(pending)
   }
 
+  // 🆕 미확인 담임 코멘트 (학생 알림 — AI 추천 기록처럼 로그 형태)
+  const loadUnreadComments = async (profile) => {
+    try {
+      const { data } = await supabase.from('submissions')
+        .select('id, topic_id, teacher_comment, teacher_comment_at, attempt, topics(title, date)')
+        .eq('user_id', profile.id)
+        .not('teacher_comment', 'is', null)
+        .is('teacher_comment_read_at', null)
+        .is('deleted_at', null)
+        .order('teacher_comment_at', { ascending: false })
+        .limit(10)
+      setUnreadComments(data || [])
+    } catch(e) {
+      setUnreadComments([])
+    }
+  }
+
   const loadTodayTopic = async (profile, targetTopicId = null) => {
     if (!profile.class_id) return
 
@@ -313,6 +331,8 @@ export default function StudentHome() {
 
       // 지난 미제출 주제 목록도 같이 조회
       await loadPendingTopics(profile, classData.teacher_id)
+      // 🆕 미확인 담임 코멘트 알림도
+      await loadUnreadComments(profile)
     }
 
     if (!topic) return
@@ -1033,6 +1053,37 @@ ${rewriteEssay}
               </div>
             </div>
           </div>
+
+          {/* 🆕 선생님 코멘트 도착 알림 (미확인 코멘트가 있을 때) */}
+          {unreadComments.length > 0 && (
+            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-4">
+              <h3 className="font-bold text-yellow-900 text-sm mb-1">
+                💛 선생님이 내 글에 코멘트를 남겼어요! ({unreadComments.length}개)
+              </h3>
+              <div className="space-y-2 mt-2">
+                {unreadComments.map(c => (
+                  <Link key={c.id} href="/student/history"
+                    className="block bg-white border border-yellow-200 hover:border-yellow-400 rounded-lg p-3 transition">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs text-gray-500">
+                        📅 {c.topics?.date} · {c.topics?.title}
+                        {(c.attempt||1) >= 2 && <span className="ml-1 text-purple-600">(수정본)</span>}
+                      </span>
+                      {c.teacher_comment_at && (
+                        <span className="text-[10px] text-yellow-700">
+                          {new Date(c.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-800 mt-1 line-clamp-2 break-keep">
+                      {c.teacher_comment}
+                    </p>
+                    <span className="text-xs text-yellow-700 mt-1 inline-block">전체 보기 →</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
           
           {!todayTopic ? (
             <>
@@ -1066,8 +1117,8 @@ ${rewriteEssay}
             </>
           ) : (
             <>
-              {/* 지난 주제 글쓰기 안내 배너 (오늘 주제 있을 때) */}
-              {pendingTopics.length > 0 && !showPendingPicker && todayTopic.date === todayStr() && step === 'write' && (
+              {/* 지난 주제 글쓰기 안내 배너 (오늘 주제 있을 때 — 모든 단계에서 표시) */}
+              {pendingTopics.length > 0 && !showPendingPicker && todayTopic.date === todayStr() && (
                 <button onClick={() => setShowPendingPicker(true)}
                   className="w-full bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-2xl p-3 text-left transition">
                   <div className="flex items-center justify-between">
