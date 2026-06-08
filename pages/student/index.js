@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
@@ -204,7 +205,7 @@ export default function StudentHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, school)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, school, grade, tutor_chat_enabled)').eq('id', authUser.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
@@ -1625,6 +1626,18 @@ ${rewriteEssay}
           </div>
         )}
         <StudentTutorial />
+
+        {/* 🆕 AI 글쓰기 도우미 (교사가 켰을 때 + 글쓰기 단계에서만) */}
+        {classInfo?.tutor_chat_enabled && (step === 'write' || step === 'rewrite') && todayTopic && (
+          <TutorChat
+            apiKey={loadApiKey()}
+            topic={todayTopic}
+            currentText={step === 'rewrite' ? rewriteEssay : essay}
+            studentName={user?.realname}
+            userId={user?.id}
+            grade={classInfo?.grade}
+          />
+        )}
       </div>
     </>
   )

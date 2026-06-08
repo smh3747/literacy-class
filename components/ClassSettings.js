@@ -22,6 +22,7 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   const rankingEnabled = classInfo.ranking_enabled !== false // 기본값 true
   const boardScope = classInfo.board_scope || 'class'
   const grade = classInfo.grade || ''
+  const tutorChatEnabled = !!classInfo.tutor_chat_enabled // 기본값 false
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -30,9 +31,7 @@ export default function ClassSettings({ classInfo, onUpdate }) {
         <div className="text-left">
           <h3 className="font-bold text-gray-900">⚙️ 학급 설정</h3>
           <p className="text-xs text-gray-500 mt-1">
-            학년: {grade ? `${grade}학년` : '미설정'} · 랭킹: {rankingEnabled ? 'ON' : 'OFF'} · 게시판: {
-              boardScope === 'national' ? '전국' : boardScope === 'off' ? 'OFF' : '학급 내'
-            }
+            학년: {grade ? `${grade}학년` : '미설정'} · 랭킹: {rankingEnabled ? 'ON' : 'OFF'} · 도우미: {tutorChatEnabled ? 'ON' : 'OFF'}
           </p>
         </div>
         <span className="text-gray-400">{open ? '▲' : '▼'}</span>
@@ -68,6 +67,21 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             </label>
             <p className="text-xs text-gray-500 mt-1 ml-6">
               학생들이 학급 내 익명 랭킹(평균점수/제출량/향상도)을 볼 수 있어요. 비교 문화가 걱정되면 끄세요.
+            </p>
+          </div>
+
+          {/* 🆕 AI 글쓰기 도우미 챗봇 */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={tutorChatEnabled}
+                onChange={e => save({ tutor_chat_enabled: e.target.checked })}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">🤖 AI 글쓰기 도우미 (챗봇)</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              학생이 글을 쓰다 막힐 때 AI에게 질문할 수 있어요. <strong>글을 대신 써주지 않고</strong> 생각을 이끄는 질문·힌트만 줘요.
+              학생당 하루 5회 제한. 평가 상황 등 필요할 때 끄세요.
             </p>
           </div>
 
