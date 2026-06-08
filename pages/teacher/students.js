@@ -1056,8 +1056,8 @@ export default function StudentsPage() {
                     </div>
                   )}
 
-                  <div className="bg-gray-50 rounded-lg p-3 max-h-72 overflow-y-auto">
-                    <table className="w-full text-sm">
+                  <div className="bg-gray-50 rounded-lg p-3 max-h-72 overflow-y-auto overflow-x-auto">
+                    <table className="w-full text-sm min-w-[320px]">
                       <thead><tr className="text-left border-b">
                         <th className="py-1 px-2 w-14">번호</th>
                         <th className="py-1 px-2 w-24">이름</th>
