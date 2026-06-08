@@ -871,15 +871,15 @@ ${contents}
                               className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${t.is_banned ? 'bg-red-50' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
                               onClick={() => setExpandedTeacherId(isExpanded ? null : t.id)}>
                               <td className="p-2 text-gray-400 select-none">{isExpanded ? '▼' : '▶'}</td>
-                              <td className="p-2 font-medium">{t.realname}</td>
-                              <td className="p-2 text-gray-600">{t.school || '-'}</td>
-                              <td className="p-2 text-gray-600 font-mono text-xs">{t.username}</td>
-                              <td className="p-2 text-gray-600">
+                              <td className="p-2 font-medium whitespace-nowrap">{t.realname}</td>
+                              <td className="p-2 text-gray-600 whitespace-nowrap">{t.school || '-'}</td>
+                              <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap">{t.username}</td>
+                              <td className="p-2 text-gray-600 whitespace-nowrap">
                                 {myClasses.length === 0 ? (
                                   <span className="text-xs text-gray-400">운영 학급 없음</span>
                                 ) : (
                                   <div className="flex flex-col gap-0.5">
-                                    <span className="text-xs">
+                                    <span className="text-xs whitespace-nowrap">
                                       🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건
                                     </span>
                                     <span className={`text-[11px] ${activityColor}`}>{activityLabel}</span>

@@ -869,7 +869,6 @@ export default function TeacherSubmissions() {
                             ⚠️ 예시 유사도 {Math.round(similarity.score * 100)}%
                           </span>
                         )}
-                        <span className="text-base font-bold">{s.total_score}/{s.max_score}점</span>
                       </div>
                     </div>
 
@@ -920,10 +919,11 @@ export default function TeacherSubmissions() {
                     />
 
                     {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
-                    <details open className="group">
-                      <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-1 select-none list-none">
+                    <details className="group">
+                      <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
                         <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
                         🤖 AI 점수·피드백 보기
+                        <span className="ml-auto font-bold text-gray-900">{s.total_score}/{s.max_score}점</span>
                       </summary>
                       <div className="space-y-3 mt-2">
 
