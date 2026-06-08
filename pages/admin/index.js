@@ -231,6 +231,57 @@ export default function AdminHome() {
     await loadAll()
   }
 
+  // 🆕 선생님 비밀번호 초기화 (비번 잊은 선생님 구제 — 재가입 사고 방지)
+  const resetTeacherPassword = async (teacher) => {
+    const newPw = prompt(
+      `🔑 "${teacher.realname}" 선생님 비밀번호 초기화\n\n` +
+      `아이디: ${teacher.username}\n\n` +
+      `새 비밀번호를 입력하세요 (6자 이상).\n` +
+      `공란으로 확인하면 임시 비밀번호가 자동 생성돼요.`,
+      ''
+    )
+    if (newPw === null) return  // 취소
+
+    // 공란이면 자동 생성 (읽기 쉬운 6자리)
+    const finalPw = newPw.trim() || `cw${Math.floor(1000 + Math.random() * 9000)}`
+    if (finalPw.length < 6) {
+      return alert('비밀번호는 6자 이상이어야 해요')
+    }
+
+    if (!confirm(
+      `${teacher.realname} 선생님의 비밀번호를 변경할까요?\n\n` +
+      `새 비밀번호: ${finalPw}\n\n` +
+      `⚠️ 변경 후 이 비밀번호를 선생님께 직접 전달해주세요.\n` +
+      `(선생님은 로그인 후 본인이 다시 변경 가능)`
+    )) return
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/reset-teacher-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teacherId: teacher.id,
+          newPassword: finalPw,
+          accessToken: session?.access_token
+        })
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || '초기화 실패')
+
+      alert(
+        `✅ 비밀번호 초기화 완료!\n\n` +
+        `선생님: ${teacher.realname}\n` +
+        `아이디: ${teacher.username}\n` +
+        `새 비밀번호: ${finalPw}\n\n` +
+        `📋 이 정보를 선생님께 전달해주세요.\n` +
+        `(이 창을 닫으면 비밀번호를 다시 볼 수 없어요)`
+      )
+    } catch(e) {
+      alert('❌ 실패: ' + e.message)
+    }
+  }
+
   // 🗑️ 선생님 휴지통으로 (B4)
   const trashTeacher = async (teacher) => {
     if (teacher.id === user?.id) {
@@ -779,6 +830,14 @@ ${contents}
                               </td>
                               <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
                                 <div className="flex flex-col sm:flex-row gap-1 justify-center">
+                                  {/* 🆕 비밀번호 초기화 (비번 잊은 선생님 구제) */}
+                                  {!t.is_banned && (
+                                    <button onClick={() => resetTeacherPassword(t)}
+                                      className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                      title="비밀번호를 잊은 선생님에게 새 비밀번호를 만들어주세요">
+                                      🔑
+                                    </button>
+                                  )}
                                   {t.role !== 'admin' && !t.is_banned && (
                                     <button onClick={() => toggleTeacherBan(t)}
                                       className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">

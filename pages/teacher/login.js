@@ -222,7 +222,7 @@ export default function TeacherLogin() {
         router.push('/teacher')
       }
     } catch(e) {
-      const errMsg = getAuthErrorMessage(e, mode === 'signup' ? 'signup' : 'login')
+      const errMsg = getAuthErrorMessage(e, mode === 'signup' ? 'signup' : 'teacherLogin')
       setError(errMsg)
       setLoading(false)
     }
@@ -389,8 +389,16 @@ export default function TeacherLogin() {
                 </button>
               </div>
 
-            <div className="mt-4 text-center">
-              <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary">
+            <div className="mt-4 text-center space-y-1.5">
+              {mode === 'login' && (
+                <p className="text-xs text-gray-500">
+                  🔑 비밀번호를 잊으셨나요?{' '}
+                  <span className="text-amber-700 font-medium">재가입하지 마시고</span> 관리자(개발자)에게 초기화를 요청하세요.
+                  <br />
+                  <span className="text-gray-400">재가입하면 기존 학급·학생·글과 연결이 끊겨요.</span>
+                </p>
+              )}
+              <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary inline-block">
                 Gemini API 키 발급 방법 →
               </Link>
             </div>
