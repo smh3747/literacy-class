@@ -221,6 +221,38 @@ export default function TeacherSubmissions() {
     setView('studentDetail')
   }
 
+  // 🆕 일일 워크플로우: 이전/다음 학생 이동 (제출한 학생만 대상)
+  const submittedStudents = topicStudents.filter(g => g.items.length > 0)
+  const currentStudentIdx = selectedStudent
+    ? submittedStudents.findIndex(g => g.profile.id === selectedStudent.profile.id)
+    : -1
+
+  const goPrevStudent = () => {
+    if (currentStudentIdx > 0) {
+      setSelectedStudent(submittedStudents[currentStudentIdx - 1])
+      window.scrollTo({ top: 0 })
+    }
+  }
+  const goNextStudent = () => {
+    if (currentStudentIdx >= 0 && currentStudentIdx < submittedStudents.length - 1) {
+      setSelectedStudent(submittedStudents[currentStudentIdx + 1])
+      window.scrollTo({ top: 0 })
+    }
+  }
+
+  // 🆕 키보드 ←/→ (입력 중일 땐 무시)
+  useEffect(() => {
+    if (view !== 'studentDetail') return
+    const onKey = (e) => {
+      const tag = (document.activeElement?.tagName || '').toLowerCase()
+      if (tag === 'textarea' || tag === 'input' || tag === 'select') return
+      if (e.key === 'ArrowLeft') goPrevStudent()
+      if (e.key === 'ArrowRight') goNextStudent()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view, currentStudentIdx, submittedStudents.length])
+
   const downloadExcel = async () => {
     // 다운로드 사유 선택 (개인정보 보호 차원에서 목적 명시)
     const purpose = prompt(
@@ -491,6 +523,59 @@ export default function TeacherSubmissions() {
     openTopic(selectedTopic)
   }
 
+  // 🆕 일괄 격려 코멘트 — 코멘트 없는 학생의 최신 글에만 (기존 코멘트 안 건드림)
+  const bulkEncourageComment = async () => {
+    if (!selectedTopic || isImpersonating) return
+
+    // 각 학생의 최신 글
+    const subsByStudent = {}
+    topicStudents.forEach(g => {
+      g.items.forEach(s => {
+        const cur = subsByStudent[s.user_id]
+        if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+      })
+    })
+    // 이 주제에서 코멘트를 하나도 못 받은 학생의 최신 글만 대상
+    const studentsWithComment = new Set()
+    topicStudents.forEach(g => {
+      if (g.items.some(s => s.teacher_comment)) studentsWithComment.add(g.profile.id)
+    })
+    const targets = Object.values(subsByStudent).filter(s => !studentsWithComment.has(s.user_id))
+
+    if (targets.length === 0) {
+      alert('모든 제출 학생이 이미 코멘트를 받았어요! 👏')
+      return
+    }
+
+    const msg = prompt(
+      `📣 일괄 격려 코멘트\n\n` +
+      `아직 코멘트를 못 받은 ${targets.length}명의 최신 글에 같은 코멘트를 답니다.\n` +
+      `(이미 코멘트 받은 학생은 건드리지 않아요)\n\n` +
+      `코멘트 내용을 입력하세요:`,
+      '오늘도 열심히 써줘서 고마워요! 꾸준히 쓰는 모습이 멋져요 💪'
+    )
+    if (!msg || !msg.trim()) return
+    if (msg.length > 1000) { alert('코멘트는 1000자 이하로 해주세요'); return }
+
+    if (!confirm(`${targets.length}명에게 아래 코멘트를 일괄 작성할까요?\n\n"${msg.trim()}"`)) return
+
+    let success = 0, failed = 0
+    for (const s of targets) {
+      try {
+        const { error } = await supabase.from('submissions')
+          .update({
+            teacher_comment: msg.trim(),
+            teacher_comment_at: new Date().toISOString(),
+            teacher_comment_read_at: null  // 학생에게 새 알림으로
+          }).eq('id', s.id)
+        if (error) throw error
+        success++
+      } catch(e) { failed++ }
+    }
+    alert(`✅ ${success}명에게 코멘트 작성 완료${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+    openTopic(selectedTopic)
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
   return (
@@ -551,6 +636,11 @@ export default function TeacherSubmissions() {
                   (s.attempt || 1) >= 1 + maxRewrites && !s.extra_rewrite_allowed
                 ).length
 
+                // 🆕 코멘트 못 받은 제출 학생 수
+                const noCommentCount = topicStudents.filter(g =>
+                  g.items.length > 0 && !g.items.some(s => s.teacher_comment)
+                ).length
+
                 return (
                   <div className="bg-primary-light rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
                     <div>
@@ -559,6 +649,7 @@ export default function TeacherSubmissions() {
                       <div className="text-xs text-primary-dark mt-1 space-x-2">
                         <span>✅ {submittedCount}명 제출</span>
                         {absentCount > 0 && <span className="text-amber-700">🚨 {absentCount}명 미제출</span>}
+                        {noCommentCount > 0 && <span className="text-yellow-700">💬 코멘트 전 {noCommentCount}명</span>}
                         <span className="text-gray-600">
                           · 최소 {selectedTopic.min_length || 30}자 / 수정 {maxRewrites}회
                         </span>
@@ -582,6 +673,12 @@ export default function TeacherSubmissions() {
                       )}
                       {submittedCount > 0 && (
                         <>
+                          {noCommentCount > 0 && !isImpersonating && (
+                            <button onClick={bulkEncourageComment}
+                              className="bg-yellow-100 border border-yellow-300 text-yellow-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-yellow-200">
+                              📣 일괄 격려 코멘트 ({noCommentCount}명)
+                            </button>
+                          )}
                           <button onClick={regradeAll} disabled={bulkRegrading}
                             className="bg-blue-100 border border-blue-300 text-blue-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-200 disabled:opacity-50">
                             🔄 전체 다시 평가 ({submittedCount}명)
@@ -655,6 +752,7 @@ export default function TeacherSubmissions() {
                     const last = sorted[sorted.length - 1]
                     const isImproved = first.id !== last.id
                     const pasted = sorted.some(s => s.paste_detected)
+                    const noComment = !sorted.some(s => s.teacher_comment)  // 🆕 코멘트 안 단 학생
                     return (
                       <button key={g.profile.id} onClick={() => openStudent(g)}
                         className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition flex justify-between items-center">
@@ -669,6 +767,11 @@ export default function TeacherSubmissions() {
                               {sorted.some(s => s.is_fallback_graded) && (
                                 <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
                                   🔁 보조 채점
+                                </span>
+                              )}
+                              {noComment && (
+                                <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full" title="아직 담임 코멘트를 안 달았어요">
+                                  💬 코멘트 전
                                 </span>
                               )}
                             </div>
@@ -697,7 +800,30 @@ export default function TeacherSubmissions() {
 
           {view === 'studentDetail' && selectedStudent && selectedTopic && (
             <>
-              <button onClick={() => setView('topicStudents')} className="text-sm text-gray-600">← 학생 목록</button>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <button onClick={() => setView('topicStudents')} className="text-sm text-gray-600">← 학생 목록</button>
+                {/* 🆕 이전/다음 학생 네비게이션 (키보드 ←/→도 가능) */}
+                {submittedStudents.length > 1 && (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <button
+                      onClick={goPrevStudent}
+                      disabled={currentStudentIdx <= 0}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                      ← 이전 학생
+                    </button>
+                    <span className="text-gray-500 px-1">
+                      {currentStudentIdx + 1} / {submittedStudents.length}
+                    </span>
+                    <button
+                      onClick={goNextStudent}
+                      disabled={currentStudentIdx >= submittedStudents.length - 1}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                      다음 학생 →
+                    </button>
+                    <span className="hidden lg:inline text-gray-400 ml-1" title="본문에서 키보드 화살표로도 이동돼요">⌨️ ←/→</span>
+                  </div>
+                )}
+              </div>
               <div className="bg-primary-light rounded-2xl p-4">
                 <h2 className="text-lg font-bold text-primary-dark">{selectedStudent.profile.realname}</h2>
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
