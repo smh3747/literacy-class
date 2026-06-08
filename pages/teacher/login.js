@@ -295,6 +295,10 @@ export default function TeacherLogin() {
             <div className="space-y-3">
                 {mode === 'signup' && (
                   <>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 leading-relaxed">
+                      👋 처음 오셨나요? 아래 정보를 채우면 <strong>나만의 학급</strong>이 만들어져요.
+                      가입 후 학생 등록 → API 키 등록 순서로 안내해드릴게요.
+                    </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">가입 유형</label>
                       <select value={signupRole} onChange={e => setSignupRole(e.target.value)}
@@ -302,6 +306,9 @@ export default function TeacherLogin() {
                         <option value="teacher">담임 교사</option>
                         <option value="admin">관리자 (운영자)</option>
                       </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        💡 대부분 <strong>담임 교사</strong>예요. 관리자는 앱 운영자만 선택하세요.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">
@@ -310,12 +317,15 @@ export default function TeacherLogin() {
                       <input type="password" value={secretCode} onChange={e => setSecretCode(e.target.value)}
                         onKeyDown={handleEnter}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="가입 코드" />
+                      <p className="text-xs text-gray-500 mt-1">
+                        💡 앱을 소개해준 분(운영자)에게 받은 코드예요. 모르면 운영자에게 문의하세요.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">이름</label>
                       <input type="text" value={realname} onChange={e => setRealname(e.target.value)}
                         onKeyDown={handleEnter}
-                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명" />
+                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명 (예: 김선생)" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학교명</label>
@@ -328,6 +338,9 @@ export default function TeacherLogin() {
                       <input type="text" value={className} onChange={e => setClassName(e.target.value)}
                         onKeyDown={handleEnter}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
+                      <p className="text-xs text-gray-500 mt-1">
+                        💡 가입하면 이 학급이 자동으로 만들어져요. 나중에 학급을 더 추가할 수도 있어요.
+                      </p>
                     </div>
                   </>
                 )}
@@ -335,7 +348,12 @@ export default function TeacherLogin() {
                   <label className="block text-sm font-medium mb-1">아이디</label>
                   <input type="text" value={username} onChange={e => setUsername(e.target.value)}
                     onKeyDown={handleEnter}
-                    className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디" autoComplete="username" />
+                    className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디 (예: kim2024)" autoComplete="username" />
+                  {mode === 'signup' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 영문·숫자로 짧고 기억하기 쉽게. 로그인할 때 매번 쓰는 아이디예요.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
@@ -343,6 +361,11 @@ export default function TeacherLogin() {
                     onKeyDown={handleEnter}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+                  {mode === 'signup' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 잊지 않도록 기억해주세요. 잊으면 운영자가 초기화해드려요.
+                    </p>
+                  )}
                 </div>
 
                 {/* 옵션 체크박스 (로그인 모드일 때만) */}
