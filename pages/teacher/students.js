@@ -37,7 +37,7 @@ export default function StudentsPage() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
@@ -110,6 +110,29 @@ export default function StudentsPage() {
     }))
     // 개별 편집 중인 것들 초기화
     setEditingUsernames({})
+  }
+
+  // 🆕 빈 양식 다운로드 — 나이스 명렬표를 못 받는 경우 직접 채워서 올리기
+  const downloadTemplate = async () => {
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+    const grade = classInfo?.grade || 5
+    const rows = [
+      ['학년', '반', '번호', '성명'],
+      [grade, 1, 1, '김예시'],
+      [grade, 1, 2, '이예시'],
+      [grade, 1, 3, '박예시'],
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols'] = [{ wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 12 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '학생명단')
+    XLSX.writeFile(wb, '학생등록_양식.xlsx')
+    alert(
+      '📄 양식이 다운로드됐어요!\n\n' +
+      '1. 예시 줄(김예시 등)을 지우고 우리 반 학생으로 채워주세요\n' +
+      '2. 학년·반·번호는 숫자로, 성명은 실명으로\n' +
+      '3. 저장 후 이 화면에 다시 업로드하면 끝!'
+    )
   }
 
   const handleFile = async (e) => {
@@ -963,6 +986,19 @@ export default function StudentsPage() {
                 <p>✅ <strong>PDF (.pdf)</strong> - 텍스트 PDF만 가능 (인식 후 결과 확인 필수)</p>
                 <p className="text-red-700">❌ <strong>이미지 PDF (스캔본)</strong> - 인식 불가</p>
               </div>
+              {/* 🆕 나이스를 못 쓰는 경우 — 빈 양식 직접 작성 */}
+              <div className="mt-2 flex items-center justify-between flex-wrap gap-2 bg-white rounded p-2">
+                <span className="text-blue-900">
+                  📄 나이스 명렬표를 받기 어렵나요? 빈 양식을 받아 직접 채워도 돼요
+                  <span className="text-blue-700/70"> (전입생 추가 등록에도 좋아요)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={downloadTemplate}
+                  className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 flex-shrink-0">
+                  📥 양식 다운로드
+                </button>
+              </div>
             </div>
 
             {!user?.school && (
@@ -1055,10 +1091,22 @@ export default function StudentsPage() {
                       </tbody>
                     </table>
                   </div>
-                  <button onClick={submitBulk} disabled={uploading}
-                    className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                    {uploading ? '등록 중...' : `📥 ${parsedStudents.length}명 일괄 등록`}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setParsedStudents([])
+                        setEditingUsernames({})
+                        setUploadStatus(null)
+                      }}
+                      disabled={uploading}
+                      className="px-4 py-3 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-50">
+                      ✖ 취소
+                    </button>
+                    <button onClick={submitBulk} disabled={uploading}
+                      className="flex-1 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                      {uploading ? '등록 중...' : `📥 ${parsedStudents.length}명 일괄 등록`}
+                    </button>
+                  </div>
                 </>
               )}
               <details className="text-xs text-gray-500">
