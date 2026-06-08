@@ -28,6 +28,40 @@ export default function TeacherLogin() {
   // 새 옵션
   const [saveUsername, setSaveUsername] = useState(false)
   const [autoLogin, setAutoLogin] = useState(true)
+
+  // 🆕 비밀번호 초기화 요청 모달
+  const [showResetRequest, setShowResetRequest] = useState(false)
+  const [resetForm, setResetForm] = useState({ username: '', realname: '', school: '', contact: '' })
+  const [resetSubmitting, setResetSubmitting] = useState(false)
+
+  const submitResetRequest = async () => {
+    if (!resetForm.username.trim() || !resetForm.realname.trim()) {
+      alert('아이디와 이름은 꼭 입력해주세요')
+      return
+    }
+    setResetSubmitting(true)
+    try {
+      const { error } = await supabase.from('password_reset_requests').insert({
+        username: resetForm.username.trim().toLowerCase(),
+        realname: resetForm.realname.trim(),
+        school: resetForm.school.trim() || null,
+        contact: resetForm.contact.trim() || null,
+      })
+      if (error) throw error
+      alert(
+        '✅ 초기화 요청이 접수됐어요!\n\n' +
+        '관리자가 확인 후 임시 비밀번호를 만들어서\n' +
+        '남겨주신 연락 방법으로 전달드릴게요.\n\n' +
+        '⚠️ 그동안 새로 가입하지 마세요 —\n' +
+        '재가입하면 기존 학급·학생·글과 연결이 끊겨요.'
+      )
+      setShowResetRequest(false)
+      setResetForm({ username: '', realname: '', school: '', contact: '' })
+    } catch(e) {
+      alert('요청 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
+    }
+    setResetSubmitting(false)
+  }
   // 가입 시 동의 체크 (한 화면에 같이 표시)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [agreePrivacy, setAgreePrivacy] = useState(false)
@@ -393,9 +427,15 @@ export default function TeacherLogin() {
               {mode === 'login' && (
                 <p className="text-xs text-gray-500">
                   🔑 비밀번호를 잊으셨나요?{' '}
-                  <span className="text-amber-700 font-medium">재가입하지 마시고</span> 관리자(개발자)에게 초기화를 요청하세요.
+                  <button
+                    type="button"
+                    onClick={() => setShowResetRequest(true)}
+                    className="text-blue-600 font-medium underline hover:text-blue-800">
+                    초기화 요청하기
+                  </button>
                   <br />
-                  <span className="text-gray-400">재가입하면 기존 학급·학생·글과 연결이 끊겨요.</span>
+                  <span className="text-amber-700">재가입하지 마세요</span>
+                  <span className="text-gray-400"> — 기존 학급·학생·글과 연결이 끊겨요.</span>
                 </p>
               )}
               <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary inline-block">
@@ -404,6 +444,66 @@ export default function TeacherLogin() {
             </div>
           </div>
         </main>
+
+        {/* 🆕 비밀번호 초기화 요청 모달 */}
+        {showResetRequest && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+            onClick={() => !resetSubmitting && setShowResetRequest(false)}>
+            <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-gray-900">🔑 비밀번호 초기화 요청</h3>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                관리자가 확인 후 임시 비밀번호를 만들어 전달해드려요.
+                본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.
+              </p>
+              <input
+                type="text"
+                placeholder="아이디 (필수)"
+                value={resetForm.username}
+                onChange={e => setResetForm({ ...resetForm, username: e.target.value })}
+                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                placeholder="이름 (필수)"
+                value={resetForm.realname}
+                onChange={e => setResetForm({ ...resetForm, realname: e.target.value })}
+                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                placeholder="학교 (선택)"
+                value={resetForm.school}
+                onChange={e => setResetForm({ ...resetForm, school: e.target.value })}
+                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                placeholder="연락 방법 (선택: 전화, 카톡 ID 등)"
+                value={resetForm.contact}
+                onChange={e => setResetForm({ ...resetForm, contact: e.target.value })}
+                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+              />
+              <p className="text-[11px] text-gray-400">
+                연락 방법을 안 남기면 함께 아는 분(동료 선생님 등)을 통해 전달될 수 있어요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowResetRequest(false)}
+                  disabled={resetSubmitting}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm disabled:opacity-50">
+                  취소
+                </button>
+                <button
+                  onClick={submitResetRequest}
+                  disabled={resetSubmitting}
+                  className="flex-1 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                  {resetSubmitting ? '접수 중...' : '요청 보내기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

@@ -16,6 +16,7 @@ export default function AdminHome() {
   const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
   const [trashedClasses, setTrashedClasses] = useState([])
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
+  const [resetRequests, setResetRequests] = useState([])  // 🆕 비밀번호 초기화 요청
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -216,6 +217,19 @@ export default function AdminHome() {
       console.warn('공유 추천 로드 실패:', e)
       setSharedSuggestionLogs([])
     }
+
+    // 🆕 비밀번호 초기화 요청 (pending만)
+    try {
+      const { data: pwReqs } = await supabase.from('password_reset_requests')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      setResetRequests(pwReqs || [])
+    } catch(e) {
+      // 테이블 미생성(SQL 미실행) 시 무시
+      setResetRequests([])
+    }
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
@@ -279,6 +293,33 @@ export default function AdminHome() {
       )
     } catch(e) {
       alert('❌ 실패: ' + e.message)
+    }
+  }
+
+  // 🆕 초기화 요청 처리 — username으로 선생님 찾아서 초기화 후 완료 처리
+  const handleResetRequest = async (req) => {
+    const target = teachers.find(t => t.username === req.username)
+    if (!target) {
+      if (confirm(
+        `"${req.username}" 아이디의 선생님을 찾을 수 없어요.\n\n` +
+        `(요청자가 아이디를 잘못 적었거나 학생 계정일 수 있어요)\n\n` +
+        `이 요청을 완료 처리(목록에서 제거)할까요?`
+      )) {
+        await supabase.from('password_reset_requests')
+          .update({ status: 'done', handled_at: new Date().toISOString() })
+          .eq('id', req.id)
+        await loadAll()
+      }
+      return
+    }
+    // 기존 초기화 흐름 재사용
+    await resetTeacherPassword(target)
+    // 처리 완료로 표시
+    if (confirm('이 요청을 완료 처리할까요? (목록에서 사라져요)')) {
+      await supabase.from('password_reset_requests')
+        .update({ status: 'done', handled_at: new Date().toISOString() })
+        .eq('id', req.id)
+      await loadAll()
     }
   }
 
@@ -735,6 +776,36 @@ ${contents}
             const bannedCount = teachers.filter(t => t.is_banned).length
 
             return (
+            <div className="space-y-4">
+            {/* 🆕 비밀번호 초기화 요청 알림 */}
+            {resetRequests.length > 0 && (
+              <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4">
+                <h3 className="font-bold text-blue-900 text-sm mb-2">
+                  🔔 비밀번호 초기화 요청 ({resetRequests.length}건)
+                </h3>
+                <div className="space-y-2">
+                  {resetRequests.map(req => (
+                    <div key={req.id} className="bg-white border border-blue-200 rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-sm">
+                        <div className="font-medium">
+                          {req.realname} <span className="text-gray-500 font-mono text-xs">@{req.username}</span>
+                          {req.school && <span className="text-gray-500 text-xs ml-1">· {req.school}</span>}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {req.contact ? `📞 ${req.contact}` : '연락처 없음 (지인 통해 전달)'}
+                          <span className="ml-2">{new Date(req.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => handleResetRequest(req)}
+                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
+                        🔑 초기화 처리
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <h3 className="font-bold">
@@ -944,6 +1015,7 @@ ${contents}
                   </table>
                 </div>
               )}
+            </div>
             </div>
             )
           })()}
