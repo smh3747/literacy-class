@@ -8,7 +8,7 @@
 // (HTTPS 전송, 서버는 키를 저장하지 않음 — 호출에만 사용)
 // ============================================
 import { callGeminiStructured, SCHEMAS } from '../../lib/gemini'
-import { gradingPrompt, rewriteGradingPrompt } from '../../lib/prompts.server'
+import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
@@ -45,8 +45,25 @@ export default async function handler(req, res) {
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0.2 }
 
+    } else if (type === 'regrade') {
+      const { topic, essay, rubrics } = payload || {}
+      if (!topic || !essay || !Array.isArray(rubrics)) {
+        return res.status(400).json({ error: '재평가에 필요한 정보가 부족해요' })
+      }
+      prompt = regradePrompt({ topic, essay, rubrics })
+      schema = SCHEMAS.essayFeedback
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0.2 }
+
+    } else if (type === 'rubricHint') {
+      const { topic, rubrics } = payload || {}
+      if (!topic || !Array.isArray(rubrics)) {
+        return res.status(400).json({ error: '평가기준 정보가 부족해요' })
+      }
+      prompt = rubricHintPrompt({ topic, rubrics })
+      schema = SCHEMAS.rubricSet
+      opts = { maxTokens: 6000, taskType: 'creative', temperature: 0.3 }
+
     } else {
-      return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
     }
 
     const result = await callGeminiStructured(apiKey, prompt, schema, opts)
