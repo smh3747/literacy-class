@@ -1989,7 +1989,7 @@ function SubmissionDetail({ sub, onBack }) {
       ) : (
         <>
           {/* 첫 글·수정본 좌우 병렬 (2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
-          <div className={`grid grid-cols-1 gap-4 items-start ${allSubs.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
+          <div className={`grid grid-cols-1 gap-4 items-stretch ${allSubs.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
             {allSubs.map((s, i) => {
               const label = s.attempt === 1
                 ? '✏️ 첫 글'

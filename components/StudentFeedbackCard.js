@@ -137,7 +137,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
                   : 'from-amber-50 to-orange-50 border-amber-200'
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-5">
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-5 h-full">
       {headerLabel && (
         <div className="flex items-center justify-between border-b pb-3">
           <h3 className="font-bold text-primary">{headerLabel}</h3>
