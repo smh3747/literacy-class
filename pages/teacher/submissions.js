@@ -186,7 +186,7 @@ export default function TeacherSubmissions() {
     await supabase.auth.signOut(); router.push('/')
   }
 
-  const openTopic = async (topic) => {
+  const openTopic = async (topic, keepStudentId = null) => {
     setSelectedTopic(topic)
     
     // 같은 학급 학생들의 이 주제 제출본 (숨김 학생 제외)
@@ -213,6 +213,16 @@ export default function TeacherSubmissions() {
       return (a.profile.realname || '').localeCompare(b.profile.realname || '')
     })
     setTopicStudents(groups)
+
+    // 🆕 특정 학생 화면을 유지해야 하면(재평가 등) 그 학생 상세로 복귀
+    if (keepStudentId) {
+      const keep = groups.find(g => g.profile.id === keepStudentId)
+      if (keep && keep.items.length > 0) {
+        setSelectedStudent(keep)
+        setView('studentDetail')
+        return
+      }
+    }
     setView('topicStudents')
   }
 
