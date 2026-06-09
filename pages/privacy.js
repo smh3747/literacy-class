@@ -80,6 +80,14 @@ export default function Privacy() {
                   교사가 유료 등급(Cloud Billing) API 키를 사용하는 경우 이러한 학습 활용은 발생하지 않습니다.
                 </p>
               </div>
+              <p className="font-semibold mt-3">[처리 위탁 및 국외 이전]</p>
+              <p className="text-gray-700 mt-1">서비스는 안정적 운영을 위해 다음 사업자에 데이터 저장·처리를 위탁하며, 이 과정에서 개인정보가 국외 서버에 저장될 수 있습니다.</p>
+              <ul className="list-disc pl-5 space-y-1 mt-1">
+                <li>Supabase Inc. (데이터베이스 호스팅) — 회원·학습 데이터 저장, 국외(미국 등)</li>
+                <li>Vercel Inc. (애플리케이션 호스팅) — 서비스 구동, 국외(미국 등)</li>
+                <li>Google LLC (Gemini API) — AI 피드백 생성, 국외(미국 등)</li>
+              </ul>
+              <p className="text-gray-600 text-xs mt-1">이전 항목: 위 "수집하는 개인정보 항목" 및 학생이 작성한 글. 이전·보유 기간은 본 방침의 보유기간과 동일합니다.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">5. 학부모 및 학생의 권리</h2>
@@ -100,9 +108,18 @@ export default function Privacy() {
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">7. 개인정보 보호책임자</h2>
-              <p>서비스 운영에 관한 문의는 사이트 내 "의견 보내기" 기능을 통해 접수해주시기 바랍니다.</p>
+              <p>개인정보 처리에 관한 업무를 총괄하는 책임자는 다음과 같습니다.</p>
+              <ul className="list-disc pl-5 space-y-1 mt-1">
+                <li>개인정보 보호책임자: 서비스 운영자</li>
+                <li>문의 접수: 사이트 내 "의견 보내기" 기능</li>
+              </ul>
+              <p className="text-gray-600 text-xs mt-1">정보주체는 개인정보 열람·정정·삭제·처리정지를 요청할 수 있으며, 서비스는 지체 없이 조치합니다.</p>
             </section>
-            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일</p>
+            <section>
+              <h2 className="text-lg font-bold mb-2">8. 처리방침의 변경</h2>
+              <p className="text-gray-700">본 개인정보처리방침은 법령·서비스 변경에 따라 개정될 수 있으며, 변경 시 시행일과 변경 내용을 서비스 내 공지합니다.</p>
+            </section>
+            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 9일</p>
           </div>
         </main>
       </div>

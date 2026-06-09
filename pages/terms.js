@@ -59,8 +59,8 @@ export default function Terms() {
             <section>
               <h2 className="text-lg font-bold mb-2">제6조 (저작권)</h2>
               <p>1. 학생이 작성한 글의 저작권은 학생에게 귀속됩니다.</p>
-              <p>2. 서비스는 학생 글을 AI 학습 데이터로 사용하지 않습니다.</p>
-              <p>3. 단, AI 피드백 생성을 위해 필요한 범위 내에서 임시적으로 처리될 수 있습니다.</p>
+              <p>2. 서비스 자체는 학생 글을 AI 학습 데이터로 사용하지 않습니다.</p>
+              <p>3. 단, AI 피드백 생성을 위해 외부 AI 제공자(Google Gemini 등)에 학생 글이 전달되며, 교사가 무료 등급 API 키를 사용하는 경우 해당 제공자의 정책에 따라 글이 AI 학습에 활용될 수 있습니다. 자세한 내용은 개인정보처리방침을 참고하시기 바랍니다.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">제7조 (약관의 변경)</h2>
