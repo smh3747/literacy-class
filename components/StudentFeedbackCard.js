@@ -164,7 +164,21 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
         </div>
       </div>
 
-      {/* 🆕 담임 선생님 코멘트 (최상단 강조 - 와이프 피드백) */}
+      {/* 📝 학생 글 — 맨 위로 (글을 먼저 보이게) */}
+      <div>
+        <h4 className="text-sm font-bold text-gray-800 mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올려보세요)` : ''}</h4>
+        <div
+          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-keep border border-gray-200"
+          dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
+        />
+        {sub.paste_detected && (
+          <p className="text-xs text-red-600 mt-1">
+            ⚠️ 붙여넣기 {sub.paste_count || 1}회 감지됨
+          </p>
+        )}
+      </div>
+
+      {/* 🆕 담임 선생님 코멘트 (글 다음 강조) */}
       {sub.teacher_comment && (
         <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
@@ -182,6 +196,15 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
           </p>
         </div>
       )}
+
+      {/* 🤖 AI 점수·피드백 — 기본 접힘 (글·코멘트 먼저) */}
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
+          <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+          🤖 AI 점수·피드백 보기
+          <span className="ml-auto font-bold text-gray-900">{sub.total_score ?? 0}/{totalMax}점</span>
+        </summary>
+        <div className="space-y-4 mt-3">
 
       {/* 종합 의견 — AI 피드백 */}
       {sub.feedback_overall && (
@@ -312,20 +335,6 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
         </div>
       )}
 
-      {/* 학생 글 (맞춤법 빨간 밑줄 적용) */}
-      <div>
-        <h4 className="text-sm font-bold text-gray-800 mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올려보세요)` : ''}</h4>
-        <div
-          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-keep border border-gray-200"
-          dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
-        />
-        {sub.paste_detected && (
-          <p className="text-xs text-red-600 mt-1">
-            ⚠️ 붙여넣기 {sub.paste_count || 1}회 감지됨
-          </p>
-        )}
-      </div>
-
       {/* 맞춤법 오류 목록 */}
       {corrections.length > 0 && (
         <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
@@ -354,6 +363,9 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
           <p className="text-sm text-indigo-900 whitespace-pre-wrap mt-2 leading-relaxed break-keep">{sub.example_text}</p>
         </details>
       )}
+
+        </div>
+      </details>
     </div>
   )
 }
