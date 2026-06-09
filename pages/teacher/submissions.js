@@ -186,6 +186,14 @@ export default function TeacherSubmissions() {
     await supabase.auth.signOut(); router.push('/')
   }
 
+  // 화면 상태를 URL에 반영 — 새로고침해도 같은 화면 유지
+  const syncUrl = (topicId = null, studentId = null) => {
+    const q = {}
+    if (topicId) q.topic = topicId
+    if (studentId) q.student = studentId
+    router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+  }
+
   const openTopic = async (topic, keepStudentId = null) => {
     setSelectedTopic(topic)
     
@@ -220,15 +228,18 @@ export default function TeacherSubmissions() {
       if (keep && keep.items.length > 0) {
         setSelectedStudent(keep)
         setView('studentDetail')
+        syncUrl(topic.id, keepStudentId)
         return
       }
     }
     setView('topicStudents')
+    syncUrl(topic.id)
   }
 
   const openStudent = (student) => {
     setSelectedStudent(student)
     setView('studentDetail')
+    syncUrl(selectedTopic?.id, student.profile.id)
   }
 
   // 🆕 일일 워크플로우: 이전/다음 학생 이동 (제출한 학생만 대상)
@@ -239,13 +250,17 @@ export default function TeacherSubmissions() {
 
   const goPrevStudent = () => {
     if (currentStudentIdx > 0) {
-      setSelectedStudent(submittedStudents[currentStudentIdx - 1])
+      const prev = submittedStudents[currentStudentIdx - 1]
+      setSelectedStudent(prev)
+      syncUrl(selectedTopic?.id, prev.profile.id)
       window.scrollTo({ top: 0 })
     }
   }
   const goNextStudent = () => {
     if (currentStudentIdx >= 0 && currentStudentIdx < submittedStudents.length - 1) {
-      setSelectedStudent(submittedStudents[currentStudentIdx + 1])
+      const next = submittedStudents[currentStudentIdx + 1]
+      setSelectedStudent(next)
+      syncUrl(selectedTopic?.id, next.profile.id)
       window.scrollTo({ top: 0 })
     }
   }
@@ -628,7 +643,7 @@ export default function TeacherSubmissions() {
 
           {view === 'topicStudents' && selectedTopic && (
             <>
-              <button onClick={() => setView('topics')} className="text-sm text-gray-600">← 주제 목록</button>
+              <button onClick={() => { setView('topics'); syncUrl(); }} className="text-sm text-gray-600">← 주제 목록</button>
               {(() => {
                 const submittedCount = topicStudents.filter(g => g.items.length > 0).length
                 const absentCount = topicStudents.filter(g => g.items.length === 0).length
@@ -811,7 +826,7 @@ export default function TeacherSubmissions() {
           {view === 'studentDetail' && selectedStudent && selectedTopic && (
             <>
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <button onClick={() => setView('topicStudents')} className="text-sm text-gray-600">← 학생 목록</button>
+                <button onClick={() => { setView('topicStudents'); setSelectedStudent(null); syncUrl(selectedTopic?.id); }} className="text-sm text-gray-600">← 학생 목록</button>
                 {/* 🆕 이전/다음 학생 네비게이션 (키보드 ←/→도 가능) */}
                 {submittedStudents.length > 1 && (
                   <div className="flex items-center gap-1.5 text-xs">

@@ -24,7 +24,20 @@ export default function AdminHome() {
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTabState] = useState('overview')
+
+  // 탭을 URL 쿼리에 반영 (새로고침해도 유지)
+  const setTab = (t) => {
+    setTabState(t)
+    router.replace({ pathname: router.pathname, query: { ...router.query, tab: t } }, undefined, { shallow: true })
+  }
+
+  // 첫 로드 시 URL의 tab 복원
+  useEffect(() => {
+    if (router.isReady && router.query.tab && router.query.tab !== tab) {
+      setTabState(router.query.tab)
+    }
+  }, [router.isReady])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -1644,9 +1657,10 @@ function AdminSubmissions() {
 }
 
 function AdminSubmissionsInner() {
+  const router = useRouter()
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  const [selectedSubmission, setSelectedSubmissionState] = useState(null)
   // 🆕 그룹화 모드: 'flat' | 'school' | 'class' | 'topic' | 'student'
   const [groupBy, setGroupBy] = useState('flat')
   const [selectedClass, setSelectedClass] = useState('all')
@@ -1657,7 +1671,26 @@ function AdminSubmissionsInner() {
   const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
   const [classMap, setClassMap] = useState({})      // { classId: { name, teacher_school } }
 
+  // 선택한 글을 URL(sub=id)에 반영 — 새로고침해도 유지
+  const setSelectedSubmission = (s) => {
+    setSelectedSubmissionState(s)
+    const q = { ...router.query }
+    if (s?.id) q.sub = s.id
+    else delete q.sub
+    router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+  }
+
   useEffect(() => { load() }, [selectedClass])
+
+  // 새로고침 시: 글 목록 로드된 뒤 URL의 sub ID로 상세 복원
+  useEffect(() => {
+    if (!router.isReady) return
+    const subId = router.query.sub
+    if (subId && !selectedSubmission && submissions.length > 0) {
+      const found = submissions.find(s => String(s.id) === String(subId))
+      if (found) setSelectedSubmissionState(found)
+    }
+  }, [router.isReady, submissions])
 
   const load = async () => {
     setLoading(true)
