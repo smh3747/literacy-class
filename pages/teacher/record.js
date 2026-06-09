@@ -89,6 +89,27 @@ export default function RecordPage() {
     const visible = (studs || []).filter(s => !s.is_hidden)
       .sort((a, b) => (parseInt(a.number) || 999) - (parseInt(b.number) || 999))
     setStudents(visible)
+
+    // 저장된 평어 불러오기 (토큰 없이 복원)
+    try {
+      const { data: saved } = await supabase.from('school_records')
+        .select('student_id, sentences, level')
+        .eq('teacher_id', profile.id)
+      if (saved && saved.length > 0) {
+        const savedMap = {}
+        saved.forEach(r => { savedMap[r.student_id] = r })
+        const restored = visible
+          .filter(s => savedMap[s.id])
+          .map(s => ({
+            student: s,
+            sentences: savedMap[s.id].sentences || [],
+            level: savedMap[s.id].level || '',
+            fromSaved: true
+          }))
+        if (restored.length > 0) setBatchResults(restored)
+      }
+    } catch (e) { /* 테이블 없으면 조용히 무시 */ }
+
     setLoading(false)
   }
 
@@ -119,6 +140,13 @@ export default function RecordPage() {
           gradeText, summaries: toSummaries(studentSubs), level: lv, standards, count: 2
         })
         results.push({ student: stu, sentences: r.sentences || [], level: lv })
+        // DB에 저장 (다음에 토큰 없이 복원)
+        try {
+          await supabase.from('school_records').upsert({
+            student_id: stu.id, teacher_id: user.id,
+            sentences: r.sentences || [], level: lv, standards, created_at: new Date().toISOString()
+          }, { onConflict: 'student_id' })
+        } catch (e) { /* 저장 실패는 무시 (테이블 없을 수 있음) */ }
       } catch (e) {
         results.push({ student: stu, sentences: [], error: getFriendlyErrorMessage ? getFriendlyErrorMessage(e) : (e.message || '실패') })
       }
@@ -210,35 +238,36 @@ export default function RecordPage() {
 
           {batchResults.length > 0 && (
             <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-start">
+            <div className="space-y-2 mb-6">
               {batchResults.map(({ student, sentences, level: lv, error: err, skipped }) => (
-                <div key={student.id} className="bg-white rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
+                <div key={student.id} className="bg-white rounded-xl p-3 shadow-sm flex flex-col sm:flex-row sm:items-stretch gap-3">
+                  {/* 이름 (왼쪽 고정폭) */}
+                  <div className="sm:w-32 sm:flex-shrink-0 flex sm:flex-col sm:justify-center gap-1">
                     <h3 className="text-sm font-bold text-gray-900">
                       {student.number ? `${student.number}번 ` : ''}{student.realname || student.username}
-                      {lv && <span className="ml-2 text-[11px] font-normal text-gray-400">({lv})</span>}
                     </h3>
+                    {lv && <span className="text-[11px] text-gray-400">{lv}</span>}
                   </div>
+                  {/* 평어들 (오른쪽 가로 배치) */}
                   {skipped ? (
-                    <p className="text-xs text-gray-400">쓴 글이 없어 건너뜀</p>
+                    <p className="text-xs text-gray-400 self-center">쓴 글이 없어 건너뜀</p>
                   ) : err ? (
-                    <p className="text-xs text-red-500">{err}</p>
+                    <p className="text-xs text-red-500 self-center">{err}</p>
                   ) : (
-                    <ul className="space-y-2">
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
                       {sentences.map((sent, i) => (
-                        <li key={i}>
-                          <button
-                            onClick={() => copy(sent, `${student.id}-${i}`)}
-                            className="w-full text-left text-sm text-gray-800 bg-gray-50 hover:bg-primary/10 border border-gray-200 rounded-lg px-3 py-2.5 transition-colors flex items-start justify-between gap-2 group"
-                          >
-                            <span className="leading-relaxed break-keep">{sent}</span>
-                            <span className="text-[11px] text-gray-400 group-hover:text-primary whitespace-nowrap mt-0.5">
-                              {copied === `${student.id}-${i}` ? '✓ 복사됨' : '복사'}
-                            </span>
-                          </button>
-                        </li>
+                        <button
+                          key={i}
+                          onClick={() => copy(sent, `${student.id}-${i}`)}
+                          className="text-left text-sm text-gray-800 bg-gray-50 hover:bg-primary/10 border border-gray-200 rounded-lg px-3 py-2.5 transition-colors flex items-start justify-between gap-2 group"
+                        >
+                          <span className="leading-relaxed break-keep">{sent}</span>
+                          <span className="text-[11px] text-gray-400 group-hover:text-primary whitespace-nowrap mt-0.5">
+                            {copied === `${student.id}-${i}` ? '✓' : '복사'}
+                          </span>
+                        </button>
                       ))}
-                    </ul>
+                    </div>
                   )}
                 </div>
               ))}
