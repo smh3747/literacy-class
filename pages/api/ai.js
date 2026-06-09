@@ -10,7 +10,7 @@
 import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
-  exampleEssayPrompt, tutorChatPrompt } from '../../lib/prompts.server'
+  exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
@@ -100,6 +100,15 @@ export default async function handler(req, res) {
       prompt = exampleEssayPrompt({ topicTitle, studentEssay })
       schema = SCHEMAS.exampleEssay
       opts = { maxTokens: 8000, taskType: 'quality' }
+
+    } else if (type === 'schoolRecord') {
+      const { summaries } = payload || {}
+      if (!Array.isArray(summaries) || summaries.length === 0) {
+        return res.status(400).json({ error: '학생의 글 기록이 필요해요' })
+      }
+      prompt = schoolRecordPrompt(payload)
+      schema = SCHEMAS.schoolRecord
+      opts = { taskType: 'quality', maxTokens: 4000, temperature: 0.4 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
