@@ -7,9 +7,10 @@
 // 개인 키 모델: 학생 학급의 Gemini 키를 요청 본문으로 받아 사용.
 // (HTTPS 전송, 서버는 키를 저장하지 않음 — 호출에만 사용)
 // ============================================
-import { callGeminiStructured, SCHEMAS } from '../../lib/gemini'
+import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
-  topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt } from '../../lib/prompts.server'
+  topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
+  exampleEssayPrompt, tutorChatPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
@@ -27,6 +28,13 @@ export default async function handler(req, res) {
 
   try {
     let prompt, schema, opts
+
+    // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
+    if (type === 'tutorChat') {
+      const p = tutorChatPrompt(payload || {})
+      const answer = await callGemini(apiKey, p, { chainName: 'simple', temperature: 0.7, maxTokens: 500 })
+      return res.status(200).json({ answer })
+    }
 
     if (type === 'grading') {
       const { topic, essay, rubrics } = payload || {}
@@ -85,6 +93,13 @@ export default async function handler(req, res) {
       prompt = topicDescPrompt(payload)
       schema = SCHEMAS.topicSuggestion
       opts = { taskType: 'creative', maxTokens: 2000 }
+
+    } else if (type === 'exampleEssay') {
+      const { topicTitle, studentEssay } = payload || {}
+      if (!studentEssay) return res.status(400).json({ error: '글 내용이 필요해요' })
+      prompt = exampleEssayPrompt({ topicTitle, studentEssay })
+      schema = SCHEMAS.exampleEssay
+      opts = { maxTokens: 8000, taskType: 'quality' }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })

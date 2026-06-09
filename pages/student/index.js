@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
@@ -562,20 +562,10 @@ export default function StudentHome() {
 
     setExampleLoading(true)
     try {
-      const prompt = `초등 5학년 학생이 쓴 다음 글을 더 좋게 다시 쓴 예시를 1편 만들어줘.
-주제: ${todayTopic.title}
-
-원본 글:
-${studentEssay}
-
-규칙:
-- 5학년 학생 수준의 자연스러운 글
-- 원본의 좋은 점은 살리고 부족한 점 보완
-- 분량: 반드시 400자 이내 (절대 넘지 말 것)
-- 따뜻하고 진솔한 느낌
-- example 필드 하나만 채워서 반환`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000, taskType: 'quality' })
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('exampleEssay', apiKey, {
+        topicTitle: todayTopic.title, studentEssay,
+      })
       if (result.example) {
         setExampleText(result.example)
         await supabase.from('submissions').update({ example_text: result.example }).eq('id', subId)
@@ -594,20 +584,10 @@ ${studentEssay}
 
     setExampleLoading(true)
     try {
-      const prompt = `초등 5학년 학생이 쓴 다음 글을 더 좋게 다시 쓴 예시를 1편 만들어줘.
-주제: ${todayTopic.title}
-
-원본 글:
-${studentEssay}
-
-규칙:
-- 5학년 학생 수준의 자연스러운 글
-- 원본의 좋은 점은 살리고 부족한 점 보완
-- 분량: 반드시 400자 이내 (절대 넘지 말 것)
-- 따뜻하고 진솔한 느낌
-- example 필드 하나만 채워서 반환`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.exampleEssay, { maxTokens: 8000, taskType: 'quality' })
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('exampleEssay', apiKey, {
+        topicTitle: todayTopic.title, studentEssay,
+      })
       if (result.example) {
         setExampleText(result.example)
         // DB에도 저장

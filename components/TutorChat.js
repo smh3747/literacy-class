@@ -6,7 +6,7 @@
 // 학생당 하루 5회 제한 (Gemini 무료 한도 보호).
 // ============================================
 import { useState, useRef, useEffect } from 'react'
-import { callGemini } from '../lib/gemini'
+import { callAI } from '../lib/aiClient'
 import { supabase } from '../lib/supabase'
 
 const DAILY_LIMIT = 5
@@ -65,29 +65,14 @@ export default function TutorChat({ apiKey, topic, currentText, studentName, use
         `${m.role === 'user' ? '학생' : '도우미'}: ${m.text}`
       ).join('\n')
 
-      const prompt = `당신은 ${gradeLabel} 학생의 글쓰기를 돕는 친절한 AI 도우미예요.
-
-[글쓰기 주제]
-${topic?.title || '(주제 없음)'}
-${topic?.description || ''}
-
-[학생이 지금까지 쓴 글]
-${currentText ? currentText.slice(0, 1500) : '(아직 안 씀)'}
-
-[대화 기록]
-${history}
-
-[매우 중요한 규칙]
-1. 절대로 학생의 글을 대신 써주지 마세요. 완성된 문장이나 문단을 제시하면 안 돼요.
-2. 대신 생각을 이끄는 질문을 던지거나, 막힌 부분을 풀 힌트와 방향만 알려주세요.
-   (예: "그때 어떤 기분이었어?", "예를 하나 떠올려볼까?", "그 장면을 더 자세히 설명해볼래?")
-3. 초등학생 눈높이로, 짧고 따뜻하게. 존댓말로 "~해요", "~볼까요?" 말투.
-4. 2~4문장으로 짧게. 길게 설명하지 마세요.
-5. 맞춤법·주제와 관련 없는 질문(게임, 잡담 등)에는 "지금은 글쓰기를 도와줄게요!"라고 부드럽게 돌려주세요.
-
-학생의 마지막 질문에 답해주세요:`
-
-      const answer = await callGemini(apiKey, prompt, { chainName: 'simple', temperature: 0.7, maxTokens: 500 })
+      // 🔒 프롬프트는 서버에서 구성
+      const answer = await callAI('tutorChat', apiKey, {
+        gradeLabel,
+        topicTitle: topic?.title,
+        topicDescription: topic?.description,
+        currentText,
+        history,
+      })
       setMessages([...newMessages, { role: 'assistant', text: (answer || '').trim() || '음, 다시 한 번 물어봐 줄래요?' }])
       await bumpUsage()
     } catch (e) {
