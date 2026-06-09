@@ -8,7 +8,8 @@
 // (HTTPS 전송, 서버는 키를 저장하지 않음 — 호출에만 사용)
 // ============================================
 import { callGeminiStructured, SCHEMAS } from '../../lib/gemini'
-import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt } from '../../lib/prompts.server'
+import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
+  topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
@@ -63,7 +64,30 @@ export default async function handler(req, res) {
       schema = SCHEMAS.rubricSet
       opts = { maxTokens: 6000, taskType: 'creative', temperature: 0.3 }
 
+    } else if (type === 'topicBatch') {
+      prompt = topicBatchPrompt(payload || {})
+      schema = SCHEMAS.topicBatch
+      opts = { taskType: 'creative', maxTokens: payload?.maxTokens || 6000 }
+
+    } else if (type === 'topicSingle') {
+      prompt = topicSinglePrompt(payload || {})
+      schema = SCHEMAS.topicSuggestion
+      opts = { taskType: 'creative', maxTokens: payload?.maxTokens || 2000 }
+
+    } else if (type === 'rubricGen') {
+      if (!payload?.title) return res.status(400).json({ error: '주제 제목이 필요해요' })
+      prompt = rubricGenPrompt(payload)
+      schema = SCHEMAS.rubricSet
+      opts = { taskType: 'creative', maxTokens: 6000, temperature: 0.5 }
+
+    } else if (type === 'topicDesc') {
+      if (!payload?.title) return res.status(400).json({ error: '주제 제목이 필요해요' })
+      prompt = topicDescPrompt(payload)
+      schema = SCHEMAS.topicSuggestion
+      opts = { taskType: 'creative', maxTokens: 2000 }
+
     } else {
+      return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
     }
 
     const result = await callGeminiStructured(apiKey, prompt, schema, opts)

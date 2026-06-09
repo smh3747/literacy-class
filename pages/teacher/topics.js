@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
 
@@ -246,48 +247,11 @@ export default function TopicsPage() {
 
       const hasTheme = batchTheme && batchTheme.trim()
 
-      let prompt = `${gradeText} 글쓰기 주제 ${targetDates.length}개를 만들어주세요.
-
-`
-      if (hasTheme) {
-        // 주제 방향이 있으면 모든 항목에 반드시 반영
-        prompt += `🎯 핵심 요구사항 (반드시 모든 주제에 반영):
-"${batchTheme.trim()}"
-
-위 방향성을 ${targetDates.length}개 주제 전부에 적용해주세요. 각 주제는 위 큰 방향 안에서 서로 다른 세부 주제/관점으로 만들어주세요.
-
-`
-      }
-
-      prompt += `규칙:
-- 만들어진 ${targetDates.length}개 주제는 서로 중복되지 않게 다양하게 (${hasTheme ? '큰 방향은 유지하되 세부 내용/접근 방식이 다르게' : '카테고리/주제가 다양하게'})
-- 최근 출제 주제와 중복 금지: ${recentTitles || '없음'}
-- title: 10-15자, 흥미롭고 ${gradeText} 학생들이 재미있어할 주제
-- description: 70-100자의 글쓰기 안내 (질문형 X, 안내/지시형으로)
-- category: 카테고리명${hasTheme ? ' (큰 방향성에 맞는 세부 카테고리)' : ' (예: "일상 경험", "상상력", "가족과 친구" 등)'}
-
-🚫 절대 피할 작문 클리셰 (학생들이 매번 봐서 식상해함):
-- "나의 아지트", "비밀의 장소", "나만의 공간" 류
-- "내가 만약 ~라면", "내가 만든 세상" 류 (너무 추상적·일반적)
-- "소중한 ~", "특별한 ~", "잊지 못할 ~" 류 (감상적·뻔함)
-- "행복했던 순간", "기억에 남는 일" 류 (너무 광범위)
-✅ 좋은 주제의 특징:
-- 학생이 "아, 그거!" 하고 바로 떠올릴 구체적 장면/상황
-- 글로 쓸 거리가 명확히 잡히는 구체성
-
-좋은 예시${hasTheme ? ` (방향성 "${batchTheme.trim()}"에 맞춘 예시는 아니고 형식만 참고)` : ''}:
-- title: "내 인생의 첫 도전"
-  description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."
-  category: "일상 경험"
-
-위와 같은 형식으로 ${targetDates.length}개 모두 만들어주세요. (반드시 ${targetDates.length}개${hasTheme ? `, 그리고 모든 주제가 "${batchTheme.trim()}" 방향성을 반영해야 합니다` : ''})`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative',
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('topicBatch', apiKey, {
+        gradeText, count: targetDates.length,
+        theme: batchTheme, recentTitles, style: 'batch',
         maxTokens: 6000,
-        onProgress: (p) => {
-          console.log('진행:', p.message)
-          setBatchProgress(p.message || '')
-        }
       })
 
       let aiTopics = Array.isArray(result.topics) ? result.topics : []
@@ -343,24 +307,11 @@ export default function TopicsPage() {
       const recentTitles = topics.slice(0, 15).map(t => t.title).join(', ')
       const hasTheme = batchTheme && batchTheme.trim()
 
-      let prompt = `${gradeText} 글쓰기 주제 1개를 새로 만들어주세요.
-
-`
-      if (hasTheme) {
-        prompt += `🎯 핵심 방향성: "${batchTheme.trim()}"\n이 방향에 맞는 주제를 만들어주세요.\n\n`
-      }
-      prompt += `중복 금지:
-- 이번 일괄 등록의 다른 주제: ${otherTitles || '없음'}
-- 최근 등록 주제: ${recentTitles || '없음'}
-
-위 주제들과 다른 새로운 주제로 1개 만들어주세요.
-- title: 10-15자
-- description: 70-100자의 글쓰기 안내
-- category: 카테고리명`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicSuggestion, {
-        taskType: 'creative',
-        maxTokens: 1500
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('topicSingle', apiKey, {
+        gradeText, theme: batchTheme,
+        otherTitles, recentTitles, style: 'batch',
+        maxTokens: 1500,
       })
 
       if (result.title) {
@@ -604,35 +555,14 @@ export default function TopicsPage() {
 
       // N개 주제 한 번에 받기 — topicBatch 스키마 재사용
       const N = aiCount
-      let prompt = `${gradeText} 글쓰기 주제 ${N}개를 만들어줘.${N >= 2 ? ' 선생님이 그중 마음에 드는 것 하나를 고를 거야.' : ''}
-${useCategorySpread
-  ? `카테고리 지시 (중요!): ${N}개 주제는 반드시 서로 다른 카테고리에서 하나씩. 다음 ${N}개 카테고리를 각각 사용해주세요 → ${cat}`
-  : `카테고리: ${cat}`}
-난이도: ${levelText}
-최근 출제한 주제 (중복 절대 금지): ${recentTitles || '없음'}
-`
-      if (aiUserRequest && aiUserRequest.trim()) {
-        prompt += `\n선생님 요청 사항: ${aiUserRequest.trim()}\n위 요청을 반드시 반영해주세요.\n`
-      }
-      prompt += `
-규칙:
-${useCategorySpread
-  ? '- 3개 주제는 각각 위에 지시된 카테고리에 충실하게'
-  : '- 3개 주제는 서로 다른 접근 각도로 (경험/관찰/상상 등)'}
-- title: 10-15자, ${gradeText}이 재미있어할 구체적 주제
-- description: 70-100자, 안내/지시형 (질문형 X), 학생이 무엇을 떠올리고 어떻게 쓸지 안내
-- category: ${useCategorySpread ? '각 주제가 받은 카테고리명' : cat}
-
-🚫 클리셰 금지: "아지트", "비밀의 장소", "내가 만든 세상", "내가 만약 ~라면", "소중한/특별한/잊지 못할 ~", "행복했던 순간", "기억에 남는 일"
-✅ 좋은 주제: 학생이 "아, 그거!" 하고 떠올릴 구체적 장면
-
-예시: "급식 시간의 작은 사건" / "내 인생의 첫 도전" / "쉬는 시간 5분 동안 일어난 일"
-
-반드시 ${N}개 모두 완성해서 보내주세요. description 끝까지 다 쓰기.`
-
       // 개수에 따라 토큰 조정 (1개: 3000, 2개: 5500, 3개: 8000)
       const tokenBudget = 3000 + (N - 1) * 2500
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicBatch, { taskType: 'creative', maxTokens: tokenBudget })
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('topicBatch', apiKey, {
+        gradeText, count: N, categoryText: cat, levelText,
+        recentTitles, userRequest: aiUserRequest, useCategorySpread,
+        style: 'suggest', maxTokens: tokenBudget,
+      })
 
       if (!Array.isArray(result.topics) || result.topics.length === 0) {
         throw new Error('추천 결과가 비어있어요. 다시 시도해주세요.')
@@ -735,26 +665,12 @@ ${useCategorySpread
         .map(s => s.title)
       const recentTitles = [...otherTitles, ...topics.slice(0, 20).map(t => t.title)].join(', ')
 
-      let prompt = `${gradeText} 글쓰기 주제 1개를 만들어줘.
-카테고리: ${cat}
-난이도: ${levelText}
-중복 금지 (이미 후보 중이거나 최근 출제한 것): ${recentTitles || '없음'}
-`
-      if (aiUserRequest && aiUserRequest.trim()) {
-        prompt += `\n선생님 요청 사항: ${aiUserRequest.trim()}\n위 요청을 반드시 반영해주세요.\n`
-      }
-      prompt += `
-규칙:
-- title: 10-15자, ${gradeText} 학생들이 재미있어할 주제
-- description: 학생에게 글쓰기 방법 안내 (안내/지시형, 70-100자)
-- 클리셰 회피: "아지트", "비밀의 장소", "내가 만약 ~라면", "소중한 ~", "기억에 남는 일" 등 추상적·뻔한 주제 금지
-- 학생이 "아, 그거 있어!" 하고 떠올릴 구체적 장면을 담은 주제
-
-좋은 예시:
-- title: "내 인생의 첫 도전"
-  description: "지금까지 처음 도전했던 일을 떠올려보세요. 그때 어떤 마음이었는지, 어떻게 도전했는지, 결과는 어땠는지 솔직하게 써보세요."`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.topicSuggestion, { taskType: 'creative', maxTokens: 2000 })
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('topicSingle', apiKey, {
+        gradeText, categoryText: cat, levelText,
+        recentTitles, userRequest: aiUserRequest,
+        style: 'suggest', maxTokens: 2000,
+      })
 
       const newSug = {
         title: result.title || '',
@@ -812,24 +728,10 @@ ${useCategorySpread
 
     setGeneratingRubrics(true)
     try {
-      const prompt2 = `주제 "${sug.title}"
-${sug.description ? '주제 설명: ' + sug.description : ''}
-
-위 주제에 어울리는 ${gradeText} 평가 기준 4개.
-
-⚠️ 주제 분석:
-- 경험 회상 → "솔직한 표현", "자세한 묘사"
-- 상상력 → "창의성", "상상력"
-- 논리/주장 → "주장과 근거", "논리성"
-- 감정 전달 → "솔직한 표현", "감각적 표현"
-
-✅ name 카테고리: [내용/형식/표현/기본]
-✅ hint: 주제 "${sug.title}" 맥락에서 무엇을 잘 표현해야 하는지, 15-30자, 4개 서로 다름
-배점: 합계 100점, 주제 핵심 35-40점, 다음 25-30점, 다음 15-25점, 맞춤법 10-20점
-
-각 항목 {name, hint, score} 모두 채울 것.`
-
-      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
+      // 🔒 프롬프트는 서버에서 구성
+      const result2 = await callAI('rubricGen', apiKey, {
+        gradeText, title: sug.title, description: sug.description,
+      })
       if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
         const cleaned = result2.rubrics.map(r => ({
           name: r.name || '평가 기준',
@@ -882,37 +784,10 @@ ${sug.description ? '주제 설명: ' + sug.description : ''}
 
     setGeneratingRubrics(true)
     try {
-      const prompt2 = `주제 "${picked.title}"
-${picked.description ? '주제 설명: ' + picked.description : ''}
-
-위 주제에 정말 어울리는 ${gradeText} 글쓰기 평가 기준 4개를 만들어줘.
-
-⚠️ 주제 분석부터 하기:
-이 주제에서 학생이 가장 잘 보여줘야 할 능력은 무엇인지 먼저 생각해보세요.
-- 경험 회상이 중요한가? → "솔직한 표현", "자세한 묘사" 강조
-- 상상력이 중요한가? → "창의성", "상상력" 강조
-- 논리/주장이 중요한가? → "주장과 근거", "논리성" 강조
-- 감정 전달이 중요한가? → "솔직한 표현", "감각적 표현" 강조
-
-✅ name (평가 기준 이름) - 다음 카테고리에서 4개 선택:
-[내용] 주제에 맞는 내용, 주제 표현, 구체적인 내용, 자세한 묘사, 솔직한 표현, 창의성, 상상력, 논리성, 주장과 근거
-[형식] 글의 짜임새, 글의 구성, 처음-가운데-끝, 문단 구성
-[표현] 풍부한 어휘, 다양한 표현, 비유 표현, 감각적 표현, 문장력
-[기본] 맞춤법과 문법, 띄어쓰기
-
-✅ hint (부가 설명) - 매우 중요!:
-- 반드시 채워야 함 (빈 값 절대 금지)
-- 주제 "${picked.title}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
-- 15-30자
-- 4개 hint가 모두 서로 다른 내용이어야 함
-
-배점 규칙:
-- 합계 100점, 각 항목 10~40점 범위
-- 주제에 가장 중요한 영역에 35-40점, 다음 25-30점, 다음 15-25점, 맞춤법 10-20점
-
-각 항목은 반드시 {name, hint, score} 모두 채울 것. hint 빈 값 절대 금지.`
-
-      const result2 = await callGeminiStructured(apiKey, prompt2, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
+      // 🔒 프롬프트는 서버에서 구성
+      const result2 = await callAI('rubricGen', apiKey, {
+        gradeText, title: picked.title, description: picked.description,
+      })
 
       if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
         const cleaned = result2.rubrics.map(r => ({
@@ -1022,19 +897,11 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
 
       // 1단계: 주제 설명 (description) 생성
       if (!desc.trim()) {
-        const descPrompt = `${gradeText} 글쓰기 주제: "${title.trim()}"
-난이도: ${levelText}
-
-이 주제로 학생들이 글을 쓸 수 있도록 안내문(description)을 만들어줘.
-
-규칙:
-- 70-100자
-- 안내/지시형으로 (질문형 금지)
-- "무엇을 떠올리고, 어떻게 쓰면 좋을지" 구체적으로
-- 학생이 글 쓰기 막막하지 않도록 친절하게`
-
         try {
-          const descResult = await callGeminiStructured(apiKey, descPrompt, SCHEMAS.topicSuggestion, { taskType: 'creative', maxTokens: 2000 })
+          // 🔒 프롬프트는 서버에서 구성
+          const descResult = await callAI('topicDesc', apiKey, {
+            gradeText, title: title.trim(), levelText,
+          })
           if (descResult.description) setDesc(descResult.description)
         } catch(e) {
           console.warn('설명 생성 실패:', e)
@@ -1042,28 +909,10 @@ ${picked.description ? '주제 설명: ' + picked.description : ''}
       }
 
       // 2단계: 평가 기준 생성
-      const prompt = `주제: "${title.trim()}"
-${desc.trim() ? '주제 설명: ' + desc.trim() : ''}
-
-위 주제에 어울리는 ${gradeText} 글쓰기 평가 기준 4개를 만들어줘.
-
-⚠️ 주제 분석부터:
-이 주제에서 학생이 가장 잘 보여줘야 할 능력은 무엇인지 먼저 생각해보세요.
-- 경험 회상 → "솔직한 표현", "자세한 묘사"
-- 상상력 → "창의성", "상상력"
-- 논리/주장 → "주장과 근거", "논리성"
-- 감정 전달 → "솔직한 표현", "감각적 표현"
-
-✅ name (평가 기준 이름) - 다음 카테고리에서 4개 선택:
-[내용] 주제에 맞는 내용, 주제 표현, 구체적인 내용, 자세한 묘사, 솔직한 표현, 창의성, 상상력, 논리성, 주장과 근거
-[형식] 글의 짜임새, 글의 구성, 처음-가운데-끝, 문단 구성
-[표현] 풍부한 어휘, 다양한 표현, 비유 표현, 감각적 표현, 문장력
-[기본] 맞춤법과 문법, 띄어쓰기
-
-✅ hint (부가 설명) - 주제 "${title.trim()}"의 맥락에서 학생이 무엇을 잘 표현해야 하는지 구체적으로
-✅ score: 각 항목 25점, 총 100점`
-
-      const result = await callGeminiStructured(apiKey, prompt, SCHEMAS.rubricSet, { taskType: 'creative', maxTokens: 6000, temperature: 0.5 })
+      // 🔒 프롬프트는 서버에서 구성
+      const result = await callAI('rubricGen', apiKey, {
+        gradeText, title: title.trim(), description: desc.trim(),
+      })
       if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {
         const cleaned = result.rubrics.slice(0, 4).map(r => ({
           name: r.name || '평가 기준',
