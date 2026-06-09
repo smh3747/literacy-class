@@ -460,6 +460,7 @@ export default function StudentHome() {
     setSubmitting(true)
     try {
       const rubrics = todayTopic.rubrics
+      const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       const result = await callAI('grading', apiKey, {
         topic: { title: todayTopic.title, description: todayTopic.description },
@@ -477,8 +478,7 @@ export default function StudentHome() {
       })
       if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
       // 총점도 만점 넘으면 캡
-      const totalMaxCalc = rubrics.reduce((s,r) => s + (r.score || 0), 0)
-      result.total = Math.max(0, Math.min(result.total, totalMaxCalc))
+      result.total = Math.max(0, Math.min(result.total, totalMax))
       if (!result.overall) result.overall = '글을 잘 써주었어요!'
       if (!result.good) result.good = '열심히 글을 썼어요.'
       if (!result.improve) result.improve = '더 자세하게 써보세요.'
@@ -707,6 +707,7 @@ ${studentEssay}
     setRewriting(true)
     try {
       const rubrics = todayTopic.rubrics
+      const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       const result = await callAI('rewriteGrading', apiKey, {
         topic: { title: todayTopic.title, description: todayTopic.description },
