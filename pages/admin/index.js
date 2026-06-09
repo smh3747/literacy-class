@@ -1969,7 +1969,7 @@ function SubmissionDetail({ sub, onBack }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 mx-auto" style={allSubs.length >= 2 ? { width: 'min(1500px, calc(100vw - 2rem))' } : undefined}>
       <button onClick={onBack} className="text-sm text-gray-600 hover:text-gray-900">← 목록으로</button>
 
       {/* 상단: 학생/주제 정보 */}
@@ -1988,13 +1988,15 @@ function SubmissionDetail({ sub, onBack }) {
         <p className="text-sm text-gray-500 py-8 text-center">상세 정보 로딩 중...</p>
       ) : (
         <>
-          {/* 모든 attempt를 학생 화면처럼 표시 */}
-          {allSubs.map((s, i) => {
-            const label = s.attempt === 1
-              ? '✏️ 첫 글'
-              : `🔄 수정본 ${s.attempt - 1}회`
-            return <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={label} />
-          })}
+          {/* 첫 글·수정본 좌우 병렬 (2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
+          <div className={`grid grid-cols-1 gap-4 items-start ${allSubs.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
+            {allSubs.map((s, i) => {
+              const label = s.attempt === 1
+                ? '✏️ 첫 글'
+                : `🔄 수정본 ${s.attempt - 1}회`
+              return <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={label} />
+            })}
+          </div>
 
           {allSubs.length === 0 && (
             <p className="text-sm text-gray-500 py-8 text-center">제출된 글이 없어요</p>
