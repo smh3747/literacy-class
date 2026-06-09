@@ -166,7 +166,7 @@ export default function RecordPage() {
       <Head><title>생기부 평어 도우미 · 문해력 수업</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} />
-        <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
+        <main className={`mx-auto px-4 py-6 sm:py-8 transition-all ${batchResults.length > 0 ? 'max-w-6xl' : 'max-w-3xl'}`}>
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">📝 생기부 평어 도우미</h1>
             <p className="text-sm text-gray-600 mt-1">
@@ -209,7 +209,8 @@ export default function RecordPage() {
           )}
 
           {batchResults.length > 0 && (
-            <div className="space-y-3 mb-6">
+            <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-start">
               {batchResults.map(({ student, sentences, level: lv, error: err, skipped }) => (
                 <div key={student.id} className="bg-white rounded-2xl p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
@@ -241,10 +242,11 @@ export default function RecordPage() {
                   )}
                 </div>
               ))}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed">
-                ⚠️ AI가 만든 <strong>초안</strong>이에요. 학생을 가장 잘 아는 선생님이 사실과 다른 부분을 고치고 실제 관찰을 더해 완성해주세요.
-              </div>
             </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed mb-6 -mt-3">
+              ⚠️ AI가 만든 <strong>초안</strong>이에요. 학생을 가장 잘 아는 선생님이 사실과 다른 부분을 고치고 실제 관찰을 더해 완성해주세요.
+            </div>
+            </>
           )}
 
           <details className="bg-white rounded-2xl shadow-sm" open={showSingle} onToggle={e => setShowSingle(e.target.open)}>
