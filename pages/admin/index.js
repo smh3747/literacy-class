@@ -1926,6 +1926,9 @@ function SubmissionRow({ s, onClick, hideField }) {
             <>{s.topic_title || s.topics?.title || '-'} · </>
           )}
           {toKST(s.created_at)}
+          {s.graded_with_model && (
+            <span className="ml-1 text-gray-400">· 🤖 {s.graded_with_model.replace('gemini-', '')}</span>
+          )}
         </div>
       </div>
       <div className="text-sm font-bold ml-3">{s.total_score}/{s.max_score}</div>

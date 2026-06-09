@@ -882,12 +882,12 @@ export default function TeacherSubmissions() {
                       </div>
                     </div>
 
-                    {/* 🆕 채점 시각 (작게) */}
+                    {/* 🆕 채점 시각 (작게) — 모델명은 숨김 */}
                     <div className="text-[11px] text-gray-500 -mt-2">
                       {s.re_graded_at ? (
-                        <>🔄 재평가: {toKST(s.re_graded_at)}{s.graded_with_model && ` · ${s.graded_with_model}`}</>
+                        <>🔄 재평가: {toKST(s.re_graded_at)}</>
                       ) : (
-                        <>🤖 AI 채점: {toKST(s.created_at)}{s.graded_with_model && ` · ${s.graded_with_model}`}</>
+                        <>🤖 AI 채점: {toKST(s.created_at)}</>
                       )}
                     </div>
 
