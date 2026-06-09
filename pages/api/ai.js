@@ -108,7 +108,7 @@ export default async function handler(req, res) {
       }
       prompt = schoolRecordPrompt(payload)
       schema = SCHEMAS.schoolRecord
-      opts = { taskType: 'quality', maxTokens: 4000, temperature: 0.4 }
+      opts = { taskType: 'quality', maxTokens: 6000, temperature: 0.4 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })

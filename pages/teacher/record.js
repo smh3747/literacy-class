@@ -170,7 +170,7 @@ export default function RecordPage() {
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">📝 생기부 평어 도우미</h1>
             <p className="text-sm text-gray-600 mt-1">
-              학급 전체의 한 문장 평어 후보를 한 번에 만들어, 골라서 바로 붙여넣으세요.
+              학급 전체의 한 문장 평어를 한 번에 만들어, 골라서 바로 붙여넣으세요.
               초안이니 <strong>반드시 교사가 검토·수정</strong>한 뒤 사용하세요.
             </p>
           </div>
@@ -249,7 +249,7 @@ export default function RecordPage() {
 
           <details className="bg-white rounded-2xl shadow-sm" open={showSingle} onToggle={e => setShowSingle(e.target.open)}>
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-700 select-none">
-              🔍 학생 한 명 자세히 보기 (후보 더 많이)
+              🔍 학생 한 명 자세히 보기 (평어 더 많이)
             </summary>
             <div className="px-5 pb-5 space-y-4">
               <select
@@ -274,7 +274,7 @@ export default function RecordPage() {
                     <option value="노력요함">노력요함</option>
                   </select>
                   <button onClick={genSingle} disabled={generating} className="bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-semibold disabled:opacity-50">
-                    {generating ? '작성 중...' : '후보 만들기'}
+                    {generating ? '작성 중...' : '평어 만들기'}
                   </button>
                 </div>
               )}
