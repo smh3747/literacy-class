@@ -38,6 +38,7 @@ export default function TopicsPage() {
   const [minLength, setMinLength] = useState(30)
   const [maxLength, setMaxLength] = useState('') // 글 최대 길이 (빈 칸=제한 없음)
   const [maxRewrites, setMaxRewrites] = useState(1)
+  const [requireRewriteChange, setRequireRewriteChange] = useState(false)
   // 제출 기한 (옵션)
   const [deadlineEnabled, setDeadlineEnabled] = useState(false)
   const [deadlineDate, setDeadlineDate] = useState('')
@@ -391,6 +392,7 @@ export default function TopicsPage() {
     setMinLength(t.min_length || 30)
     setMaxLength(t.max_length || '')
     setMaxRewrites(t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1)
+    setRequireRewriteChange(!!t.require_rewrite_change)
     setDeadlineEnabled(!!t.deadline_date)
     setDeadlineDate(t.deadline_date || '')
     setDeadlineTime(t.deadline_time || '23:59')
@@ -408,6 +410,7 @@ export default function TopicsPage() {
     setLockEnabled(false)
     setMinLength(30); setMaxLength('')
     setMaxRewrites(1)
+    setRequireRewriteChange(false)
     setDeadlineEnabled(false)
   }
 
@@ -455,6 +458,7 @@ export default function TopicsPage() {
           min_length: minLen,
           max_length: maxLen,
           max_rewrites: maxRew,
+          require_rewrite_change: requireRewriteChange,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
         }).eq('id', existing.id)
@@ -472,6 +476,7 @@ export default function TopicsPage() {
           min_length: minLen,
           max_length: maxLen,
           max_rewrites: maxRew,
+          require_rewrite_change: requireRewriteChange,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
         }).select('id').single()
@@ -1472,6 +1477,22 @@ export default function TopicsPage() {
                   <p className="text-xs text-gray-500 mt-1.5">
                     💡 첫 글 외에 수정본을 몇 번까지 쓸 수 있는지 정해요. 학생이 다 쓰면 선생님이 추가 허용 가능.
                   </p>
+
+                  {/* 맞춤법만 고친 수정본 차단 (수정 허용 시에만) */}
+                  {maxRewrites > 0 && (
+                    <label className="flex items-start gap-2 mt-3 pt-3 border-t border-gray-100 cursor-pointer">
+                      <input type="checkbox" checked={requireRewriteChange}
+                        onChange={e => setRequireRewriteChange(e.target.checked)}
+                        className="w-4 h-4 mt-0.5" />
+                      <span className="text-xs text-gray-700">
+                        <strong>맞춤법만 고친 수정본은 제출 막기</strong>
+                        <br />
+                        <span className="text-gray-500">
+                          첫 글과 거의 똑같으면(내용을 거의 안 바꾸면) 제출이 안 돼요. 내용을 더 발전시키도록 유도해요.
+                        </span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
 

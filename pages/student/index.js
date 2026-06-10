@@ -646,6 +646,41 @@ export default function StudentHome() {
       return alert(`글이 너무 길어요! (${maxLen}자 이하로 써주세요)\n\n현재 ${rewriteEssay.trim().length}자`)
     }
 
+    // 🆕 첫 글과 거의 같은지 검사 (맞춤법만 고친 경우)
+    const norm = (t) => (t || '').replace(/\s/g, '')
+    const a = norm(essay), b = norm(rewriteEssay)
+    if (a.length > 0 && b.length > 0) {
+      const shorter = a.length < b.length ? a : b
+      const longer = a.length < b.length ? b : a
+      let same = 0
+      for (let i = 0; i < shorter.length; i++) {
+        if (longer[i] === shorter[i]) same++
+      }
+      const sim = same / longer.length
+      const lenDiff = Math.abs(a.length - b.length)
+      const requireChange = todayTopic?.require_rewrite_change
+
+      if (requireChange && sim >= 0.9 && lenDiff < longer.length * 0.07) {
+        // 교사가 차단 설정 + 90% 이상 동일 → 제출 막음
+        return alert(
+          '✋ 아직 제출할 수 없어요!\n\n' +
+          '처음 글이랑 거의 똑같아요. 맞춤법만 고친 것 같아요.\n' +
+          '선생님이 알려준 \'더 발전시킬 점\'을 보고\n' +
+          '내용을 더 자세히 쓰거나 새로운 생각을 더해 주세요. 💪'
+        )
+      }
+      if (sim >= 0.85 && lenDiff < longer.length * 0.1) {
+        // 그 외: 경고만 (제출은 허용)
+        const ok = confirm(
+          '✏️ 처음 글이랑 거의 똑같아요!\n\n' +
+          '맞춤법만 살짝 고친 것 같아요. 선생님이 알려준 \'더 발전시킬 점\'을 보고\n' +
+          '내용을 더 자세히 쓰거나 새로운 생각을 더하면 점수가 더 오를 거예요.\n\n' +
+          '그래도 이대로 제출할까요?'
+        )
+        if (!ok) return
+      }
+    }
+
     // 시간 락 검증
     const lock = checkTimeLock(todayTopic)
     if (!lock.allowed) {

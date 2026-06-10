@@ -1945,11 +1945,11 @@ function SubmissionRow({ s, onClick, hideField }) {
           {hideField !== 'student' && (
             <>
               {s.profiles?.realname || '?'}
-              <span className="text-xs text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : '수정본'})</span>
+              <span className="text-xs text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : `수정본 ${s.attempt - 1}차`})</span>
             </>
           )}
           {hideField === 'student' && (
-            <span>{s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}`}</span>
+            <span>{s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`}</span>
           )}
           {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
           {s.is_fallback_graded && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">폴백</span>}
@@ -2019,23 +2019,41 @@ function SubmissionDetail({ sub, onBack }) {
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8 text-center">상세 정보 로딩 중...</p>
-      ) : (
-        <>
-          {/* 첫 글·수정본 좌우 병렬 (2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
-          <div className={`grid grid-cols-1 gap-4 items-stretch ${allSubs.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
-            {allSubs.map((s, i) => {
-              const label = s.attempt === 1
-                ? '✏️ 첫 글'
-                : `🔄 수정본 ${s.attempt - 1}회`
-              return <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={label} />
-            })}
-          </div>
+      ) : allSubs.length === 0 ? (
+        <p className="text-sm text-gray-500 py-8 text-center">제출된 글이 없어요</p>
+      ) : (() => {
+        // allSubs는 attempt 오름차순. 최신 2개를 병렬, 그 이전 글은 아래로
+        const topTwo = allSubs.slice(-2)
+        const older = allSubs.slice(0, -2)
+        const labelFor = (s) => s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`
+        return (
+          <>
+            {topTwo.length >= 2 && (
+              <div className="text-xs text-gray-500 mb-1">
+                ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+              </div>
+            )}
+            <div className={`grid grid-cols-1 gap-4 items-stretch ${topTwo.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
+              {topTwo.map(s => (
+                <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)} />
+              ))}
+            </div>
 
-          {allSubs.length === 0 && (
-            <p className="text-sm text-gray-500 py-8 text-center">제출된 글이 없어요</p>
-          )}
-        </>
-      )}
+            {older.length > 0 && (
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-gray-600 hover:text-gray-900 py-2 px-2 bg-gray-50 rounded-lg select-none">
+                  📂 이전 글 더 보기 ({older.length}개)
+                </summary>
+                <div className="space-y-4 mt-3">
+                  {[...older].reverse().map(s => (
+                    <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )
+      })()}
     </div>
   )
 }

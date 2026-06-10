@@ -311,7 +311,7 @@ export default function TeacherSubmissions() {
           g.profile.number || (gIdx + 1),
           g.profile.realname,
           g.profile.username,
-          (s.attempt||1) === 1 ? '첫 글' : `수정본 ${s.attempt}`,
+          (s.attempt||1) === 1 ? '첫 글' : `수정본 ${(s.attempt||1) - 1}차`,
           s.total_score,
           s.max_score,
           toKST(s.created_at),
@@ -469,7 +469,7 @@ export default function TeacherSubmissions() {
       setBulkProgress({
         done: i,
         total: allSubs.length,
-        current: `${student.realname} (${(sub.attempt||1) === 1 ? '첫 글' : `수정본 ${sub.attempt}`})`,
+        current: `${student.realname} (${(sub.attempt||1) === 1 ? '첫 글' : `수정본 ${(sub.attempt||1) - 1}차`})`,
         failed
       })
       const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
@@ -855,36 +855,40 @@ export default function TeacherSubmissions() {
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
 
-              {/* 🆕 첫 글·수정본 좌우 병렬 (글 2개 이상일 때 데스크탑에서, 모바일은 위아래) */}
-              <div className={`grid gap-4 items-stretch ${
-                selectedStudent.items.length >= 2 ? 'lg:grid-cols-2' : ''
-              }`}>
-              {[...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1)).map((s, i, arr) => {
-                const isLast = i === arr.length - 1
-                const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
-                // 베껴쓰기 의심 체크: 이 글의 직전 글에 제공된 example_text와 비교
-                const prevSub = arr[i - 1]
-                const prevExample = prevSub?.example_text
-                const similarity = prevExample
-                  ? calcSimilarity(s.essay_text, prevExample)
-                  : { score: 0, matchedChars: 0, longestMatch: '' }
-                const isSuspicious = similarity.score >= 0.3 // 30% 이상 일치하면 의심
-                const isHighlySuspicious = similarity.score >= 0.5 // 50% 이상은 강한 의심
-                return (
-                  <div key={s.id} className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 ${
-                    isHighlySuspicious ? 'border-2 border-red-400' : isSuspicious ? 'border-2 border-amber-400' : ''
-                  }`}>
-                    <div className="flex justify-between items-center flex-wrap gap-2">
-                      <h3 className="font-bold text-sm">
-                        {(s.attempt||1) === 1 ? '📝 첫 번째 글' : (s.attempt||1) === 2 ? '✨ 수정본' : `✨ 수정본 ${s.attempt}`}
-                      </h3>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {s.paste_detected && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">⚠️ 복붙 {s.paste_count || 1}회</span>}
-                        {s.is_fallback_graded && (
-                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title={`채점 모델: ${s.graded_with_model || '?'} - 메인 모델 한도로 보조 모델 사용. 재평가 권장.`}>
-                            🔁 보조 채점
-                          </span>
-                        )}
+              {/* 🆕 최신 2개를 위에 병렬(직전=왼쪽, 최신=오른쪽), 그 이전 글은 아래로 */}
+              {(() => {
+                const ordered = [...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+                const topTwo = ordered.slice(-2)   // 최신 2개 (직전, 최신)
+                const older = ordered.slice(0, -2)  // 그 이전 글들
+
+                const labelFor = (s) => {
+                  const a = s.attempt || 1
+                  return a === 1 ? '📝 첫 번째 글' : a === 2 ? '✨ 수정본 (1차)' : `✨ 수정본 ${a - 1}차`
+                }
+
+                const renderCard = (s, idxInOrdered) => {
+                  const isLast = (s.attempt || 1) === (ordered[ordered.length - 1].attempt || 1)
+                  const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
+                  const prevSub = ordered[idxInOrdered - 1]
+                  const prevExample = prevSub?.example_text
+                  const similarity = prevExample
+                    ? calcSimilarity(s.essay_text, prevExample)
+                    : { score: 0, matchedChars: 0, longestMatch: '' }
+                  const isSuspicious = similarity.score >= 0.3
+                  const isHighlySuspicious = similarity.score >= 0.5
+                  return (
+                    <div key={s.id} className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 h-full ${
+                      isHighlySuspicious ? 'border-2 border-red-400' : isSuspicious ? 'border-2 border-amber-400' : ''
+                    }`}>
+                      <div className="flex justify-between items-center flex-wrap gap-2">
+                        <h3 className="font-bold text-sm">{labelFor(s)}</h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {s.paste_detected && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">⚠️ 복붙 {s.paste_count || 1}회</span>}
+                          {s.is_fallback_graded && (
+                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title={`채점 모델: ${s.graded_with_model || '?'} - 메인 모델 한도로 보조 모델 사용. 재평가 권장.`}>
+                              🔁 보조 채점
+                            </span>
+                          )}
                         {isHighlySuspicious && (
                           <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-bold">
                             🚨 예시 유사도 {Math.round(similarity.score * 100)}%
@@ -1105,34 +1109,60 @@ export default function TeacherSubmissions() {
                       </div>
                     )}
 
-                    {/* 재평가된 글이면 이전 점수 표시 */}
-                    {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
-                          📊 이전 평가 보기 ({s.previous_total_score}/{s.previous_max_score}점)
-                        </summary>
-                        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2 text-gray-700">
-                          <div className="text-xs">
-                            이전 채점: <strong>{s.previous_total_score}/{s.previous_max_score}점</strong>
-                            {s.re_graded_at && (
-                              <span className="ml-2 text-gray-500">
-                                · {new Date(s.re_graded_at).toLocaleString('ko-KR')} 재평가
-                              </span>
+                      {/* 재평가된 글이면 이전 점수 표시 */}
+                      {s.re_graded_at && s.previous_total_score !== null && s.previous_total_score !== undefined && (
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                            📊 이전 평가 보기 ({s.previous_total_score}/{s.previous_max_score}점)
+                          </summary>
+                          <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2 text-gray-700">
+                            <div className="text-xs">
+                              이전 채점: <strong>{s.previous_total_score}/{s.previous_max_score}점</strong>
+                              {s.re_graded_at && (
+                                <span className="ml-2 text-gray-500">
+                                  · {new Date(s.re_graded_at).toLocaleString('ko-KR')} 재평가
+                                </span>
+                              )}
+                            </div>
+                            {s.previous_feedback_overall && (
+                              <div>
+                                <div className="font-semibold text-xs mb-0.5">종합의견 (이전)</div>
+                                <p className="whitespace-pre-wrap">{s.previous_feedback_overall}</p>
+                              </div>
                             )}
                           </div>
-                          {s.previous_feedback_overall && (
-                            <div>
-                              <div className="font-semibold text-xs mb-0.5">종합의견 (이전)</div>
-                              <p className="whitespace-pre-wrap">{s.previous_feedback_overall}</p>
-                            </div>
-                          )}
+                        </details>
+                      )}
+                    </div>
+                  )
+                }
+
+                return (
+                  <>
+                    {/* 최신 2개: 직전(왼쪽) vs 최신(오른쪽) 병렬 */}
+                    {topTwo.length >= 2 && (
+                      <div className="text-xs text-gray-500 mb-1">
+                        ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+                      </div>
+                    )}
+                    <div className={`grid gap-4 items-stretch ${topTwo.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
+                      {topTwo.map(s => renderCard(s, ordered.indexOf(s)))}
+                    </div>
+
+                    {/* 그 이전 글들 — 아래에 세로로 (최신순) */}
+                    {older.length > 0 && (
+                      <details className="mt-4" open={false}>
+                        <summary className="cursor-pointer text-sm font-semibold text-gray-600 hover:text-gray-900 py-2 px-2 bg-gray-50 rounded-lg select-none">
+                          📂 이전 글 더 보기 ({older.length}개)
+                        </summary>
+                        <div className="space-y-4 mt-3">
+                          {[...older].reverse().map(s => renderCard(s, ordered.indexOf(s)))}
                         </div>
                       </details>
                     )}
-                  </div>
+                  </>
                 )
-              })}
-              </div>
+              })()}
             </>
           )}
         </main>
