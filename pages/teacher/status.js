@@ -69,7 +69,7 @@ export default function SubmissionStatus() {
     if (studentIds.length === 0) { setSubmissions([]); return }
 
     const { data: subs } = await supabase.from('submissions')
-      .select('id, user_id, total_score, max_score, created_at, attempt, reported')
+      .select('id, user_id, total_score, max_score, created_at, attempt, reported, teacher_comment')
       .eq('topic_id', topicId)
       .in('user_id', studentIds)
       .is('deleted_at', null)
@@ -121,6 +121,25 @@ export default function SubmissionStatus() {
     }
   })
 
+  // 💡 도움이 필요한 학생: 최고 점수가 만점의 60% 미만
+  const needHelp = submitted.filter(s => {
+    const best = bestSubByUser[s.id]
+    if (!best) return false
+    const max = best.max_score || 100
+    return (best.total_score || 0) / max < 0.6
+  })
+
+  // 💬 코멘트 대기: 최신 글에 담임 코멘트가 없는 학생
+  const latestSubByUser = {}
+  submissions.forEach(s => {
+    const cur = latestSubByUser[s.user_id]
+    if (!cur || (s.attempt || 1) > (cur.attempt || 1)) latestSubByUser[s.user_id] = s
+  })
+  const needComment = submitted.filter(s => {
+    const latest = latestSubByUser[s.id]
+    return latest && !latest.teacher_comment
+  })
+
   return (
     <>
       <Head><title>제출 현황 - 문해력 수업</title></Head>
@@ -163,7 +182,7 @@ export default function SubmissionStatus() {
           ) : (
             <>
               {/* 요약 카드 */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                 <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-primary">{students.length}</div>
                   <div className="text-xs text-gray-500 mt-1">전체</div>
@@ -175,6 +194,14 @@ export default function SubmissionStatus() {
                 <div className="bg-amber-50 rounded-2xl p-4 text-center border border-amber-200">
                   <div className="text-2xl font-bold text-amber-700">{absent.length}</div>
                   <div className="text-xs text-amber-700 mt-1">미제출</div>
+                </div>
+                <div className="bg-rose-50 rounded-2xl p-4 text-center border border-rose-200">
+                  <div className="text-2xl font-bold text-rose-700">{needHelp.length}</div>
+                  <div className="text-xs text-rose-700 mt-1">💡 도움 필요</div>
+                </div>
+                <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-200">
+                  <div className="text-2xl font-bold text-blue-700">{needComment.length}</div>
+                  <div className="text-xs text-blue-700 mt-1">💬 코멘트 대기</div>
                 </div>
               </div>
 
@@ -218,6 +245,60 @@ export default function SubmissionStatus() {
                   </div>
                 )}
               </div>
+
+              {/* 💡 도움이 필요한 학생 (점수 60% 미만) */}
+              {needHelp.length > 0 && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm">
+                  <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <h3 className="font-bold text-rose-900">
+                      💡 도움이 필요한 학생 ({needHelp.length}명)
+                      <span className="text-xs font-normal text-gray-400 ml-2">점수가 60% 미만이에요</span>
+                    </h3>
+                    <button onClick={() => copyAbsentList(needHelp, '도움 필요')}
+                      className="text-xs bg-rose-100 text-rose-800 hover:bg-rose-200 px-3 py-1.5 rounded-full">
+                      📋 명단 복사
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {needHelp.sort(sortByNumber).map(s => {
+                      const best = bestSubByUser[s.id]
+                      return (
+                        <div key={s.id} className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm flex items-center justify-between">
+                          <span>
+                            {s.number && <span className="text-xs text-rose-700 mr-1.5">{s.number}번</span>}
+                            <span className="font-medium">{s.realname}</span>
+                          </span>
+                          <span className="text-xs text-rose-600">{best?.total_score ?? 0}/{best?.max_score ?? 100}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 💬 코멘트 대기 (최신 글에 담임 코멘트 없음) */}
+              {needComment.length > 0 && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm">
+                  <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <h3 className="font-bold text-blue-900">
+                      💬 코멘트 기다리는 학생 ({needComment.length}명)
+                      <span className="text-xs font-normal text-gray-400 ml-2">최신 글에 담임 코멘트가 아직 없어요</span>
+                    </h3>
+                    <Link href={`/teacher/submissions?topic=${selectedTopicId}`}
+                      className="text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 px-3 py-1.5 rounded-full">
+                      ✏️ 코멘트 쓰러 가기
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {needComment.sort(sortByNumber).map(s => (
+                      <div key={s.id} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
+                        {s.number && <span className="text-xs text-blue-700 mr-1.5">{s.number}번</span>}
+                        <span className="font-medium">{s.realname}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 제출 학생 */}
               <div className="bg-white rounded-2xl p-5 shadow-sm">
