@@ -263,13 +263,14 @@ export default function SubmissionStatus() {
                     {needHelp.sort(sortByNumber).map(s => {
                       const best = bestSubByUser[s.id]
                       return (
-                        <div key={s.id} className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm flex items-center justify-between">
+                        <Link key={s.id} href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                          className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm flex items-center justify-between hover:bg-rose-100 hover:border-rose-300 transition-colors">
                           <span>
                             {s.number && <span className="text-xs text-rose-700 mr-1.5">{s.number}번</span>}
                             <span className="font-medium">{s.realname}</span>
                           </span>
                           <span className="text-xs text-rose-600">{best?.total_score ?? 0}/{best?.max_score ?? 100}</span>
-                        </div>
+                        </Link>
                       )
                     })}
                   </div>
@@ -291,10 +292,11 @@ export default function SubmissionStatus() {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                     {needComment.sort(sortByNumber).map(s => (
-                      <div key={s.id} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
+                      <Link key={s.id} href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                        className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm hover:bg-blue-100 hover:border-blue-300 transition-colors block">
                         {s.number && <span className="text-xs text-blue-700 mr-1.5">{s.number}번</span>}
                         <span className="font-medium">{s.realname}</span>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 </div>
