@@ -52,6 +52,7 @@ export default function RecordPage() {
   const [batchRunning, setBatchRunning] = useState(false)
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0, current: '' })
   const [batchResults, setBatchResults] = useState([])
+  const [selectedIds, setSelectedIds] = useState(new Set())  // 평어 만들 학생 선택
 
   const [showSingle, setShowSingle] = useState(false)
   const [selectedId, setSelectedId] = useState('')
@@ -115,45 +116,63 @@ export default function RecordPage() {
 
   const getKey = () => classInfo?.api_key || loadApiKey()
 
+  // 체크박스 토글
+  const toggleStudent = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    if (selectedIds.size === students.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(students.map(s => s.id)))
+  }
+
   const runBatch = async () => {
     const key = getKey()
     if (!key) { alert('학급 API 키가 설정되어 있지 않아요. 설정에서 등록해주세요.'); return }
-    if (students.length === 0) { alert('학생이 없어요.'); return }
-    if (!confirm(`학생 ${students.length}명의 평어를 한 번에 만들까요?\n\n· AI를 학생 수만큼 호출해요 (수 분 소요)\n· 글이 없는 학생은 건너뜁니다`)) return
+    const targets = students.filter(s => selectedIds.has(s.id))
+    if (targets.length === 0) { alert('평어를 만들 학생을 먼저 선택해주세요.'); return }
+    if (!confirm(`선택한 학생 ${targets.length}명의 평어를 만들까요?\n\n· AI를 학생 수만큼 호출해요\n· 글이 없는 학생은 건너뜁니다`)) return
 
     setBatchRunning(true)
-    setBatchResults([])
-    setBatchProgress({ done: 0, total: students.length, current: '' })
+    setBatchProgress({ done: 0, total: targets.length, current: '' })
 
-    const results = []
-    for (let i = 0; i < students.length; i++) {
-      const stu = students[i]
-      setBatchProgress({ done: i, total: students.length, current: stu.realname || stu.username })
+    // 기존 결과를 맵으로 (선택 안 한 학생 평어는 유지)
+    const merged = {}
+    batchResults.forEach(r => { merged[r.student.id] = r })
+
+    for (let i = 0; i < targets.length; i++) {
+      const stu = targets[i]
+      setBatchProgress({ done: i, total: targets.length, current: stu.realname || stu.username })
       try {
         const studentSubs = await loadSummaries(stu.id)
         if (studentSubs.length === 0) {
-          results.push({ student: stu, sentences: [], level: '', skipped: true })
-          setBatchResults([...results]); continue
+          merged[stu.id] = { student: stu, sentences: [], level: '', skipped: true }
+        } else {
+          const lv = autoLevel(studentSubs)
+          const r = await callAI('schoolRecord', key, {
+            gradeText, summaries: toSummaries(studentSubs), level: lv, standards, count: 2
+          })
+          merged[stu.id] = { student: stu, sentences: r.sentences || [], level: lv }
+          try {
+            await supabase.from('school_records').upsert({
+              student_id: stu.id, teacher_id: user.id,
+              sentences: r.sentences || [], level: lv, standards, created_at: new Date().toISOString()
+            }, { onConflict: 'student_id' })
+          } catch (e) { /* 저장 실패 무시 */ }
         }
-        const lv = autoLevel(studentSubs)
-        const r = await callAI('schoolRecord', key, {
-          gradeText, summaries: toSummaries(studentSubs), level: lv, standards, count: 2
-        })
-        results.push({ student: stu, sentences: r.sentences || [], level: lv })
-        // DB에 저장 (다음에 토큰 없이 복원)
-        try {
-          await supabase.from('school_records').upsert({
-            student_id: stu.id, teacher_id: user.id,
-            sentences: r.sentences || [], level: lv, standards, created_at: new Date().toISOString()
-          }, { onConflict: 'student_id' })
-        } catch (e) { /* 저장 실패는 무시 (테이블 없을 수 있음) */ }
       } catch (e) {
-        results.push({ student: stu, sentences: [], error: getFriendlyErrorMessage ? getFriendlyErrorMessage(e) : (e.message || '실패') })
+        merged[stu.id] = { student: stu, sentences: [], error: getFriendlyErrorMessage ? getFriendlyErrorMessage(e) : (e.message || '실패') }
       }
-      setBatchResults([...results])
+      // 학생 번호순으로 정렬해서 표시
+      const ordered = students.filter(s => merged[s.id]).map(s => merged[s.id])
+      setBatchResults(ordered)
     }
-    setBatchProgress({ done: students.length, total: students.length, current: '' })
+    setBatchProgress({ done: targets.length, total: targets.length, current: '' })
     setBatchRunning(false)
+    setSelectedIds(new Set())  // 생성 후 선택 해제
   }
 
   const pickStudent = async (id) => {
@@ -198,7 +217,7 @@ export default function RecordPage() {
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">📝 생기부 평어 도우미</h1>
             <p className="text-sm text-gray-600 mt-1">
-              학급 전체의 한 문장 평어를 한 번에 만들어, 골라서 바로 붙여넣으세요.
+              학생을 선택해 한 문장 평어를 만들고, 골라서 바로 붙여넣으세요.
               초안이니 <strong>반드시 교사가 검토·수정</strong>한 뒤 사용하세요.
             </p>
           </div>
@@ -216,13 +235,39 @@ export default function RecordPage() {
             />
             <button
               onClick={runBatch}
-              disabled={batchRunning}
+              disabled={batchRunning || selectedIds.size === 0}
               className="mt-3 w-full sm:w-auto bg-primary text-white px-6 py-3 rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
             >
               {batchRunning
                 ? `만드는 중... (${batchProgress.done}/${batchProgress.total})`
-                : `✨ 학급 전체 평어 한 번에 만들기 (${students.length}명)`}
+                : `✨ 선택한 학생 평어 만들기 (${selectedIds.size}명)`}
             </button>
+          </div>
+
+          {/* 학생 선택 (체크박스) */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-800">학생 선택</h3>
+              <button onClick={toggleAll} className="text-xs text-primary hover:underline">
+                {selectedIds.size === students.length ? '전체 해제' : '전체 선택'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {students.map(s => {
+                const checked = selectedIds.has(s.id)
+                const hasSaved = batchResults.find(r => r.student.id === s.id && !r.skipped && !r.error)
+                return (
+                  <label key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${checked ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleStudent(s.id)} className="accent-primary" />
+                    <span className="truncate">{s.number ? `${s.number}번 ` : ''}{s.realname || s.username}</span>
+                    {hasSaved && <span className="ml-auto text-[10px] text-green-600">●</span>}
+                  </label>
+                )
+              })}
+            </div>
+            {batchResults.length > 0 && (
+              <p className="text-xs text-gray-400 mt-2">● 표시: 평어가 이미 만들어진 학생 (다시 만들려면 체크 후 생성)</p>
+            )}
           </div>
 
           {batchRunning && (
