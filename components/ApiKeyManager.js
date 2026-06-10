@@ -52,12 +52,34 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
     setShowInput(false)
   }
 
+  const [verifying, setVerifying] = useState(false)
+
   const save = async () => {
     const key = inputKey.trim()
     if (!key) return alert('API 키를 입력해주세요')
     if (!key.startsWith('AIza')) {
       return alert('Gemini API 키는 "AIza" 로 시작해요. 다시 확인해주세요.')
     }
+
+    // 🆕 키가 실제로 작동하는지 즉석 검증 (모델 목록 조회 — 무료, 즉시)
+    setVerifying(true)
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=1`)
+      if (!res.ok) {
+        setVerifying(false)
+        if (res.status === 400 || res.status === 401) {
+          return alert('❌ 키가 올바르지 않아요.\n\n복사할 때 일부가 빠졌을 수 있어요. Google AI Studio에서 키 전체를 다시 복사해주세요.')
+        }
+        if (res.status === 403) {
+          return alert('❌ 이 키는 사용이 차단되어 있어요.\n\n학교/기관 계정으로 발급한 키일 가능성이 높아요.\n시크릿 모드에서 개인 @gmail.com 계정으로 다시 발급해주세요.\n(자세한 방법: API 키 발급 안내 페이지)')
+        }
+        return alert(`❌ 키 확인에 실패했어요 (오류 ${res.status}).\n잠시 후 다시 시도해주세요.`)
+      }
+    } catch (e) {
+      // 네트워크 오류 — 검증은 못 했지만 저장은 진행 (인터넷 문제일 수 있음)
+      console.warn('키 검증 네트워크 오류:', e)
+    }
+    setVerifying(false)
 
     try {
       const { error } = await supabase.from('classes').update({ api_key: key }).eq('id', classId)
@@ -68,7 +90,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
       setInputKey('')
       setShowInput(false)
       onChange?.(key)
-      alert('API 키 저장 완료!\n학급의 모든 학생이 이 키를 사용합니다.')
+      alert('✅ 키 확인 완료 + 저장!\n학급의 모든 학생이 이 키를 사용합니다.')
     } catch(e) {
       alert('저장 실패: ' + e.message)
     }
@@ -175,8 +197,8 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
                 취소
               </button>
             )}
-            <button onClick={save} className="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium">
-              저장
+            <button onClick={save} disabled={verifying} className="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-60">
+              {verifying ? '키 확인 중...' : '저장'}
             </button>
           </div>
           <div className="text-xs space-y-1 bg-red-50 border border-red-200 p-3 rounded">
