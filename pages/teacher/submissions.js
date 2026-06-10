@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
 import { loadApiKey } from '../../lib/gemini'
+import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
@@ -941,6 +942,7 @@ export default function TeacherSubmissions() {
                       studentName={selectedStudent.profile.realname}
                       onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
                       disabled={isImpersonating}
+                      maskNames={topicStudents.map(g => g.profile.realname).filter(Boolean)}
                     />
 
                     {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
@@ -1144,10 +1146,84 @@ export default function TeacherSubmissions() {
 // 학생 글 1편당 코멘트 1개. 작성·수정·삭제 가능.
 // 임퍼소네이션 중에는 작성 차단 (disabled prop).
 // ============================================
-function TeacherCommentBox({ submission, studentName, onUpdated, disabled }) {
+function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskNames = [] }) {
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(submission.teacher_comment || '')
   const [saving, setSaving] = useState(false)
+  const [templates, setTemplates] = useState([])
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+
+  // ✨ AI 추천: 내 기존 코멘트 말투를 학습해 이 글에 맞는 초안 생성
+  const fetchSuggestions = async () => {
+    const apiKey = loadApiKey()
+    if (!apiKey) return alert('API 키가 설정되어 있지 않아요.')
+    setSuggesting(true)
+    setSuggestions([])
+    try {
+      // 내가 쓴 최근 코멘트 15개 (말투 샘플) — RLS로 내 학급만 조회됨
+      const { data: recent } = await supabase.from('submissions')
+        .select('teacher_comment')
+        .not('teacher_comment', 'is', null)
+        .neq('id', submission.id)
+        .order('teacher_comment_at', { ascending: false })
+        .limit(15)
+
+      // 학생 이름 마스킹 (개인정보 — AI에 이름 안 보냄)
+      const mask = (t) => {
+        let out = t
+        maskNames.forEach(n => {
+          if (n && n.length >= 2) out = out.split(n).join('○○')
+        })
+        return out
+      }
+      const styleSamples = (recent || []).map(r => mask(r.teacher_comment)).filter(Boolean)
+
+      const r = await callAI('commentSuggest', apiKey, {
+        styleSamples,
+        essay: submission.essay_text,
+        score: submission.total_score,
+        max: submission.max_score,
+        aiOverall: submission.feedback_overall,
+        aiImprove: submission.feedback_improve,
+      })
+      setSuggestions(Array.isArray(r.comments) ? r.comments : [])
+    } catch (e) {
+      alert('추천 생성 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
+    }
+    setSuggesting(false)
+  }
+
+  // 자주 쓰는 코멘트 (localStorage)
+  const TPL_KEY = 'teacher_comment_templates'
+  const DEFAULT_TPLS = [
+    '글이 점점 좋아지고 있어요! 꾸준히 쓰는 모습이 멋져요. 👍',
+    '구체적인 표현이 정말 인상 깊었어요. 다음 글도 기대할게요!',
+    'AI 피드백을 읽고 한 가지만 골라 고쳐쓰기에 도전해볼까요?',
+    '솔직한 마음이 잘 느껴지는 글이었어요. 선생님이 감동했어요. 💛',
+  ]
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TPL_KEY)
+      setTemplates(stored ? JSON.parse(stored) : DEFAULT_TPLS)
+    } catch { setTemplates(DEFAULT_TPLS) }
+  }, [])
+  const saveTemplates = (next) => {
+    setTemplates(next)
+    try { localStorage.setItem(TPL_KEY, JSON.stringify(next)) } catch {}
+  }
+  const insertTemplate = (t) => {
+    setContent(prev => prev.trim() ? prev.trimEnd() + '\n' + t : t)
+  }
+  const addCurrentAsTemplate = () => {
+    const t = content.trim()
+    if (!t) return alert('저장할 문구를 먼저 입력해주세요!')
+    if (templates.includes(t)) return alert('이미 저장된 문구예요.')
+    saveTemplates([...templates, t])
+  }
+  const removeTemplate = (idx) => {
+    saveTemplates(templates.filter((_, i) => i !== idx))
+  }
 
   // submission 바뀌면 초기값 동기화
   useEffect(() => {
@@ -1207,6 +1283,37 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled }) {
           </h4>
           <span className="text-[10px] text-yellow-700">학생에게 그대로 보입니다</span>
         </div>
+        {/* 자주 쓰는 문구 + AI 추천 */}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <button
+            onClick={fetchSuggestions}
+            disabled={suggesting}
+            className="inline-flex items-center gap-1 bg-primary/10 border border-primary/30 text-primary rounded-full px-2.5 py-0.5 text-[11px] font-semibold hover:bg-primary/20 disabled:opacity-50"
+            title="내가 평소 쓰는 말투로, 이 글에 맞는 코멘트를 추천받아요">
+            {suggesting ? '추천 만드는 중...' : '✨ 추천 받기'}
+          </button>
+          {templates.map((t, i) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-yellow-100 border border-yellow-300 rounded-full pl-2.5 pr-1 py-0.5 text-[11px] text-yellow-900 max-w-[260px]">
+              <button onClick={() => insertTemplate(t)} className="truncate hover:underline" title={t}>
+                {t.length > 22 ? t.slice(0, 22) + '…' : t}
+              </button>
+              <button onClick={() => removeTemplate(i)} className="text-yellow-500 hover:text-red-600 px-0.5" title="이 문구 삭제">×</button>
+            </span>
+          ))}
+        </div>
+        {/* AI 추천 결과 — 클릭하면 삽입 */}
+        {suggestions.length > 0 && (
+          <div className="space-y-1.5">
+            {suggestions.map((sug, i) => (
+              <button key={i}
+                onClick={() => { insertTemplate(sug); }}
+                className="w-full text-left text-xs text-gray-800 bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 transition-colors leading-relaxed break-keep">
+                {sug}
+              </button>
+            ))}
+            <p className="text-[10px] text-gray-400">초안이에요 — 선생님 마음을 담아 다듬어 주세요.</p>
+          </div>
+        )}
         <textarea
           value={content}
           onChange={e => setContent(e.target.value)}
@@ -1215,9 +1322,18 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled }) {
           className="w-full p-2 border border-yellow-300 rounded text-sm leading-relaxed bg-white"
         />
         <div className="flex justify-between items-center gap-2">
-          <span className={`text-[11px] ${content.length > 1000 ? 'text-red-600' : 'text-gray-500'}`}>
-            {content.length}자 {content.length > 1000 && '(너무 길어요)'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] ${content.length > 1000 ? 'text-red-600' : 'text-gray-500'}`}>
+              {content.length}자 {content.length > 1000 && '(너무 길어요)'}
+            </span>
+            <button
+              onClick={addCurrentAsTemplate}
+              disabled={!content.trim()}
+              className="text-[11px] text-yellow-700 hover:text-yellow-900 underline disabled:opacity-40"
+              title="지금 쓴 문구를 자주 쓰는 문구로 저장">
+              + 문구 저장
+            </button>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={() => { setContent(submission.teacher_comment || ''); setEditing(false) }}

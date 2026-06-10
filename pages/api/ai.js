@@ -10,7 +10,7 @@
 import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
-  exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt } from '../../lib/prompts.server'
+  exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
@@ -109,6 +109,13 @@ export default async function handler(req, res) {
       prompt = schoolRecordPrompt(payload)
       schema = SCHEMAS.schoolRecord
       opts = { taskType: 'quality', maxTokens: 6000, temperature: 0.4 }
+
+    } else if (type === 'commentSuggest') {
+      const { essay } = payload || {}
+      if (!essay) return res.status(400).json({ error: '학생 글이 필요해요' })
+      prompt = commentSuggestPrompt(payload)
+      schema = SCHEMAS.commentSuggest
+      opts = { taskType: 'quality', maxTokens: 2000, temperature: 0.6 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
