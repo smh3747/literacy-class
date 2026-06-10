@@ -38,7 +38,7 @@ export default function TopicsPage() {
   const [minLength, setMinLength] = useState(30)
   const [maxLength, setMaxLength] = useState('') // 글 최대 길이 (빈 칸=제한 없음)
   const [maxRewrites, setMaxRewrites] = useState(1)
-  const [requireRewriteChange, setRequireRewriteChange] = useState(false)
+  const [requireRewriteChange, setRequireRewriteChange] = useState(true)
   // 제출 기한 (옵션)
   const [deadlineEnabled, setDeadlineEnabled] = useState(false)
   const [deadlineDate, setDeadlineDate] = useState('')
@@ -392,7 +392,7 @@ export default function TopicsPage() {
     setMinLength(t.min_length || 30)
     setMaxLength(t.max_length || '')
     setMaxRewrites(t.max_rewrites !== undefined && t.max_rewrites !== null ? t.max_rewrites : 1)
-    setRequireRewriteChange(!!t.require_rewrite_change)
+    setRequireRewriteChange(t.require_rewrite_change !== false)
     setDeadlineEnabled(!!t.deadline_date)
     setDeadlineDate(t.deadline_date || '')
     setDeadlineTime(t.deadline_time || '23:59')
@@ -410,7 +410,7 @@ export default function TopicsPage() {
     setLockEnabled(false)
     setMinLength(30); setMaxLength('')
     setMaxRewrites(1)
-    setRequireRewriteChange(false)
+    setRequireRewriteChange(true)
     setDeadlineEnabled(false)
   }
 
