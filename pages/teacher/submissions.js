@@ -936,7 +936,7 @@ export default function TeacherSubmissions() {
                       </span>
                     )}
                     <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed ${
-                      arr.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
+                      ordered.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
                     }`}
                       dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
 
