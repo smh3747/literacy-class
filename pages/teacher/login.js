@@ -31,13 +31,22 @@ export default function TeacherLogin() {
 
   // 🆕 비밀번호 초기화 요청 모달
   const [showResetRequest, setShowResetRequest] = useState(false)
-  const [resetForm, setResetForm] = useState({ username: '', realname: '', school: '', contact: '' })
+  const [resetForm, setResetForm] = useState({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
   const [resetSubmitting, setResetSubmitting] = useState(false)
 
   const submitResetRequest = async () => {
-    if (!resetForm.username.trim() || !resetForm.realname.trim()) {
-      alert('아이디와 이름은 꼭 입력해주세요')
-      return
+    const isFindId = resetForm.type === 'find_id'
+    // 요청 종류별 필수값
+    if (isFindId) {
+      if (!resetForm.realname.trim() || !resetForm.school.trim()) {
+        alert('이름과 학교는 꼭 입력해주세요')
+        return
+      }
+    } else {
+      if (!resetForm.username.trim() || !resetForm.realname.trim()) {
+        alert('아이디와 이름은 꼭 입력해주세요')
+        return
+      }
     }
     setResetSubmitting(true)
     try {
@@ -46,7 +55,8 @@ export default function TeacherLogin() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: resetForm.username.trim().toLowerCase(),
+          request_type: resetForm.type,
+          username: isFindId ? '' : resetForm.username.trim().toLowerCase(),
           realname: resetForm.realname.trim(),
           school: resetForm.school.trim() || null,
           contact: resetForm.contact.trim() || null,
@@ -55,14 +65,20 @@ export default function TeacherLogin() {
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(data?.error || '잠시 후 다시 시도해주세요')
       alert(
-        '✅ 초기화 요청이 접수됐어요!\n\n' +
-        '관리자가 확인 후 임시 비밀번호를 만들어서\n' +
-        '남겨주신 연락 방법으로 전달드릴게요.\n\n' +
-        '⚠️ 그동안 새로 가입하지 마세요 —\n' +
-        '재가입하면 기존 학급·학생·글과 연결이 끊겨요.'
+        isFindId
+          ? '✅ 아이디 찾기 요청이 접수됐어요!\n\n' +
+            '관리자가 이름·학교로 확인 후\n' +
+            '남겨주신 연락 방법으로 아이디를 알려드릴게요.\n\n' +
+            '⚠️ 그동안 새로 가입하지 마세요 —\n' +
+            '재가입하면 기존 학급·학생·글과 연결이 끊겨요.'
+          : '✅ 초기화 요청이 접수됐어요!\n\n' +
+            '관리자가 확인 후 임시 비밀번호를 만들어서\n' +
+            '남겨주신 연락 방법으로 전달드릴게요.\n\n' +
+            '⚠️ 그동안 새로 가입하지 마세요 —\n' +
+            '재가입하면 기존 학급·학생·글과 연결이 끊겨요.'
       )
       setShowResetRequest(false)
-      setResetForm({ username: '', realname: '', school: '', contact: '' })
+      setResetForm({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
     } catch(e) {
       alert('요청 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
     }
@@ -458,12 +474,12 @@ export default function TeacherLogin() {
             <div className="mt-4 text-center space-y-1.5">
               {mode === 'login' && (
                 <p className="text-xs text-gray-500">
-                  🔑 비밀번호를 잊으셨나요?{' '}
+                  🔑 아이디 또는 비밀번호를 잊으셨나요?{' '}
                   <button
                     type="button"
                     onClick={() => setShowResetRequest(true)}
                     className="text-blue-600 font-medium underline hover:text-blue-800">
-                    초기화 요청하기
+                    찾기 요청하기
                   </button>
                   <br />
                   <span className="text-amber-700">재가입하지 마세요</span>
@@ -483,18 +499,40 @@ export default function TeacherLogin() {
             onClick={() => !resetSubmitting && setShowResetRequest(false)}>
             <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl"
               onClick={e => e.stopPropagation()}>
-              <h3 className="font-bold text-gray-900">🔑 비밀번호 초기화 요청</h3>
+              <h3 className="font-bold text-gray-900">🔑 아이디 / 비밀번호 찾기</h3>
+
+              {/* 요청 종류 선택 */}
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setResetForm({ ...resetForm, type: 'reset_password' })}
+                  className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type !== 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                  🔑 비밀번호 초기화
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResetForm({ ...resetForm, type: 'find_id' })}
+                  className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type === 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                  🔍 아이디 찾기
+                </button>
+              </div>
+
               <p className="text-xs text-gray-500 leading-relaxed">
-                관리자가 확인 후 임시 비밀번호를 만들어 전달해드려요.
-                본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.
+                {resetForm.type === 'find_id'
+                  ? '관리자가 이름·학교로 확인 후 아이디를 연락처로 알려드려요. 본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.'
+                  : '관리자가 확인 후 임시 비밀번호를 만들어 전달해드려요. 본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.'}
               </p>
-              <input
-                type="text"
-                placeholder="아이디 (필수)"
-                value={resetForm.username}
-                onChange={e => setResetForm({ ...resetForm, username: e.target.value })}
-                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
-              />
+
+              {/* 아이디 찾기일 때는 아이디 입력칸 숨김 */}
+              {resetForm.type !== 'find_id' && (
+                <input
+                  type="text"
+                  placeholder="아이디 (필수)"
+                  value={resetForm.username}
+                  onChange={e => setResetForm({ ...resetForm, username: e.target.value })}
+                  className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+                />
+              )}
               <input
                 type="text"
                 placeholder="이름 (필수)"
@@ -504,7 +542,7 @@ export default function TeacherLogin() {
               />
               <input
                 type="text"
-                placeholder="학교 (선택)"
+                placeholder={resetForm.type === 'find_id' ? '학교 (필수)' : '학교 (선택)'}
                 value={resetForm.school}
                 onChange={e => setResetForm({ ...resetForm, school: e.target.value })}
                 className="w-full p-3 border border-gray-200 rounded-lg text-sm"

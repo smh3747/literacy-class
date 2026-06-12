@@ -52,6 +52,7 @@ export default function TeacherHome() {
   const scrollToLoginHint = () => guideToCard(loginHintRef, 'loginHint')
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
+  const [mustChangePw, setMustChangePw] = useState(false)  // 🆕 step161: 초기화 후 강제 변경
   const [showProfileModal, setShowProfileModal] = useState(false)
   // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
   const [isImpersonating, setIsImpersonating] = useState(false)
@@ -70,7 +71,13 @@ export default function TeacherHome() {
     setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
-    
+
+    // 🆕 step161: 비번 초기화된 계정이면 변경 모달 자동 노출 (임퍼소네이션 중엔 제외)
+    if (profile.must_change_password && !imp) {
+      setMustChangePw(true)
+      setShowPwModal(true)
+    }
+
     if (profile.classes?.id) {
       const [s, t, samples] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true })
@@ -230,6 +237,18 @@ export default function TeacherHome() {
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+          {/* 🆕 step161: 비번 초기화된 계정 — 변경 강하게 유도 */}
+          {mustChangePw && !showPwModal && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-red-900 font-medium">
+                🔐 임시 비밀번호(123456)로 로그인했어요. 보안을 위해 비밀번호를 꼭 바꿔주세요.
+              </p>
+              <button onClick={() => setShowPwModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 flex-shrink-0">
+                지금 변경하기
+              </button>
+            </div>
+          )}
           <div className="flex items-start justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
@@ -426,7 +445,18 @@ export default function TeacherHome() {
             </Link>
           </div>
         </main>
-        {showPwModal && <PasswordChangeModal onClose={() => setShowPwModal(false)} />}
+        {showPwModal && (
+          <PasswordChangeModal
+            onClose={() => setShowPwModal(false)}
+            onSuccess={async () => {
+              if (!mustChangePw) return
+              try {
+                await supabase.from('profiles').update({ must_change_password: false }).eq('id', user.id)
+                setMustChangePw(false)
+              } catch (e) { /* 플래그 해제 실패해도 변경은 성공 */ }
+            }}
+          />
+        )}
         {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
       </div>
     </>

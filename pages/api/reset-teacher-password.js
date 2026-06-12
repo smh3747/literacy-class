@@ -81,6 +81,15 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '비밀번호 변경 실패: ' + updErr.message })
   }
 
+  // step161: 초기화된 계정은 로그인 후 비번 변경을 강제 유도 (방치 방지)
+  try {
+    await supabaseAdmin.from('profiles')
+      .update({ must_change_password: true })
+      .eq('id', teacherId)
+  } catch (e) {
+    console.warn('must_change_password 설정 실패(무시):', e?.message || e)
+  }
+
   return res.status(200).json({
     success: true,
     teacher: { username: targetProfile.username, realname: targetProfile.realname }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function PasswordChangeModal({ onClose }) {
+export default function PasswordChangeModal({ onClose, onSuccess }) {
   const [currentPw, setCurrentPw] = useState('')
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
@@ -42,7 +42,10 @@ export default function PasswordChangeModal({ onClose }) {
       // 비밀번호 업데이트
       const { error: updateErr } = await supabase.auth.updateUser({ password: newPw })
       if (updateErr) throw updateErr
-      
+
+      // step161: 초기화 후 강제 변경 플래그 해제 등 후처리
+      try { await onSuccess?.() } catch (e) { /* 후처리 실패해도 변경은 성공 */ }
+
       setSuccess(true)
       setTimeout(() => onClose(), 2000)
     } catch(e) {

@@ -18,6 +18,7 @@ export default function AdminHome() {
   const [trashedClasses, setTrashedClasses] = useState([])
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
   const [resetRequests, setResetRequests] = useState([])  // 🆕 비밀번호 초기화 요청
+  const [idLookups, setIdLookups] = useState({})  // 🆕 step161: 아이디 찾기 후보 { [reqId]: {loading, list} }
   const [errorLogs, setErrorLogs] = useState([])  // 🆕 step155: 에러 로그 (최근 50건)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
@@ -283,26 +284,12 @@ export default function AdminHome() {
 
   // 🆕 선생님 비밀번호 초기화 (비번 잊은 선생님 구제 — 재가입 사고 방지)
   const resetTeacherPassword = async (teacher) => {
-    const newPw = prompt(
-      `🔑 "${teacher.realname}" 선생님 비밀번호 초기화\n\n` +
-      `아이디: ${teacher.username}\n\n` +
-      `새 비밀번호를 입력하세요 (6자 이상).\n` +
-      `공란으로 확인하면 임시 비밀번호가 자동 생성돼요.`,
-      ''
-    )
-    if (newPw === null) return  // 취소
-
-    // 공란이면 자동 생성 (읽기 쉬운 6자리)
-    const finalPw = newPw.trim() || `cw${Math.floor(1000 + Math.random() * 9000)}`
-    if (finalPw.length < 6) {
-      return alert('비밀번호는 6자 이상이어야 해요')
-    }
-
+    // step161: 비밀번호는 고정값 123456으로 표준화 (학생 초기 비번과 동일 체계)
+    const FIXED_PW = '123456'
     if (!confirm(
-      `${teacher.realname} 선생님의 비밀번호를 변경할까요?\n\n` +
-      `새 비밀번호: ${finalPw}\n\n` +
-      `⚠️ 변경 후 이 비밀번호를 선생님께 직접 전달해주세요.\n` +
-      `(선생님은 로그인 후 본인이 다시 변경 가능)`
+      `${teacher.realname} 선생님의 비밀번호를 "${FIXED_PW}"로 초기화할까요?\n\n` +
+      `아이디: ${teacher.username}\n\n` +
+      `초기화 후 선생님은 로그인 시 비밀번호 변경을 안내받아요.`
     )) return
 
     try {
@@ -312,7 +299,7 @@ export default function AdminHome() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teacherId: teacher.id,
-          newPassword: finalPw,
+          newPassword: FIXED_PW,
           accessToken: session?.access_token
         })
       })
@@ -320,12 +307,9 @@ export default function AdminHome() {
       if (!res.ok) throw new Error(result.error || '초기화 실패')
 
       alert(
-        `✅ 비밀번호 초기화 완료!\n\n` +
-        `선생님: ${teacher.realname}\n` +
-        `아이디: ${teacher.username}\n` +
-        `새 비밀번호: ${finalPw}\n\n` +
-        `📋 이 정보를 선생님께 전달해주세요.\n` +
-        `(이 창을 닫으면 비밀번호를 다시 볼 수 없어요)`
+        `✅ 비밀번호가 ${FIXED_PW}으로 초기화됐어요.\n\n` +
+        `선생님: ${teacher.realname} (아이디: ${teacher.username})\n\n` +
+        `📋 요청자에게 "${FIXED_PW}으로 로그인 후 비밀번호를 꼭 바꾸세요"라고 안내해주세요.`
       )
     } catch(e) {
       alert('❌ 실패: ' + e.message)
@@ -356,6 +340,31 @@ export default function AdminHome() {
         .update({ status: 'done', handled_at: new Date().toISOString() })
         .eq('id', req.id)
       await loadAll()
+    }
+  }
+
+  // 🆕 step161: 요청 완료 처리(공통)
+  const markRequestDone = async (req) => {
+    if (!confirm('이 요청을 완료 처리할까요? (목록에서 사라져요)')) return
+    await supabase.from('password_reset_requests')
+      .update({ status: 'done', handled_at: new Date().toISOString() })
+      .eq('id', req.id)
+    await loadAll()
+  }
+
+  // 🆕 step161: 아이디 찾기 — 이름+학교로 교사 후보 조회 (동명이인 대비 복수 표시)
+  const findIdCandidates = async (req) => {
+    setIdLookups(prev => ({ ...prev, [req.id]: { loading: true, list: [] } }))
+    try {
+      // 이름으로 교사/관리자 검색 (학교는 표시로 대조 — 오타 대비 넓게)
+      let q = supabase.from('profiles')
+        .select('username, realname, school, role')
+        .eq('realname', (req.realname || '').trim())
+        .in('role', ['teacher', 'admin'])
+      const { data } = await q
+      setIdLookups(prev => ({ ...prev, [req.id]: { loading: false, list: data || [] } }))
+    } catch (e) {
+      setIdLookups(prev => ({ ...prev, [req.id]: { loading: false, list: [] } }))
     }
   }
 
@@ -788,27 +797,74 @@ export default function AdminHome() {
             {resetRequests.length > 0 && (
               <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4">
                 <h3 className="font-bold text-blue-900 text-sm mb-2">
-                  🔔 비밀번호 초기화 요청 ({resetRequests.length}건)
+                  🔔 아이디/비밀번호 찾기 요청 ({resetRequests.length}건)
                 </h3>
                 <div className="space-y-2">
-                  {resetRequests.map(req => (
-                    <div key={req.id} className="bg-white border border-blue-200 rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="text-sm">
-                        <div className="font-medium">
-                          {req.realname} <span className="text-gray-500 font-mono text-xs">@{req.username}</span>
-                          {req.school && <span className="text-gray-500 text-xs ml-1">· {req.school}</span>}
+                  {resetRequests.map(req => {
+                    const isFindId = req.request_type === 'find_id'
+                    const lookup = idLookups[req.id]
+                    return (
+                    <div key={req.id} className="bg-white border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="text-sm">
+                          <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                            {isFindId
+                              ? <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-semibold">🔍 아이디 찾기</span>
+                              : <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold">🔑 비번 초기화</span>}
+                            {req.realname}
+                            {!isFindId && <span className="text-gray-500 font-mono text-xs">@{req.username}</span>}
+                            {req.school && <span className="text-gray-500 text-xs ml-1">· {req.school}</span>}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {req.contact ? `📞 ${req.contact}` : '연락처 없음 (지인 통해 전달)'}
+                            <span className="ml-2">{new Date(req.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {req.contact ? `📞 ${req.contact}` : '연락처 없음 (지인 통해 전달)'}
-                          <span className="ml-2">{new Date(req.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {isFindId ? (
+                            <>
+                              <button onClick={() => findIdCandidates(req)}
+                                className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700">
+                                🔍 교사 찾기
+                              </button>
+                              <button onClick={() => markRequestDone(req)}
+                                className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200">
+                                ✅ 완료
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => handleResetRequest(req)}
+                              className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
+                              🔑 초기화 처리
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <button onClick={() => handleResetRequest(req)}
-                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
-                        🔑 초기화 처리
-                      </button>
+
+                      {/* 아이디 찾기 후보 결과 */}
+                      {isFindId && lookup && (
+                        <div className="mt-2 border-t border-gray-100 pt-2 text-xs">
+                          {lookup.loading ? (
+                            <span className="text-gray-400">찾는 중...</span>
+                          ) : lookup.list.length === 0 ? (
+                            <span className="text-red-600">"{req.realname}" 이름의 교사를 찾지 못했어요. 학교명·이름을 요청자에게 다시 확인해주세요.</span>
+                          ) : (
+                            <div className="space-y-1">
+                              <p className="text-gray-500">매칭 교사 {lookup.list.length}명 (학교로 본인 대조 후 아이디 전달):</p>
+                              {lookup.list.map((c, i) => (
+                                <div key={i} className="flex items-center gap-2 bg-purple-50 rounded px-2 py-1">
+                                  <span className="font-mono font-semibold text-purple-800">{c.username}</span>
+                                  <span className="text-gray-500">· {c.school || '학교 미입력'}</span>
+                                  {c.role === 'admin' && <span className="text-[10px] text-purple-600">[관리자]</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}

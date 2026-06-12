@@ -26,8 +26,18 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { username, realname, school, contact } = req.body || {}
-  if (!username || !username.trim() || !realname || !realname.trim()) {
-    return res.status(400).json({ error: '아이디와 이름은 꼭 입력해주세요' })
+  const requestType = req.body?.request_type === 'find_id' ? 'find_id' : 'reset_password'
+
+  // 요청 종류별 필수값 검증
+  if (requestType === 'find_id') {
+    // 아이디를 모르는 상황 → 이름+학교로 본인 확인
+    if (!realname || !realname.trim() || !school || !school.trim()) {
+      return res.status(400).json({ error: '이름과 학교는 꼭 입력해주세요' })
+    }
+  } else {
+    if (!username || !username.trim() || !realname || !realname.trim()) {
+      return res.status(400).json({ error: '아이디와 이름은 꼭 입력해주세요' })
+    }
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -63,11 +73,13 @@ export default async function handler(req, res) {
     }
 
     // 3) INSERT (service_role — RLS 우회)
+    //    find_id는 아이디를 모르는 요청이므로 username은 빈 문자열로 저장 (컬럼 NOT NULL 대비)
     const { error } = await supabase.from('password_reset_requests').insert({
-      username: String(username).trim().toLowerCase(),
+      username: requestType === 'find_id' ? '' : String(username).trim().toLowerCase(),
       realname: String(realname).trim(),
       school: school ? String(school).trim() : null,
       contact: contact ? String(contact).trim() : null,
+      request_type: requestType,
       ip_hash: ipHash,
     })
     if (error) throw error
