@@ -1,5 +1,8 @@
 import Head from 'next/head'
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import ApiKeyManager from '../components/ApiKeyManager'
 
 // 각 단계마다 캡처 이미지가 들어갈 자리 컴포넌트
 // 나중에 /public/api-key/step1.png ~ step5.png 이미지 넣으면 자동 표시
@@ -24,6 +27,25 @@ function StepImage({ step, alt }) {
 }
 
 export default function ApiKeyGuide() {
+  // step157: 로그인한 교사면 가이드 안에서 바로 등록할 수 있게 상태 로드
+  const [authState, setAuthState] = useState({ loading: true, classId: null, isTeacher: false })
+  const [registered, setRegistered] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { setAuthState({ loading: false, classId: null, isTeacher: false }); return }
+        const { data: profile } = await supabase.from('profiles')
+          .select('role, class_id').eq('id', user.id).maybeSingle()
+        const isTeacher = !!profile && (profile.role === 'teacher' || profile.role === 'admin')
+        setAuthState({ loading: false, classId: profile?.class_id || null, isTeacher })
+      } catch (e) {
+        setAuthState({ loading: false, classId: null, isTeacher: false })
+      }
+    })()
+  }, [])
+
   return (
     <>
       <Head><title>Gemini API 키 발급 안내 - 문해력 수업</title></Head>
@@ -104,7 +126,7 @@ export default function ApiKeyGuide() {
                   <span className="flex-shrink-0 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">3</span>
                   <div className="flex-1">
                     <p className="font-medium mb-1">생성된 API 키 복사</p>
-                    <p className="text-gray-600 text-xs">키는 <code className="bg-gray-100 px-1 rounded">AIza...</code>로 시작하는 약 40글자의 긴 문자열</p>
+                    <p className="text-gray-600 text-xs">키는 보통 <code className="bg-gray-100 px-1 rounded">AIza</code> 또는 <code className="bg-gray-100 px-1 rounded">AQ.</code> 등으로 시작하는 긴 문자열이에요 (형식은 발급 시기마다 달라요)</p>
                     <p className="text-gray-600 text-xs mt-1">아래 사진의 빨간 ③ 표시된 <strong>복사 아이콘</strong> 또는 아래쪽 <strong>"키 복사"</strong> 버튼 클릭</p>
                   </div>
                 </div>
@@ -117,12 +139,31 @@ export default function ApiKeyGuide() {
                   <span className="flex-shrink-0 w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">4</span>
                   <div className="flex-1">
                     <p className="font-medium mb-1">문해력 수업 사이트에 붙여넣고 저장</p>
-                    <p className="text-gray-600 text-xs">선생님 메인 화면 → <strong>"🔑 학급 Gemini API 키"</strong> 카드 찾기</p>
-                    <p className="text-gray-600 text-xs mt-1">아래 사진의 빨간 ④ 입력칸에 키를 붙여넣고, ⑤ 저장 버튼 클릭</p>
+                    <p className="text-gray-600 text-xs">아래에서 <strong>바로 등록</strong>하거나, 선생님 메인 화면의 <strong>"🔑 학급 Gemini API 키"</strong> 카드에서 등록할 수 있어요</p>
                     <p className="text-gray-500 text-xs mt-1">한 번 저장하면 학급의 모든 학생이 자동으로 이 키를 사용합니다</p>
                   </div>
                 </div>
-                <StepImage step={5} alt="키 입력 + 저장 버튼" />
+
+                {/* 🆕 step157: 가이드 안에서 바로 등록 */}
+                {authState.loading ? null : (authState.isTeacher && authState.classId) ? (
+                  <div className="mt-3">
+                    <ApiKeyManager classId={authState.classId} onChange={(k) => { if (k) setRegistered(true) }} />
+                    {registered && (
+                      <Link href="/teacher"
+                        className="mt-3 inline-block bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 transition">
+                        ✅ 등록 완료! 대시보드로 돌아가기 →
+                      </Link>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm">
+                    <p className="text-blue-900 font-medium mb-2">🔑 로그인하면 이 자리에서 바로 등록할 수 있어요</p>
+                    <Link href="/teacher/login"
+                      className="inline-block bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition">
+                      선생님 로그인 →
+                    </Link>
+                  </div>
+                )}
               </li>
             </ol>
           </div>

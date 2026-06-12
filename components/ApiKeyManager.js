@@ -54,27 +54,33 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const save = async () => {
     const key = inputKey.trim()
     if (!key) return alert('API 키를 입력해주세요')
-    if (!key.startsWith('AIza')) {
-      return alert('Gemini API 키는 "AIza" 로 시작해요. 다시 확인해주세요.')
+    // 느슨한 형식 체크 (발급 시기마다 접두사가 달라짐 — AIza / AQ. 등): 길이 20자 이상 + 공백·한글 미포함
+    if (key.length < 20 || /\s/.test(key) || /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(key)) {
+      return alert('API 키 형식이 올바르지 않은 것 같아요.\n공백 없이 키 전체를 정확히 붙여넣었는지 확인해주세요.')
     }
 
-    // 🆕 키가 실제로 작동하는지 즉석 검증 (모델 목록 조회 — 무료, 즉시)
+    // 🆕 step157: 서버에서 실호출 검증 (class_secrets 저장 전이라 키를 body로 전달 — 유일한 예외)
     setVerifying(true)
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=1`)
-      if (!res.ok) {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
         setVerifying(false)
-        if (res.status === 400 || res.status === 401) {
-          return alert('❌ 키가 올바르지 않아요.\n\n복사할 때 일부가 빠졌을 수 있어요. Google AI Studio에서 키 전체를 다시 복사해주세요.')
-        }
-        if (res.status === 403) {
-          return alert('❌ 이 키는 사용이 차단되어 있어요.\n\n학교/기관 계정으로 발급한 키일 가능성이 높아요.\n시크릿 모드에서 개인 @gmail.com 계정으로 다시 발급해주세요.\n(자세한 방법: API 키 발급 안내 페이지)')
-        }
-        return alert(`❌ 키 확인에 실패했어요 (오류 ${res.status}).\n잠시 후 다시 시도해주세요.`)
+        return alert('로그인 세션이 만료됐어요. 다시 로그인해주세요.')
+      }
+      const resp = await fetch('/api/verify-gemini-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, apiKey: key }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok || !data.ok) {
+        setVerifying(false)
+        // 실패 시 저장하지 않고 원인 안내
+        return alert('❌ 키 확인에 실패했어요.\n\n' + (data.reason || '잠시 후 다시 시도해주세요.'))
       }
     } catch (e) {
-      // 네트워크 오류 — 검증은 못 했지만 저장은 진행 (인터넷 문제일 수 있음)
-      console.warn('키 검증 네트워크 오류:', e)
+      setVerifying(false)
+      return alert('키 확인 중 오류가 났어요. 인터넷 연결을 확인하고 다시 시도해주세요.')
     }
     setVerifying(false)
 
@@ -88,7 +94,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
       setInputKey('')
       setShowInput(false)
       onChange?.(key)
-      alert('✅ 키 확인 완료 + 저장!\n학급의 모든 학생이 이 키를 사용합니다.')
+      alert('✅ 키가 정상 작동해요! 저장했어요.\n학급의 모든 학생이 이 키를 사용합니다.')
     } catch(e) {
       alert('저장 실패: ' + e.message)
     }
@@ -183,7 +189,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
           )}
           <input
             type="password"
-            placeholder="AIza... 로 시작하는 키 붙여넣기"
+            placeholder="발급받은 API 키를 붙여넣어 주세요"
             value={inputKey}
             onChange={e => setInputKey(e.target.value)}
             className="w-full p-3 border border-gray-200 rounded-lg text-sm font-mono"
@@ -202,7 +208,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
           <div className="text-xs space-y-1 bg-red-50 border border-red-200 p-3 rounded">
             <p className="font-semibold text-red-900">🚨 반드시 개인 Gmail 계정으로 발급한 키만 사용!</p>
             <p className="text-red-800">• 학교/회사/교육청 계정 키는 Google이 차단해서 작동 안 해요</p>
-            <p className="text-red-800">• 키가 AIza로 시작 + 개인 @gmail.com 계정인지 확인</p>
+            <p className="text-red-800">• 반드시 개인 @gmail.com 계정으로 발급한 키인지 확인</p>
           </div>
           <div className="text-xs text-gray-600 space-y-1 bg-yellow-50 border border-yellow-200 p-3 rounded">
             <p className="font-semibold">📌 학급 단위 저장 안내</p>
