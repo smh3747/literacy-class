@@ -5,10 +5,13 @@
 import { createClient } from '@supabase/supabase-js'
 
 export default async function handler(req, res) {
-  // Vercel Cron만 호출 가능 (인증)
+  // Vercel Cron만 호출 가능 (인증) — CRON_SECRET 미설정 시 무조건 거부
   const authHeader = req.headers.authorization
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    return res.status(500).json({ error: '서버 설정 누락 (CRON_SECRET 없음)' })
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 

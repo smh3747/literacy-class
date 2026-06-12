@@ -337,10 +337,17 @@ export default function StudentsPage() {
 
     setUploading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        alert('로그인 세션이 만료됐어요. 다시 로그인해주세요.')
+        setUploading(false)
+        return
+      }
+
       const res = await fetch('/api/students-bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students: finalStudents, classId: classInfo.id })
+        body: JSON.stringify({ students: finalStudents, classId: classInfo.id, accessToken: session.access_token })
       })
       const result = await res.json()
 
