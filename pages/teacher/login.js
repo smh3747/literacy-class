@@ -41,13 +41,19 @@ export default function TeacherLogin() {
     }
     setResetSubmitting(true)
     try {
-      const { error } = await supabase.from('password_reset_requests').insert({
-        username: resetForm.username.trim().toLowerCase(),
-        realname: resetForm.realname.trim(),
-        school: resetForm.school.trim() || null,
-        contact: resetForm.contact.trim() || null,
+      // step156: 스팸 방어를 위해 서버 라우트 경유 (익명 직접 INSERT 차단됨)
+      const resp = await fetch('/api/password-reset-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: resetForm.username.trim().toLowerCase(),
+          realname: resetForm.realname.trim(),
+          school: resetForm.school.trim() || null,
+          contact: resetForm.contact.trim() || null,
+        }),
       })
-      if (error) throw error
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data?.error || '잠시 후 다시 시도해주세요')
       alert(
         '✅ 초기화 요청이 접수됐어요!\n\n' +
         '관리자가 확인 후 임시 비밀번호를 만들어서\n' +
