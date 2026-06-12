@@ -935,7 +935,7 @@ export default function TeacherSubmissions() {
                         맞춤법/띄어쓰기 {s.corrections.length}개
                       </span>
                     )}
-                    <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed ${
+                    <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                       ordered.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
                     }`}
                       dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />

@@ -168,7 +168,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
       <div>
         <h4 className="text-sm font-bold text-gray-800 mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올려보세요)` : ''}</h4>
         <div
-          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-keep border border-gray-200"
+          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-words border border-gray-200"
           dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
         />
         {sub.paste_detected && (
