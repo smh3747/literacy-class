@@ -172,11 +172,17 @@ export default function TeacherHome() {
     if (!confirm(`학급 가입 코드를 재발급할까요?\n\n현재: ${classInfo.code}\n\n⚠️ 재발급하면 기존 코드는 사용할 수 없어요. 학생들에게 새 코드를 알려야 해요!`)) return
     
     try {
+      // step149 RLS: 타 학급 코드는 안 보이므로 중복확인은 서버 라우트로
       let newCode, attempts = 0
       while (attempts < 10) {
         newCode = String(Math.floor(1000 + Math.random() * 9000))
-        const { data: existing } = await supabase.from('classes').select('id').eq('code', newCode).maybeSingle()
-        if (!existing) break
+        const dupRes = await fetch('/api/class-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkCode: newCode })
+        })
+        const { exists } = await dupRes.json()
+        if (!exists) break
         attempts++
       }
       

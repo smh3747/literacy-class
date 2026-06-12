@@ -66,10 +66,13 @@ export default function StudentLogin() {
 
   const loadClassHint = async (code) => {
     try {
-      const { data } = await supabase.from('classes')
-        .select('name, school, login_hint_enabled, login_username_prefix, login_default_password')
-        .eq('code', code)
-        .maybeSingle()
+      // step149 RLS: 비로그인 classes 조회는 서버 라우트 경유 (api_key 비노출)
+      const res = await fetch('/api/class-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      })
+      const { class: data } = await res.json()
       if (data && data.login_hint_enabled && data.login_username_prefix) {
         setClassHint({
           className: data.name,
@@ -205,7 +208,13 @@ export default function StudentLogin() {
         persistOptions()
         router.push('/student')
       } else {
-        const { data: classData } = await supabase.from('classes').select('id, name, is_active, school, deleted_at').eq('code', classCode).maybeSingle()
+        // step149 RLS: 가입은 비로그인이므로 서버 라우트로 학급 조회
+        const lookupRes = await fetch('/api/class-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: classCode })
+        })
+        const { class: classData } = await lookupRes.json()
         if (!classData) {
           setError('학급 코드가 잘못됐어요. 선생님께 확인해주세요')
           setLoading(false)

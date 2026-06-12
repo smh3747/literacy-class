@@ -232,11 +232,17 @@ export default function TeacherLogin() {
           throw err
         }
 
+        // step149 RLS: 타 학급 코드는 안 보이므로 중복확인은 서버 라우트로
         let newCode, attempts = 0
         while (attempts < 10) {
           newCode = String(Math.floor(1000 + Math.random() * 9000))
-          const { data: existing } = await supabase.from('classes').select('id').eq('code', newCode).maybeSingle()
-          if (!existing) break
+          const dupRes = await fetch('/api/class-lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ checkCode: newCode })
+          })
+          const { exists } = await dupRes.json()
+          if (!exists) break
           attempts++
         }
 
