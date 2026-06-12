@@ -18,6 +18,7 @@ export default function AdminHome() {
   const [trashedClasses, setTrashedClasses] = useState([])
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
   const [resetRequests, setResetRequests] = useState([])  // 🆕 비밀번호 초기화 요청
+  const [errorLogs, setErrorLogs] = useState([])  // 🆕 step155: 에러 로그 (최근 50건)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -252,6 +253,18 @@ export default function AdminHome() {
     } catch(e) {
       // 테이블 미생성(SQL 미실행) 시 무시
       setResetRequests([])
+    }
+
+    // 🆕 step155: 에러 로그 (최근 50건)
+    try {
+      const { data: elogs } = await supabase.from('error_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      setErrorLogs(elogs || [])
+    } catch(e) {
+      // 테이블 미생성(SQL 미실행) 시 무시
+      setErrorLogs([])
     }
   }
 
@@ -725,13 +738,17 @@ export default function AdminHome() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
             {[
               { label: '선생님', val: stats.teachers, icon: '👨‍🏫', color: 'bg-blue-50 text-blue-900' },
               { label: '학급', val: stats.classes, icon: '🏫', color: 'bg-green-50 text-green-900' },
               { label: '학생', val: stats.students, icon: '🎒', color: 'bg-purple-50 text-purple-900' },
               { label: '누적 글쓰기', val: stats.submissions, icon: '📝', color: 'bg-orange-50 text-orange-900' },
-              { label: '오늘', val: stats.today, icon: '✨', color: 'bg-pink-50 text-pink-900' }
+              { label: '오늘', val: stats.today, icon: '✨', color: 'bg-pink-50 text-pink-900' },
+              (() => {
+                const cnt24h = errorLogs.filter(e => Date.now() - new Date(e.created_at).getTime() < 24 * 60 * 60 * 1000).length
+                return { label: '24h 에러', val: cnt24h, icon: '🚨', color: cnt24h > 0 ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-900' }
+              })()
             ].map(s => (
               <div key={s.label} className={`${s.color} rounded-xl p-4`}>
                 <div className="text-2xl mb-1">{s.icon}</div>
@@ -748,7 +765,8 @@ export default function AdminHome() {
               { id: 'submissions', label: '📝 학생 글' },
               { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` },
               { id: 'shared-suggestions', label: `📚 추천 공유${sharedSuggestionLogs.length > 0 ? ` (${sharedSuggestionLogs.length})` : ''}` },
-              { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` }
+              { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
+              { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex-1 min-w-fit py-2 px-3 rounded-lg text-sm font-medium whitespace-nowrap ${tab === t.id ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
@@ -1601,6 +1619,71 @@ export default function AdminHome() {
               </div>
             </div>
           )}
+
+          {/* 🆕 step155: 에러 로그 탭 */}
+          {tab === 'errors' && (() => {
+            const classNameById = {}
+            classes.forEach(c => { classNameById[c.id] = c.name })
+            // 같은 message 연속 발생을 묶어서 (N회) 표기
+            const grouped = []
+            for (const e of errorLogs) {
+              const last = grouped[grouped.length - 1]
+              if (last && last.message === e.message && last.error_type === e.error_type && last.page === e.page) {
+                last.count++
+              } else {
+                grouped.push({ ...e, count: 1 })
+              }
+            }
+            const roleBadge = (r) => {
+              const map = {
+                admin: 'bg-purple-100 text-purple-700',
+                teacher: 'bg-blue-100 text-blue-700',
+                student: 'bg-green-100 text-green-700',
+                unknown: 'bg-gray-100 text-gray-600',
+              }
+              return map[r] || map.unknown
+            }
+            const typeBadge = (t) => {
+              const map = {
+                ai_call: 'bg-orange-100 text-orange-700',
+                api_error: 'bg-red-100 text-red-700',
+                js_error: 'bg-amber-100 text-amber-700',
+              }
+              return map[t] || 'bg-gray-100 text-gray-600'
+            }
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-900">🚨 에러 로그 (최근 {errorLogs.length}건)</h3>
+                  <span className="text-xs text-gray-500">30일 지나면 자동 삭제돼요</span>
+                </div>
+                {grouped.length === 0 ? (
+                  <div className="text-sm text-gray-400 py-8 text-center">아직 기록된 에러가 없어요 🎉</div>
+                ) : (
+                  <div className="space-y-2">
+                    {grouped.map((e, i) => (
+                      <div key={e.id || i} className="border border-gray-100 rounded-lg p-3 text-sm">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-xs text-gray-500">{toKST(e.created_at)}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleBadge(e.role)}`}>{e.role || 'unknown'}</span>
+                          {e.class_id && classNameById[e.class_id] && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{classNameById[e.class_id]}</span>
+                          )}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${typeBadge(e.error_type)}`}>{e.error_type}</span>
+                          {e.page && <span className="text-[10px] text-gray-400">{e.page}</span>}
+                          {e.count > 1 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold">({e.count}회)</span>}
+                        </div>
+                        <div className="text-gray-800 break-all">{e.message}</div>
+                        {e.context && (
+                          <div className="text-[11px] text-gray-400 mt-1 break-all">{JSON.stringify(e.context)}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
         </main>
       </div>

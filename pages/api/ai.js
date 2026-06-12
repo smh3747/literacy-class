@@ -20,6 +20,39 @@ export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
 }
 
+// 서버 측 에러 기록(step155): service_role로 error_logs에 직접 INSERT. 절대 throw하지 않음.
+async function logServerError({ accessToken, type, message }) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) return
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+    let role = 'unknown', userId = null, classId = null
+    if (accessToken) {
+      try {
+        const anon = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+          auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { data: u } = await anon.auth.getUser(accessToken)
+        if (u?.user?.id) {
+          userId = u.user.id
+          const { data: p } = await admin.from('profiles').select('role, class_id').eq('id', userId).maybeSingle()
+          role = p?.role || 'unknown'
+          classId = p?.class_id || null
+        }
+      } catch (_) {}
+    }
+    await admin.from('error_logs').insert({
+      role, user_id: userId, class_id: classId,
+      page: 'api/ai', error_type: 'api_error',
+      message: (message == null ? '' : String(message)).slice(0, 500),
+      context: type ? { aiType: type } : null,
+    })
+  } catch (_) { /* 로깅 실패는 무시 */ }
+}
+
 // 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
 async function resolveApiKey({ accessToken, classId: classIdParam }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -204,6 +237,8 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error('AI proxy error:', e?.message || e)
+    // 서버 측 에러 기록 (개인정보 없는 원본 메시지만)
+    await logServerError({ accessToken, type, message: e?.message || e })
     // 친절한 에러 메시지는 클라이언트에서 처리하도록 원문 전달
     return res.status(500).json({ error: e?.message || 'AI 처리 중 오류가 발생했어요' })
   }

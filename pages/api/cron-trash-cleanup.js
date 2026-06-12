@@ -24,6 +24,14 @@ export default async function handler(req, res) {
   const supabase = createClient(supabaseUrl, serviceKey)
 
   try {
+    // 🆕 step155: 30일 지난 에러 로그 자동 삭제 (테이블 무한 증가 방지)
+    try {
+      const elogCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      await supabase.from('error_logs').delete().lt('created_at', elogCutoff)
+    } catch (e) {
+      console.warn('error_logs 정리 실패(무시):', e?.message || e)
+    }
+
     // 각 학급의 보관 기간 가져오기
     const { data: classes, error: classErr } = await supabase
       .from('classes')
