@@ -116,7 +116,8 @@ export default function TeacherSubmissions() {
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
 
-  useEffect(() => { checkAuth() }, [])
+  // router.isReady 전엔 router.query가 비어 있어 URL 복원(?topic=&student=)이 안 됨
+  useEffect(() => { if (router.isReady) checkAuth() }, [router.isReady])
 
   const checkAuth = async () => {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
