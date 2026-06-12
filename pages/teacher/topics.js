@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -7,6 +7,19 @@ import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
+
+// 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
+function AiLoadingBlock({ title, sub }) {
+  return (
+    <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-5 flex items-center gap-4">
+      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin flex-shrink-0" />
+      <div>
+        <p className="font-bold text-indigo-900">{title}</p>
+        {sub && <p className="text-sm text-indigo-700/80 mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  )
+}
 
 const DEFAULT_RUBRICS = [
   { name: '주제에 맞는 내용', hint: '주제에서 벗어나지 않고 핵심을 잘 표현', score: 25 },
@@ -63,6 +76,18 @@ export default function TopicsPage() {
   const [diverseMode, setDiverseMode] = useState(true)
   // 역방향: 주제 → 평가기준 자동 생성
   const [generatingRubrics, setGeneratingRubrics] = useState(false)
+  // 🆕 step159: AI 완료 후 "주제 등록" 버튼으로 유도 (스크롤 + 강조)
+  const [highlightRegister, setHighlightRegister] = useState(false)
+  const formStartRef = useRef(null)
+  const registerBtnRef = useRef(null)
+  // 평가기준 생성 완료 후 등록 버튼으로 부드럽게 안내
+  const guideToRegister = () => {
+    setTimeout(() => {
+      try { registerBtnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (e) {}
+      setHighlightRegister(true)
+      setTimeout(() => setHighlightRegister(false), 4500)
+    }, 120)
+  }
 
   // 📅 기간 일괄 등록 모드
   const [batchMode, setBatchMode] = useState(false)
@@ -768,6 +793,10 @@ export default function TopicsPage() {
     setDesc(picked.description)
     // 카드는 닫음 (재선택은 다시 추천 받으면 됨)
     setAiPicker(null)
+    // 🆕 step159: 폼이 채워지는 모습 + 평가기준 생성 로딩이 보이게 스크롤
+    setTimeout(() => {
+      try { formStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
+    }, 50)
     // 등록 시 로그와 연결할 수 있게 보관
     setLastSelectedLogId(aiPicker.logId || null)
 
@@ -815,6 +844,7 @@ export default function TopicsPage() {
       alert('주제는 채워졌지만 평가 기준 생성은 실패했어요.\n기본 평가기준을 사용하거나 다시 시도해주세요.\n\n' + getFriendlyErrorMessage(e))
     }
     setGeneratingRubrics(false)
+    guideToRegister()  // 🆕 step159: 완료 → 등록 버튼으로 유도
   }
 
   // 🆕 추천 로그 불러오기 (와이프 피드백: AI 추천 기록 보기)
@@ -929,12 +959,12 @@ export default function TopicsPage() {
         }
         setRubrics(cleaned)
       }
-      alert('✅ 평가 기준 자동 생성 완료!')
     } catch(e) {
       console.error('평가 기준 생성 오류:', e)
       alert(getFriendlyErrorMessage(e))
     }
     setGeneratingRubrics(false)
+    guideToRegister()  // 🆕 step159: 완료 → 등록 버튼으로 유도 (alert 대신 시각 유도)
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
@@ -1034,16 +1064,9 @@ export default function TopicsPage() {
                     {batchGenerating ? '🤖 AI가 주제 만드는 중...' : '✨ AI로 주제 일괄 생성'}
                   </button>
                   {batchGenerating && (
-                    <div className="text-xs text-center space-y-1">
-                      <p className="text-gray-600">
-                        여러 주제를 한 번에 만들어요. 약 10~30초 정도 걸려요.
-                      </p>
-                      {batchProgress && (
-                        <p className="text-purple-700 font-medium">
-                          🔄 {batchProgress}
-                        </p>
-                      )}
-                    </div>
+                    <AiLoadingBlock
+                      title="AI가 여러 주제를 한 번에 만들고 있어요..."
+                      sub={batchProgress ? `🔄 ${batchProgress}` : '약 10~30초 정도 걸려요 — 잠시만 기다려 주세요'} />
                   )}
                 </div>
               )}
@@ -1220,16 +1243,27 @@ export default function TopicsPage() {
                 />
               )}
 
+              {/* 🆕 step159: 주제 추천 생성 중 로딩 블록 */}
+              {aiSuggesting && !aiPicker && (
+                <AiLoadingBlock
+                  title="AI가 주제를 추천하고 있어요..."
+                  sub="잠시만 기다려 주세요 (보통 10~20초)" />
+              )}
+
               {/* 🆕 3개 추천 카드 (와이프 피드백) */}
               {aiPicker && aiPicker.suggestions && aiPicker.suggestions.length > 0 && (
                 <div className="bg-purple-50 border-2 border-purple-300 rounded-xl p-4 space-y-3">
+                  {/* 🆕 step159: 다음 행동 유도 배너 */}
+                  <div className="bg-purple-600 text-white rounded-lg px-3 py-2 text-sm font-semibold text-center">
+                    👇 마음에 드는 주제를 클릭하면 평가기준까지 자동으로 만들어져요
+                  </div>
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                       <h4 className="font-bold text-purple-900">
                         ✨ {aiPicker.suggestions.length}개 중에 골라보세요
                       </h4>
                       <p className="text-xs text-purple-700/80 mt-0.5">
-                        클릭하면 주제·설명·평가기준이 자동 입력됩니다. 카드 옆 🔄로 그 칸만 바꿀 수 있어요.
+                        카드 옆 🔄로 그 칸만 바꿀 수 있어요.
                       </p>
                     </div>
                     <div className="flex gap-2 flex-wrap">
@@ -1263,12 +1297,12 @@ export default function TopicsPage() {
                   <div className="space-y-2">
                     {aiPicker.suggestions.map((s, idx) => (
                       <div key={idx}
-                        className="bg-white border border-purple-200 rounded-lg overflow-hidden">
+                        className="bg-white border border-purple-200 rounded-lg overflow-hidden hover:border-purple-500 hover:shadow-md transition">
                         <div className="flex items-stretch">
                           <button
                             onClick={() => applySuggestion(idx)}
                             disabled={generatingRubrics || refreshingIdx >= 0}
-                            className="flex-1 text-left hover:bg-purple-50 p-3 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            className="flex-1 text-left hover:bg-purple-50 p-3 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                             <div className="flex items-start gap-3">
                               <div className="flex-shrink-0 w-7 h-7 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-sm font-bold">
                                 {idx + 1}
@@ -1284,9 +1318,10 @@ export default function TopicsPage() {
                                     {s.description}
                                   </div>
                                 )}
-                                {refreshingIdx !== idx && s.category && (
-                                  <div className="text-[11px] text-purple-600 mt-1">
-                                    #{s.category}
+                                {refreshingIdx !== idx && (
+                                  <div className="flex items-center gap-2 mt-1.5">
+                                    {s.category && <span className="text-[11px] text-purple-600">#{s.category}</span>}
+                                    <span className="text-[11px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">이 주제 선택 →</span>
                                   </div>
                                 )}
                               </div>
@@ -1329,7 +1364,7 @@ export default function TopicsPage() {
                 </div>
               )}
 
-              <div>
+              <div ref={formStartRef}>
                 <label className="block text-sm font-medium mb-1">주제</label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
                   placeholder="예: 가장 기억에 남는 여행"
@@ -1350,6 +1385,13 @@ export default function TopicsPage() {
                     ? '⏳ AI가 생성 중...'
                     : `🤖 위 주제 "${title.trim().slice(0, 20)}${title.length > 20 ? '...' : ''}"에 맞는 ${desc.trim() ? '평가기준' : '설명 + 평가기준'} 자동 생성`}
                 </button>
+              )}
+
+              {/* 🆕 step159: 평가기준 생성 중 로딩 블록 (주제 클릭/역방향 생성 공통) */}
+              {generatingRubrics && (
+                <AiLoadingBlock
+                  title="AI가 평가기준을 만들고 있어요..."
+                  sub="거의 다 됐어요 (보통 10~20초) — 잠시만 기다려 주세요" />
               )}
 
               {/* 루브릭 */}
@@ -1556,8 +1598,14 @@ export default function TopicsPage() {
                 )}
               </div>
 
-              <button onClick={saveTopic} disabled={saving}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+              {/* 🆕 step159: 평가기준 생성 완료 후 등록 유도 */}
+              {highlightRegister && !generatingRubrics && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-800 text-center font-medium">
+                  ✅ 평가기준까지 완성됐어요! 내용을 확인한 뒤 아래 <strong>[새 주제 등록]</strong>을 눌러주세요
+                </div>
+              )}
+              <button ref={registerBtnRef} onClick={saveTopic} disabled={saving}
+                className={`w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50 ${highlightRegister ? 'guide-highlight' : ''}`}>
                 {saving ? '저장 중...' : (editingTopicId ? '💾 수정 저장' : '💾 새 주제 등록')}
               </button>
             </div>
