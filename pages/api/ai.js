@@ -1,19 +1,71 @@
 // ============================================
 // AI 서버 프록시 — 프롬프트를 서버에서만 구성/실행
 // ============================================
-// 브라우저는 "어떤 작업인지(type) + 필요한 데이터"만 보냄.
+// 브라우저는 "어떤 작업인지(type) + 필요한 데이터 + 로그인 토큰"만 보냄.
 // 프롬프트 본문은 lib/prompts.server.js 에만 있어 F12로 노출되지 않음.
 //
-// 개인 키 모델: 학생 학급의 Gemini 키를 요청 본문으로 받아 사용.
-// (HTTPS 전송, 서버는 키를 저장하지 않음 — 호출에만 사용)
+// 키 서버격리 모델(step153~): 클라이언트는 API 키를 보내지 않는다.
+//   accessToken으로 호출자를 인증 → 학급 판별 → service_role로 class_secrets에서
+//   학급 키를 조회해 호출에만 사용한다 (키는 클라이언트로 절대 내려가지 않음).
+//   class_secrets에 없으면 classes.api_key 폴백 (step154에서 제거 예정).
 // ============================================
+import { createClient } from '@supabase/supabase-js'
 import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
-  exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt } from '../../lib/prompts.server'
+  exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
+  grammarOnlyPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 60, // 채점은 시간이 걸릴 수 있음
+}
+
+// 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
+async function resolveApiKey({ accessToken, classId: classIdParam }) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceKey) {
+    return { error: { status: 500, message: '서버 설정 누락 (SERVICE_ROLE_KEY 없음)' } }
+  }
+
+  // 토큰 검증 (anon 클라이언트)
+  const supabaseAnon = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+  const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(accessToken)
+  if (userErr || !userData?.user) {
+    return { error: { status: 401, message: '인증 정보가 유효하지 않아요. 다시 로그인해주세요.' } }
+  }
+
+  // 호출자 프로필 → 학급 판별
+  const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+  const { data: profile } = await supabaseAdmin.from('profiles')
+    .select('role, class_id').eq('id', userData.user.id).maybeSingle()
+  if (!profile) {
+    return { error: { status: 403, message: '사용자 정보를 찾을 수 없어요.' } }
+  }
+
+  // admin은 classId 파라미터 허용, 그 외엔 본인 학급
+  const classId = (profile.role === 'admin' && classIdParam) ? classIdParam : profile.class_id
+  if (!classId) {
+    return { error: { status: 400, message: '학급 정보가 없어요.' } }
+  }
+
+  // class_secrets 우선 → classes.api_key 폴백
+  const { data: secret } = await supabaseAdmin.from('class_secrets')
+    .select('api_key').eq('class_id', classId).maybeSingle()
+  let apiKey = secret?.api_key || null
+  if (!apiKey) {
+    const { data: cls } = await supabaseAdmin.from('classes')
+      .select('api_key').eq('id', classId).maybeSingle()
+    apiKey = cls?.api_key || null
+  }
+  if (!apiKey) {
+    return { error: { status: 400, message: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' } }
+  }
+  return { apiKey }
 }
 
 export default async function handler(req, res) {
@@ -21,10 +73,20 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { type, apiKey, payload } = req.body || {}
+  const { type, accessToken, classId, payload } = req.body || {}
 
-  if (!apiKey) return res.status(400).json({ error: 'API 키가 필요해요' })
   if (!type) return res.status(400).json({ error: '작업 종류가 필요해요' })
+  // 구버전 클라이언트(키만 보내고 토큰 없음)는 거부 — 배포 전 열려 있던 탭 대비
+  if (!accessToken) {
+    return res.status(401).json({ error: '앱이 업데이트되었어요. 페이지를 새로고침 해주세요.' })
+  }
+
+  // 키 서버 조회 (class_secrets → classes 폴백)
+  const keyResult = await resolveApiKey({ accessToken, classId })
+  if (keyResult.error) {
+    return res.status(keyResult.error.status).json({ error: keyResult.error.message })
+  }
+  const apiKey = keyResult.apiKey
 
   try {
     let prompt, schema, opts
@@ -116,6 +178,22 @@ export default async function handler(req, res) {
       prompt = commentSuggestPrompt(payload)
       schema = SCHEMAS.commentSuggest
       opts = { taskType: 'quality', maxTokens: 2000, temperature: 0.6 }
+
+    } else if (type === 'grammarOnly') {
+      const { essay } = payload || {}
+      if (!essay) return res.status(400).json({ error: '글 내용이 필요해요' })
+      prompt = grammarOnlyPrompt({ essay })
+      schema = SCHEMAS.grammarOnly
+      opts = { taskType: 'quality', maxTokens: 2000 }
+
+    } else if (type === 'feedbackSummary') {
+      const { feedbacks } = payload || {}
+      if (!Array.isArray(feedbacks) || feedbacks.length < 2) {
+        return res.status(400).json({ error: '요약할 의견이 부족해요' })
+      }
+      prompt = feedbackSummaryPrompt({ feedbacks })
+      schema = SCHEMAS.feedbackSummary
+      opts = { taskType: 'quality', maxTokens: 4000 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })

@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase'
 
 const DAILY_LIMIT = 5
 
-export default function TutorChat({ apiKey, topic, currentText, studentName, userId, grade }) {
+export default function TutorChat({ topic, currentText, studentName, userId, grade }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])  // {role:'user'|'assistant', text}
   const [input, setInput] = useState('')
@@ -66,7 +66,7 @@ export default function TutorChat({ apiKey, topic, currentText, studentName, use
       ).join('\n')
 
       // 🔒 프롬프트는 서버에서 구성
-      const answer = await callAI('tutorChat', apiKey, {
+      const answer = await callAI('tutorChat', {
         gradeLabel,
         topicTitle: topic?.title,
         topicDescription: topic?.description,

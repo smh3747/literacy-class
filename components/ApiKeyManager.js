@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '../lib/supabase'
-import { saveApiKey as saveLocal, deleteApiKey as deleteLocal } from '../lib/gemini'
 
 export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const [savedKey, setSavedKey] = useState('')
@@ -29,12 +28,10 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const loadKey = async () => {
     setLoading(true)
     try {
-      const { data } = await supabase.from('classes').select('api_key').eq('id', classId).maybeSingle()
+      // 키 서버격리(step153~): 키는 class_secrets에 저장 (교사·admin만 RLS로 접근)
+      const { data } = await supabase.from('class_secrets').select('api_key').eq('class_id', classId).maybeSingle()
       const k = data?.api_key || ''
       setSavedKey(k)
-      // 로컬에도 저장 (학생들이 쓸 때를 위해)
-      if (k) saveLocal(k)
-      else deleteLocal()
       onChange?.(k)
     } catch(e) {
       console.error('API 키 로드 실패:', e)
@@ -82,11 +79,12 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
     setVerifying(false)
 
     try {
-      const { error } = await supabase.from('classes').update({ api_key: key }).eq('id', classId)
+      // 키 서버격리(step153~): class_secrets에만 저장 (classes.api_key는 더 이상 갱신 안 함)
+      const { error } = await supabase.from('class_secrets')
+        .upsert({ class_id: classId, api_key: key, updated_at: new Date().toISOString() })
       if (error) throw error
-      
+
       setSavedKey(key)
-      saveLocal(key) // 로컬에도
       setInputKey('')
       setShowInput(false)
       onChange?.(key)
@@ -99,11 +97,11 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const remove = async () => {
     if (!confirm('정말 API 키를 삭제하시겠어요?\n\n삭제하면 학생들이 AI 피드백을 받을 수 없어요!')) return
     try {
-      const { error } = await supabase.from('classes').update({ api_key: null }).eq('id', classId)
+      // 키 서버격리(step153~): class_secrets 행 삭제
+      const { error } = await supabase.from('class_secrets').delete().eq('class_id', classId)
       if (error) throw error
-      
+
       setSavedKey('')
-      deleteLocal()
       setInputKey('')
       setShowInput(false)
       onChange?.('')

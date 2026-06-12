@@ -1,8 +1,15 @@
+import { useEffect } from 'react'
 import '../styles/globals.css'
 import Footer from '../components/Footer'
 import VersionChecker from '../components/VersionChecker'
+import { purgeLegacyApiKey } from '../lib/gemini'
 
 export default function App({ Component, pageProps }) {
+  // 키 서버격리(step153~): 과거 버전이 localStorage에 남긴 API 키 1회성 제거
+  useEffect(() => {
+    purgeLegacyApiKey()
+  }, [])
+
   return (
     <>
       <Component {...pageProps} />

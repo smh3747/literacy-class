@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
@@ -19,6 +19,7 @@ export default function TopicsPage() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
+  const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
   
@@ -98,7 +99,7 @@ export default function TopicsPage() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, grade)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, grade)').eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
@@ -116,9 +117,13 @@ export default function TopicsPage() {
     }
     setAiGrade(gradeStr)
 
-    // 학급 API 키를 로컬에도 동기화
-    if (profile.classes?.api_key) {
-      saveLocalApiKey(profile.classes.api_key)
+    // 키 서버격리(step153~): 키 등록 여부만 확인 (값은 안 가져옴). AI 호출은 서버가 키 조회.
+    if (profile.classes?.id) {
+      try {
+        const { data: keyCheck } = await supabase.from('class_secrets')
+          .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
+        setHasApiKey(!!keyCheck)
+      } catch (e) { setHasApiKey(false) }
     }
 
     await loadTopics(profile.id, profile.classes?.id)
@@ -217,8 +222,7 @@ export default function TopicsPage() {
     if (!batchStartDate || !batchEndDate) return alert('시작/종료 날짜를 모두 선택해주세요')
     if (new Date(batchStartDate) > new Date(batchEndDate)) return alert('종료일이 시작일보다 빠를 수 없어요')
 
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
+    if (!hasApiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
 
     const dates = getDatesInRange(batchStartDate, batchEndDate, batchExcludeWeekend)
     if (dates.length === 0) return alert('생성할 날짜가 없어요 (주말만 선택됨)')
@@ -249,7 +253,7 @@ export default function TopicsPage() {
       const hasTheme = batchTheme && batchTheme.trim()
 
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('topicBatch', apiKey, {
+      const result = await callAI('topicBatch', {
         gradeText, count: targetDates.length,
         theme: batchTheme, recentTitles, style: 'batch',
         maxTokens: 6000,
@@ -297,8 +301,7 @@ export default function TopicsPage() {
     const item = batchPreview[idx]
     if (!item) return
 
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요')
+    if (!hasApiKey) return alert('Gemini API 키를 먼저 등록해주세요')
 
     setRegeneratingIdx(idx)
     try {
@@ -309,7 +312,7 @@ export default function TopicsPage() {
       const hasTheme = batchTheme && batchTheme.trim()
 
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('topicSingle', apiKey, {
+      const result = await callAI('topicSingle', {
         gradeText, theme: batchTheme,
         otherTitles, recentTitles, style: 'batch',
         maxTokens: 1500,
@@ -523,8 +526,7 @@ export default function TopicsPage() {
 
   // AI 주제 추천 — 3개 받아서 와이프가 고름 (와이프 피드백)
   const suggestTopic = async () => {
-    const apiKey = loadApiKey()
-    if (!apiKey) {
+    if (!hasApiKey) {
       alert('Gemini API 키를 먼저 등록해주세요! (선생님 메인 화면에서 등록 가능)')
       return
     }
@@ -563,7 +565,7 @@ export default function TopicsPage() {
       // 개수에 따라 토큰 조정 (1개: 3000, 2개: 5500, 3개: 8000)
       const tokenBudget = 3000 + (N - 1) * 2500
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('topicBatch', apiKey, {
+      const result = await callAI('topicBatch', {
         gradeText, count: N, categoryText: cat, levelText,
         recentTitles, userRequest: aiUserRequest, useCategorySpread,
         style: 'suggest', maxTokens: tokenBudget,
@@ -646,8 +648,7 @@ export default function TopicsPage() {
   // 🆕 카드 1개만 다시 추천 (다른 2개는 그대로 유지)
   const refreshSingleSuggestion = async (idx, overrideCategory = null) => {
     if (!aiPicker || !aiPicker.suggestions[idx]) return
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
+    if (!hasApiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
 
     setRefreshingIdx(idx)
     try {
@@ -671,7 +672,7 @@ export default function TopicsPage() {
       const recentTitles = [...otherTitles, ...topics.slice(0, 20).map(t => t.title)].join(', ')
 
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('topicSingle', apiKey, {
+      const result = await callAI('topicSingle', {
         gradeText, categoryText: cat, levelText,
         recentTitles, userRequest: aiUserRequest,
         style: 'suggest', maxTokens: 2000,
@@ -723,8 +724,7 @@ export default function TopicsPage() {
     setDesc(sug.description || '')
     setLastSelectedLogId(null)
 
-    const apiKey = loadApiKey()
-    if (!apiKey) {
+    if (!hasApiKey) {
       // 평가기준 없이도 폼은 채워짐
       if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
       return
@@ -734,7 +734,7 @@ export default function TopicsPage() {
     setGeneratingRubrics(true)
     try {
       // 🔒 프롬프트는 서버에서 구성
-      const result2 = await callAI('rubricGen', apiKey, {
+      const result2 = await callAI('rubricGen', {
         gradeText, title: sug.title, description: sug.description,
       })
       if (Array.isArray(result2.rubrics) && result2.rubrics.length > 0) {
@@ -783,14 +783,13 @@ export default function TopicsPage() {
     }
 
     // 평가기준 자동 생성
-    const apiKey = loadApiKey()
-    if (!apiKey) return
+    if (!hasApiKey) return
     const gradeText = aiGrade ? `초등 ${aiGrade}학년` : '초등 5학년'
 
     setGeneratingRubrics(true)
     try {
       // 🔒 프롬프트는 서버에서 구성
-      const result2 = await callAI('rubricGen', apiKey, {
+      const result2 = await callAI('rubricGen', {
         gradeText, title: picked.title, description: picked.description,
       })
 
@@ -889,8 +888,7 @@ export default function TopicsPage() {
       alert('먼저 주제를 입력해주세요!')
       return
     }
-    const apiKey = loadApiKey()
-    if (!apiKey) {
+    if (!hasApiKey) {
       alert('Gemini API 키를 먼저 등록해주세요!')
       return
     }
@@ -904,7 +902,7 @@ export default function TopicsPage() {
       if (!desc.trim()) {
         try {
           // 🔒 프롬프트는 서버에서 구성
-          const descResult = await callAI('topicDesc', apiKey, {
+          const descResult = await callAI('topicDesc', {
             gradeText, title: title.trim(), levelText,
           })
           if (descResult.description) setDesc(descResult.description)
@@ -915,7 +913,7 @@ export default function TopicsPage() {
 
       // 2단계: 평가 기준 생성
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('rubricGen', apiKey, {
+      const result = await callAI('rubricGen', {
         gradeText, title: title.trim(), description: desc.trim(),
       })
       if (Array.isArray(result.rubrics) && result.rubrics.length > 0) {

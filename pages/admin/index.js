@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import { toKST, toKSTDate } from '../../lib/timeFormat'
+import { callAI } from '../../lib/aiClient'
 
 export default function AdminHome() {
   const router = useRouter()
@@ -202,6 +203,15 @@ export default function AdminHome() {
           c.last_activity_at = classLastActivity[c.id] || null
         })
       }
+    }
+
+    // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능)
+    try {
+      const { data: secrets } = await supabase.from('class_secrets').select('class_id, api_key')
+      const keyedClassIds = new Set((secrets || []).filter(s => s.api_key).map(s => s.class_id))
+      activeClasses.forEach(c => { c.has_api_key = keyedClassIds.has(c.id) })
+    } catch (e) {
+      activeClasses.forEach(c => { c.has_api_key = !!c.api_key }) // 폴백: 동결된 classes.api_key
     }
 
     setTeachers(activeTeachers)
@@ -647,52 +657,18 @@ export default function AdminHome() {
     if (target.length === 0) return alert('요약할 의견이 없어요')
     if (target.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
 
-    // gemini.js 동적 import
-    const { callGeminiStructured, SCHEMAS, loadApiKey } = await import('../../lib/gemini')
-    const { SchemaType } = await import('@google/generative-ai')
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('Gemini API 키를 먼저 등록해주세요 (선생님 메인 화면에서)')
+    // 키 서버격리(step153~): 키 등록된 학급의 키로 호출 (admin은 classId 지정 가능)
+    const keyedClass = classes.find(c => c.has_api_key)
+    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 선생님이 먼저 키를 등록해야 해요.')
 
     setAiSummarizing(true)
     setAiSummary(null)
     try {
-      const contents = target.map((f, i) => `[${i + 1}] ${f.content}`).join('\n\n')
-      const prompt = `다음은 "문해력 수업" 교육용 웹앱에 들어온 ${target.length}개의 선생님 의견입니다. 카테고리별로 정리하고 우선순위와 대응 방안을 제안해주세요.
-
-의견 목록:
-${contents}
-
-분석 형식:
-- categories: 의견을 카테고리별로 묶기 (예: "기능 추가 요청", "버그 신고", "UI 개선" 등)
-- priorityList: 우선순위 높은 의견 3-5개 (시급한 것부터)
-- summary: 전체적인 인사이트 한 문단
-
-이 분석 결과를 토대로 개발자(Claude)에게 다음 작업을 지시할 수 있도록 명확하게 정리해주세요.`
-
-      const schema = {
-        type: SchemaType.OBJECT,
-        properties: {
-          categories: {
-            type: SchemaType.ARRAY,
-            items: {
-              type: SchemaType.OBJECT,
-              properties: {
-                name: { type: SchemaType.STRING },
-                items: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
-              },
-              required: ['name', 'items']
-            }
-          },
-          priorityList: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING }
-          },
-          summary: { type: SchemaType.STRING }
-        },
-        required: ['categories', 'priorityList', 'summary']
-      }
-
-      const result = await callGeminiStructured(apiKey, prompt, schema, { taskType: 'quality', maxTokens: 4000 })
+      // 🔒 프롬프트는 서버(/api/ai)에서 구성
+      const result = await callAI('feedbackSummary',
+        { feedbacks: target.map(f => f.content) },
+        { classId: keyedClass.id }
+      )
       setAiSummary(result)
     } catch(e) {
       alert('AI 요약 실패: ' + (e.message || e))
@@ -1098,7 +1074,7 @@ ${contents}
                           <td className="p-2 text-center text-gray-600">{c.student_count || 0}</td>
                           <td className="p-2 font-mono text-sm">{c.code}</td>
                           <td className="p-2">
-                            {c.api_key ? (
+                            {c.has_api_key ? (
                               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">✅</span>
                             ) : (
                               <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">미등록</span>

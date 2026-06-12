@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
@@ -206,17 +206,13 @@ export default function StudentHome() {
   const checkAuth = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, api_key, school, grade, tutor_chat_enabled)').eq('id', authUser.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled)').eq('id', authUser.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
-    
-    // 학급의 API 키 자동 로드 (학생에게 보이지 않게)
-    if (profile.classes?.api_key) {
-      saveLocalApiKey(profile.classes.api_key)
-    }
+    // 키 서버격리(step153~): 학생은 API 키를 다루지 않는다. AI 호출 시 서버가 학급 키를 조회한다.
 
     // URL 쿼리에 topic_id 있으면 그 주제로 진입 (history에서 "추가 수정" 등)
     const queryTopicId = router.query?.topic
@@ -449,20 +445,13 @@ export default function StudentHome() {
       return
     }
 
-    const apiKey = loadApiKey()
-    if (!apiKey) {
-      // 학생은 선생님 키를 못 쓰니, 선생님이 같은 브라우저에서 미리 등록해 놨어야 함
-      // 또는 학생 본인 키 등록 가능하게 안내
-      alert('AI 기능이 아직 활성화되지 않았어요.\n선생님께 "AI 기능 켜주세요"라고 말씀드려주세요!')
-      return
-    }
-
     setSubmitting(true)
     try {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
-      const result = await callAI('grading', apiKey, {
+      // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러를 반환 → catch에서 안내
+      const result = await callAI('grading', {
         topic: { title: todayTopic.title, description: todayTopic.description },
         essay,
         rubrics,
@@ -557,13 +546,12 @@ export default function StudentHome() {
 
   // 예시 작품 생성 (subId 명시 가능 - 수정본 직후 사용)
   const generateExampleForSub = async (studentEssay, totalMax, subId) => {
-    const apiKey = loadApiKey()
-    if (!apiKey || !subId) return
+    if (!subId) return
 
     setExampleLoading(true)
     try {
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('exampleEssay', apiKey, {
+      const result = await callAI('exampleEssay', {
         topicTitle: todayTopic.title, studentEssay,
       })
       if (result.example) {
@@ -579,13 +567,10 @@ export default function StudentHome() {
 
   // 예시 작품 생성 (첫 글용 - currentSub 사용)
   const generateExample = async (studentEssay, totalMax) => {
-    const apiKey = loadApiKey()
-    if (!apiKey) return
-
     setExampleLoading(true)
     try {
       // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('exampleEssay', apiKey, {
+      const result = await callAI('exampleEssay', {
         topicTitle: todayTopic.title, studentEssay,
       })
       if (result.example) {
@@ -688,9 +673,6 @@ export default function StudentHome() {
       return
     }
 
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('AI 기능이 아직 활성화되지 않았어요.\n선생님께 문의해주세요.')
-
     // 추가 수정 권한 체크
     const { data: existingSubs } = await supabase.from('submissions')
       .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
@@ -724,7 +706,7 @@ export default function StudentHome() {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
-      const result = await callAI('rewriteGrading', apiKey, {
+      const result = await callAI('rewriteGrading', {
         topic: { title: todayTopic.title, description: todayTopic.description },
         rewriteEssay,
         rubrics,
@@ -1492,7 +1474,6 @@ export default function StudentHome() {
         {/* 🆕 AI 글쓰기 도우미 (교사가 켰을 때 + 글쓰기 단계에서만) */}
         {classInfo?.tutor_chat_enabled && (step === 'write' || step === 'rewrite') && todayTopic && (
           <TutorChat
-            apiKey={loadApiKey()}
             topic={todayTopic}
             currentText={step === 'rewrite' ? rewriteEssay : essay}
             studentName={user?.realname}

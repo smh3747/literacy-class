@@ -2,7 +2,7 @@ import Head from 'next/head'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
-import { loadApiKey, saveApiKey as saveLocalApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 
@@ -42,6 +42,7 @@ export default function RecordPage() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
+  const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [gradeText, setGradeText] = useState('초등학교')
@@ -68,14 +69,21 @@ export default function RecordPage() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
     const { data: profile } = await supabase.from('profiles')
-      .select('*, classes:class_id(id, name, code, api_key, grade)')
+      .select('*, classes:class_id(id, name, code, grade)')
       .eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
-    if (profile.classes?.api_key) saveLocalApiKey(profile.classes.api_key)
+    // 키 서버격리(step153~): 키 등록 여부만 확인. AI 호출은 서버가 학급 키 조회.
+    if (profile.classes?.id) {
+      try {
+        const { data: keyCheck } = await supabase.from('class_secrets')
+          .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
+        setHasApiKey(!!keyCheck)
+      } catch (e) { setHasApiKey(false) }
+    }
 
     let gt = '초등학교'
     if (profile.classes?.grade) gt = `초등학교 ${profile.classes.grade}학년`
@@ -114,8 +122,6 @@ export default function RecordPage() {
     setLoading(false)
   }
 
-  const getKey = () => classInfo?.api_key || loadApiKey()
-
   // 체크박스 토글
   const toggleStudent = (id) => {
     setSelectedIds(prev => {
@@ -130,8 +136,7 @@ export default function RecordPage() {
   }
 
   const runBatch = async () => {
-    const key = getKey()
-    if (!key) { alert('학급 API 키가 설정되어 있지 않아요. 설정에서 등록해주세요.'); return }
+    if (!hasApiKey) { alert('학급 API 키가 설정되어 있지 않아요. 설정에서 등록해주세요.'); return }
     const targets = students.filter(s => selectedIds.has(s.id))
     if (targets.length === 0) { alert('평어를 만들 학생을 먼저 선택해주세요.'); return }
     if (!confirm(`선택한 학생 ${targets.length}명의 평어를 만들까요?\n\n· AI를 학생 수만큼 호출해요\n· 글이 없는 학생은 건너뜁니다`)) return
@@ -152,7 +157,7 @@ export default function RecordPage() {
           merged[stu.id] = { student: stu, sentences: [], level: '', skipped: true }
         } else {
           const lv = autoLevel(studentSubs)
-          const r = await callAI('schoolRecord', key, {
+          const r = await callAI('schoolRecord', {
             gradeText, summaries: toSummaries(studentSubs), level: lv, standards, count: 2
           })
           merged[stu.id] = { student: stu, sentences: r.sentences || [], level: lv }
@@ -186,11 +191,10 @@ export default function RecordPage() {
   const genSingle = async () => {
     setError(''); setSingle(null)
     if (subs.length === 0) { setError('이 학생의 글 기록이 없어요.'); return }
-    const key = getKey()
-    if (!key) { setError('학급 API 키가 설정되어 있지 않아요.'); return }
+    if (!hasApiKey) { setError('학급 API 키가 설정되어 있지 않아요.'); return }
     setGenerating(true)
     try {
-      const r = await callAI('schoolRecord', key, {
+      const r = await callAI('schoolRecord', {
         gradeText, summaries: toSummaries(subs), level, standards, count: 4
       })
       setSingle(r)

@@ -3,13 +3,15 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { callGeminiStructured, SCHEMAS, loadApiKey, getFriendlyErrorMessage } from '../../lib/gemini'
+import { getFriendlyErrorMessage } from '../../lib/gemini'
+import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 
 export default function GrammarBackfill() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
+  const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [topics, setTopics] = useState([])
   const [selectedTopicId, setSelectedTopicId] = useState('')
   const [submissions, setSubmissions] = useState([]) // 선택 주제의 제출물
@@ -31,6 +33,15 @@ export default function GrammarBackfill() {
     }
     setUser(profile)
     setClassInfo(profile.classes)
+
+    // 키 서버격리(step153~): 키 등록 여부만 확인. AI 호출은 서버가 학급 키 조회.
+    if (profile.classes?.id) {
+      try {
+        const { data: keyCheck } = await supabase.from('class_secrets')
+          .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
+        setHasApiKey(!!keyCheck)
+      } catch (e) { setHasApiKey(false) }
+    }
 
     if (profile.classes?.id) {
       const { data: topicList } = await supabase.from('topics')
@@ -95,8 +106,7 @@ export default function GrammarBackfill() {
     const targets = submissions.filter(s => selectedIds.has(s.id))
     if (targets.length === 0) return alert('선택된 글이 없어요')
 
-    const apiKey = loadApiKey()
-    if (!apiKey) {
+    if (!hasApiKey) {
       alert('Gemini API 키가 설정되지 않았어요.\n주제 관리에서 먼저 API 키를 등록해주세요.')
       return
     }
@@ -127,22 +137,8 @@ export default function GrammarBackfill() {
       setProgress(p => ({ ...p, current: `${studentName}의 글 처리 중...`, done }))
 
       try {
-        const prompt = `다음 초등학생 글의 맞춤법과 띄어쓰기 오류를 찾아주세요.
-
-학생 글:
-${sub.essay_text}
-
-규칙:
-- 명백한 맞춤법/띄어쓰기 오류만 골라주세요
-- original은 학생 글에 정확히 등장하는 표현이어야 합니다 (그대로 복사)
-- correction은 올바른 표기
-- reason은 짧게 (예: "맞춤법 오류", "띄어쓰기")
-- 오류가 없으면 빈 배열로 응답`
-
-        const result = await callGeminiStructured(
-          apiKey, prompt, SCHEMAS.grammarOnly,
-          { taskType: 'quality', maxTokens: 2000 }
-        )
+        // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 키 서버격리 + IP 보호
+        const result = await callAI('grammarOnly', { essay: sub.essay_text })
         let corrections = Array.isArray(result.corrections) ? result.corrections : []
 
         // 규칙 기반 보강 (AI가 놓친 .그래서 등 띄어쓰기 추가)

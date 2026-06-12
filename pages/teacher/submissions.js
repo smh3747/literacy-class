@@ -6,7 +6,6 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
-import { loadApiKey } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
@@ -108,6 +107,7 @@ export default function TeacherSubmissions() {
   useGrammarTooltip()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
+  const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('topics') // topics / topicStudents / studentDetail
@@ -128,7 +128,16 @@ export default function TeacherSubmissions() {
     setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
-    
+
+    // 키 서버격리(step153~): 키 등록 여부만 확인. AI 호출은 서버가 학급 키 조회.
+    if (profile.classes?.id) {
+      try {
+        const { data: keyCheck } = await supabase.from('class_secrets')
+          .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
+        setHasApiKey(!!keyCheck)
+      } catch (e) { setHasApiKey(false) }
+    }
+
     const { data } = await supabase.from('topics').select('*').eq('teacher_id', profile.id).order('date', { ascending: false }).limit(30)
     setTopics(data || [])
     setLoading(false)
@@ -407,14 +416,13 @@ export default function TeacherSubmissions() {
       `· AI 호출 1회 사용`
     )) return
 
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('AI 기능이 활성화되지 않았어요')
+    if (!hasApiKey) return alert('AI 기능이 활성화되지 않았어요')
 
     setRegrading(sub.id)
     setRegradeResult(null)
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser()
-      const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
+      const result = await regradeSubmission(sub, selectedTopic, authUser?.id)
       if (!result.success) {
         alert('재평가 실패: ' + result.error)
       } else {
@@ -457,8 +465,7 @@ export default function TeacherSubmissions() {
       `· 일일 한도 부족 시 중간에 멈출 수 있음`
     )) return
 
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('AI 기능이 활성화되지 않았어요')
+    if (!hasApiKey) return alert('AI 기능이 활성화되지 않았어요')
 
     setBulkRegrading(true)
     setBulkProgress({ done: 0, total: allSubs.length, current: '', failed: [] })
@@ -473,7 +480,7 @@ export default function TeacherSubmissions() {
         current: `${student.realname} (${(sub.attempt||1) === 1 ? '첫 글' : `수정본 ${(sub.attempt||1) - 1}차`})`,
         failed
       })
-      const result = await regradeSubmission(sub, selectedTopic, apiKey, authUser?.id)
+      const result = await regradeSubmission(sub, selectedTopic, authUser?.id)
       if (!result.success) {
         failed.push({ name: student.realname, attempt: sub.attempt, error: result.error })
         // 일일 한도 도달이면 중단
@@ -1188,8 +1195,7 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskN
 
   // ✨ AI 추천: 내 기존 코멘트 말투를 학습해 이 글에 맞는 초안 생성
   const fetchSuggestions = async () => {
-    const apiKey = loadApiKey()
-    if (!apiKey) return alert('API 키가 설정되어 있지 않아요.')
+    // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러 반환 → catch에서 안내
     setSuggesting(true)
     setSuggestions([])
     try {
@@ -1211,7 +1217,7 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskN
       }
       const styleSamples = (recent || []).map(r => mask(r.teacher_comment)).filter(Boolean)
 
-      const r = await callAI('commentSuggest', apiKey, {
+      const r = await callAI('commentSuggest', {
         styleSamples,
         essay: submission.essay_text,
         score: submission.total_score,

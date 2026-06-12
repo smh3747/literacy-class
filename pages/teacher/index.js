@@ -101,10 +101,11 @@ export default function TeacherHome() {
         setTopicCount(tc || 0)
 
         // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)
+        // 키 서버격리(step153~): class_secrets 기준 (교사는 RLS로 본인 학급 조회 가능)
         try {
-          const { data: keyCheck } = await supabase.from('classes')
-            .select('api_key').eq('id', profile.classes.id).maybeSingle()
-          setHasApiKey(!!keyCheck?.api_key)
+          const { data: keyCheck } = await supabase.from('class_secrets')
+            .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
+          setHasApiKey(!!keyCheck)
         } catch(e) {
           setHasApiKey(false)
         }
