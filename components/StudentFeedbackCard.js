@@ -137,7 +137,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
                   : 'from-amber-50 to-orange-50 border-amber-200'
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-5 h-full">
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-5 h-full min-w-0 overflow-hidden">
       {headerLabel && (
         <div className="flex items-center justify-between border-b pb-3">
           <h3 className="font-bold text-primary">{headerLabel}</h3>
@@ -168,7 +168,8 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
       <div>
         <h4 className="text-sm font-bold text-gray-800 mb-2">📝 내 글{corrections.length > 0 ? ` (빨간 밑줄에 마우스 올려보세요)` : ''}</h4>
         <div
-          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap break-words border border-gray-200"
+          className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap border border-gray-200"
+          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
           dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
         />
         {sub.paste_detected && (

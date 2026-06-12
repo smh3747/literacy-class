@@ -877,7 +877,7 @@ export default function TeacherSubmissions() {
                   const isSuspicious = similarity.score >= 0.3
                   const isHighlySuspicious = similarity.score >= 0.5
                   return (
-                    <div key={s.id} className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 h-full ${
+                    <div key={s.id} className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 h-full min-w-0 ${
                       isHighlySuspicious ? 'border-2 border-red-400' : isSuspicious ? 'border-2 border-amber-400' : ''
                     }`}>
                       <div className="flex justify-between items-center flex-wrap gap-2">
@@ -935,9 +935,10 @@ export default function TeacherSubmissions() {
                         맞춤법/띄어쓰기 {s.corrections.length}개
                       </span>
                     )}
-                    <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                    <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap ${
                       ordered.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
                     }`}
+                      style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
                       dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
 
                     {/* 🆕 담임 코멘트 — 학생 글 바로 아래 (가까이) */}
