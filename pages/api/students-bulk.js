@@ -76,7 +76,15 @@ export default async function handler(req, res) {
         continue
       }
 
-      const email = `${s.username}@writing.class`
+      // step160: 서버 측 아이디 형식 검증 (소문자화 + 허용문자 + 길이)
+      // 학생 로그인은 username@writing.class 합성 이메일 → 이메일 안전 문자만 허용
+      const uname = String(s.username).trim().toLowerCase()
+      if (!/^[a-z0-9_-]{4,20}$/.test(uname)) {
+        results.failed.push({ ...s, error: '아이디 형식 오류 (영문 소문자·숫자 4~20자)' })
+        continue
+      }
+
+      const email = `${uname}@writing.class`
       const password = '123456' // 초기 비밀번호 (Supabase 정책: 최소 6자)
 
       // 계정 생성 (service_role — RLS·이메일 확인 영향 없음)
@@ -104,7 +112,7 @@ export default async function handler(req, res) {
       // profile 추가
       const profileData = {
         id: data.user.id,
-        username: s.username,
+        username: uname,
         realname: s.realname,
         role: 'student',
         class_id: classId

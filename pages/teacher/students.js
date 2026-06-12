@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
+import { makeUsernameVariant } from '../../lib/usernameGen'
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -21,9 +22,11 @@ export default function StudentsPage() {
   // 아이디 prefix (예: "hr" → hr5101)
   const [idPrefix, setIdPrefix] = useState('')
   const [defaultPrefix, setDefaultPrefix] = useState('') // 학교 초성 기본값
-  // 🆕 step158: 학생 1명 개별 추가
+  // 🆕 step158: 학생 1명 개별 추가 (step160: 아이디 직접 지정 옵션)
   const [showAddOne, setShowAddOne] = useState(false)
-  const [addOneForm, setAddOneForm] = useState({ realname: '', number: '' })
+  const [addOneForm, setAddOneForm] = useState({ realname: '', number: '', username: '' })
+  const [addOneIdManual, setAddOneIdManual] = useState(false) // 교사가 아이디를 직접 손대면 true
+  const [addOneIdHint, setAddOneIdHint] = useState('')         // 아이디 입력 즉시 안내
   const [addingOne, setAddingOne] = useState(false)
   const [addOneResult, setAddOneResult] = useState(null) // { username, password }
   // 인라인 편집 상태
@@ -441,24 +444,100 @@ export default function StudentsPage() {
     return buildUsername(idPrefix, classInfo?.grade || '5', '1', '').replace(/00$/, '')
   }
 
-  // 🆕 step158: 학생 1명 추가 (기존 /api/students-bulk를 1명 배열로 재사용)
+  // 🆕 step160: 번호로 자동 아이디 계산 (기존 규칙 재사용 + 학급 내 중복 회피)
+  // students에는 숨김 학생도 포함되므로 학급 전체와 대조한다.
+  const computeAutoUsername = (numberStr) => {
+    const taken = new Set(students.map(s => (s.username || '').toLowerCase()).filter(Boolean))
+    const stem = deriveUsernameStem()
+    const explicit = String(numberStr || '').trim() !== ''
+
+    // 시작 번호: 명시값 우선, 없으면 다음 번호
+    let n
+    if (explicit) {
+      n = parseInt(numberStr, 10)
+      if (isNaN(n)) n = 1
+    } else {
+      const nums = students.map(s => parseInt(s.number, 10)).filter(x => !isNaN(x))
+      n = nums.length ? Math.max(...nums) + 1 : 1
+    }
+    let candidate = `${stem}${String(n).padStart(2, '0')}`.toLowerCase()
+
+    // 1) 번호 자동배정이면 빈 번호로 증가시켜 충돌 회피
+    if (!explicit) {
+      let guard = 0
+      while (taken.has(candidate) && guard < 300) {
+        n++; guard++
+        candidate = `${stem}${String(n).padStart(2, '0')}`.toLowerCase()
+      }
+    }
+    // 2) 그래도 충돌(명시 번호 or 번호 소진)이면 숫자 suffix 변형
+    if (taken.has(candidate)) {
+      const base = candidate
+      let suffix = 2, guard = 0
+      while (taken.has(candidate) && guard < 100) {
+        candidate = makeUsernameVariant(base, suffix).toLowerCase()
+        suffix++; guard++
+      }
+    }
+    return candidate
+  }
+
+  // 🆕 step160: 폼 열기 — 초기화
+  const openAddOne = () => {
+    setShowAddOne(true)
+    setAddOneResult(null)
+    setAddOneIdManual(false)
+    setAddOneIdHint('')
+    setAddOneForm({ realname: '', number: '', username: '' })
+  }
+
+  // 이름/번호 변경 — 수동 모드가 아니면 아이디 미리보기 자동 갱신
+  const onAddOneFieldChange = (field, value) => {
+    setAddOneForm(f => {
+      const nf = { ...f, [field]: value }
+      if (!addOneIdManual) nf.username = computeAutoUsername(field === 'number' ? value : nf.number)
+      return nf
+    })
+  }
+
+  // 아이디 직접 수정 — 즉시 소문자화·허용문자 정리 + 안내, 수동 모드로 전환
+  const onAddOneIdChange = (raw) => {
+    const cleaned = raw.toLowerCase().replace(/[^a-z0-9]/g, '')
+    setAddOneIdManual(true)
+    setAddOneForm(f => ({ ...f, username: cleaned }))
+    if (raw !== cleaned) setAddOneIdHint('아이디는 영문 소문자·숫자만 쓸 수 있어요')
+    else if (cleaned && (cleaned.length < 4 || cleaned.length > 20)) setAddOneIdHint('아이디는 4~20자로 입력해주세요')
+    else setAddOneIdHint('')
+  }
+
+  // 🔄 자동으로 — 자동생성 값으로 복원
+  const resetAddOneIdToAuto = () => {
+    setAddOneIdManual(false)
+    setAddOneIdHint('')
+    setAddOneForm(f => ({ ...f, username: computeAutoUsername(f.number) }))
+  }
+
+  // 🆕 step158/160: 학생 1명 추가 (기존 /api/students-bulk를 1명 배열로 재사용)
   const submitAddOne = async () => {
     const realname = addOneForm.realname.trim()
     if (!realname) return alert('이름을 입력해주세요')
 
-    // 번호: 입력값 우선, 비었으면 다음 번호 자동 배정
+    // 아이디: 폼 값 우선, 비었으면 자동 생성
+    let username = (addOneForm.username || '').trim().toLowerCase()
+    if (!username) username = computeAutoUsername(addOneForm.number)
+
+    if (!/^[a-z0-9]{4,20}$/.test(username)) {
+      setAddOneIdHint('아이디는 영문 소문자·숫자 4~20자로 입력해주세요')
+      return alert('아이디는 영문 소문자·숫자 4~20자로 입력해주세요.')
+    }
+
+    // 번호: 입력값 우선, 비었으면 다음 번호 자동 배정 (기록·정렬용)
     let number = String(addOneForm.number || '').trim()
     if (!number) {
       const nums = students.map(s => parseInt(s.number, 10)).filter(n => !isNaN(n))
       number = String(nums.length ? Math.max(...nums) + 1 : 1)
     }
 
-    const stem = deriveUsernameStem()
-    const username = `${stem}${String(number).trim().padStart(2, '0')}`.toLowerCase()
-
-    if (!/^[a-z0-9_-]+$/.test(username)) {
-      return alert('아이디 자동 생성에 실패했어요. 학교명/학년이 설정됐는지 확인해주세요.')
-    }
     if (!confirm(`"${realname}" 학생을 추가할게요.\n\n아이디: ${username}\n초기 비밀번호: 123456\n\n진행할까요?`)) return
 
     setAddingOne(true)
@@ -491,12 +570,21 @@ export default function StudentsPage() {
         } catch (e) { /* 안내 저장 실패해도 등록은 성공 */ }
 
         setAddOneResult({ username, password: '123456' })
-        setAddOneForm({ realname: '', number: '' })
+        setAddOneForm({ realname: '', number: '', username: '' })
+        setAddOneIdManual(false)
+        setAddOneIdHint('')
         await loadStudents(classInfo.id)
       } else {
+        // 실패 — 폼·입력값 그대로 유지
         const err = result?.failed?.[0]?.error || '알 수 없는 오류'
         let friendly = err
-        if (err.includes('이미 가입')) friendly = `이미 쓰는 아이디예요 (${username}). 번호를 바꿔서 다시 시도해주세요.`
+        if (err.includes('이미 가입')) {
+          // 학급 내 중복은 미리보기에서 회피되므로, 여기 도달하면 보통 다른 학급/학교와 전역 충돌
+          friendly = `이 아이디는 다른 학급에서 사용 중이에요 (${username}).\n아이디를 조금 바꿔주세요.`
+          setAddOneIdManual(true)  // 직접 수정 모드로 (이름/번호 바꿔도 안 덮어쓰게)
+          setAddOneIdHint('다른 학급에서 쓰는 아이디예요. 조금 바꿔주세요')
+        }
+        else if (err.includes('아이디 형식')) friendly = '아이디는 영문 소문자·숫자 4~20자로 해주세요.'
         else if (err.includes('아이디/이름 누락')) friendly = '이름이 비어 있어요.'
         alert('추가 실패: ' + friendly)
       }
@@ -1065,7 +1153,7 @@ export default function StudentsPage() {
                 {!showAddOne && (
                   <button
                     type="button"
-                    onClick={() => { setShowAddOne(true); setAddOneResult(null); setAddOneForm({ realname: '', number: '' }) }}
+                    onClick={openAddOne}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 flex-shrink-0">
                     ➕ 한 명 추가
                   </button>
@@ -1078,7 +1166,7 @@ export default function StudentsPage() {
                     <input
                       type="text"
                       value={addOneForm.realname}
-                      onChange={e => setAddOneForm(f => ({ ...f, realname: e.target.value }))}
+                      onChange={e => onAddOneFieldChange('realname', e.target.value)}
                       placeholder="이름 (필수)"
                       className="flex-1 min-w-[140px] px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       autoFocus
@@ -1086,13 +1174,44 @@ export default function StudentsPage() {
                     <input
                       type="number"
                       value={addOneForm.number}
-                      onChange={e => setAddOneForm(f => ({ ...f, number: e.target.value }))}
+                      onChange={e => onAddOneFieldChange('number', e.target.value)}
                       placeholder="번호 (선택)"
                       className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     />
                   </div>
+
+                  {/* 🆕 step160: 아이디 직접 지정 (자동 미리보기 + 수동 수정) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-gray-700">아이디</label>
+                      {addOneIdManual && (
+                        <button
+                          type="button"
+                          onClick={resetAddOneIdToAuto}
+                          className="text-xs px-2 py-0.5 border border-gray-200 text-gray-600 rounded hover:bg-gray-50">
+                          🔄 자동으로
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={addOneForm.username}
+                      onChange={e => onAddOneIdChange(e.target.value)}
+                      placeholder="이름·번호 입력 시 자동으로 채워져요"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                      maxLength={20}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                    {addOneIdHint
+                      ? <p className="text-xs text-red-600 mt-1">{addOneIdHint}</p>
+                      : <p className="text-xs text-gray-500 mt-1">{addOneIdManual ? '직접 지정한 아이디를 사용해요 (영문 소문자·숫자 4~20자)' : '자동 생성된 아이디예요. 직접 고쳐도 돼요.'}</p>
+                    }
+                  </div>
+
                   <p className="text-xs text-gray-500">
-                    번호를 비우면 다음 번호로 자동 배정돼요. 아이디는 자동 생성되고 초기 비밀번호는 <strong>123456</strong>입니다.
+                    번호를 비우면 다음 번호로 자동 배정돼요. 초기 비밀번호는 <strong>123456</strong>입니다.
                   </p>
                   <div className="flex gap-2">
                     <button
