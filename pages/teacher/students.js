@@ -21,6 +21,11 @@ export default function StudentsPage() {
   // 아이디 prefix (예: "hr" → hr5101)
   const [idPrefix, setIdPrefix] = useState('')
   const [defaultPrefix, setDefaultPrefix] = useState('') // 학교 초성 기본값
+  // 🆕 step158: 학생 1명 개별 추가
+  const [showAddOne, setShowAddOne] = useState(false)
+  const [addOneForm, setAddOneForm] = useState({ realname: '', number: '' })
+  const [addingOne, setAddingOne] = useState(false)
+  const [addOneResult, setAddOneResult] = useState(null) // { username, password }
   // 인라인 편집 상태
   const [editingNumbers, setEditingNumbers] = useState({}) // {studentId: number}
   const [editingUsernames, setEditingUsernames] = useState({}) // {parsedIdx: username} - 미리보기에서 개별 수정
@@ -37,7 +42,7 @@ export default function StudentsPage() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade, login_username_prefix)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
@@ -420,6 +425,85 @@ export default function StudentsPage() {
       alert('일괄 등록 실패: ' + e.message)
     }
     setUploading(false)
+  }
+
+  // 🆕 step158: 기존 학생 아이디에서 공통 줄기(번호 2자리 앞부분) 추출
+  const deriveUsernameStem = () => {
+    const unames = students.map(s => s.username).filter(Boolean)
+    if (unames.length > 0) {
+      const stems = unames.map(u => /\d{2}$/.test(u) ? u.slice(0, -2) : u)
+      const freq = {}
+      stems.forEach(st => { freq[st] = (freq[st] || 0) + 1 })
+      return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]
+    }
+    // 기존 학생이 없으면: 로그인 안내 prefix → 학교초성+학년+1반
+    if (classInfo?.login_username_prefix) return classInfo.login_username_prefix.trim().toLowerCase()
+    return buildUsername(idPrefix, classInfo?.grade || '5', '1', '').replace(/00$/, '')
+  }
+
+  // 🆕 step158: 학생 1명 추가 (기존 /api/students-bulk를 1명 배열로 재사용)
+  const submitAddOne = async () => {
+    const realname = addOneForm.realname.trim()
+    if (!realname) return alert('이름을 입력해주세요')
+
+    // 번호: 입력값 우선, 비었으면 다음 번호 자동 배정
+    let number = String(addOneForm.number || '').trim()
+    if (!number) {
+      const nums = students.map(s => parseInt(s.number, 10)).filter(n => !isNaN(n))
+      number = String(nums.length ? Math.max(...nums) + 1 : 1)
+    }
+
+    const stem = deriveUsernameStem()
+    const username = `${stem}${String(number).trim().padStart(2, '0')}`.toLowerCase()
+
+    if (!/^[a-z0-9_-]+$/.test(username)) {
+      return alert('아이디 자동 생성에 실패했어요. 학교명/학년이 설정됐는지 확인해주세요.')
+    }
+    if (!confirm(`"${realname}" 학생을 추가할게요.\n\n아이디: ${username}\n초기 비밀번호: 123456\n\n진행할까요?`)) return
+
+    setAddingOne(true)
+    setAddOneResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        alert('로그인 세션이 만료됐어요. 다시 로그인해주세요.')
+        setAddingOne(false)
+        return
+      }
+      const res = await fetch('/api/students-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          students: [{ username, realname, number }],
+          classId: classInfo.id,
+          accessToken: session.access_token,
+        }),
+      })
+      const result = await res.json()
+
+      if (result?.success?.length > 0) {
+        // 로그인 안내 prefix 동기화 (첫 학생이면 여기서 세팅됨)
+        try {
+          const { ensureLoginHint } = await import('../../lib/loginHint')
+          await ensureLoginHint(classInfo.id, {
+            existingUsernames: [...students.map(s => s.username).filter(Boolean), username],
+          })
+        } catch (e) { /* 안내 저장 실패해도 등록은 성공 */ }
+
+        setAddOneResult({ username, password: '123456' })
+        setAddOneForm({ realname: '', number: '' })
+        await loadStudents(classInfo.id)
+      } else {
+        const err = result?.failed?.[0]?.error || '알 수 없는 오류'
+        let friendly = err
+        if (err.includes('이미 가입')) friendly = `이미 쓰는 아이디예요 (${username}). 번호를 바꿔서 다시 시도해주세요.`
+        else if (err.includes('아이디/이름 누락')) friendly = '이름이 비어 있어요.'
+        alert('추가 실패: ' + friendly)
+      }
+    } catch (e) {
+      alert('추가 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
+    }
+    setAddingOne(false)
   }
 
   // 비밀번호 초기화 (공란 = 123456, 입력값 = 그 값으로)
@@ -967,6 +1051,77 @@ export default function StudentsPage() {
           {isImpersonating && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
               📖 읽기 전용입니다. 학생 등록/수정/삭제, 비밀번호 초기화 등 모든 변경 작업은 차단되어 있어요.
+            </div>
+          )}
+
+          {/* 🆕 step158: 학생 1명 개별 추가 (신규 교사 간보기 / 전학생 추가) */}
+          {!isImpersonating && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border-2 border-green-200">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h3 className="font-bold">➕ 학생 1명 추가</h3>
+                  <p className="text-sm text-gray-600">테스트로 1명만 먼저 만들거나, 전학생 1명을 추가할 때 좋아요</p>
+                </div>
+                {!showAddOne && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddOne(true); setAddOneResult(null); setAddOneForm({ realname: '', number: '' }) }}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 flex-shrink-0">
+                    ➕ 한 명 추가
+                  </button>
+                )}
+              </div>
+
+              {showAddOne && (
+                <div className="mt-3 space-y-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <input
+                      type="text"
+                      value={addOneForm.realname}
+                      onChange={e => setAddOneForm(f => ({ ...f, realname: e.target.value }))}
+                      placeholder="이름 (필수)"
+                      className="flex-1 min-w-[140px] px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      autoFocus
+                    />
+                    <input
+                      type="number"
+                      value={addOneForm.number}
+                      onChange={e => setAddOneForm(f => ({ ...f, number: e.target.value }))}
+                      placeholder="번호 (선택)"
+                      className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    번호를 비우면 다음 번호로 자동 배정돼요. 아이디는 자동 생성되고 초기 비밀번호는 <strong>123456</strong>입니다.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowAddOne(false); setAddOneResult(null) }}
+                      className="flex-1 py-2 border border-gray-200 rounded-lg text-sm">
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitAddOne}
+                      disabled={addingOne}
+                      className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60">
+                      {addingOne ? '추가 중...' : '추가하기'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {addOneResult && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                  <p className="font-semibold text-green-900 mb-1">✅ 추가 완료! 학생에게 알려주세요</p>
+                  <div className="flex gap-4 flex-wrap font-mono">
+                    <span>아이디: <strong className="text-green-800">{addOneResult.username}</strong></span>
+                    <span>비밀번호: <strong className="text-green-800">{addOneResult.password}</strong></span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">학생은 학급 가입 코드 없이 이 아이디·비밀번호로 바로 로그인할 수 있어요.</p>
+                </div>
+              )}
             </div>
           )}
 
