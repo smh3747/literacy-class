@@ -224,10 +224,7 @@ export default function TeacherLogin() {
           throw new Error(data.error || '가입 코드가 잘못됐어요')
         }
 
-        if (signupRole === 'admin') {
-          const { data: existingAdmin } = await supabase.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
-          if (existingAdmin) throw new Error('관리자는 이미 가입되어 있어요')
-        }
+        // admin 중복가입 확인은 /api/verify-code(서버)에서 수행 (step148 RLS로 이동)
 
         const { data, error: err } = await supabase.auth.signUp({ email, password })
         if (err) {

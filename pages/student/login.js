@@ -229,23 +229,26 @@ export default function StudentLogin() {
           return
         }
 
-        // 학급 내 기존 닉네임 가져와서 중복 안 되게 부여
-        let nickname = null
+        const profileData = {
+          id: data.user.id, username: username.toLowerCase(), realname: username,
+          role: 'student', class_id: classData.id, school: classData.school || null
+        }
+
+        // ⚠️ profile을 먼저 INSERT해야 함 (step148 RLS):
+        // 내 profile이 생겨야 my_class_id()가 잡혀서 동급생 닉네임 조회가 허용됨
+        await supabase.from('profiles').insert(profileData)
+
+        // 학급 내 기존 닉네임 가져와서 중복 안 되게 부여 (본인 행 UPDATE)
         try {
           const { generateUniqueNickname } = await import('../../lib/nickname')
           const { data: existing } = await supabase.from('profiles')
             .select('nickname').eq('class_id', classData.id).eq('role', 'student')
           const used = (existing || []).map(p => p.nickname).filter(Boolean)
-          nickname = generateUniqueNickname(used)
-        } catch(e) { /* nickname 컬럼 없으면 무시 */ }
-
-        const profileData = {
-          id: data.user.id, username: username.toLowerCase(), realname: username,
-          role: 'student', class_id: classData.id, school: classData.school || null
-        }
-        if (nickname) profileData.nickname = nickname
-
-        await supabase.from('profiles').insert(profileData)
+          const nickname = generateUniqueNickname(used)
+          if (nickname) {
+            await supabase.from('profiles').update({ nickname }).eq('id', data.user.id)
+          }
+        } catch(e) { /* nickname 컬럼 없으면 무시 — 가입은 계속 */ }
         persistOptions()
         router.push('/student')
       }
