@@ -33,6 +33,40 @@ export default function TeacherLogin() {
   const [showResetRequest, setShowResetRequest] = useState(false)
   const [resetForm, setResetForm] = useState({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
   const [resetSubmitting, setResetSubmitting] = useState(false)
+  // 🆕 step162: 아이디 자동 찾기 결과 ({ status:'found'|'none'|'multiple', maskedUsername? } | null)
+  const [findResult, setFindResult] = useState(null)
+  const [findLoading, setFindLoading] = useState(false)
+
+  const closeResetModal = () => {
+    setShowResetRequest(false)
+    setFindResult(null)
+  }
+
+  // 🆕 step162: 아이디 자동 찾기 (이름+학교 → 마스킹된 아이디 표시)
+  const submitFindId = async () => {
+    if (!resetForm.realname.trim() || !resetForm.school.trim()) {
+      alert('이름과 학교는 꼭 입력해주세요')
+      return
+    }
+    setFindLoading(true)
+    setFindResult(null)
+    try {
+      const resp = await fetch('/api/find-teacher-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          realname: resetForm.realname.trim(),
+          school: resetForm.school.trim(),
+        }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data?.error || '잠시 후 다시 시도해주세요')
+      setFindResult(data)
+    } catch(e) {
+      alert('조회 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
+    }
+    setFindLoading(false)
+  }
 
   const submitResetRequest = async () => {
     const isFindId = resetForm.type === 'find_id'
@@ -78,6 +112,7 @@ export default function TeacherLogin() {
             '재가입하면 기존 학급·학생·글과 연결이 끊겨요.'
       )
       setShowResetRequest(false)
+      setFindResult(null)
       setResetForm({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
     } catch(e) {
       alert('요청 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
@@ -496,7 +531,7 @@ export default function TeacherLogin() {
         {/* 🆕 비밀번호 초기화 요청 모달 */}
         {showResetRequest && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-            onClick={() => !resetSubmitting && setShowResetRequest(false)}>
+            onClick={() => !resetSubmitting && !findLoading && closeResetModal()}>
             <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl"
               onClick={e => e.stopPropagation()}>
               <h3 className="font-bold text-gray-900">🔑 아이디 / 비밀번호 찾기</h3>
@@ -505,13 +540,13 @@ export default function TeacherLogin() {
               <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
                 <button
                   type="button"
-                  onClick={() => setResetForm({ ...resetForm, type: 'reset_password' })}
+                  onClick={() => { setResetForm({ ...resetForm, type: 'reset_password' }); setFindResult(null) }}
                   className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type !== 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
                   🔑 비밀번호 초기화
                 </button>
                 <button
                   type="button"
-                  onClick={() => setResetForm({ ...resetForm, type: 'find_id' })}
+                  onClick={() => { setResetForm({ ...resetForm, type: 'find_id' }); setFindResult(null) }}
                   className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type === 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
                   🔍 아이디 찾기
                 </button>
@@ -519,7 +554,7 @@ export default function TeacherLogin() {
 
               <p className="text-xs text-gray-500 leading-relaxed">
                 {resetForm.type === 'find_id'
-                  ? '관리자가 이름·학교로 확인 후 아이디를 연락처로 알려드려요. 본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.'
+                  ? '이름·학교를 넣으면 바로 아이디 일부를 보여드려요. 가입할 때 쓴 이름·학교를 정확히 입력해주세요.'
                   : '관리자가 확인 후 임시 비밀번호를 만들어 전달해드려요. 본인 확인을 위해 가입할 때 쓴 정보를 입력해주세요.'}
               </p>
 
@@ -537,39 +572,84 @@ export default function TeacherLogin() {
                 type="text"
                 placeholder="이름 (필수)"
                 value={resetForm.realname}
-                onChange={e => setResetForm({ ...resetForm, realname: e.target.value })}
+                onChange={e => { setResetForm({ ...resetForm, realname: e.target.value }); if (findResult) setFindResult(null) }}
                 className="w-full p-3 border border-gray-200 rounded-lg text-sm"
               />
               <input
                 type="text"
                 placeholder={resetForm.type === 'find_id' ? '학교 (필수)' : '학교 (선택)'}
                 value={resetForm.school}
-                onChange={e => setResetForm({ ...resetForm, school: e.target.value })}
+                onChange={e => { setResetForm({ ...resetForm, school: e.target.value }); if (findResult) setFindResult(null) }}
                 className="w-full p-3 border border-gray-200 rounded-lg text-sm"
               />
-              <input
-                type="text"
-                placeholder="연락 방법 (선택: 전화, 카톡 ID 등)"
-                value={resetForm.contact}
-                onChange={e => setResetForm({ ...resetForm, contact: e.target.value })}
-                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
-              />
-              <p className="text-[11px] text-gray-400">
-                연락 방법을 안 남기면 함께 아는 분(동료 선생님 등)을 통해 전달될 수 있어요.
-              </p>
+
+              {/* 비번 초기화 요청에만 연락처 입력 (아이디 찾기는 자동 표시라 불필요) */}
+              {resetForm.type !== 'find_id' && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="연락 방법 (선택: 전화, 카톡 ID 등)"
+                    value={resetForm.contact}
+                    onChange={e => setResetForm({ ...resetForm, contact: e.target.value })}
+                    className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+                  />
+                  <p className="text-[11px] text-gray-400">
+                    연락 방법을 안 남기면 함께 아는 분(동료 선생님 등)을 통해 전달될 수 있어요.
+                  </p>
+                </>
+              )}
+
+              {/* 🆕 step162: 아이디 자동 찾기 결과 */}
+              {resetForm.type === 'find_id' && findResult && (
+                <div className="border-t border-gray-100 pt-3 text-sm">
+                  {findResult.status === 'found' && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-gray-700 text-xs mb-1">회원님의 아이디예요 (보안을 위해 일부만 표시)</p>
+                      <p className="font-mono font-bold text-lg text-green-800 tracking-wide">{findResult.maskedUsername}</p>
+                      <p className="text-[11px] text-gray-500 mt-1">전체 아이디가 기억나지 않으면 가운데 글자를 떠올려보세요. 그래도 모르면 아래 "관리자에게 요청"을 눌러주세요.</p>
+                    </div>
+                  )}
+                  {findResult.status === 'none' && (
+                    <p className="text-red-600 text-xs">일치하는 계정이 없어요. 이름·학교를 가입할 때처럼 정확히 입력했는지 확인해주세요.</p>
+                  )}
+                  {findResult.status === 'multiple' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                      동명이인이 있어 자동으로 확정할 수 없어요. 아래 "관리자에게 요청"을 눌러주시면 관리자가 확인 후 알려드려요.
+                    </div>
+                  )}
+                  {(findResult.status === 'none' || findResult.status === 'multiple') && (
+                    <button
+                      onClick={submitResetRequest}
+                      disabled={resetSubmitting}
+                      className="mt-2 w-full py-2.5 border border-primary text-primary rounded-lg text-sm font-semibold disabled:opacity-50">
+                      {resetSubmitting ? '접수 중...' : '관리자에게 요청하기'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button
-                  onClick={() => setShowResetRequest(false)}
-                  disabled={resetSubmitting}
+                  onClick={closeResetModal}
+                  disabled={resetSubmitting || findLoading}
                   className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm disabled:opacity-50">
-                  취소
+                  {findResult?.status === 'found' ? '닫기' : '취소'}
                 </button>
-                <button
-                  onClick={submitResetRequest}
-                  disabled={resetSubmitting}
-                  className="flex-1 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-                  {resetSubmitting ? '접수 중...' : '요청 보내기'}
-                </button>
+                {resetForm.type === 'find_id' ? (
+                  <button
+                    onClick={submitFindId}
+                    disabled={findLoading}
+                    className="flex-1 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                    {findLoading ? '찾는 중...' : '아이디 찾기'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={submitResetRequest}
+                    disabled={resetSubmitting}
+                    className="flex-1 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                    {resetSubmitting ? '접수 중...' : '요청 보내기'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

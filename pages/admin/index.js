@@ -19,6 +19,7 @@ export default function AdminHome() {
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
   const [resetRequests, setResetRequests] = useState([])  // 🆕 비밀번호 초기화 요청
   const [idLookups, setIdLookups] = useState({})  // 🆕 step161: 아이디 찾기 후보 { [reqId]: {loading, list} }
+  const [selectedReqIds, setSelectedReqIds] = useState(new Set())  // 🆕 step162: 요청함 일괄 선택
   const [errorLogs, setErrorLogs] = useState([])  // 🆕 step155: 에러 로그 (최근 50건)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
@@ -366,6 +367,91 @@ export default function AdminHome() {
     } catch (e) {
       setIdLookups(prev => ({ ...prev, [req.id]: { loading: false, list: [] } }))
     }
+  }
+
+  // 🆕 step162: 비번 초기화 API 호출 (단일/일괄 공용) — 123456 + must_change_password
+  const resetPasswordApi = async (teacherId, token) => {
+    try {
+      const res = await fetch('/api/reset-teacher-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId, newPassword: '123456', accessToken: token })
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: result.error || '초기화 실패' }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e.message || '네트워크 오류' }
+    }
+  }
+
+  // 🆕 step162: 선택 토글
+  const toggleReqSelect = (id) => {
+    setSelectedReqIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // 🆕 step162: 비번 초기화 일괄 처리 (reset_password 요청만 대상)
+  const bulkResetPasswords = async (reqs) => {
+    const targets = (reqs || []).filter(r => r.request_type !== 'find_id')
+    if (targets.length === 0) {
+      return alert('초기화할 비번 요청이 없어요.\n(아이디 찾기 요청은 일괄 초기화 대상이 아니에요.)')
+    }
+    if (!confirm(
+      `${targets.length}건의 비밀번호를 "123456"으로 일괄 초기화할까요?\n\n` +
+      `초기화 후 각 선생님께 연락처로 "123456으로 로그인 후 비밀번호를 꼭 바꾸세요"라고 안내해주세요.`
+    )) return
+
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    let ok = 0
+    const fails = []
+    for (const r of targets) {
+      const target = teachers.find(t => t.username === r.username)
+      if (!target) { fails.push(`${r.realname}(@${r.username}) — 계정 없음`); continue }
+      const result = await resetPasswordApi(target.id, token)
+      if (result.ok) {
+        ok++
+        await supabase.from('password_reset_requests')
+          .update({ status: 'done', handled_at: new Date().toISOString() })
+          .eq('id', r.id)
+      } else {
+        fails.push(`${r.realname}(@${r.username}) — ${result.error}`)
+      }
+    }
+    setSelectedReqIds(new Set())
+    await loadAll()
+    alert(
+      `✅ 일괄 초기화 완료\n\n성공 ${ok}건 / 실패 ${fails.length}건` +
+      (fails.length ? `\n\n[실패 목록]\n- ${fails.join('\n- ')}` : '') +
+      `\n\n📋 비밀번호 123456을 각 요청자에게 전달해주세요.`
+    )
+  }
+
+  // 🆕 step162: 요청 삭제 (비번 안 건드리고 행만 제거) — DELETE RLS 정책 필요
+  const deleteRequest = async (req) => {
+    if (!confirm('이 요청을 삭제할까요?\n\n(비밀번호는 건드리지 않고 목록에서 행만 제거해요. 되돌릴 수 없어요.)')) return
+    const { error } = await supabase.from('password_reset_requests').delete().eq('id', req.id)
+    if (error) {
+      return alert('삭제 실패: ' + error.message + '\n\n(step162 DELETE RLS 정책이 적용됐는지 확인해주세요)')
+    }
+    setSelectedReqIds(prev => { const n = new Set(prev); n.delete(req.id); return n })
+    await loadAll()
+  }
+
+  // 🆕 step162: 선택 일괄 삭제
+  const bulkDeleteRequests = async (ids) => {
+    if (!ids || ids.length === 0) return alert('선택된 요청이 없어요.')
+    if (!confirm(`선택한 ${ids.length}건을 삭제할까요?\n\n(비밀번호는 건드리지 않고 행만 제거해요. 되돌릴 수 없어요.)`)) return
+    const { error } = await supabase.from('password_reset_requests').delete().in('id', ids)
+    if (error) {
+      return alert('삭제 실패: ' + error.message + '\n\n(step162 DELETE RLS 정책이 적용됐는지 확인해주세요)')
+    }
+    setSelectedReqIds(new Set())
+    await loadAll()
   }
 
   // 🗑️ 선생님 휴지통으로 (B4)
@@ -799,14 +885,39 @@ export default function AdminHome() {
                 <h3 className="font-bold text-blue-900 text-sm mb-2">
                   🔔 아이디/비밀번호 찾기 요청 ({resetRequests.length}건)
                 </h3>
+
+                {/* 🆕 step162: 일괄 처리 도구 모음 */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
+                  <span className="text-blue-800 mr-1">선택 {selectedReqIds.size}건</span>
+                  <button onClick={() => bulkResetPasswords(resetRequests)}
+                    className="px-2.5 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
+                    🔑 대기 전부 초기화
+                  </button>
+                  <button onClick={() => bulkResetPasswords(resetRequests.filter(r => selectedReqIds.has(r.id)))}
+                    disabled={selectedReqIds.size === 0}
+                    className="px-2.5 py-1.5 bg-blue-100 text-blue-800 rounded-lg font-semibold hover:bg-blue-200 disabled:opacity-40">
+                    🔑 선택 일괄 초기화
+                  </button>
+                  <button onClick={() => bulkDeleteRequests(Array.from(selectedReqIds))}
+                    disabled={selectedReqIds.size === 0}
+                    className="px-2.5 py-1.5 bg-white border border-red-300 text-red-600 rounded-lg font-semibold hover:bg-red-50 disabled:opacity-40">
+                    🗑️ 선택 일괄 삭제
+                  </button>
+                </div>
+
                 <div className="space-y-2">
                   {resetRequests.map(req => {
                     const isFindId = req.request_type === 'find_id'
                     const lookup = idLookups[req.id]
+                    const checked = selectedReqIds.has(req.id)
                     return (
                     <div key={req.id} className="bg-white border border-blue-200 rounded-lg p-3">
                       <div className="flex items-start justify-between gap-2 flex-wrap">
-                        <div className="text-sm">
+                        <div className="flex items-start gap-2 text-sm">
+                          <input type="checkbox" checked={checked}
+                            onChange={() => toggleReqSelect(req.id)}
+                            className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          <div>
                           <div className="font-medium flex items-center gap-1.5 flex-wrap">
                             {isFindId
                               ? <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-semibold">🔍 아이디 찾기</span>
@@ -818,6 +929,7 @@ export default function AdminHome() {
                           <div className="text-xs text-gray-500 mt-0.5">
                             {req.contact ? `📞 ${req.contact}` : '연락처 없음 (지인 통해 전달)'}
                             <span className="ml-2">{new Date(req.created_at).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                          </div>
                           </div>
                         </div>
                         <div className="flex gap-1.5 flex-wrap">
@@ -838,6 +950,10 @@ export default function AdminHome() {
                               🔑 초기화 처리
                             </button>
                           )}
+                          <button onClick={() => deleteRequest(req)}
+                            className="text-xs px-3 py-1.5 bg-white border border-red-300 text-red-600 rounded-lg font-semibold hover:bg-red-50">
+                            🗑️ 삭제
+                          </button>
                         </div>
                       </div>
 
