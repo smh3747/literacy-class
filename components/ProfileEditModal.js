@@ -91,7 +91,7 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
                   onChange={({ school: s, school_code, school_region }) => {
                     setSchool(s); setSchoolCode(school_code || ''); setSchoolRegion(school_region || '')
                   }}
-                  placeholder="학교명 입력 후 목록에서 선택 (예: 하랑)"
+                  placeholder="학교명 입력 후 목록에서 선택"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   💡 목록에서 고르면 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.

@@ -1397,7 +1397,7 @@ export default function StudentsPage() {
                     <p className="font-semibold text-gray-700">✅ 권장: 나이스 학급명렬표</p>
                     <code className="block mt-1 font-mono text-[11px]">학년 | 반 | 번호 | 성명 | 비고</code>
                     <p className="mt-1">→ 아이디는 자동 생성: <strong>[학교초성][학년][반][번호]</strong></p>
-                    <p>예: 한국초등학교 5학년 1반 1번 → <code className="font-mono">hgc5101</code></p>
+                    <p>예: ○○초등학교(초성 abc) 5학년 1반 1번 → <code className="font-mono">abc5101</code></p>
                     <p className="mt-1 text-amber-700">학생들에게 본인 아이디 알려주는 것 잊지 마세요!</p>
                   </div>
                   <div className="pt-2 border-t border-gray-200">

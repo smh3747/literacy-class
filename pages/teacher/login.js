@@ -403,7 +403,7 @@ export default function TeacherLogin() {
                           setSchool(s); setSchoolCode(school_code || ''); setSchoolRegion(school_region || '')
                         }}
                         onEnter={handleEnter}
-                        placeholder="학교명 입력 후 목록에서 선택 (예: 하랑)"
+                        placeholder="학교명 입력 후 목록에서 선택"
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         💡 학교명을 입력하면 목록이 떠요. 목록에서 고르면 나중에 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.
@@ -598,7 +598,7 @@ export default function TeacherLogin() {
                   if (findResult) setFindResult(null)
                 }}
                 placeholder={resetForm.type === 'find_id' ? '학교 (필수) — 목록에서 선택' : '학교 (선택)'}
-                inputClassName="w-full p-3 border border-gray-200 rounded-lg text-sm"
+                inputClassName="w-full p-3 border border-gray-200 rounded-lg text-base"
               />
 
               {/* 비번 초기화 요청에만 연락처 입력 (아이디 찾기는 자동 표시라 불필요) */}

@@ -91,15 +91,15 @@ export default function SchoolAutocomplete({ value, onChange, placeholder, onEnt
         onChange={handleType}
         onKeyDown={handleKey}
         onFocus={() => { if (results.length > 0) setOpen(true) }}
-        placeholder={placeholder || '학교명 2글자 이상 입력 (예: 하랑)'}
-        className={inputClassName || 'w-full p-3 border border-gray-200 rounded-lg'}
+        placeholder={placeholder || '학교명 검색 (예: ○○초등학교)'}
+        className={inputClassName || 'w-full p-3 border border-gray-200 rounded-lg text-base'}
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-          {loading && <div className="px-3 py-2 text-xs text-gray-400">학교를 찾는 중...</div>}
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-auto">
+          {loading && <div className="px-3 py-2.5 text-sm text-gray-400">학교를 찾는 중...</div>}
           {!loading && results.length === 0 && (
-            <div className="px-3 py-2 text-xs text-gray-500">
+            <div className="px-3 py-2.5 text-sm text-gray-500">
               {noApi
                 ? '학교 검색을 잠시 쓸 수 없어요. 학교명을 직접 입력해주세요.'
                 : '검색 결과가 없어요. 학교명을 직접 입력해도 돼요.'}
@@ -111,9 +111,9 @@ export default function SchoolAutocomplete({ value, onChange, placeholder, onEnt
               key={s.code}
               onClick={() => pick(s)}
               onMouseEnter={() => setHighlight(i)}
-              className={`block w-full text-left px-3 py-2 hover:bg-blue-50 ${i === highlight ? 'bg-blue-50' : ''}`}>
-              <div className="text-sm font-medium text-gray-900">{s.name}</div>
-              <div className="text-[11px] text-gray-500">{s.region}{s.address ? ` · ${s.address}` : ''}</div>
+              className={`block w-full text-left px-3 py-2.5 hover:bg-blue-50 ${i === highlight ? 'bg-blue-50' : ''}`}>
+              <div className="text-base font-semibold text-gray-900">{s.name}</div>
+              <div className="text-xs text-gray-500 mt-0.5">{s.region}{s.address ? ` · ${s.address}` : ''}</div>
             </button>
           ))}
         </div>
