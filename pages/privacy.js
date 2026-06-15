@@ -35,6 +35,7 @@ export default function Privacy() {
               <ul className="list-disc pl-5 space-y-1">
                 <li>필수: 이름, 학년/반/번호, 아이디, 비밀번호</li>
                 <li>자동 수집: 작성한 글, AI 피드백 결과, 접속 기록</li>
+                <li>방문/페이지뷰 통계 (쿠키 없는 익명 집계, 개인 식별 안 함)</li>
               </ul>
               <p className="font-semibold mt-2">[교사]</p>
               <ul className="list-disc pl-5 space-y-1">
@@ -84,7 +85,7 @@ export default function Privacy() {
               <p className="text-gray-700 mt-1">서비스는 안정적 운영을 위해 다음 사업자에 데이터 저장·처리를 위탁하며, 이 과정에서 개인정보가 국외 서버에 저장될 수 있습니다.</p>
               <ul className="list-disc pl-5 space-y-1 mt-1">
                 <li>Supabase Inc. (데이터베이스 호스팅) — 회원·학습 데이터 저장, 국외(미국 등)</li>
-                <li>Vercel Inc. (애플리케이션 호스팅) — 서비스 구동, 국외(미국 등)</li>
+                <li>Vercel Inc. (애플리케이션 호스팅·방문 통계) — 서비스 구동 및 익명 방문 통계 집계(쿠키 미사용, 개인 식별 안 함), 국외(미국 등)</li>
                 <li>Google LLC (Gemini API) — AI 피드백 생성, 국외(미국 등)</li>
               </ul>
               <p className="text-gray-600 text-xs mt-1">이전 항목: 위 "수집하는 개인정보 항목" 및 학생이 작성한 글. 이전·보유 기간은 본 방침의 보유기간과 동일합니다.</p>
@@ -119,7 +120,7 @@ export default function Privacy() {
               <h2 className="text-lg font-bold mb-2">8. 처리방침의 변경</h2>
               <p className="text-gray-700">본 개인정보처리방침은 법령·서비스 변경에 따라 개정될 수 있으며, 변경 시 시행일과 변경 내용을 서비스 내 공지합니다.</p>
             </section>
-            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 9일</p>
+            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 15일</p>
           </div>
         </main>
       </div>
