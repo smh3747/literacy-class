@@ -5,6 +5,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import { getAuthErrorMessage } from '../../lib/authErrors'
 import ConsentForm from '../../components/ConsentForm'
+import SchoolAutocomplete from '../../components/SchoolAutocomplete'
 
 // 로컬 스토리지 키
 const SAVED_USERNAME_KEY = 'lc-saved-username-teacher'
@@ -20,6 +21,8 @@ export default function TeacherLogin() {
   const [secretCode, setSecretCode] = useState('')
   const [className, setClassName] = useState('')
   const [school, setSchool] = useState('')
+  const [schoolCode, setSchoolCode] = useState('')      // step163: 표준학교코드
+  const [schoolRegion, setSchoolRegion] = useState('')  // step163: 시도교육청명
   const [signupRole, setSignupRole] = useState('teacher')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -304,12 +307,13 @@ export default function TeacherLogin() {
         }
 
         const { data: newClass, error: classErr } = await supabase.from('classes')
-          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id, school: school.trim() })
+          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id, school: school.trim(), school_code: schoolCode || null })
           .select().single()
         if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
 
         await supabase.from('profiles').insert({
-          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), school: school.trim(), role: signupRole, class_id: newClass.id
+          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), school: school.trim(),
+          school_code: schoolCode || null, school_region: schoolRegion || null, role: signupRole, class_id: newClass.id
         })
 
         persistOptions()
@@ -389,9 +393,17 @@ export default function TeacherLogin() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학교명</label>
-                      <input type="text" value={school} onChange={e => setSchool(e.target.value)}
-                        onKeyDown={handleEnter}
-                        className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 한국초등학교" />
+                      <SchoolAutocomplete
+                        value={school}
+                        onChange={({ school: s, school_code, school_region }) => {
+                          setSchool(s); setSchoolCode(school_code || ''); setSchoolRegion(school_region || '')
+                        }}
+                        onEnter={handleEnter}
+                        placeholder="학교명 입력 후 목록에서 선택 (예: 하랑)"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        💡 학교명을 입력하면 목록이 떠요. 목록에서 고르면 나중에 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>

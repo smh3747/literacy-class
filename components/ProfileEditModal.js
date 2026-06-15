@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import SchoolAutocomplete from './SchoolAutocomplete'
 
 export default function ProfileEditModal({ user, onClose, onUpdate }) {
   const [realname, setRealname] = useState('')
   const [school, setSchool] = useState('')
+  const [schoolCode, setSchoolCode] = useState('')      // step163: 표준학교코드
+  const [schoolRegion, setSchoolRegion] = useState('')  // step163: 시도교육청명
   const [classNameInput, setClassNameInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -13,6 +16,8 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
     if (user) {
       setRealname(user.realname || '')
       setSchool(user.school || '')
+      setSchoolCode(user.school_code || '')
+      setSchoolRegion(user.school_region || '')
     }
     loadClassName()
   }, [user])
@@ -34,14 +39,18 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
       // profiles 업데이트
       const { error: pErr } = await supabase.from('profiles').update({
         realname: realname.trim(),
-        school: school.trim()
+        school: school.trim(),
+        school_code: schoolCode || null,
+        school_region: schoolRegion || null
       }).eq('id', user.id)
       if (pErr) throw pErr
 
-      // classes 이름 업데이트
+      // classes 이름 + 학교코드 업데이트 (학교별 그룹화/학생 상속 정합성)
       if (user.class_id) {
         const { error: cErr } = await supabase.from('classes').update({
-          name: classNameInput.trim()
+          name: classNameInput.trim(),
+          school: school.trim(),
+          school_code: schoolCode || null
         }).eq('id', user.class_id)
         if (cErr) throw cErr
       }
@@ -77,9 +86,16 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">학교명</label>
-                <input type="text" value={school} onChange={e => setSchool(e.target.value)}
-                  placeholder="예: 한국초등학교"
-                  className="w-full p-3 border border-gray-200 rounded-lg" />
+                <SchoolAutocomplete
+                  value={school}
+                  onChange={({ school: s, school_code, school_region }) => {
+                    setSchool(s); setSchoolCode(school_code || ''); setSchoolRegion(school_region || '')
+                  }}
+                  placeholder="학교명 입력 후 목록에서 선택 (예: 하랑)"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 목록에서 고르면 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">학급 이름</label>
