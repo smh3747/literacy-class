@@ -85,20 +85,24 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             </p>
           </div>
 
-          {/* 게시판 범위 (게시판은 아직 미구현이지만 준비) */}
-          <div>
-            <label className="block text-sm font-medium mb-1">📋 게시판 범위 <span className="text-xs text-gray-400">(게시판 기능 출시 예정)</span></label>
-            <select value={boardScope} onChange={e => save({ board_scope: e.target.value })}
-              disabled={saving}
-              className="w-full p-2 border border-gray-200 rounded-lg text-sm">
-              <option value="class">학급 내 (같은 반 학생만)</option>
-              <option value="national">전국 (다른 학교 학생들과 공유)</option>
-              <option value="off">사용 안 함</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              💡 학생들이 친구 글을 보고 댓글을 다는 기능 (출시되면 자동 적용)
-            </p>
-          </div>
+          {/* 게시판 범위 — 게시판 기능이 아직 미구현이라 화면에서만 숨김 (출시 전 정리).
+              나중에 게시판을 만들 때 아래 false 를 true 로 바꾸면 그대로 되살아남.
+              ⚠️ board_scope 컬럼/데이터·save() 로직은 건드리지 않음, 화면 표시만 숨김. */}
+          {false && (
+            <div>
+              <label className="block text-sm font-medium mb-1">📋 게시판 범위 <span className="text-xs text-gray-400">(게시판 기능 출시 예정)</span></label>
+              <select value={boardScope} onChange={e => save({ board_scope: e.target.value })}
+                disabled={saving}
+                className="w-full p-2 border border-gray-200 rounded-lg text-sm">
+                <option value="class">학급 내 (같은 반 학생만)</option>
+                <option value="national">전국 (다른 학교 학생들과 공유)</option>
+                <option value="off">사용 안 함</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                💡 학생들이 친구 글을 보고 댓글을 다는 기능 (출시되면 자동 적용)
+              </p>
+            </div>
+          )}
 
           {saving && <p className="text-xs text-gray-500">💾 저장 중...</p>}
         </div>
