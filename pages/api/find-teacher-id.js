@@ -20,6 +20,49 @@
 // 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (서버 전용)
 
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+
+// step165: IP 기반 호출 제한 (무차별 대입 방지, 특히 동명이인 학급코드 2차 확인)
+//   password-reset-request.js의 ip_hash(sha256 + 고정 prefix) 패턴을 재사용한다.
+//   전용 테이블 api_rate_limit에 호출 1건당 1행 기록, 윈도우 내 건수로 차단.
+//   조회 실패 시에는 fail-open(차단하지 않음)해 정상 사용자의 가용성을 우선한다.
+const RL_BUCKET = 'find_teacher_id'
+const RL_IP_PREFIX = 'literacy-class:findid:'   // password-reset와 다른 prefix
+const RL_SHORT_LIMIT = 20                         // 10분 내 허용 횟수
+const RL_SHORT_WINDOW_MS = 10 * 60 * 1000
+const RL_DAY_LIMIT = 50                            // 24시간 내 허용 횟수
+const RL_DAY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for']
+  if (xff) return String(xff).split(',')[0].trim()
+  return req.socket?.remoteAddress || 'unknown'
+}
+
+function hashIp(ip) {
+  return crypto.createHash('sha256').update(RL_IP_PREFIX + ip).digest('hex')
+}
+
+// true면 한도 초과(차단). 내부 오류는 fail-open(false).
+async function isRateLimited(supabase, ipHash) {
+  try {
+    const countSince = async (windowMs) => {
+      const cutoff = new Date(Date.now() - windowMs).toISOString()
+      const { count } = await supabase.from('api_rate_limit')
+        .select('id', { count: 'exact', head: true })
+        .eq('bucket', RL_BUCKET).eq('ip_hash', ipHash).gt('created_at', cutoff)
+      return count || 0
+    }
+    if (await countSince(RL_SHORT_WINDOW_MS) >= RL_SHORT_LIMIT) return true
+    if (await countSince(RL_DAY_WINDOW_MS) >= RL_DAY_LIMIT) return true
+    // 한도 내 → 이번 호출 기록 후 통과
+    await supabase.from('api_rate_limit').insert({ bucket: RL_BUCKET, ip_hash: ipHash })
+    return false
+  } catch (e) {
+    console.error('find-teacher-id rate limit check failed (fail-open):', e?.message || e)
+    return false
+  }
+}
 
 function maskUsername(u) {
   const s = String(u || '')
@@ -47,6 +90,12 @@ export default async function handler(req, res) {
   const supabase = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false }
   })
+
+  // step165: 호출 제한 (이름+학교 1차 조회와 학급코드 2차 확인 모두 동일 한도 적용)
+  const ipHash = hashIp(getClientIp(req))
+  if (await isRateLimited(supabase, ipHash)) {
+    return res.status(429).json({ error: '요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
+  }
 
   try {
     // 이름 + 학교 정확 일치 (클라이언트가 trim해서 보냄). 휴지통 계정은 제외.
