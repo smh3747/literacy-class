@@ -244,7 +244,7 @@ export default function TeacherHome() {
 
   return (
     <>
-      <Head><title>선생님 화면 - 문해력 수업</title></Head>
+      <Head><title>선생님 화면 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />

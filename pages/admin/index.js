@@ -720,7 +720,7 @@ export default function AdminHome() {
   const formatFeedbacksAsMarkdown = (fbs) => {
     if (!fbs || fbs.length === 0) return ''
     const today = new Date().toISOString().slice(0, 10)
-    let md = `# 문해력 수업 - 사용자 의견 모음 (${today})\n\n`
+    let md = `# 다온클래스 - 사용자 의견 모음 (${today})\n\n`
     md += `총 ${fbs.length}건\n\n---\n\n`
     fbs.forEach((f, i) => {
       const date = toKST(f.created_at) || ''
@@ -788,7 +788,7 @@ export default function AdminHome() {
   const formatAiSummaryAsMarkdown = (summary) => {
     if (!summary) return ''
     const today = new Date().toISOString().slice(0, 10)
-    let md = `# 문해력 수업 - 사용자 의견 AI 요약 (${today})\n\n`
+    let md = `# 다온클래스 - 사용자 의견 AI 요약 (${today})\n\n`
     md += `## 📊 카테고리별 정리\n\n`
     summary.categories?.forEach(cat => {
       md += `### ${cat.name}\n`
@@ -818,7 +818,7 @@ export default function AdminHome() {
 
   return (
     <>
-      <Head><title>관리자 페이지 - 문해력 수업</title></Head>
+      <Head><title>관리자 페이지 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">

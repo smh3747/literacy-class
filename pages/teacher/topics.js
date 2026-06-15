@@ -971,7 +971,7 @@ export default function TopicsPage() {
 
   return (
     <>
-      <Head><title>주제 관리 - 문해력 수업</title></Head>
+      <Head><title>주제 관리 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">

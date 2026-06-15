@@ -1,4 +1,4 @@
-# 문해력 수업 (literacy-class)
+# 다온클래스 (literacy-class)
 
 초등학생을 위한 AI 글쓰기 피드백 시스템
 

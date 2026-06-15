@@ -214,7 +214,7 @@ export default function RecordPage() {
 
   return (
     <>
-      <Head><title>생기부 평어 도우미 · 문해력 수업</title></Head>
+      <Head><title>생기부 평어 도우미 · 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} />
         <main className={`mx-auto px-4 py-6 sm:py-8 transition-all ${batchResults.length > 0 ? 'max-w-6xl' : 'max-w-3xl'}`}>

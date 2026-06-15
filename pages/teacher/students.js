@@ -1116,7 +1116,7 @@ export default function StudentsPage() {
 
   return (
     <>
-      <Head><title>학생 관리 - 문해력 수업</title></Head>
+      <Head><title>학생 관리 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />

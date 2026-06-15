@@ -11,7 +11,7 @@ export default function Header({ user, onLogout }) {
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2">
             <span className="text-2xl">📝</span>
-            <h1 className="text-base sm:text-lg font-bold text-primary-dark">문해력 수업</h1>
+            <h1 className="text-base sm:text-lg font-bold text-primary-dark">다온클래스</h1>
           </Link>
           <div className="flex items-center gap-2">
             {user && (

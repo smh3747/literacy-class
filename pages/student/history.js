@@ -131,7 +131,7 @@ export default function StudentHistory() {
     
     return (
       <>
-        <Head><title>{g.title} - 문해력 수업</title></Head>
+        <Head><title>{g.title} - 다온클래스</title></Head>
         <style>{`
           .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
         `}</style>
@@ -350,7 +350,7 @@ export default function StudentHistory() {
 
   return (
     <>
-      <Head><title>내 글 기록 - 문해력 수업</title></Head>
+      <Head><title>내 글 기록 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">

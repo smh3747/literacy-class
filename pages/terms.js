@@ -18,7 +18,7 @@ export default function Terms() {
 
   return (
     <>
-      <Head><title>이용약관 - 문해력 수업</title></Head>
+      <Head><title>이용약관 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
@@ -30,7 +30,7 @@ export default function Terms() {
           <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 text-sm leading-relaxed">
             <section>
               <h2 className="text-lg font-bold mb-2">제1조 (목적)</h2>
-              <p>본 약관은 문해력 수업(이하 "서비스")이 제공하는 AI 글쓰기 학습 서비스의 이용 조건과 절차, 기타 필요한 사항을 규정함을 목적으로 합니다.</p>
+              <p>본 약관은 다온클래스(이하 "서비스")이 제공하는 AI 글쓰기 학습 서비스의 이용 조건과 절차, 기타 필요한 사항을 규정함을 목적으로 합니다.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">제2조 (서비스의 제공)</h2>

@@ -117,7 +117,7 @@ export default function QrCodeModal({ classCode, className, onClose }) {
           </div>
           <div class="code">${classCode}</div>
           <p class="url">${url}</p>
-          <p class="footer">문해력 수업 · 학급 가입 안내</p>
+          <p class="footer">다온클래스 · 학급 가입 안내</p>
         </body>
       </html>
     `)

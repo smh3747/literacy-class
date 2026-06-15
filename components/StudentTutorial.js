@@ -28,7 +28,7 @@ export default function StudentTutorial() {
   const steps = [
     {
       icon: '🎒',
-      title: '문해력 수업에 오신 걸 환영해요!',
+      title: '다온클래스에 오신 걸 환영해요!',
       desc: '여러분의 글쓰기 실력을 키워줄 친구예요.\n잠깐 사용 방법을 알려드릴게요!'
     },
     {

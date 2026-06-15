@@ -47,7 +47,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>문해력 수업</title>
+        <title>다온클래스</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="description" content="초등학생을 위한 AI 글쓰기 피드백 시스템" />
       </Head>
@@ -57,7 +57,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-2">
               <span className="text-2xl">📝</span>
-              <h1 className="text-lg font-bold text-primary-dark">문해력 수업</h1>
+              <h1 className="text-lg font-bold text-primary-dark">다온클래스</h1>
             </div>
             <button
               onClick={() => setShowFeedback(true)}
@@ -71,7 +71,7 @@ export default function Home() {
         <main className="flex-1 flex items-center justify-center px-4 py-12">
           <div className="max-w-md w-full text-center">
             <div className="text-6xl mb-4">✏️</div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">문해력 수업</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-3">다온클래스</h2>
             <p className="text-gray-600 mb-6">
               선생님과 함께하는<br />
               스마트한 글쓰기 학습

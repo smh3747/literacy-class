@@ -48,7 +48,7 @@ export default function ApiKeyGuide() {
 
   return (
     <>
-      <Head><title>Gemini API 키 발급 안내 - 문해력 수업</title></Head>
+      <Head><title>Gemini API 키 발급 안내 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
@@ -138,7 +138,7 @@ export default function ApiKeyGuide() {
                 <div className="flex items-start gap-3 mb-2">
                   <span className="flex-shrink-0 w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">4</span>
                   <div className="flex-1">
-                    <p className="font-medium mb-1">문해력 수업 사이트에 붙여넣고 저장</p>
+                    <p className="font-medium mb-1">다온클래스 사이트에 붙여넣고 저장</p>
                     <p className="text-gray-600 text-xs">아래에서 <strong>바로 등록</strong>하거나, 선생님 메인 화면의 <strong>"🔑 학급 Gemini API 키"</strong> 카드에서 등록할 수 있어요</p>
                     <p className="text-gray-500 text-xs mt-1">한 번 저장하면 학급의 모든 학생이 자동으로 이 키를 사용합니다</p>
                   </div>

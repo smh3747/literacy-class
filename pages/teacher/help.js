@@ -122,7 +122,7 @@ export default function TeacherHelp() {
 
   return (
     <>
-      <Head><title>도움말 - 문해력 수업</title></Head>
+      <Head><title>도움말 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">

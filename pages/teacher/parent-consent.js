@@ -32,7 +32,7 @@ export default function ParentConsent() {
 
   return (
     <>
-      <Head><title>학부모 동의서 - 문해력 수업</title></Head>
+      <Head><title>학부모 동의서 - 다온클래스</title></Head>
       <style>{`
         /* 화면 표시용 */
         .consent-doc { font-size: 14px; line-height: 1.55; }
@@ -90,7 +90,7 @@ export default function ParentConsent() {
             {/* 헤더 */}
             <div className="doc-header text-center mb-5 pb-3 border-b-2 border-gray-300">
               <h1 className="text-xl font-bold mb-1">AI 글쓰기 수업 참여 안내 및 동의서</h1>
-              <p className="text-xs text-gray-600">「문해력 수업」 학부모 안내</p>
+              <p className="text-xs text-gray-600">「다온클래스」 학부모 안내</p>
               {user.school && <p className="text-xs text-gray-700 mt-1">{user.school} · {classInfo?.name}</p>}
             </div>
 
@@ -149,7 +149,7 @@ export default function ParentConsent() {
                 <h2 className="font-bold text-gray-800 mb-1">📝 동의 확인</h2>
                 <label className="flex items-start gap-2 mb-1 text-[13px]">
                   <span className="checkbox-sq inline-block w-4 h-4 border border-gray-700 flex-shrink-0 mt-0.5"></span>
-                  <span>위 안내 내용을 읽고 자녀의 「문해력 수업」 이용에 <strong>동의합니다.</strong></span>
+                  <span>위 안내 내용을 읽고 자녀의 「다온클래스」 이용에 <strong>동의합니다.</strong></span>
                 </label>
                 <label className="flex items-start gap-2 mb-1 text-[13px]">
                   <span className="checkbox-sq inline-block w-4 h-4 border border-gray-700 flex-shrink-0 mt-0.5"></span>

@@ -7,7 +7,7 @@ export default function Footer() {
     <footer className="mt-12 py-6 border-t border-gray-200 bg-white">
       <div className="max-w-4xl mx-auto px-4 text-center text-xs text-gray-500 space-y-1">
         <p>
-          © {year} 문해력 수업. All rights reserved.
+          © {year} 다온클래스. All rights reserved.
         </p>
         <p>
           본 서비스의 콘텐츠, UI, 시스템은 저작권법 및 지식재산권법에 의해 보호됩니다.

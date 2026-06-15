@@ -16,7 +16,7 @@ export default function Privacy() {
 
   return (
     <>
-      <Head><title>개인정보처리방침 - 문해력 수업</title></Head>
+      <Head><title>개인정보처리방침 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
@@ -27,7 +27,7 @@ export default function Privacy() {
         <main className="max-w-3xl mx-auto px-4 py-8">
           <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 text-sm leading-relaxed">
             <section>
-              <p className="text-gray-700">문해력 수업(이하 "서비스")는 「개인정보 보호법」 등 관련 법령을 준수하며, 다음과 같이 개인정보처리방침을 수립·공개합니다.</p>
+              <p className="text-gray-700">다온클래스(이하 "서비스")는 「개인정보 보호법」 등 관련 법령을 준수하며, 다음과 같이 개인정보처리방침을 수립·공개합니다.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">1. 수집하는 개인정보 항목</h2>

@@ -808,7 +808,7 @@ export default function StudentHome() {
 
   return (
     <>
-      <Head><title>글쓰기 - 문해력 수업</title></Head>
+      <Head><title>글쓰기 - 다온클래스</title></Head>
       <style>{`
         .grammar-error {
           text-decoration: underline wavy #dc2626;

@@ -82,7 +82,7 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
 
   const buildAnnouncementText = () => {
     const lines = [
-      `📚 문해력 수업 학생 로그인 안내`,
+      `📚 다온클래스 학생 로그인 안내`,
       ``,
       `1️⃣ 아래 링크 또는 QR로 접속`,
       loginUrl,

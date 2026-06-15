@@ -272,7 +272,7 @@ export default function StudentLogin() {
 
   return (
     <>
-      <Head><title>학생 로그인 - 문해력 수업</title></Head>
+      <Head><title>학생 로그인 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-md mx-auto flex items-center gap-3">

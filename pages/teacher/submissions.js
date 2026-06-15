@@ -614,7 +614,7 @@ export default function TeacherSubmissions() {
 
   return (
     <>
-      <Head><title>학생 글 보기 - 문해력 수업</title></Head>
+      <Head><title>학생 글 보기 - 다온클래스</title></Head>
       <style>{`
         .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
       `}</style>
