@@ -24,10 +24,11 @@ function maskUsername(u) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { realname, school } = req.body || {}
+  const { realname, school, school_code } = req.body || {}
   if (!realname || !realname.trim() || !school || !school.trim()) {
     return res.status(400).json({ error: '이름과 학교를 모두 입력해주세요' })
   }
+  const code = school_code ? String(school_code).trim() : ''
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -41,14 +42,29 @@ export default async function handler(req, res) {
 
   try {
     // 이름 + 학교 정확 일치 (클라이언트가 trim해서 보냄). 휴지통 계정은 제외.
-    const { data, error } = await supabase.from('profiles')
-      .select('username, deleted_at, role')
-      .eq('realname', realname.trim())
-      .eq('school', school.trim())
-      .in('role', ['teacher', 'admin'])
-    if (error) throw error
+    // step163: 표준학교코드(school_code)가 오면 코드 기준으로 먼저 매칭해 표기 흔들림
+    // ('하랑초' vs '하랑초등학교')으로 인한 'none'을 없앤다.
+    //   ⚠️ 단, 기존 교사는 profile.school_code가 아직 NULL일 수 있다. 이때 코드 매칭이
+    //      0건이면 학교명 텍스트로 한 번 더 fallback 조회해 오인식('none')을 막는다.
+    //      자동완성으로 고른 학교명은 공식명이라 텍스트 fallback도 정확도가 높다.
+    const findBy = async (col, val) => {
+      const { data, error } = await supabase.from('profiles')
+        .select('username, deleted_at, role')
+        .eq('realname', realname.trim())
+        .eq(col, val)
+        .in('role', ['teacher', 'admin'])
+      if (error) throw error
+      return (data || []).filter(p => !p.deleted_at && p.username)
+    }
 
-    const active = (data || []).filter(p => !p.deleted_at && p.username)
+    let active = []
+    if (code) {
+      active = await findBy('school_code', code)
+      if (active.length === 0) active = await findBy('school', school.trim()) // 기존 교사 보완
+    } else {
+      active = await findBy('school', school.trim())
+    }
+
     if (active.length === 0) return res.status(200).json({ status: 'none' })
     if (active.length > 1) return res.status(200).json({ status: 'multiple', count: active.length })
     return res.status(200).json({ status: 'found', maskedUsername: maskUsername(active[0].username) })

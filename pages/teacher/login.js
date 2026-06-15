@@ -34,7 +34,7 @@ export default function TeacherLogin() {
 
   // 🆕 비밀번호 초기화 요청 모달
   const [showResetRequest, setShowResetRequest] = useState(false)
-  const [resetForm, setResetForm] = useState({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
+  const [resetForm, setResetForm] = useState({ type: 'find_id', username: '', realname: '', school: '', school_code: '', contact: '' })
   const [resetSubmitting, setResetSubmitting] = useState(false)
   // 🆕 step162: 아이디 자동 찾기 결과 ({ status:'found'|'none'|'multiple', maskedUsername? } | null)
   const [findResult, setFindResult] = useState(null)
@@ -60,6 +60,7 @@ export default function TeacherLogin() {
         body: JSON.stringify({
           realname: resetForm.realname.trim(),
           school: resetForm.school.trim(),
+          school_code: resetForm.school_code || null,
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -116,7 +117,7 @@ export default function TeacherLogin() {
       )
       setShowResetRequest(false)
       setFindResult(null)
-      setResetForm({ type: 'reset_password', username: '', realname: '', school: '', contact: '' })
+      setResetForm({ type: 'find_id', username: '', realname: '', school: '', school_code: '', contact: '' })
     } catch(e) {
       alert('요청 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
     }
@@ -548,19 +549,19 @@ export default function TeacherLogin() {
               onClick={e => e.stopPropagation()}>
               <h3 className="font-bold text-gray-900">🔑 아이디 / 비밀번호 찾기</h3>
 
-              {/* 요청 종류 선택 */}
+              {/* 요청 종류 선택 (아이디 찾기 먼저) */}
               <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => { setResetForm({ ...resetForm, type: 'reset_password' }); setFindResult(null) }}
-                  className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type !== 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
-                  🔑 비밀번호 초기화
-                </button>
                 <button
                   type="button"
                   onClick={() => { setResetForm({ ...resetForm, type: 'find_id' }); setFindResult(null) }}
                   className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type === 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
                   🔍 아이디 찾기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setResetForm({ ...resetForm, type: 'reset_password' }); setFindResult(null) }}
+                  className={`flex-1 py-2 rounded-md text-xs font-semibold ${resetForm.type !== 'find_id' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                  🔑 비밀번호 초기화
                 </button>
               </div>
 
@@ -587,12 +588,14 @@ export default function TeacherLogin() {
                 onChange={e => { setResetForm({ ...resetForm, realname: e.target.value }); if (findResult) setFindResult(null) }}
                 className="w-full p-3 border border-gray-200 rounded-lg text-sm"
               />
-              <input
-                type="text"
-                placeholder={resetForm.type === 'find_id' ? '학교 (필수)' : '학교 (선택)'}
+              <SchoolAutocomplete
                 value={resetForm.school}
-                onChange={e => { setResetForm({ ...resetForm, school: e.target.value }); if (findResult) setFindResult(null) }}
-                className="w-full p-3 border border-gray-200 rounded-lg text-sm"
+                onChange={({ school: s, school_code, school_region }) => {
+                  setResetForm(prev => ({ ...prev, school: s, school_code: school_code || '' }))
+                  if (findResult) setFindResult(null)
+                }}
+                placeholder={resetForm.type === 'find_id' ? '학교 (필수) — 목록에서 선택' : '학교 (선택)'}
+                inputClassName="w-full p-3 border border-gray-200 rounded-lg text-sm"
               />
 
               {/* 비번 초기화 요청에만 연락처 입력 (아이디 찾기는 자동 표시라 불필요) */}
@@ -600,7 +603,7 @@ export default function TeacherLogin() {
                 <>
                   <input
                     type="text"
-                    placeholder="연락 방법 (선택: 전화, 카톡 ID 등)"
+                    placeholder="연락받을 방법 (예: 카톡 ID, 이메일 등)"
                     value={resetForm.contact}
                     onChange={e => setResetForm({ ...resetForm, contact: e.target.value })}
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm"

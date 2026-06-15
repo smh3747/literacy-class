@@ -54,6 +54,8 @@ export default function TeacherHome() {
   const [showPwModal, setShowPwModal] = useState(false)
   const [mustChangePw, setMustChangePw] = useState(false)  // 🆕 step161: 초기화 후 강제 변경
   const [showProfileModal, setShowProfileModal] = useState(false)
+  // 🆕 step163: 표준학교코드 없는 기존 교사 재선택 배너
+  const [showSchoolBanner, setShowSchoolBanner] = useState(false)
   // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
   const [isImpersonating, setIsImpersonating] = useState(false)
 
@@ -76,6 +78,16 @@ export default function TeacherHome() {
     if (profile.must_change_password && !imp) {
       setMustChangePw(true)
       setShowPwModal(true)
+    }
+
+    // 🆕 step163: 표준학교코드가 없는 기존 교사면 "학교 다시 선택" 배너 1회 노출
+    //   (임퍼소네이션 중엔 쓰기 불가하므로 제외 / "나중에" 누르면 localStorage로 끔)
+    if (!imp && profile.role === 'teacher' && !profile.school_code) {
+      const dismissed = typeof window !== 'undefined' &&
+        localStorage.getItem('lc-school-banner-dismissed-' + profile.id) === '1'
+      setShowSchoolBanner(!dismissed)
+    } else {
+      setShowSchoolBanner(false)
     }
 
     if (profile.classes?.id) {
@@ -316,6 +328,38 @@ export default function TeacherHome() {
               onScrollToApi={scrollToApiKey}
               onScrollToLoginHint={scrollToLoginHint}
             />
+          )}
+
+          {/* 🆕 step163: 학교 다시 선택 안내 배너 (표준학교코드 없는 기존 교사) */}
+          {showSchoolBanner && (
+            <div className="rounded-2xl p-4 shadow-sm border bg-blue-50 border-blue-300">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl flex-shrink-0">🏫</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-sm text-blue-900">학교를 공식 명칭으로 다시 선택해주세요</h3>
+                  <p className="text-xs text-blue-800 mt-1">
+                    아이디·비밀번호 찾기가 정확히 되려면 학교를 목록에서 한 번 골라주시면 돼요. 1분이면 끝나요!
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => setShowProfileModal(true)}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700">
+                      지금 선택하기
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (typeof window !== 'undefined' && user?.id) {
+                          localStorage.setItem('lc-school-banner-dismissed-' + user.id, '1')
+                        }
+                        setShowSchoolBanner(false)
+                      }}
+                      className="px-3 py-2 border border-blue-200 text-blue-700 rounded-lg text-xs font-medium">
+                      나중에
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
