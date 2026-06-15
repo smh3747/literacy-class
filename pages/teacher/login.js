@@ -34,9 +34,10 @@ export default function TeacherLogin() {
 
   // 🆕 비밀번호 초기화 요청 모달
   const [showResetRequest, setShowResetRequest] = useState(false)
-  const [resetForm, setResetForm] = useState({ type: 'find_id', username: '', realname: '', school: '', school_code: '', contact: '' })
+  const [resetForm, setResetForm] = useState({ type: 'find_id', username: '', realname: '', school: '', school_code: '', class_code: '', contact: '' })
   const [resetSubmitting, setResetSubmitting] = useState(false)
-  // 🆕 step162: 아이디 자동 찾기 결과 ({ status:'found'|'none'|'multiple', maskedUsername? } | null)
+  // 🆕 step162/164: 아이디 자동 찾기 결과
+  //   ({ status:'found'|'none'|'need_class_code'|'multiple', maskedUsername? } | null)
   const [findResult, setFindResult] = useState(null)
   const [findLoading, setFindLoading] = useState(false)
 
@@ -61,6 +62,8 @@ export default function TeacherLogin() {
           realname: resetForm.realname.trim(),
           school: resetForm.school.trim(),
           school_code: resetForm.school_code || null,
+          // step164: 동명이인 2차 확인용 학급 가입코드 (있을 때만 전송)
+          class_code: resetForm.class_code.trim() || null,
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -117,7 +120,7 @@ export default function TeacherLogin() {
       )
       setShowResetRequest(false)
       setFindResult(null)
-      setResetForm({ type: 'find_id', username: '', realname: '', school: '', school_code: '', contact: '' })
+      setResetForm({ type: 'find_id', username: '', realname: '', school: '', school_code: '', class_code: '', contact: '' })
     } catch(e) {
       alert('요청 실패: ' + (e.message || '잠시 후 다시 시도해주세요'))
     }
@@ -614,7 +617,7 @@ export default function TeacherLogin() {
                 </>
               )}
 
-              {/* 🆕 step162: 아이디 자동 찾기 결과 */}
+              {/* 🆕 step162/164: 아이디 자동 찾기 결과 */}
               {resetForm.type === 'find_id' && findResult && (
                 <div className="border-t border-gray-100 pt-3 text-sm">
                   {findResult.status === 'found' && (
@@ -624,12 +627,35 @@ export default function TeacherLogin() {
                       <p className="text-[11px] text-gray-500 mt-1">전체 아이디가 기억나지 않으면 가운데 글자를 떠올려보세요. 그래도 모르면 아래 "관리자에게 요청"을 눌러주세요.</p>
                     </div>
                   )}
+                  {/* 🆕 step164: 동명이인 — 학급 가입코드 2차 확인 */}
+                  {findResult.status === 'need_class_code' && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-blue-800">
+                        같은 이름의 선생님이 있어요. 본인 학급의 <strong>가입코드</strong>(학생에게 나눠준 4자리 코드)를 입력해주세요.
+                      </p>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="학급 가입코드 4자리"
+                        value={resetForm.class_code}
+                        onChange={e => setResetForm({ ...resetForm, class_code: e.target.value.replace(/[^0-9]/g, '') })}
+                        className="w-full p-2.5 border border-blue-200 rounded-lg text-sm tracking-widest"
+                      />
+                      <button
+                        onClick={submitFindId}
+                        disabled={findLoading || resetForm.class_code.trim().length < 4}
+                        className="w-full py-2 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                        {findLoading ? '확인 중...' : '이 코드로 확인'}
+                      </button>
+                    </div>
+                  )}
                   {findResult.status === 'none' && (
                     <p className="text-red-600 text-xs">일치하는 계정이 없어요. 이름·학교를 가입할 때처럼 정확히 입력했는지 확인해주세요.</p>
                   )}
                   {findResult.status === 'multiple' && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                      동명이인이 있어 자동으로 확정할 수 없어요. 아래 "관리자에게 요청"을 눌러주시면 관리자가 확인 후 알려드려요.
+                      입력한 가입코드로 본인 학급을 확인하지 못했어요. 코드를 다시 확인하시거나, 아래 "관리자에게 요청"을 눌러주시면 관리자가 확인 후 알려드려요.
                     </div>
                   )}
                   {(findResult.status === 'none' || findResult.status === 'multiple') && (
