@@ -38,12 +38,12 @@ export default function SetupChecklist({ classInfo, hasApiKey, studentCount, top
       label: 'Gemini API 키 등록',
       done: !!hasApiKey,
       detail: hasApiKey ? '등록 완료' : 'AI 채점·피드백을 받으려면 필요해요',
-      action: {
-        type: 'scroll',
-        text: hasApiKey ? '관리하기' : '🔑 지금 등록하기',
-        onClick: onScrollToApi
-      },
-      help: { href: '/api-key-guide', text: '발급 방법 보기' }
+      // 미등록: 가이드 페이지(발급설명+임베드 입력칸 원스톱)로 보냄 (메인 버튼이 가이드라 help 중복 제거)
+      // 등록 완료: 기존대로 대시보드 카드로 스크롤(관리) + help 유지
+      action: hasApiKey
+        ? { type: 'scroll', text: '관리하기', onClick: onScrollToApi }
+        : { type: 'link', href: '/api-key-guide', text: '🔑 키 발급받고 등록하기 (5분)' },
+      help: hasApiKey ? { href: '/api-key-guide', text: '발급 방법 보기' } : null
     },
     {
       id: 'students',

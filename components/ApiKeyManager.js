@@ -215,10 +215,10 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
               {verifying ? '키 확인 중...' : '저장'}
             </button>
           </div>
-          <div className="text-xs space-y-1 bg-red-50 border border-red-200 p-3 rounded">
-            <p className="font-semibold text-red-900">🚨 반드시 개인 Gmail 계정으로 발급한 키만 사용!</p>
-            <p className="text-red-800">• 학교/회사/교육청 계정 키는 Google이 차단해서 작동 안 해요</p>
-            <p className="text-red-800">• 반드시 개인 @gmail.com 계정으로 발급한 키인지 확인</p>
+          <div className="text-xs space-y-1 bg-blue-50 border border-blue-200 p-3 rounded">
+            <p className="font-semibold text-blue-900">💡 개인 Gmail 계정 키를 사용해주세요</p>
+            <p className="text-blue-800">• 학교/회사/교육청 계정 키는 Google이 막아두어 작동하지 않아요</p>
+            <p className="text-blue-800">• 개인 @gmail.com 계정으로 발급한 키인지 한 번 확인해주세요</p>
           </div>
           <div className="text-xs text-gray-600 space-y-1 bg-yellow-50 border border-yellow-200 p-3 rounded">
             <p className="font-semibold">📌 학급 단위 저장 안내</p>
