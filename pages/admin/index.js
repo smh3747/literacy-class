@@ -1941,7 +1941,7 @@ function AdminSubmissionsInner() {
     }
     const cMap = {}
     ;(classData || []).forEach(c => {
-      cMap[c.id] = { name: c.name, teacher_school: teacherSchoolMap[c.teacher_id] || '학교 미설정' }
+      cMap[c.id] = { name: c.name, teacher_school: teacherSchoolMap[c.teacher_id] || '학교 미설정', teacher_name: teacherNameMap[c.teacher_id] || '' }
       // 🆕 드롭다운 구분용: 학교·담임 정보를 classList 항목에 직접 부착
       c.school = teacherSchoolMap[c.teacher_id] || '학교 미설정'
       c.teacher_name = teacherNameMap[c.teacher_id] || ''
@@ -2019,7 +2019,7 @@ function AdminSubmissionsInner() {
         const cls = classMap[s.profiles?.class_id]
         key = s.profiles?.class_id || 'no-class'
         label = `📚 ${cls?.name || '(학급 정보 없음)'}`
-        subLabel = cls?.teacher_school || ''
+        subLabel = [cls?.teacher_school, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
       } else if (groupBy === 'topic') {
         key = s.topic_id || s.topic_title || 'no-topic'
         label = `📝 ${s.topic_title || s.topics?.title || '(주제 없음)'}`
@@ -2170,7 +2170,7 @@ function AdminSubmissionsInner() {
 function SubmissionRow({ s, onClick, hideField, classMap }) {
   // 읽기 전용 소속 표시 — 이미 로드된 classMap만 사용 (추가 쿼리 없음)
   const cls = classMap?.[s.profiles?.class_id]
-  const affiliation = [cls?.teacher_school, cls?.name].filter(Boolean).join(' · ')
+  const affiliation = [cls?.teacher_school, cls?.name, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
   return (
     <button onClick={onClick}
       className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center">
