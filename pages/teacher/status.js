@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import { displayStudentName } from '../../lib/displayName'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -85,7 +86,7 @@ export default function SubmissionStatus() {
   const copyAbsentList = (list, label = '미제출') => {
     if (list.length === 0) return alert(`${label} 학생이 없어요!`)
     const text = list
-      .map(s => `${s.number ? s.number + '번 ' : ''}${s.realname}`)
+      .map(s => `${s.number ? s.number + '번 ' : ''}${displayStudentName(s)}`)
       .join(', ')
     navigator.clipboard.writeText(text)
       .then(() => alert(`📋 ${list.length}명의 명단이 복사됐어요!\n\n${text}`))
@@ -107,7 +108,7 @@ export default function SubmissionStatus() {
     const na = parseInt(a.number) || 999
     const nb = parseInt(b.number) || 999
     if (na !== nb) return na - nb
-    return (a.realname || '').localeCompare(b.realname || '')
+    return displayStudentName(a).localeCompare(displayStudentName(b))
   }
   submitted.sort(sortByNumber)
   absent.sort(sortByNumber)
@@ -239,7 +240,7 @@ export default function SubmissionStatus() {
                     {absent.map(s => (
                       <div key={s.id} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm">
                         {s.number && <span className="text-xs text-amber-700 mr-1.5">{s.number}번</span>}
-                        <span className="font-medium">{s.realname}</span>
+                        <span className="font-medium">{displayStudentName(s)}</span>
                       </div>
                     ))}
                   </div>
@@ -267,7 +268,7 @@ export default function SubmissionStatus() {
                           className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm flex items-center justify-between hover:bg-rose-100 hover:border-rose-300 transition-colors">
                           <span>
                             {s.number && <span className="text-xs text-rose-700 mr-1.5">{s.number}번</span>}
-                            <span className="font-medium">{s.realname}</span>
+                            <span className="font-medium">{displayStudentName(s)}</span>
                           </span>
                           <span className="text-xs text-rose-600">{best?.total_score ?? 0}/{best?.max_score ?? 100}</span>
                         </Link>
@@ -295,7 +296,7 @@ export default function SubmissionStatus() {
                       <Link key={s.id} href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
                         className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm hover:bg-blue-100 hover:border-blue-300 transition-colors block">
                         {s.number && <span className="text-xs text-blue-700 mr-1.5">{s.number}번</span>}
-                        <span className="font-medium">{s.realname}</span>
+                        <span className="font-medium">{displayStudentName(s)}</span>
                       </Link>
                     ))}
                   </div>
@@ -327,7 +328,7 @@ export default function SubmissionStatus() {
                               {s.number && (
                                 <span className="text-xs text-gray-500 font-mono w-8 text-center">{s.number}번</span>
                               )}
-                              <span className="font-medium group-hover:text-primary group-hover:underline">{s.realname}</span>
+                              <span className="font-medium group-hover:text-primary group-hover:underline">{displayStudentName(s)}</span>
                               {userSubs.length > 1 && (
                                 <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
                                   +{userSubs.length - 1} 수정

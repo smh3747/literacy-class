@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { displayStudentName } from '../../lib/displayName'
 import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
 import { makeUsernameVariant } from '../../lib/usernameGen'
 
@@ -1360,7 +1361,7 @@ export default function StudentsPage() {
                           return (
                             <tr key={i} className="border-b border-gray-100">
                               <td className="py-1 px-2">{s.number}</td>
-                              <td className="py-1 px-2">{s.realname}</td>
+                              <td className="py-1 px-2">{displayStudentName(s)}</td>
                               <td className="py-1 px-2">
                                 <input
                                   type="text"
@@ -1576,7 +1577,7 @@ export default function StudentsPage() {
 
                         const currentRealname = editingRealnames[s.id] !== undefined
                           ? editingRealnames[s.id]
-                          : (s.realname || '')
+                          : displayStudentName(s)
                         const isDirtyName = editingRealnames[s.id] !== undefined &&
                           editingRealnames[s.id] !== (s.realname || '')
 

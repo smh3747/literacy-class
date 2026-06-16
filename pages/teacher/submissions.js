@@ -9,6 +9,7 @@ import { regradeSubmission } from '../../lib/regrade'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
+import { displayStudentName } from '../../lib/displayName'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
@@ -176,7 +177,7 @@ export default function TeacherSubmissions() {
       const na = parseInt(a.profile.number) || 999
       const nb = parseInt(b.profile.number) || 999
       if (na !== nb) return na - nb
-      return (a.profile.realname || '').localeCompare(b.profile.realname || '')
+      return displayStudentName(a.profile).localeCompare(displayStudentName(b.profile))
     })
     setTopicStudents(groups)
 
@@ -229,7 +230,7 @@ export default function TeacherSubmissions() {
       const na = parseInt(a.profile.number) || 999
       const nb = parseInt(b.profile.number) || 999
       if (na !== nb) return na - nb
-      return (a.profile.realname || '').localeCompare(b.profile.realname || '')
+      return displayStudentName(a.profile).localeCompare(displayStudentName(b.profile))
     })
     setTopicStudents(groups)
 
@@ -769,7 +770,7 @@ export default function TeacherSubmissions() {
                             )}
                             <div>
                               <div className="font-medium text-sm text-gray-800">
-                                {g.profile.realname}
+                                {displayStudentName(g.profile)}
                                 <span className="ml-2 text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
                               </div>
                               <div className="text-xs text-gray-500 mt-0.5">@{g.profile.username}</div>
@@ -796,7 +797,7 @@ export default function TeacherSubmissions() {
                           )}
                           <div>
                             <div className="font-medium text-sm">
-                              {g.profile.realname}
+                              {displayStudentName(g.profile)}
                               {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
                               {sorted.some(s => s.is_fallback_graded) && (
                                 <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
@@ -859,7 +860,7 @@ export default function TeacherSubmissions() {
                 )}
               </div>
               <div className="bg-primary-light rounded-2xl p-4">
-                <h2 className="text-lg font-bold text-primary-dark">{selectedStudent.profile.realname}</h2>
+                <h2 className="text-lg font-bold text-primary-dark">{displayStudentName(selectedStudent.profile)}</h2>
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
 
@@ -952,7 +953,7 @@ export default function TeacherSubmissions() {
                     {/* 🆕 담임 코멘트 — 학생 글 바로 아래 (가까이) */}
                     <TeacherCommentBox
                       submission={s}
-                      studentName={selectedStudent.profile.realname}
+                      studentName={displayStudentName(selectedStudent.profile)}
                       onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
                       disabled={isImpersonating}
                       maskNames={topicStudents.map(g => g.profile.realname).filter(Boolean)}
