@@ -536,11 +536,16 @@ export default function StudentHome() {
       generateExample(essay, totalMax)
     } catch(e) {
       console.error('제출 오류:', e)
+      const rawMsg = e?.message || ''
       // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
-      const isAuthExpired = /인증|로그인/.test(e?.message || '')
+      const isAuthExpired = /인증|로그인/.test(rawMsg)
+      // 유료 잔액 소진은 학생이 못 고침 → 선생님께 알리도록 안내 (버튼 없음)
+      const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
       setErrorModal({
         title: '🚨 글 제출에 문제가 생겼어요',
-        message: getFriendlyErrorMessage(e),
+        message: isPrepayment
+          ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+          : getFriendlyErrorMessage(e),
         showReload: isAuthExpired
       })
     }
@@ -799,11 +804,16 @@ export default function StudentHome() {
       generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
+      const rawMsg = e?.message || ''
       // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
-      const isAuthExpired = /인증|로그인/.test(e?.message || '')
+      const isAuthExpired = /인증|로그인/.test(rawMsg)
+      // 유료 잔액 소진은 학생이 못 고침 → 선생님께 알리도록 안내 (버튼 없음)
+      const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
       setErrorModal({
         title: '🚨 수정본 제출에 문제가 생겼어요',
-        message: getFriendlyErrorMessage(e),
+        message: isPrepayment
+          ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+          : getFriendlyErrorMessage(e),
         showReload: isAuthExpired
       })
     }
