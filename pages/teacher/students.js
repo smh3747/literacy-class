@@ -1518,6 +1518,14 @@ export default function StudentsPage() {
               const clearSelection = () => setSelectedStudentIds(new Set())
               return (
               <>
+                {/* 🔒 잠긴(동의 대기) 신규 학생이 한 명이라도 있을 때만 안내 — realname 빈값 기준 */}
+                {students.some(s => !s.is_hidden && !(s.realname && s.realname.trim())) && (
+                  <div className="bg-blue-50 border border-blue-200 text-blue-900 text-xs sm:text-sm p-3 rounded-lg mb-3 leading-relaxed">
+                    💡 개인정보 보호를 위해, 새로 등록되는 학생은 <strong>닉네임</strong>으로 표시됩니다.
+                    학부모 동의 절차는 <strong>준비 중</strong>이며, 동의가 완료되면 실명으로 표시될 예정입니다.
+                    <span className="text-blue-700/70"> (기존 학생은 그대로 표시됩니다)</span>
+                  </div>
+                )}
                 <p className="text-xs text-gray-500 mb-2">
                   💡 번호/이름/아이디 칸 클릭해서 수정 · 동의서 ✓ · 🔑 비번 초기화 · 🙈 전출생 숨김
                 </p>
@@ -1624,6 +1632,10 @@ export default function StudentsPage() {
                                 disabled={savingId === s.id || s.is_hidden}
                                 title="클릭해서 이름 수정"
                               />
+                              {/* 🔒 realname이 빈값이면 잠긴(동의 대기) 신규 학생 — 닉네임은 위 입력칸에 displayStudentName으로 표시됨 */}
+                              {!s.is_hidden && !(s.realname && s.realname.trim()) && (
+                                <span className="inline-block mt-0.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">🔒 동의 대기</span>
+                              )}
                               {s.nickname ? (
                                 <div className="text-[10px] text-purple-600 mt-0.5 flex items-center gap-1 flex-wrap">
                                   <span>🎭 {s.nickname}</span>
