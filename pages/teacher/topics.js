@@ -778,6 +778,8 @@ export default function TopicsPage() {
       }
     } catch(e) {
       console.error('평가 기준 생성 실패:', e)
+      // 변환 누락 메우기: 다른 rubricGen catch처럼 친절 메시지로 안내 (Failed to fetch 등 포함)
+      alert(getFriendlyErrorMessage(e))
     }
     setGeneratingRubrics(false)
 
