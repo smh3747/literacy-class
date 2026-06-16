@@ -72,24 +72,26 @@ export default function ApiKeyGuide() {
             <h2 className="font-bold text-gray-900 mb-2">💡 API 키가 뭐예요?</h2>
             <p className="text-sm text-gray-700">
               AI(구글 Gemini)를 쓰기 위해 구글에서 <strong>무료로 받는 '출입증'</strong>이에요.
-              한 번 발급받아 붙여넣으면 끝, <strong>5분</strong>이면 됩니다. 코딩 몰라도 괜찮아요.
+              한 번 발급받아 붙여넣으면 끝, <strong>5분</strong>이면 됩니다.
             </p>
             <p className="text-sm text-gray-600 mt-2">
               <strong>왜 선생님이 직접 받나요?</strong> → 선생님 키로 쓰면 AI 비용이 구글 무료 한도로 해결되거든요.
             </p>
           </div>
 
-          {/* ⚠️ 가장 중요 - 맨 위에 강조 */}
-          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-5">
-            <h3 className="font-bold text-red-900 mb-2 text-base">🚨 시작 전 꼭 알아두세요!</h3>
-            <div className="text-sm text-red-900 space-y-2">
-              <p className="font-bold">반드시 개인 Gmail 계정(@gmail.com)으로 진행하세요.</p>
-              <ul className="text-xs space-y-1">
-                <li>❌ 학교 계정 (학교 도메인) → <strong>차단됨</strong></li>
-                <li>❌ 교육청/정부기관 계정 → <strong>차단됨</strong></li>
-                <li>✅ 본인이름@gmail.com 같은 개인 계정 → <strong>OK</strong></li>
-              </ul>
-              <p className="text-xs mt-2 bg-white p-2 rounded">
+          {/* 💡 한 가지만 확인 - 안내 톤 */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+            <h3 className="font-bold text-amber-900 mb-2 text-base">💡 한 가지만 확인해주세요</h3>
+            <div className="text-sm text-amber-900 space-y-2">
+              <p>
+                <strong>개인 Gmail 계정</strong>으로 발급해주세요. 학교·교육청 계정은 구글이 외부 앱 연결을 막아둬서 작동하지 않거든요.
+                개인 Gmail이 없으시면 <strong>1분</strong>이면 새로 만들 수 있어요.
+              </p>
+              <p className="text-xs">✅ 예: <strong>본인이름@gmail.com</strong> 같은 개인 계정</p>
+              <p className="text-xs bg-white border border-amber-100 p-2 rounded text-amber-900">
+                🔒 이 키는 AI 글쓰기 채점에만 사용되며, 선생님의 Gmail·메일·개인정보에는 접근하지 않아요. (구글 AI를 부르는 용도로만 쓰이는 키예요.)
+              </p>
+              <p className="text-xs mt-1 bg-white p-2 rounded">
                 💡 만약 현재 브라우저에 학교 계정으로 로그인되어 있다면, <strong>시크릿 모드</strong>(Ctrl+Shift+N)를 열어서 진행하시면 편해요.
               </p>
             </div>
