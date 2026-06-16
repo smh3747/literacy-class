@@ -67,6 +67,18 @@ export default function ApiKeyGuide() {
             </p>
           </div>
 
+          {/* 💡 API 키가 뭔지 — 생소한 선생님용 쉬운 설명 */}
+          <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 className="font-bold text-gray-900 mb-2">💡 API 키가 뭐예요?</h2>
+            <p className="text-sm text-gray-700">
+              AI(구글 Gemini)를 쓰기 위해 구글에서 <strong>무료로 받는 '출입증'</strong>이에요.
+              한 번 발급받아 붙여넣으면 끝, <strong>5분</strong>이면 됩니다. 코딩 몰라도 괜찮아요.
+            </p>
+            <p className="text-sm text-gray-600 mt-2">
+              <strong>왜 선생님이 직접 받나요?</strong> → 선생님 키로 쓰면 AI 비용이 구글 무료 한도로 해결되거든요.
+            </p>
+          </div>
+
           {/* ⚠️ 가장 중요 - 맨 위에 강조 */}
           <div className="bg-red-50 border-2 border-red-300 rounded-xl p-5">
             <h3 className="font-bold text-red-900 mb-2 text-base">🚨 시작 전 꼭 알아두세요!</h3>
@@ -227,9 +239,9 @@ export default function ApiKeyGuide() {
 
           {/* 무료 한도 - 간단하게 */}
           <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-lg font-bold mb-3">💰 정말 무료인가요?</h2>
+            <h2 className="text-lg font-bold mb-3">💰 AI 쓰는 데 돈이 드나요?</h2>
             <div className="text-sm space-y-2">
-              <p>네, <strong>완전 무료</strong>로 사용할 수 있어요.</p>
+              <p>AI 채점에 드는 비용은 구글의 <strong>무료 한도</strong>로 충분해서, 따로 돈이 나가지 않아요. (선생님이 등록한 키로 무료 한도 안에서 작동해요.)</p>
               <p className="text-gray-600">
                 Google이 정한 일일 한도가 있긴 하지만, 우리 앱은 한도 도달 시 자동으로 다른 모델로 전환되어 학생들이 끊김 없이 사용할 수 있도록 설계되어 있어요.
               </p>

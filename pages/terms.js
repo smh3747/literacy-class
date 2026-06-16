@@ -35,7 +35,7 @@ export default function Terms() {
             <section>
               <h2 className="text-lg font-bold mb-2">제2조 (서비스의 제공)</h2>
               <p>1. 서비스는 초·중등 학교 교사가 학생에게 글쓰기 과제를 부여하고, 학생이 작성한 글에 대해 AI 기반 피드백을 제공받을 수 있는 플랫폼입니다.</p>
-              <p>2. 서비스는 무료로 제공되며, AI 호출 비용은 사용자(교사)가 본인의 API 키로 부담합니다.</p>
+              <p>2. 현재 서비스는 베타 기간 동안 무료로 제공됩니다. 향후 유료 요금제가 도입될 수 있으며, 이 경우 시행 전 서비스 내 공지를 통해 안내합니다. AI 호출 비용(교사가 등록한 API 키로 발생)은 서비스 이용료와 별개입니다.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold mb-2">제3조 (회원가입)</h2>
@@ -66,7 +66,7 @@ export default function Terms() {
               <h2 className="text-lg font-bold mb-2">제7조 (약관의 변경)</h2>
               <p>본 약관은 필요 시 변경될 수 있으며, 변경 시 서비스 내 공지를 통해 안내합니다.</p>
             </section>
-            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일</p>
+            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 16일</p>
           </div>
         </main>
       </div>

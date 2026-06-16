@@ -7,6 +7,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
   const [inputKey, setInputKey] = useState('')
   const [showInput, setShowInput] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [showInputKey, setShowInputKey] = useState(false)  // 입력 중 붙여넣기 확인용 (저장 키 표시와 별개)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)  // 🆕 카드 열고 닫기 (키 등록되어 있으면 기본 닫힘)
 
@@ -143,7 +144,7 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
               </span>
             ) : (
               <span className="text-xs font-normal bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                ⚠️ 미등록 — AI 채점 불가
+                🔑 AI 키를 등록하면 채점이 시작돼요 (준비되면 5분이면 충분해요)
               </span>
             )}
           </h3>
@@ -187,14 +188,23 @@ export default function ApiKeyManager({ classId, onChange, openSignal }) {
               💡 새 API 키를 입력하면 기존 키가 교체됩니다
             </div>
           )}
-          <input
-            type="password"
-            placeholder="발급받은 API 키를 붙여넣어 주세요"
-            value={inputKey}
-            onChange={e => setInputKey(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-lg text-sm font-mono"
-            autoComplete="off"
-          />
+          <div className="relative">
+            <input
+              type={showInputKey ? 'text' : 'password'}
+              placeholder="발급받은 API 키를 붙여넣어 주세요"
+              value={inputKey}
+              onChange={e => setInputKey(e.target.value)}
+              className="w-full p-3 pr-12 border border-gray-200 rounded-lg text-sm font-mono"
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              onClick={() => setShowInputKey(v => !v)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-sm px-2 py-1 text-gray-500 hover:text-gray-700"
+              title={showInputKey ? '숨기기' : '붙여넣은 키 보기'}>
+              {showInputKey ? '🙈' : '👁️'}
+            </button>
+          </div>
           <div className="flex gap-2">
             {hasKey && (
               <button onClick={cancelEdit} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm">
