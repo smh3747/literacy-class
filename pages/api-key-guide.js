@@ -71,7 +71,10 @@ export default function ApiKeyGuide() {
           <div className="bg-white border border-gray-200 rounded-xl p-5">
             <h2 className="font-bold text-gray-900 mb-2">💡 API 키가 뭐예요?</h2>
             <p className="text-sm text-gray-700 leading-relaxed">
-              AI(구글 Gemini)를 쓰기 위해 구글에서 <strong>무료로 받는 '출입증'</strong>이에요. 한 번 발급받아 붙여넣으면 끝, <strong>5분</strong>이면 됩니다.
+              AI(구글 Gemini)를 쓰기 위해 구글에서 <strong>무료로 받는 '출입증'</strong>이에요.
+            </p>
+            <p className="text-sm text-gray-700 mt-2 leading-relaxed">
+              한 번 발급받아 붙여넣으면 끝! <strong>5분</strong>이면 됩니다.
             </p>
             <p className="text-sm text-gray-600 mt-2 leading-relaxed">
               <strong>왜 선생님이 직접 받나요?</strong> → 선생님 키로 쓰면 AI 비용이 구글 무료 한도로 해결되거든요.
