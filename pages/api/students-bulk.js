@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { generateUniqueNickname } from '../../lib/nickname'
+import { maskName } from '../../lib/maskName'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -113,7 +114,8 @@ export default async function handler(req, res) {
       const profileData = {
         id: data.user.id,
         username: uname,
-        realname: s.realname,
+        // 개인정보 최소화(1단계): 신규 학생은 마스킹된 이름으로 저장 (김민수 → 김*수)
+        realname: maskName(s.realname),
         role: 'student',
         class_id: classId
       }
