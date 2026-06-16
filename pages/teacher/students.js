@@ -1524,6 +1524,7 @@ export default function StudentsPage() {
                     💡 개인정보 보호를 위해, 새로 등록되는 학생은 <strong>닉네임</strong>으로 표시됩니다.
                     학부모 동의 절차는 <strong>준비 중</strong>이며, 동의가 완료되면 실명으로 표시될 예정입니다.
                     <span className="text-blue-700/70"> (기존 학생은 그대로 표시됩니다)</span>
+                    <div className="text-[11px] text-blue-700/80 mt-1">아래 목록에서 <strong>🔒 동의 대기</strong> 표시가 있는 학생이 닉네임으로 보이는 중이에요.</div>
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mb-2">
@@ -1634,7 +1635,10 @@ export default function StudentsPage() {
                               />
                               {/* 🔒 realname이 빈값이면 잠긴(동의 대기) 신규 학생 — 닉네임은 위 입력칸에 displayStudentName으로 표시됨 */}
                               {!s.is_hidden && !(s.realname && s.realname.trim()) && (
-                                <span className="inline-block mt-0.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">🔒 동의 대기</span>
+                                <span
+                                  className="inline-block mt-0.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full cursor-help"
+                                  title="학부모 동의가 완료되면 실명으로 표시됩니다"
+                                >🔒 동의 대기</span>
                               )}
                               {s.nickname ? (
                                 <div className="text-[10px] text-purple-600 mt-0.5 flex items-center gap-1 flex-wrap">
