@@ -218,8 +218,8 @@ export default function ApiKeyGuide() {
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
             <h3 className="font-bold text-yellow-900 mb-2">⚠️ 보안 주의사항</h3>
             <ul className="text-sm text-yellow-900 space-y-1">
-              <li>• API 키는 본인의 기기에만 저장하세요</li>
-              <li>• 공용 PC에서 사용 후 반드시 "키 삭제" 버튼을 눌러주세요</li>
+              <li>• 입력한 키는 서버에 안전하게 보관되며, 학생이나 외부에 공개되지 않아요</li>
+              <li>• 키를 바꾸거나 지우려면 언제든 "키 삭제" 버튼으로 가능해요 (서버에서 제거됩니다)</li>
               <li>• 타인에게 API 키를 공유하지 마세요</li>
               <li>• 키가 유출된 것 같으면 Google AI Studio에서 즉시 삭제 후 재발급</li>
             </ul>

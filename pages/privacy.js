@@ -40,7 +40,7 @@ export default function Privacy() {
               <p className="font-semibold mt-2">[교사]</p>
               <ul className="list-disc pl-5 space-y-1">
                 <li>필수: 이름, 아이디, 비밀번호, 소속 학급 정보</li>
-                <li>선택: AI API 키 (브라우저에만 저장, 서버 미저장)</li>
+                <li>선택: AI API 키 (학급 단위로 서버에 보관, 담당 교사·관리자만 접근, 학생·외부 비공개)</li>
               </ul>
             </section>
             <section>
@@ -103,7 +103,7 @@ export default function Privacy() {
               <ul className="list-disc pl-5 space-y-1">
                 <li>HTTPS 암호화 통신</li>
                 <li>비밀번호는 단방향 암호화 저장</li>
-                <li>AI API 키는 사용자 브라우저에만 저장 (서버 미보관)</li>
+                <li>AI API 키는 학급 단위로 서버에 보관하며, 담당 교사·관리자만 접근할 수 있고 학생·외부에는 공개되지 않습니다 (AI 호출 시에만 서버가 사용, 브라우저로 전달 안 함)</li>
                 <li>접근 권한 분리 (학생/교사/관리자)</li>
               </ul>
             </section>
@@ -120,7 +120,7 @@ export default function Privacy() {
               <h2 className="text-lg font-bold mb-2">8. 처리방침의 변경</h2>
               <p className="text-gray-700">본 개인정보처리방침은 법령·서비스 변경에 따라 개정될 수 있으며, 변경 시 시행일과 변경 내용을 서비스 내 공지합니다.</p>
             </section>
-            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 15일</p>
+            <p className="text-gray-500 text-xs pt-4 border-t">시행일: 2026년 5월 7일 · 최종 개정: 2026년 6월 16일</p>
           </div>
         </main>
       </div>
