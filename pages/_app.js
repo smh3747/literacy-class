@@ -19,8 +19,34 @@ export default function App({ Component, pageProps }) {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
+    // 🆕 확장프로그램(메타마스크 등) 노이즈 필터 — js_error 경로에만 적용.
+    // 보수적 원칙: 우리 앱 진짜 에러(504/ai_call/api_error 등)는 절대 거르지 않음. (미탐 > 오탐)
+    const APP_MARKERS = ['status 5', '파싱 실패', 'TIMEOUT', 'ai_call', 'Gemini', '응답']
+    const EXTENSION_ORIGINS = [
+      'chrome-extension://', 'moz-extension://', 'safari-web-extension://',
+      'safari-extension://', 'ms-browser-extension://',
+    ]
+    const NOISE_PHRASES = [
+      'Failed to connect to MetaMask',
+      'Cannot redefine property: ethereum',
+      'Cannot set property ethereum',
+    ]
+    const isExtensionNoise = (msg, source) => {
+      const m = msg || ''
+      // 1) 우리 앱 표지가 있으면 출처 불문 무조건 보존 (오탐 방지)
+      if (APP_MARKERS.some(w => m.includes(w))) return false
+      // 2) 출처(filename/stack)가 확장프로그램 origin이면 노이즈로 판단
+      const s = source || ''
+      if (EXTENSION_ORIGINS.some(o => s.includes(o))) return true
+      // 3) 알려진 전체 문구면 노이즈 (단어 단독 매칭 금지 — 전체 문구만)
+      if (NOISE_PHRASES.some(p => m.includes(p))) return true
+      return false
+    }
+
     const onError = (event) => {
       const msg = event?.error?.message || event?.message || '알 수 없는 오류'
+      const source = event?.filename || event?.error?.stack || ''
+      if (isExtensionNoise(msg, source)) return
       logError({
         page: router.pathname,
         errorType: 'js_error',
@@ -31,6 +57,8 @@ export default function App({ Component, pageProps }) {
     const onRejection = (event) => {
       const reason = event?.reason
       const msg = (reason && (reason.message || String(reason))) || 'unhandledrejection'
+      const source = (reason && reason.stack) || ''
+      if (isExtensionNoise(msg, source)) return
       logError({ page: router.pathname, errorType: 'js_error', message: msg })
     }
 

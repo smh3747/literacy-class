@@ -17,7 +17,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   grammarOnlyPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 
 export const config = {
-  maxDuration: 60, // 채점은 시간이 걸릴 수 있음
+  maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
 }
 
 // 서버 측 에러 기록(step155): service_role로 error_logs에 직접 INSERT. 절대 throw하지 않음.
