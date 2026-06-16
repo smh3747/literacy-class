@@ -1288,6 +1288,15 @@ export default function StudentsPage() {
                 메인 화면 → "✏️ 내 정보 수정"에서 학교명을 먼저 입력해주세요.
               </div>
             )}
+            {/* 🔒 명단 처리 안심 안내 — 코드로 확인된 사실만 (과장 금지) */}
+            <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded-lg mb-3">
+              <p className="font-semibold mb-1">🔒 학생 명단은 이렇게 안전하게 처리돼요</p>
+              <ul className="text-xs space-y-1 text-blue-800">
+                <li>• 업로드한 명렬표 파일은 선생님 기기(브라우저)에서만 읽고, 우리 서버에 저장되지 않아요.</li>
+                <li>• 학생 이름은 AI 채점에 사용되지 않아요 (AI에는 글 내용만 전달돼요).</li>
+                <li>• 학생 정보는 담임 선생님과 관리자만 볼 수 있고, 외부에는 공개되지 않아요.</li>
+              </ul>
+            </div>
             <div className="space-y-3">
               <label className="block">
                 <span className="sr-only">엑셀 또는 PDF 파일 선택</span>
