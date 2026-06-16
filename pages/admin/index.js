@@ -2108,7 +2108,7 @@ function AdminSubmissionsInner() {
         // ─── flat: 기존 동작 (시간순 평면 리스트) ───
         <div className="space-y-2">
           {submissions.map(s => (
-            <SubmissionRow key={s.id} s={s} onClick={() => setSelectedSubmission(s)} />
+            <SubmissionRow key={s.id} s={s} classMap={classMap} onClick={() => setSelectedSubmission(s)} />
           ))}
         </div>
       ) : (
@@ -2151,7 +2151,7 @@ function AdminSubmissionsInner() {
                 {isExpanded && (
                   <div className="bg-white p-2 space-y-1.5 border-t border-gray-200">
                     {g.items.map(s => (
-                      <SubmissionRow key={s.id} s={s}
+                      <SubmissionRow key={s.id} s={s} classMap={classMap}
                         onClick={() => setSelectedSubmission(s)}
                         hideField={groupBy === 'topic' ? 'topic' : groupBy === 'student' ? 'student' : null} />
                     ))}
@@ -2167,7 +2167,10 @@ function AdminSubmissionsInner() {
 }
 
 // 학생글 한 줄 (재사용 컴포넌트)
-function SubmissionRow({ s, onClick, hideField }) {
+function SubmissionRow({ s, onClick, hideField, classMap }) {
+  // 읽기 전용 소속 표시 — 이미 로드된 classMap만 사용 (추가 쿼리 없음)
+  const cls = classMap?.[s.profiles?.class_id]
+  const affiliation = [cls?.teacher_school, cls?.name].filter(Boolean).join(' · ')
   return (
     <button onClick={onClick}
       className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center">
@@ -2186,6 +2189,9 @@ function SubmissionRow({ s, onClick, hideField }) {
           {s.is_fallback_graded && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">폴백</span>}
         </div>
         <div className="text-xs text-gray-500 mt-1">
+          {affiliation && (
+            <span className="text-gray-400">{affiliation} · </span>
+          )}
           {hideField !== 'topic' && (
             <>{s.topic_title || s.topics?.title || '-'} · </>
           )}
