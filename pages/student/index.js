@@ -536,9 +536,12 @@ export default function StudentHome() {
       generateExample(essay, totalMax)
     } catch(e) {
       console.error('제출 오류:', e)
+      // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
+      const isAuthExpired = /인증|로그인/.test(e?.message || '')
       setErrorModal({
         title: '🚨 글 제출에 문제가 생겼어요',
-        message: getFriendlyErrorMessage(e)
+        message: getFriendlyErrorMessage(e),
+        showReload: isAuthExpired
       })
     }
     setSubmitting(false); setRetryMessage(null)
@@ -796,9 +799,12 @@ export default function StudentHome() {
       generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
+      // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
+      const isAuthExpired = /인증|로그인/.test(e?.message || '')
       setErrorModal({
         title: '🚨 수정본 제출에 문제가 생겼어요',
-        message: getFriendlyErrorMessage(e)
+        message: getFriendlyErrorMessage(e),
+        showReload: isAuthExpired
       })
     }
     setRewriting(false); setRetryMessage(null)
@@ -1460,9 +1466,21 @@ export default function StudentHome() {
                   {errorModal.message}
                 </p>
               </div>
+              {errorModal.showReload && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="w-full py-3 mb-2 bg-primary text-white rounded-xl font-semibold"
+                >
+                  🔄 새로고침
+                </button>
+              )}
               <button
                 onClick={() => setErrorModal(null)}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold"
+                className={`w-full py-3 rounded-xl font-semibold ${
+                  errorModal.showReload
+                    ? 'bg-gray-100 text-gray-700'
+                    : 'bg-primary text-white'
+                }`}
               >
                 확인
               </button>
