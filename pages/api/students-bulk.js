@@ -4,9 +4,11 @@
 // 환경변수 필요:
 // - NEXT_PUBLIC_SUPABASE_URL
 // - SUPABASE_SERVICE_ROLE_KEY  ← 서버 전용 (절대 클라이언트 노출 금지)
+// - NAME_ENCRYPTION_KEY        ← 서버 전용, 신규 학생 실명 잠금용(없으면 실명 평문 폴백)
 
 import { createClient } from '@supabase/supabase-js'
 import { generateUniqueNickname } from '../../lib/nickname'
+import { encryptName } from '../../lib/encryptName'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -109,11 +111,24 @@ export default async function handler(req, res) {
         usedNicknames.push(nickname) // 다음 학생 위해 추가
       } catch(e) {}
 
-      // profile 추가
+      // 🔒 신규 학생 실명 잠금(개인정보 최소화):
+      //    실명을 암호화해 pending_names에 보관하고 profiles.realname은 비운다.
+      //    화면은 displayStudentName이 빈 realname 대신 nickname을 보여줌.
+      //    암호화가 가능할 때만 realname을 비우고(이름 분실 방지), 실패 시 실명 평문 폴백.
+      let encName = null
+      let lockWarning = null
+      try {
+        encName = encryptName(s.realname)   // 키 없음/형식오류면 throw → 폴백
+      } catch (encErr) {
+        lockWarning = '이름 암호화 실패(실명 보존): ' + encErr.message
+        console.error('[students-bulk] encrypt 실패:', uname, encErr.message)
+      }
+
+      // profile 추가 — 잠금 성공 시 realname 비움, 실패 시 실명 보존
       const profileData = {
         id: data.user.id,
         username: uname,
-        realname: s.realname,
+        realname: encName ? '' : s.realname,
         role: 'student',
         class_id: classId
       }
@@ -127,7 +142,18 @@ export default async function handler(req, res) {
       if (profErr) {
         results.failed.push({ ...s, error: 'profile: ' + profErr.message })
       } else {
-        results.success.push({ ...s, nickname })
+        // 잠금 테이블 저장 (profiles가 먼저 있어야 FK 충족 → insert 이후 수행)
+        if (encName) {
+          const { error: pnErr } = await supabaseAdmin.from('pending_names')
+            .insert({ student_id: data.user.id, class_id: classId, enc_name: encName })
+          if (pnErr) {
+            // 잠금 실패 → 이름 분실 방지: realname을 실명으로 되돌리고 경고 기록
+            lockWarning = 'pending_names 저장 실패(실명 복원): ' + pnErr.message
+            console.error('[students-bulk] pending_names 실패:', uname, pnErr.message)
+            await supabaseAdmin.from('profiles').update({ realname: s.realname }).eq('id', data.user.id)
+          }
+        }
+        results.success.push({ ...s, nickname, ...(lockWarning ? { warning: lockWarning } : {}) })
       }
     } catch(e) {
       results.failed.push({ ...s, error: e.message })
