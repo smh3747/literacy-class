@@ -244,6 +244,15 @@ export default function ParentConsent() {
                     className="w-full p-3 border border-gray-200 rounded-lg" />
                 </div>
 
+                {/* 부모 안심 안내 (사실 기반 — 철회 가능 단정 금지) */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+                  <p className="font-semibold">🔒 안심하세요</p>
+                  <p>· 받는 정보는 <strong>보호자 성함과 서명</strong>뿐이에요. 연락처·주소는 받지 않아요.</p>
+                  <p>· 자녀 실명은 <strong>동의한 우리 반</strong>에서 글쓰기 피드백 용도로만 쓰여요.</p>
+                  <p>· 동의는 <strong>선택</strong>이에요. 안 하셔도 자녀는 닉네임으로 모든 기능을 이용해요.</p>
+                  <p>· 동의를 거두고 싶으시면 <strong>담임 선생님께 말씀해</strong> 주세요.</p>
+                </div>
+
                 {/* 동의 항목 안내 (privacy.js 문구에 정합) */}
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 space-y-1.5 leading-relaxed">
                   <p className="font-semibold text-gray-900">📋 수집·이용 안내</p>

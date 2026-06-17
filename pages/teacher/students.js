@@ -9,6 +9,7 @@ import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { displayStudentName } from '../../lib/displayName'
 import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
 import { makeUsernameVariant } from '../../lib/usernameGen'
+import ConsentPanel from '../../components/ConsentPanel'
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -374,6 +375,9 @@ export default function StudentsPage() {
       }
 
       let msg = `✅ 성공: ${result.success.length}명\n❌ 실패: ${result.failed.length}명`
+      if (result.success.length > 0) {
+        msg += `\n\n🔒 실명은 보호자 동의 전까지 자동으로 잠겨 닉네임으로 표시돼요. 동의 안내는 아래 '학부모 동의'에서 보낼 수 있어요.`
+      }
 
       if (result.failed.length > 0) {
         // 동일 사유 그룹핑
@@ -1419,6 +1423,20 @@ export default function StudentsPage() {
               </details>
             </div>
           </div>
+
+          {/* 🆕 학부모 동의 B카드 — 잠긴 학생(realname 빈값=step188 기준)이 1명 이상 & 임퍼소네이션 아닐 때만 */}
+          {!isImpersonating && classInfo && students.filter(s => !s.is_hidden && !(s.realname && String(s.realname).trim())).length > 0 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
+              <h3 className="font-bold text-gray-900 mb-1">
+                🔒 학부모 동의
+                <span className="ml-2 text-sm font-normal text-blue-700">
+                  동의 대기 {students.filter(s => !s.is_hidden && !(s.realname && String(s.realname).trim())).length}명
+                </span>
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">동의받으면 그 학생만 실명으로 표시돼요. 동의는 선택이에요.</p>
+              <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} />
+            </div>
+          )}
 
           {/* 등록된 학생 목록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
