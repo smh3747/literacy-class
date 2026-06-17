@@ -238,26 +238,31 @@ export default function StudentLogin() {
           return
         }
 
-        const profileData = {
-          id: data.user.id, username: username.toLowerCase(), realname: username,
-          role: 'student', class_id: classData.id, school: classData.school || null
-        }
-
-        // ⚠️ profile을 먼저 INSERT해야 함 (step148 RLS):
-        // 내 profile이 생겨야 my_class_id()가 잡혀서 동급생 닉네임 조회가 허용됨
-        await supabase.from('profiles').insert(profileData)
-
-        // 학급 내 기존 닉네임 가져와서 중복 안 되게 부여 (본인 행 UPDATE)
+        // 🆕 step197: 닉네임을 insert 전에 확정해 한 번에 저장 (자가가입도 잠금 모델과 동일하게
+        //   realname엔 아이디 대신 빈값 → 화면은 displayStudentName이 닉네임을 표시).
+        // generateUniqueNickname은 항상 비어있지 않은 문자열을 반환(중복 회피 30회 실패 시 숫자 접미사,
+        //   DB접근·throw 없음) → 닉네임 누락 불가. 동급생 닉네임 조회는 best-effort(가입 전이라
+        //   RLS상 대개 빈 결과 → 중복 회피는 약화되나 중복은 외관상 문제일 뿐, 교사가 '닉네임 변경'으로 조정 가능).
+        let nickname
         try {
           const { generateUniqueNickname } = await import('../../lib/nickname')
-          const { data: existing } = await supabase.from('profiles')
-            .select('nickname').eq('class_id', classData.id).eq('role', 'student')
-          const used = (existing || []).map(p => p.nickname).filter(Boolean)
-          const nickname = generateUniqueNickname(used)
-          if (nickname) {
-            await supabase.from('profiles').update({ nickname }).eq('id', data.user.id)
-          }
-        } catch(e) { /* nickname 컬럼 없으면 무시 — 가입은 계속 */ }
+          let used = []
+          try {
+            const { data: existing } = await supabase.from('profiles')
+              .select('nickname').eq('class_id', classData.id).eq('role', 'student')
+            used = (existing || []).map(p => p.nickname).filter(Boolean)
+          } catch (_) { /* 조회 실패 → 빈 목록으로 생성(닉네임은 여전히 보장) */ }
+          nickname = generateUniqueNickname(used)
+        } catch (_) {
+          // 극단 케이스(모듈 로드 실패 등) 폴백 — 닉네임이 절대 비지 않도록 직접 구성. 가입은 중단하지 않음.
+          nickname = '새친구' + String(data.user.id).slice(0, 4)
+        }
+
+        const profileData = {
+          id: data.user.id, username: username.toLowerCase(), realname: '', nickname,
+          role: 'student', class_id: classData.id, school: classData.school || null
+        }
+        await supabase.from('profiles').insert(profileData)
         persistOptions()
         router.push('/student')
       }
