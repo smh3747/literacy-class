@@ -84,13 +84,18 @@ export default async function handler(req, res) {
     // 3) 학급 검증
     const normalizedCode = String(classCode).trim().toUpperCase()
     const { data: cls } = await supabaseAdmin.from('classes')
-      .select('id, consent_password, deleted_at')
+      .select('id, code, consent_password, deleted_at')
       .eq('code', normalizedCode)
       .maybeSingle()
     if (!cls || cls.deleted_at) {
       return res.status(404).json({ error: '학급을 찾을 수 없어요. 코드를 다시 확인해주세요.' })
     }
-    if (!cls.consent_password || String(consentPassword).trim() !== cls.consent_password) {
+    // 동의번호 폴백: 교사가 비번을 설정했으면 그 값, 비웠으면(빈값/null) 학급코드가 정답.
+    //  ※ ClassSettings(표시·안내문)와 반드시 같은 규칙 — 안 그러면 "안내문엔 적혀있는데 거부" 사고.
+    const effectivePw = (cls.consent_password && String(cls.consent_password).trim() !== '')
+      ? String(cls.consent_password).trim()
+      : String(cls.code || normalizedCode || '').trim()
+    if (!effectivePw || String(consentPassword).trim() !== effectivePw) {
       return res.status(403).json({ error: '동의 비밀번호가 일치하지 않아요. 담임 선생님께 확인해주세요.' })
     }
 

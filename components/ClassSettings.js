@@ -14,6 +14,8 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   const [stats, setStats] = useState(null)               // { total, consented, locked }
   const [origin, setOrigin] = useState('')
   const [copied, setCopied] = useState(false)
+  const [copiedAnno, setCopiedAnno] = useState(false)    // 안내문 복사 토스트
+  const [school, setSchool] = useState('')               // 학급 학교명(안내문용)
   const qrRef = useRef(null)
 
   // origin (NEXT_PUBLIC_SITE_URL 우선)
@@ -30,8 +32,8 @@ export default function ClassSettings({ classInfo, onUpdate }) {
     let alive = true
     ;(async () => {
       try {
-        const { data: c } = await supabase.from('classes').select('consent_password').eq('id', classInfo.id).maybeSingle()
-        if (alive) { setConsentPw(c?.consent_password || ''); setConsentPwInput(c?.consent_password || '') }
+        const { data: c } = await supabase.from('classes').select('consent_password, school').eq('id', classInfo.id).maybeSingle()
+        if (alive) { setConsentPw(c?.consent_password || ''); setConsentPwInput(c?.consent_password || ''); setSchool(c?.school || '') }
         const { data: studs } = await supabase.from('profiles')
           .select('realname, consent_received, is_hidden').eq('class_id', classInfo.id).eq('role', 'student')
         if (alive) {
@@ -48,6 +50,28 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   }, [classInfo?.id])
 
   const consentUrl = origin && classInfo?.code ? `${origin}/consent/${classInfo.code}` : ''
+  // 동의번호 폴백: 설정했으면 그 값, 비웠으면 학급코드 (parent-consent.js 검증과 반드시 동일 규칙)
+  const effectivePw = (consentPw && consentPw.trim()) ? consentPw.trim() : (classInfo?.code || '')
+
+  // 커뮤니티(밴드·카톡)용 완성 안내문 — 실제 값 채움(동의번호=폴백값이라 검증과 항상 일치)
+  const buildAnnouncement = () => {
+    const schoolLabel = school || '○○초'
+    const className = classInfo?.name || '우리 반'
+    return `[${schoolLabel} ${className}] 학부모 동의 안내\n` +
+      `아래 링크에서 자녀 번호와 동의번호를 입력해 동의해 주세요.\n` +
+      `링크: ${consentUrl}\n` +
+      `동의번호: ${effectivePw}\n` +
+      `※ 동의는 선택입니다. 안 하셔도 자녀는 닉네임으로 정상 이용됩니다.`
+  }
+  const copyAnnouncement = async () => {
+    const text = buildAnnouncement()
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedAnno(true); setTimeout(() => setCopiedAnno(false), 2500)
+    } catch {
+      try { window.prompt('아래 내용을 복사하세요:', text) } catch {}
+    }
+  }
 
   // QR (열렸을 때 + URL 준비되면 그림)
   useEffect(() => {
@@ -195,26 +219,29 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             <div className="flex gap-2">
               <input type="text" value={consentPwInput}
                 onChange={e => setConsentPwInput(e.target.value)}
-                placeholder="예: 1234"
+                placeholder="비워두면 학급코드 사용"
                 className="flex-1 p-2 border border-gray-200 rounded-lg text-sm" />
               <button onClick={saveConsentPw} disabled={saving}
                 className="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50">저장</button>
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              {consentPw
-                ? <>현재 설정됨: <code className="bg-gray-100 px-1 rounded">{consentPw}</code> · </>
-                : <span className="text-amber-600">아직 설정 안 됨 · </span>}
-              학부모가 동의할 때 입력하는 비밀번호예요
+              동의번호: <code className="bg-gray-100 px-1 rounded">{effectivePw}</code>
+              {consentPw ? ' (직접 설정)' : ' (학급코드 기본값)'} · 학부모가 동의할 때 입력하는 번호예요.
+              비워두면 <strong>학급코드</strong>가 동의번호로 쓰여요.
             </p>
 
-            {/* 부모 동의 링크 + QR */}
+            {/* 부모 동의 안내문 + 링크 + QR */}
             <div className="mt-3">
-              <label className="block text-sm font-medium mb-1">부모 동의 링크</label>
-              {!consentPw && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2">
-                  ⚠️ 먼저 <strong>동의 비밀번호를 설정</strong>하세요. (비밀번호가 없으면 학부모가 제출해도 막혀요)
-                </p>
-              )}
+              <label className="block text-sm font-medium mb-1">부모 동의 안내</label>
+              {/* 핵심: 완성 안내문 복사 (글 안 쓰고 복사 한 번) */}
+              <button onClick={copyAnnouncement}
+                className="w-full py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
+                {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 커뮤니티용 안내문 복사 (밴드·카톡)'}
+              </button>
+              <p className="text-[11px] text-gray-500 mt-1 text-center">복사해서 학급 밴드·카톡에 그대로 붙여넣으면 돼요</p>
+
+              {/* 링크/QR만 따로 (참고) */}
+              <p className="text-xs text-gray-500 mt-3 mb-1">또는 링크·QR만 따로:</p>
               <div className="flex gap-2 items-center">
                 <code className="flex-1 min-w-0 bg-gray-50 px-2 py-2 rounded text-xs text-gray-700 break-all">{consentUrl || '...'}</code>
                 <button onClick={copyLink}
@@ -226,9 +253,6 @@ export default function ClassSettings({ classInfo, onUpdate }) {
                 <canvas ref={qrRef} className="border border-gray-200 rounded" />
                 <p className="text-[11px] text-gray-400 mt-1">QR — 학부모가 스캔하면 동의 페이지로 이동</p>
               </div>
-              <p className="text-xs text-gray-700 mt-2 bg-gray-50 rounded p-2 leading-relaxed">
-                📢 학급 커뮤니티(밴드·카톡 등)에 <strong>위 링크와 동의 비밀번호</strong>를 함께 올려주세요.
-              </p>
             </div>
           </div>
 
