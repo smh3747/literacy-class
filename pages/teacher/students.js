@@ -1119,6 +1119,13 @@ export default function StudentsPage() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
+  // 🆕 step207-A: 컨시어지 단계 판정 (students 배열에서 파생 — 새 상태값 없음)
+  //   active=활성(숨김 제외) 학생 수, locked=동의 대기(realname 빈값, step188 기준)
+  //   step 1 등록 → 2 동의(선택) → 3 수업. ★동의는 게이트가 아니라 추천 다음 행동일 뿐.
+  const conciergeActive = students.filter(s => !s.is_hidden).length
+  const conciergeLocked = students.filter(s => !s.is_hidden && !(s.realname && String(s.realname).trim())).length
+  const conciergeStep = conciergeActive === 0 ? 1 : (conciergeLocked > 0 ? 2 : 3)
+
   return (
     <>
       <Head><title>학생 관리 - 다온클래스</title></Head>
@@ -1137,6 +1144,76 @@ export default function StudentsPage() {
               <div className="text-sm text-primary-dark">
                 <strong>{classInfo.name}</strong> · 학생 가입 코드: <span className="font-mono font-bold tracking-widest">{classInfo.code}</span>
               </div>
+            </div>
+          )}
+
+          {/* 🆕 step207-A: 컨시어지 진행표시 + "지금 할 일" 배너 (감싸기만 — 아래 기존 블록은 그대로) */}
+          {classInfo && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-green-100 space-y-4">
+              {/* 진행표시: ① 학생 등록 · ② 동의(선택) · ③ 수업 시작 */}
+              <div className="flex items-center gap-1 sm:gap-2">
+                {[
+                  { n: 1, label: '학생 등록' },
+                  { n: 2, label: '동의', sub: '(선택)' },
+                  { n: 3, label: '수업 시작' },
+                ].map((s, i) => {
+                  const done = s.n < conciergeStep
+                  const current = s.n === conciergeStep
+                  return (
+                    <div key={s.n} className="flex items-center gap-1 sm:gap-2 flex-1 last:flex-none">
+                      <div className={`flex items-center gap-1.5 ${current ? '' : 'opacity-60'}`}>
+                        <span className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                          ${done ? 'bg-green-500 text-white' : current ? 'bg-green-600 text-white ring-4 ring-green-100' : 'bg-gray-100 text-gray-400'}`}>
+                          {done ? '✓' : s.n}
+                        </span>
+                        <span className={`text-xs sm:text-sm font-semibold ${current ? 'text-green-700' : 'text-gray-500'}`}>
+                          {s.label}<span className="font-normal text-gray-400">{s.sub || ''}</span>
+                        </span>
+                      </div>
+                      {i < 2 && <div className={`h-0.5 flex-1 rounded ${done ? 'bg-green-300' : 'bg-gray-100'}`} />}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* "지금 할 일" — 흉내내기(읽기) 중엔 안내 톤만, 평소엔 행동 유도 */}
+              {isImpersonating ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+                  📖 읽기 전용으로 보는 중이에요. 현재 단계: <strong>{conciergeStep === 1 ? '학생 등록' : conciergeStep === 2 ? '학부모 동의(선택)' : '수업 시작'}</strong>
+                  {' '}(활성 {conciergeActive}명{conciergeLocked > 0 ? ` · 동의 대기 ${conciergeLocked}명` : ''})
+                </div>
+              ) : conciergeStep === 1 ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="font-bold text-green-900">🙌 먼저 학생을 등록할게요</div>
+                  <p className="text-sm text-green-800 mt-1">
+                    아래 <strong>📋 학급명렬표 일괄 등록</strong>에 나이스 엑셀을 올리면 한 번에 끝나요.
+                    한 명만 먼저 만들어 보고 싶으면 <strong>➕ 학생 1명 추가</strong>를 쓰세요.
+                  </p>
+                </div>
+              ) : conciergeStep === 2 ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="font-bold text-green-900">🎉 학생 {conciergeActive}명이 등록됐어요</div>
+                  <p className="text-sm text-green-800 mt-1">
+                    원하면 아래 <strong>🔒 학부모 동의</strong>에서 동의를 받을 수 있어요 <span className="text-green-700/80">(선택)</span>.
+                    <br /><strong>동의 없이 바로 수업을 시작해도 괜찮아요.</strong> 동의 대기 {conciergeLocked}명은 그동안 닉네임으로 안전하게 표시돼요.
+                  </p>
+                  <Link href={withImpersonation('/teacher/topics')}
+                    className="inline-block mt-3 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 text-sm">
+                    ✍️ 바로 수업 시작 (주제 만들기)
+                  </Link>
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="font-bold text-green-900">✅ 준비 끝! 수업을 시작하세요</div>
+                  <p className="text-sm text-green-800 mt-1">
+                    학생 {conciergeActive}명이 모두 준비됐어요. 글쓰기 주제를 만들면 학생들이 바로 쓸 수 있어요.
+                  </p>
+                  <Link href={withImpersonation('/teacher/topics')}
+                    className="inline-block mt-3 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 text-sm">
+                    ✍️ 주제 만들기
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
