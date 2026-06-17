@@ -1917,6 +1917,7 @@ function AdminSubmissionsInner() {
   // 🆕 날짜 필터: 'all' | 'today' | 'week' | 'custom'
   const [dateFilter, setDateFilter] = useState('all')
   const [customDate, setCustomDate] = useState('')  // YYYY-MM-DD (custom일 때)
+  const [search, setSearch] = useState('')  // 🆕 통합 검색(담임·학교·학생 표시이름) — 클라 필터
 
   // 🆕 보조 데이터: 학생 → 학급 → 학교 매핑
   const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
@@ -2049,7 +2050,7 @@ function AdminSubmissionsInner() {
 
     const groups = {}  // { groupKey: { label, subLabel, items: [] } }
 
-    submissions.forEach(s => {
+    visibleSubmissions.forEach(s => {
       let key, label, subLabel = ''
       if (groupBy === 'school') {
         const cls = classMap[s.profiles?.class_id]
@@ -2078,13 +2079,23 @@ function AdminSubmissionsInner() {
     return Object.values(groups).sort((a, b) => b.items.length - a.items.length)
   }
 
+  // 🆕 통합 검색: 담임명·학교명·학생 표시이름(displayStudentName) 부분일치 — 이미 로드된 목록 내 클라이언트 필터(서버 재조회 없음)
+  // ⚠️ 잠긴 학생은 displayStudentName이 닉네임을 반환 → 닉네임으로만 검색됨. 실명 복호화/암호문 조회 절대 안 함.
+  const sq = search.trim().toLowerCase()
+  const matchSearch = (s) => {
+    if (!sq) return true
+    const cls = classMap?.[s.profiles?.class_id]
+    return [cls?.teacher_name, cls?.teacher_school, displayStudentName(s.profiles)]
+      .some(f => f && String(f).toLowerCase().includes(sq))
+  }
+  const visibleSubmissions = submissions.filter(matchSearch)
   const groups = buildGroups()
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-bold">
-          📝 학생 글 (최근 {submissions.length}건)
+          📝 학생 글 (최근 {submissions.length}건{sq ? ` · 검색 ${visibleSubmissions.length}건` : ''})
           {selectedClass === 'all' && (
             <span className="text-[10px] text-gray-400 font-normal ml-1.5">
               전체 모드는 최근 200건만 — 특정 학급 글을 모두 보려면 학급을 선택하세요
@@ -2155,17 +2166,21 @@ function AdminSubmissionsInner() {
               onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
               className="text-xs border border-gray-200 rounded p-1" />
           </div>
+          {/* 🆕 통합 검색 (담임·학교·학생 표시이름) — 로드된 목록 내 클라 필터 */}
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 담임·학교·학생 검색"
+            className="text-sm border border-gray-200 rounded p-2 w-[170px]" />
         </div>
       </div>
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8 text-center">로딩 중...</p>
-      ) : submissions.length === 0 ? (
-        <p className="text-sm text-gray-500 py-8 text-center">학생 글이 없어요</p>
+      ) : visibleSubmissions.length === 0 ? (
+        <p className="text-sm text-gray-500 py-8 text-center">{sq ? '검색 결과가 없어요' : '학생 글이 없어요'}</p>
       ) : groupBy === 'flat' ? (
         // ─── flat: 기존 동작 (시간순 평면 리스트) ───
         <div className="space-y-2">
-          {submissions.map(s => (
+          {visibleSubmissions.map(s => (
             <SubmissionRow key={s.id} s={s} classMap={classMap} onClick={() => setSelectedSubmission(s)} />
           ))}
         </div>
