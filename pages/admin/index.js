@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
+import { displayStudentName } from '../../lib/displayName'
 
 export default function AdminHome() {
   const router = useRouter()
@@ -21,6 +22,7 @@ export default function AdminHome() {
   const [idLookups, setIdLookups] = useState({})  // 🆕 step161: 아이디 찾기 후보 { [reqId]: {loading, list} }
   const [selectedReqIds, setSelectedReqIds] = useState(new Set())  // 🆕 step162: 요청함 일괄 선택
   const [errorLogs, setErrorLogs] = useState([])  // 🆕 step155: 에러 로그 (최근 50건)
+  const [logStudentNumbers, setLogStudentNumbers] = useState({})  // 🆕 에러로그 학생 번호 표시용 {user_id: number} (실명 미조회)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -264,6 +266,16 @@ export default function AdminHome() {
         .order('created_at', { ascending: false })
         .limit(50)
       setErrorLogs(elogs || [])
+      // 🆕 에러로그 학생의 '번호'만 표시용으로 조인 (⚠️ 실명 realname은 절대 조회하지 않음)
+      const logUserIds = [...new Set((elogs || []).filter(e => e.role === 'student' && e.user_id).map(e => e.user_id))]
+      if (logUserIds.length > 0) {
+        const { data: nums } = await supabase.from('profiles').select('id, number').in('id', logUserIds)
+        const nMap = {}
+        ;(nums || []).forEach(p => { nMap[p.id] = p.number })
+        setLogStudentNumbers(nMap)
+      } else {
+        setLogStudentNumbers({})
+      }
     } catch(e) {
       // 테이블 미생성(SQL 미실행) 시 무시
       setErrorLogs([])
@@ -1794,8 +1806,8 @@ export default function AdminHome() {
 
           {/* 🆕 step155: 에러 로그 탭 */}
           {tab === 'errors' && (() => {
-            const classNameById = {}
-            classes.forEach(c => { classNameById[c.id] = c.name })
+            const classInfoById = {}
+            classes.forEach(c => { classInfoById[c.id] = { name: c.name, teacher: c.teacher_profile?.realname || '' } })
             // 같은 message 연속 발생을 묶어서 (N회) 표기
             const grouped = []
             for (const e of errorLogs) {
@@ -1838,8 +1850,13 @@ export default function AdminHome() {
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs text-gray-500">{toKST(e.created_at)}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleBadge(e.role)}`}>{e.role || 'unknown'}</span>
-                          {e.class_id && classNameById[e.class_id] && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{classNameById[e.class_id]}</span>
+                          {e.class_id && classInfoById[e.class_id] && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                              {classInfoById[e.class_id].name}{classInfoById[e.class_id].teacher ? ` (담임 ${classInfoById[e.class_id].teacher})` : ''}
+                            </span>
+                          )}
+                          {e.role === 'student' && e.user_id && logStudentNumbers[e.user_id] && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{logStudentNumbers[e.user_id]}번</span>
                           )}
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${typeBadge(e.error_type)}`}>{e.error_type}</span>
                           {e.page && <span className="text-[10px] text-gray-400">{e.page}</span>}
@@ -1897,6 +1914,9 @@ function AdminSubmissionsInner() {
   const [selectedClass, setSelectedClass] = useState('all')
   const [classList, setClassList] = useState([])
   const [expandedGroups, setExpandedGroups] = useState(new Set())  // 펼쳐진 그룹 ID
+  // 🆕 날짜 필터: 'all' | 'today' | 'week' | 'custom'
+  const [dateFilter, setDateFilter] = useState('all')
+  const [customDate, setCustomDate] = useState('')  // YYYY-MM-DD (custom일 때)
 
   // 🆕 보조 데이터: 학생 → 학급 → 학교 매핑
   const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
@@ -1911,7 +1931,7 @@ function AdminSubmissionsInner() {
     router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
   }
 
-  useEffect(() => { load() }, [selectedClass])
+  useEffect(() => { load() }, [selectedClass, dateFilter, customDate])
 
   // 새로고침 시: 글 목록 로드된 뒤 URL의 sub ID로 상세 복원
   useEffect(() => {
@@ -1969,6 +1989,26 @@ function AdminSubmissionsInner() {
         return
       }
       query = query.in('user_id', studentIds)
+    }
+
+    // 🆕 날짜 필터 (KST 기준 created_at 범위). 그룹화·학급 필터와 공존.
+    const kstTodayStr = () => {
+      const k = new Date(Date.now() + 9 * 3600 * 1000)
+      return `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, '0')}-${String(k.getUTCDate()).padStart(2, '0')}`
+    }
+    const kstDayStartUTC = (ymd) => {
+      const [y, m, d] = ymd.split('-').map(Number)
+      return new Date(Date.UTC(y, m - 1, d) - 9 * 3600 * 1000).toISOString()
+    }
+    if (dateFilter === 'today') {
+      query = query.gte('created_at', kstDayStartUTC(kstTodayStr()))
+    } else if (dateFilter === 'week') {
+      const start = new Date(new Date(kstDayStartUTC(kstTodayStr())).getTime() - 6 * 86400000).toISOString()
+      query = query.gte('created_at', start)
+    } else if (dateFilter === 'custom' && customDate) {
+      const start = kstDayStartUTC(customDate)
+      const end = new Date(new Date(start).getTime() + 86400000).toISOString()
+      query = query.gte('created_at', start).lt('created_at', end)
     }
 
     const { data } = await query
@@ -2097,6 +2137,24 @@ function AdminSubmissionsInner() {
               ))}
             </select>
           )}
+          {/* 🆕 날짜 필터 (전체/오늘/최근7일/직접날짜) — 그룹화·학급 필터와 공존 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <span className="text-xs text-gray-600 px-1.5">기간:</span>
+            {[{ v: 'all', l: '전체' }, { v: 'today', l: '오늘' }, { v: 'week', l: '최근7일' }].map(opt => (
+              <button key={opt.v}
+                onClick={() => { setDateFilter(opt.v); setCustomDate('') }}
+                className={`text-xs px-2 py-1 rounded ${
+                  dateFilter === opt.v
+                    ? 'bg-white shadow-sm font-semibold text-primary'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}>
+                {opt.l}
+              </button>
+            ))}
+            <input type="date" value={customDate}
+              onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
+              className="text-xs border border-gray-200 rounded p-1" />
+          </div>
         </div>
       </div>
 
@@ -2170,38 +2228,40 @@ function AdminSubmissionsInner() {
 function SubmissionRow({ s, onClick, hideField, classMap }) {
   // 읽기 전용 소속 표시 — 이미 로드된 classMap만 사용 (추가 쿼리 없음)
   const cls = classMap?.[s.profiles?.class_id]
-  const affiliation = [cls?.teacher_school, cls?.name, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
+  // 학급명은 칩으로 강조, 학교·담임은 보조 회색
+  const sub = [cls?.teacher_school, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
+  const pct = s.max_score ? s.total_score / s.max_score : 0
+  const scoreColor = pct >= 0.8 ? 'text-green-600' : pct >= 0.6 ? 'text-amber-600' : 'text-rose-600'
   return (
     <button onClick={onClick}
-      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center">
+      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium">
+        <div className="text-sm font-semibold text-gray-900">
           {hideField !== 'student' && (
             <>
-              {s.profiles?.realname || '?'}
-              <span className="text-xs text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : `수정본 ${s.attempt - 1}차`})</span>
+              {displayStudentName(s.profiles)}
+              <span className="text-xs font-normal text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : `수정본 ${s.attempt - 1}차`})</span>
             </>
           )}
           {hideField === 'student' && (
-            <span>{s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`}</span>
+            <span className="font-medium">{s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`}</span>
           )}
           {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
           {s.is_fallback_graded && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">폴백</span>}
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          {affiliation && (
-            <span className="text-gray-400">{affiliation} · </span>
+          {cls?.name && (
+            <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded text-[10px] mr-1.5">{cls.name}</span>
           )}
-          {hideField !== 'topic' && (
-            <>{s.topic_title || s.topics?.title || '-'} · </>
-          )}
-          {toKST(s.created_at)}
-          {s.graded_with_model && (
-            <span className="ml-1 text-gray-400">· 🤖 {s.graded_with_model.replace('gemini-', '')}</span>
-          )}
+          <span className="text-gray-400">
+            {sub && <>{sub} · </>}
+            {hideField !== 'topic' && <>{s.topic_title || s.topics?.title || '-'} · </>}
+            {toKST(s.created_at)}
+            {s.graded_with_model && <> · 🤖 {s.graded_with_model.replace('gemini-', '')}</>}
+          </span>
         </div>
       </div>
-      <div className="text-sm font-bold ml-3">{s.total_score}/{s.max_score}</div>
+      <div className={`text-sm font-bold ml-3 flex-shrink-0 ${scoreColor}`}>{s.total_score}/{s.max_score}</div>
     </button>
   )
 }
