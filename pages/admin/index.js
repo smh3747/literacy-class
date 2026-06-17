@@ -29,6 +29,9 @@ export default function AdminHome() {
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
+  const [replyDraft, setReplyDraft] = useState({})      // 🆕 피드백 답변 입력 { [id]: text }
+  const [editingReply, setEditingReply] = useState(null) // 🆕 답변 수정 중인 피드백 id
+  const [savingReplyId, setSavingReplyId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTabState] = useState('overview')
 
@@ -650,6 +653,29 @@ export default function AdminHome() {
     }).eq('id', fb.id)
     if (error) return alert('실패: ' + error.message)
     await loadAll()
+  }
+
+  // 🆕 step205-B: 피드백 답변 저장 (admin write = 기존 fb_update). reply_read_at은 안 건드림(step C에서 작성자 열람 시).
+  const saveReply = async (f) => {
+    if (!f.user_id) return alert('비로그인 의견이라 답변을 보낼 수 없어요.')
+    const text = (replyDraft[f.id] ?? '').trim()
+    if (!text) return alert('답변 내용을 입력하세요.')
+    setSavingReplyId(f.id)
+    try {
+      const now = new Date().toISOString()
+      const { error } = await supabase.from('feedback').update({
+        reply_text: text, replied_at: now, reply_by: user?.id || null
+      }).eq('id', f.id)
+      if (error) throw error
+      // 로컬 상태 갱신(목록 즉시 반영)
+      setFeedbacks(prev => prev.map(x => x.id === f.id
+        ? { ...x, reply_text: text, replied_at: now, reply_by: user?.id || null }
+        : x))
+      setEditingReply(null)
+    } catch (e) {
+      alert('답변 저장 실패: ' + e.message)
+    }
+    setSavingReplyId(null)
   }
 
   // 💬 의견 일괄 숨김 (보이는 것 모두)
@@ -1544,6 +1570,10 @@ export default function AdminHome() {
                                       {f.author.role === 'student' && f.author.class_name && (
                                         <span className="ml-1 opacity-80">· {f.author.class_name}</span>
                                       )}
+                                      {f.author.role === 'student' && (() => {
+                                        const teacher = classes.find(c => c.id === f.author.class_id)?.teacher_profile?.realname
+                                        return teacher ? <span className="ml-1 opacity-80">· 담임 {teacher}</span> : null
+                                      })()}
                                       {(f.author.role === 'teacher' || f.author.role === 'admin') && f.author.school && (
                                         <span className="ml-1 opacity-80">· {f.author.school}</span>
                                       )}
@@ -1562,6 +1592,40 @@ export default function AdminHome() {
                                 </button>
                               </div>
                               <div className="text-sm whitespace-pre-wrap">{f.content}</div>
+
+                              {/* 🆕 step205-B: 답변 */}
+                              <div className="mt-2 pt-2 border-t border-gray-200">
+                                {!f.user_id ? (
+                                  <p className="text-xs text-gray-400">🕵️ 비로그인 의견이라 답변을 보낼 수 없어요.</p>
+                                ) : (f.reply_text && editingReply !== f.id) ? (
+                                  <div>
+                                    <div className="text-xs text-blue-700 font-medium mb-0.5">
+                                      💬 내 답변
+                                      {f.replied_at && <span className="text-gray-400 font-normal ml-1">· {toKST(f.replied_at)}</span>}
+                                    </div>
+                                    <div className="text-sm bg-blue-50 border border-blue-100 rounded p-2 whitespace-pre-wrap">{f.reply_text}</div>
+                                    <button onClick={() => { setEditingReply(f.id); setReplyDraft(d => ({ ...d, [f.id]: f.reply_text })) }}
+                                      className="text-xs text-gray-500 underline mt-1">수정</button>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <textarea value={replyDraft[f.id] ?? ''}
+                                      onChange={e => setReplyDraft(d => ({ ...d, [f.id]: e.target.value }))}
+                                      rows={2} placeholder="이 의견에 답변을 입력하세요..."
+                                      className="w-full p-2 border border-gray-200 rounded text-sm" />
+                                    <div className="flex gap-2 mt-1">
+                                      <button onClick={() => saveReply(f)} disabled={savingReplyId === f.id}
+                                        className="text-xs px-3 py-1.5 bg-primary text-white rounded disabled:opacity-50">
+                                        {savingReplyId === f.id ? '저장 중...' : (f.reply_text ? '답변 수정' : '답변 저장')}
+                                      </button>
+                                      {f.reply_text && (
+                                        <button onClick={() => setEditingReply(null)}
+                                          className="text-xs px-3 py-1.5 border border-gray-200 rounded">취소</button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )
