@@ -25,6 +25,9 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   const boardScope = classInfo.board_scope || 'class'
   const grade = classInfo.grade || ''
   const tutorChatEnabled = !!classInfo.tutor_chat_enabled // 기본값 false
+  // step206: 학생 자가가입 허용. 기본 true(미적용/null도 허용으로 간주 → false일 때만 막힘).
+  //   명렬표 일괄등록 시 students-bulk가 자동으로 false로 바꿔둠.
+  const selfSignupEnabled = classInfo.self_signup_enabled !== false
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -84,6 +87,22 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             <p className="text-xs text-gray-500 mt-1 ml-6">
               학생이 글을 쓰다 막힐 때 AI에게 질문할 수 있어요. <strong>글을 대신 써주지 않고</strong> 생각을 이끄는 질문·힌트만 줘요.
               학생당 하루 5회 제한. 평가 상황 등 필요할 때 끄세요.
+            </p>
+          </div>
+
+          {/* 🆕 step206: 학생 가입 허용 토글 (명렬표 학급은 꺼두면 오타로 새 계정 생기는 것 방지) */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={selfSignupEnabled}
+                onChange={e => save({ self_signup_enabled: e.target.checked })}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">📝 학생 가입(회원가입) 허용</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              명렬표로 학생을 등록했다면 <strong>꺼두는 걸 권해요.</strong> 끄면 학생이 회원가입 탭으로 새 계정을 만들 수 없어
+              (로그인 아이디 오타로 생기는 ‘유령 계정’을 막아요). 전학생은 보통 위의 <strong>[한 명 추가]</strong>로 넣으면 돼요(가입 허용을 켜지 않아도 됩니다).
+              {!selfSignupEnabled && <span className="block mt-1 text-amber-600">현재 가입 차단됨 — 학생은 선생님이 만든 아이디로 로그인만 가능해요.</span>}
             </p>
           </div>
 

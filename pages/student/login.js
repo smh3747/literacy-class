@@ -192,7 +192,8 @@ export default function StudentLogin() {
         
         if (!profile) {
           await supabase.auth.signOut()
-          throw new Error('회원 정보를 찾을 수 없어요. 가입을 먼저 해주세요.')
+          // step206: '가입을 먼저' 유도 제거 — 명렬표 학급에서 잘못된 새 계정(유령) 생성을 부추기지 않도록.
+          throw new Error('회원 정보를 찾을 수 없어요. 아이디 오타가 아닌지 확인하거나 선생님께 문의해주세요.')
         }
         
         if (profile.role === 'teacher' || profile.role === 'admin') {
@@ -228,6 +229,14 @@ export default function StudentLogin() {
         }
         if (classData.is_active === false) {
           setError('이 학급은 현재 운영 중지 상태예요. 선생님께 문의해주세요.')
+          setLoading(false)
+          return
+        }
+        // 🆕 step206: 명렬표 학급(자가가입 OFF)은 새 계정 생성을 막는다 — 유령계정 원천 차단.
+        //   ★ false일 때만 막음(null/미적용 학급은 그대로 허용 → 순수 자가가입 학급 영향 0).
+        //   ★ 로그인(기존 계정) 경로는 막지 않음 — 가입(새 계정)만 차단한다.
+        if (classData.self_signup_enabled === false) {
+          setError('이 학급은 선생님이 만든 아이디로 로그인만 가능해요.\n아이디 오타가 아닌지 확인해주세요.\n전학생이거나 아이디를 모르면 선생님께 문의하면 바로 만들어 주실 수 있어요.')
           setLoading(false)
           return
         }

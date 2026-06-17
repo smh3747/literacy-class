@@ -100,7 +100,7 @@ export default function TeacherHome() {
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp } = await getEffectiveProfile(
-      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled)'
+      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled)'
     )
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {

@@ -160,5 +160,19 @@ export default async function handler(req, res) {
     }
   }
 
+  // step206: 명렬표(일괄등록) 학급은 학생 자가가입을 자동 차단한다.
+  //   "명단을 올린 학급"은 교사가 아이디를 관리하므로, 학생이 로그인 오타 후
+  //   가입 탭으로 새 계정(유령)을 만드는 길을 막는다. 이미 false면 그대로(멱등).
+  //   ★순수 자가가입 학급은 명렬표를 안 올리니 이 라우트를 안 거쳐 true 유지 → 영향 0.
+  //   1명이라도 등록 성공했을 때만 끈다(파일 오류로 전부 실패 시 설정 안 건드림).
+  if (results.success.length > 0) {
+    try {
+      await supabaseAdmin.from('classes').update({ self_signup_enabled: false }).eq('id', classId)
+    } catch (e) {
+      // 토글 실패는 등록 결과를 막지 않음(컬럼 미적용 등). 등록 결과는 그대로 반환.
+      console.error('[students-bulk] self_signup_enabled off 실패:', e?.message)
+    }
+  }
+
   return res.status(200).json(results)
 }

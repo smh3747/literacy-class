@@ -39,7 +39,7 @@ export default async function handler(req, res) {
   }
   const normalized = code.trim().toUpperCase()
   const { data, error } = await supabaseAdmin.from('classes')
-    .select('id, name, school, is_active, deleted_at, login_hint_enabled, login_username_prefix, login_default_password')
+    .select('id, name, school, is_active, deleted_at, login_hint_enabled, login_username_prefix, login_default_password, self_signup_enabled')
     .eq('code', normalized)
     .maybeSingle()
 
