@@ -1835,6 +1835,25 @@ export default function AdminHome() {
               }
               return map[t] || 'bg-gray-100 text-gray-600'
             }
+            // 🆕 표시 시점 원인 분류 (저장구조 불변). 순서 중요: prepayment를 429보다 먼저.
+            const classifyError = (msg) => {
+              const m = msg || ''
+              if (/prepayment|credits are depleted|billing#prepay/i.test(m))
+                return { color: 'bg-rose-100 text-rose-700', label: '🔴 유료키 소진', summary: '유료키 잔액 소진 · 무료키로 교체 필요' }
+              if (/503|high demand|overloaded|UNAVAILABLE/i.test(m))
+                return { color: 'bg-yellow-100 text-yellow-700', label: '🟡 구글 혼잡', summary: '구글 AI 서버 혼잡 · 곧 풀림(조치 불필요)' }
+              if (/429|per day|PerDay|quota|exceeded/i.test(m))
+                return { color: 'bg-orange-100 text-orange-700', label: '🟠 한도 소진', summary: '무료 한도 소진 · 오후 리셋' }
+              if (/401|인증 정보가 유효|UNAUTHENTICATED/i.test(m))
+                return { color: 'bg-gray-100 text-gray-600', label: '⚪ 세션 만료', summary: '학생 세션 만료 · 다시 로그인하면 됨(정상)' }
+              if (/Failed to fetch|NetworkError/i.test(m))
+                return { color: 'bg-gray-100 text-gray-600', label: '⚪ 네트워크', summary: '네트워크 일시 끊김 · 보통 일시적' }
+              if (/504|파싱 실패|JSON|TIMEOUT/i.test(m))
+                return { color: 'bg-yellow-100 text-yellow-700', label: '🟡 응답지연', summary: '응답 지연/파싱 실패 · 보통 일시적' }
+              if (/MetaMask|Invariant|extension|ethereum/i.test(m))
+                return { color: 'bg-gray-200 text-gray-500', label: '⚫ 확장노이즈', summary: '브라우저 확장 노이즈 · 무시 가능' }
+              return { color: 'bg-gray-100 text-gray-600', label: '⚪ 기타', summary: '기타' }
+            }
             return (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1845,7 +1864,9 @@ export default function AdminHome() {
                   <div className="text-sm text-gray-400 py-8 text-center">아직 기록된 에러가 없어요 🎉</div>
                 ) : (
                   <div className="space-y-2">
-                    {grouped.map((e, i) => (
+                    {grouped.map((e, i) => {
+                      const c = classifyError(e.message)
+                      return (
                       <div key={e.id || i} className="border border-gray-100 rounded-lg p-3 text-sm">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-xs text-gray-500">{toKST(e.created_at)}</span>
@@ -1861,13 +1882,16 @@ export default function AdminHome() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${typeBadge(e.error_type)}`}>{e.error_type}</span>
                           {e.page && <span className="text-[10px] text-gray-400">{e.page}</span>}
                           {e.count > 1 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold">({e.count}회)</span>}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${c.color}`}>{c.label}</span>
                         </div>
-                        <div className="text-gray-800 break-all">{e.message}</div>
+                        <div className="text-sm text-gray-800">{c.summary}</div>
+                        <div className="text-[10px] text-gray-400 break-all mt-0.5">{e.message}</div>
                         {e.context && (
                           <div className="text-[11px] text-gray-400 mt-1 break-all">{JSON.stringify(e.context)}</div>
                         )}
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
