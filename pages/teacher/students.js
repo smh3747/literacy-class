@@ -42,6 +42,9 @@ export default function StudentsPage() {
   const [editingNicknameStudent, setEditingNicknameStudent] = useState(null)
   // 선택된 학생 ID들 (체크박스 - 일괄 비번 초기화용)
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set())
+  // 🆕 step207-D: 탭 전환 — 'register'(등록) | 'list'(목록). 동의는 별도 화면(/consent)으로 이동.
+  //   null이면 학생 수에 따라 기본 탭을 파생(0명→등록, 있으면→목록). 사용자가 누르면 그 값으로 고정.
+  const [mode, setMode] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -1118,9 +1121,14 @@ export default function StudentsPage() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
-  // step207-B: 동의 대기(잠긴) 학생 수 — 동의서 관리 입구 배너 표시용 (step188 기준, realname 빈값)
-  //   ※ 컨시어지 진행표시 띠는 메인 허브(D)로 이동 예정이라 students에선 제거.
+  // 🆕 step207-D: 컨시어지 단계 판정 (students 배열에서 파생 — 새 상태값 없음)
+  //   active=활성(숨김 제외) 학생 수, locked=동의 대기(realname 빈값, step188 기준)
+  //   step 1 등록 → 2 동의(선택) → 3 수업. ★동의는 게이트가 아니라 진행 표시(게이지)일 뿐.
+  const conciergeActive = students.filter(s => !s.is_hidden).length
   const conciergeLocked = students.filter(s => !s.is_hidden && !(s.realname && String(s.realname).trim())).length
+  const conciergeStep = conciergeActive === 0 ? 1 : (conciergeLocked > 0 ? 2 : 3)
+  // 기본 탭: 활성 0명이면 등록, 있으면 목록. 사용자가 누르면 mode가 고정됨.
+  const effectiveMode = mode || (conciergeActive === 0 ? 'register' : 'list')
 
   return (
     <>
@@ -1149,6 +1157,58 @@ export default function StudentsPage() {
               📖 읽기 전용입니다. 학생 등록/수정/삭제, 비밀번호 초기화 등 모든 변경 작업은 차단되어 있어요.
             </div>
           )}
+
+          {/* 🆕 step207-D: 진행표시 게이지 (①학생등록 ②동의(선택) ③수업) — 띠만, 행동 배너는 메인 허브로 */}
+          {classInfo && (
+            <div className="flex items-center gap-1 sm:gap-2">
+              {[
+                { n: 1, label: '학생 등록' },
+                { n: 2, label: '동의', sub: '(선택)' },
+                { n: 3, label: '수업 시작' },
+              ].map((s, i) => {
+                const done = s.n < conciergeStep
+                const current = s.n === conciergeStep
+                return (
+                  <div key={s.n} className="flex items-center gap-1 sm:gap-2 flex-1 last:flex-none">
+                    <div className={`flex items-center gap-1.5 ${current ? '' : 'opacity-60'}`}>
+                      <span className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                        ${done ? 'bg-green-500 text-white' : current ? 'bg-green-600 text-white ring-4 ring-green-100' : 'bg-gray-100 text-gray-400'}`}>
+                        {done ? '✓' : s.n}
+                      </span>
+                      <span className={`text-xs sm:text-sm font-semibold ${current ? 'text-green-700' : 'text-gray-500'}`}>
+                        {s.label}<span className="font-normal text-gray-400">{s.sub || ''}</span>
+                      </span>
+                    </div>
+                    {i < 2 && <div className={`h-0.5 flex-1 rounded ${done ? 'bg-green-300' : 'bg-gray-100'}`} />}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 🆕 step207-D: 탭 배너 3개 — [📋등록][👥목록][🔒동의(→/consent)] */}
+          {classInfo && (
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <button onClick={() => setMode('register')}
+                className={`rounded-2xl p-3 text-left border-2 transition ${effectiveMode === 'register' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                <div className="text-sm sm:text-base font-bold">📋 학생 등록</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{conciergeActive > 0 ? `${conciergeActive}명 등록됨` : '아직 없어요'}</div>
+              </button>
+              <button onClick={() => setMode('list')}
+                className={`rounded-2xl p-3 text-left border-2 transition ${effectiveMode === 'list' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                <div className="text-sm sm:text-base font-bold">👥 학생 목록</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{conciergeActive}명 보기</div>
+              </button>
+              <Link href={withImpersonation('/teacher/students/consent')}
+                className="rounded-2xl p-3 text-left border-2 border-gray-200 bg-white hover:border-gray-300 transition">
+                <div className="text-sm sm:text-base font-bold">🔒 동의서 관리</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{conciergeLocked > 0 ? `대기 ${conciergeLocked}명 →` : '관리 →'}</div>
+              </Link>
+            </div>
+          )}
+
+          {/* ===== 등록 탭 ===== */}
+          {effectiveMode === 'register' && (<>
 
           {/* 🆕 step158: 학생 1명 개별 추가 (신규 교사 간보기 / 전학생 추가) */}
           {!isImpersonating && (
@@ -1427,26 +1487,12 @@ export default function StudentsPage() {
             </div>
           </div>
 
-          {/* 🆕 step207-B: 학부모 동의는 별도 화면(/teacher/students/consent)으로 분리 — 여기선 입구 배너만 */}
-          {classInfo && (
-            <Link href={withImpersonation('/teacher/students/consent')}
-              className="block bg-white rounded-2xl p-5 shadow-sm border border-blue-100 hover:shadow-md transition">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-bold text-gray-900">
-                    📋 학부모 동의서 관리
-                    {conciergeLocked > 0 && (
-                      <span className="ml-2 text-sm font-normal text-blue-700">동의 대기 {conciergeLocked}명</span>
-                    )}
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">동의받으면 그 학생만 실명으로 표시돼요. 동의는 선택이에요.</p>
-                </div>
-                <span className="text-gray-400 text-lg flex-shrink-0">→</span>
-              </div>
-            </Link>
-          )}
+          </>)}
+          {/* ===== /등록 탭 ===== */}
 
-          {/* 등록된 학생 목록 */}
+          {/* ===== 목록 탭 ===== */}
+          {effectiveMode === 'list' && (
+          /* 등록된 학생 목록 */
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-bold">
@@ -1754,6 +1800,8 @@ export default function StudentsPage() {
               )
             })()}
           </div>
+          )}
+          {/* ===== /목록 탭 ===== */}
         </main>
         {editingNicknameStudent && (
           <NicknameChangeModal
