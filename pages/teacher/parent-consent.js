@@ -119,7 +119,7 @@ export default function ParentConsent() {
                   <li><strong>수집 정보:</strong> 학교/학년/반/번호, 학생 성명(아이디), 학생이 작성한 글</li>
                   <li><strong>이용 목적:</strong> AI 피드백 제공 및 교사 지도 자료로 활용 (그 외 용도 사용 안 함)</li>
                   <li><strong>익명화:</strong> 학급 내 랭킹/통계 표시 시 자동 닉네임(예: "용감한 토끼")만 노출, 본명은 담임만 확인</li>
-                  <li><strong>보관 기간:</strong> 학년 종료 후 즉시 삭제 (요청 시 즉시 삭제 가능)</li>
+                  <li><strong>보관 기간:</strong> 학생 글·피드백은 학기 종료 후 1년까지 보관 후 자동 삭제 (요청 시 즉시 삭제 가능)</li>
                 </ul>
               </div>
             </section>

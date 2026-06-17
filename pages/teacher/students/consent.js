@@ -1,6 +1,7 @@
-// 학부모 동의서 관리 — 학생관리에서 분리한 교사 전용 화면 (step207-B)
-// ★ConsentPanel은 그대로 재사용(폴백·안내문 단일 출처 유지) — 위치만 students.js에서 이리 옮김.
-//   진입: /teacher/students/consent. 교사 가드는 students.js와 동일 패턴(getEffectiveProfile).
+// 학부모 동의서 관리 — 온라인/종이 두 갈래 (step207-B 신설 · step207-C 두 갈래)
+// ★ConsentPanel은 그대로 재사용(폴백·안내문·왜동의/학운위 문구 단일 출처) — 위치만 옮김.
+//   종이 갈래는 기존 인쇄 화면(/teacher/parent-consent)을 그대로 연결(방식 b) — print 동작·출력물 유지.
+//   진입: /teacher/students/consent. 교사 가드는 students.js와 동일 패턴.
 import Head from 'next/head'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
@@ -18,6 +19,7 @@ export default function StudentsConsentPage() {
   const [students, setStudents] = useState([])
   const [isImpersonating, setIsImpersonating] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState('online') // 'online' | 'paper'
 
   useEffect(() => { checkAuth() }, [])
 
@@ -70,17 +72,55 @@ export default function StudentsConsentPage() {
             🔒 동의받으면 그 학생만 실명으로 표시돼요. <strong>동의는 선택이에요</strong> — 받지 않아도 닉네임으로 안전하게 수업을 진행할 수 있어요.
           </div>
 
-          {classInfo && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
-              <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} />
+          {/* 두 갈래 선택 */}
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => setMode('online')}
+              className={`rounded-2xl p-4 text-left border-2 transition ${mode === 'online' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+              <div className="text-lg font-bold">🔗 온라인으로 받기</div>
+              <div className="text-xs text-gray-600 mt-1">링크·QR·동의번호를 보내 학부모가 휴대폰으로 동의</div>
+            </button>
+            <button onClick={() => setMode('paper')}
+              className={`rounded-2xl p-4 text-left border-2 transition ${mode === 'paper' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+              <div className="text-lg font-bold">🖨 종이로 받기</div>
+              <div className="text-xs text-gray-600 mt-1">A4 한 장으로 인쇄해 가정통신문으로 배부·회수</div>
+            </button>
+          </div>
+
+          {/* 온라인 갈래 — ConsentPanel(왜동의/학운위/폴백 안내문 모두 이 안에 단일 출처) */}
+          {mode === 'online' && classInfo && (
+            <div className="space-y-3">
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
+                <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} />
+              </div>
+              {/* 종이로 오가는 배너 */}
+              <button onClick={() => setMode('paper')}
+                className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
+                🖨 종이가 편하세요? → <strong>종이로 받기</strong>
+              </button>
             </div>
           )}
 
-          {/* 종이 동의서(인쇄/PDF)는 별도 화면 — step207-C에서 통합 예정 */}
-          <Link href={withImpersonation('/teacher/parent-consent')}
-            className="block bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
-            🖨️ 종이 동의서가 필요하면 → <strong>인쇄용 동의서(A4 한 장)</strong>
-          </Link>
+          {/* 종이 갈래 — 기존 인쇄 화면 연결(방식 b: print 동작·출력물 그대로 유지) */}
+          {mode === 'paper' && (
+            <div className="space-y-3">
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
+                <h3 className="font-bold text-gray-900 mb-1">🖨 종이 동의서 (A4 한 장)</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  가정통신문으로 배부할 인쇄용 동의서예요. 아래 버튼을 누르면 인쇄 화면이 열리고, 거기서 <strong>🖨️ 인쇄하기</strong>로 출력하면 됩니다.
+                  학생이 받아온 종이의 동의 여부는 학생 목록에서 <strong>동의서 ✓</strong>로 직접 체크하세요.
+                </p>
+                <Link href={withImpersonation('/teacher/parent-consent')}
+                  className="inline-block mt-3 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
+                  📄 인쇄용 동의서 열기
+                </Link>
+              </div>
+              {/* 온라인으로 오가는 배너 */}
+              <button onClick={() => setMode('online')}
+                className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
+                ← <strong>온라인으로 받기</strong> (링크·QR로 더 간편하게)
+              </button>
+            </div>
+          )}
         </main>
       </div>
     </>
