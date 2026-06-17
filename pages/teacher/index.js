@@ -12,6 +12,7 @@ import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
 import SetupChecklist from '../../components/SetupChecklist'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
+import { toKST } from '../../lib/timeFormat'
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -58,8 +59,43 @@ export default function TeacherHome() {
   const [showSchoolBanner, setShowSchoolBanner] = useState(false)
   // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
   const [isImpersonating, setIsImpersonating] = useState(false)
+  // 🆕 step205-C: 내 의견에 달린 운영자 답변 알림
+  const [replyNotifs, setReplyNotifs] = useState([])
+  const [showReplies, setShowReplies] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
+
+  // 내 의견 중 답변 달린 것만 조회 (fb_select 완화로 본인 행 읽기 가능).
+  // ⚠️ 임퍼소네이션 중엔 세션이 admin이라 본인 행 판정이 어긋나므로 비활성.
+  useEffect(() => {
+    if (!user?.id || isImpersonating) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { data } = await supabase.from('feedback')
+          .select('id, content, reply_text, replied_at, reply_read_at')
+          .eq('user_id', user.id)
+          .not('reply_text', 'is', null)
+          .order('replied_at', { ascending: false })
+        if (alive) setReplyNotifs(data || [])
+      } catch (e) { /* 무시 */ }
+    })()
+    return () => { alive = false }
+  }, [user?.id, isImpersonating])
+
+  // 답변 읽음 처리 (서비스롤 API — 본인 user_id 행만 갱신, fb_update는 admin-only라 직접 못 씀)
+  const markRepliesRead = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      await fetch('/api/feedback-mark-read', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token }),
+      })
+      const now = new Date().toISOString()
+      setReplyNotifs(prev => prev.map(r => ({ ...r, reply_read_at: r.reply_read_at || now })))
+    } catch (e) { /* 무시 */ }
+  }
 
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
@@ -261,6 +297,44 @@ export default function TeacherHome() {
               </button>
             </div>
           )}
+          {/* 🆕 step205-C: 내 의견에 달린 운영자 답변 알림 (안 읽은 게 있거나 펼친 상태일 때) */}
+          {!isImpersonating && replyNotifs.length > 0 && (replyNotifs.some(r => !r.reply_read_at) || showReplies) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-blue-900">
+                  💬 보내주신 의견에 답변이 도착했어요
+                  {(() => {
+                    const n = replyNotifs.filter(r => !r.reply_read_at).length
+                    return n > 0 ? <span className="ml-1 text-blue-700">({n}건)</span> : null
+                  })()}
+                </p>
+                {!showReplies ? (
+                  <button onClick={() => { setShowReplies(true); markRepliesRead() }}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 flex-shrink-0">
+                    답변 보기
+                  </button>
+                ) : (
+                  <button onClick={() => setShowReplies(false)}
+                    className="text-xs text-blue-700 underline flex-shrink-0">접기</button>
+                )}
+              </div>
+              {showReplies && (
+                <div className="mt-3 space-y-3">
+                  {replyNotifs.map(r => (
+                    <div key={r.id} className="bg-white rounded-lg p-3 border border-blue-100">
+                      <p className="text-xs text-gray-500 mb-1">내 의견</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap mb-2">{r.content}</p>
+                      <p className="text-xs text-blue-700 font-medium mb-1">
+                        💬 운영자 답변{r.replied_at && <span className="text-gray-400 font-normal ml-1">· {toKST(r.replied_at)}</span>}
+                      </p>
+                      <p className="text-sm text-blue-900 whitespace-pre-wrap bg-blue-50 rounded p-2">{r.reply_text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-start justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-xl font-bold">{user.realname} 선생님 환영합니다!</h2>
