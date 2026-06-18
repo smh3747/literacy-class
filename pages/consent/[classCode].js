@@ -147,7 +147,8 @@ export default function ParentConsent() {
           consentPassword: consentPassword.trim(),
           parentName: parentName.trim(),
           signature,
-          consentItems: ['privacy', 'ai_processing'],
+          agree: true,
+          consentItems: agree ? ['privacy', 'ai_processing'] : [],
         }),
       })
       const data = await res.json().catch(() => ({}))

@@ -56,7 +56,7 @@ async function isRateLimited(supabase, ipHash) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { classCode, studentNumber, consentPassword, parentName, signature, consentItems } = req.body || {}
+  const { classCode, studentNumber, consentPassword, parentName, signature, consentItems, agree } = req.body || {}
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -97,6 +97,13 @@ export default async function handler(req, res) {
       : String(cls.code || normalizedCode || '').trim()
     if (!effectivePw || String(consentPassword).trim() !== effectivePw) {
       return res.status(403).json({ error: '동의 비밀번호가 일치하지 않아요. 담임 선생님께 확인해주세요.' })
+    }
+
+    // 3-b) 동의 의사 검증 — 서버가 동의 여부를 보증한다.
+    //  agree !== true 이면 실명 잠금 해제(7단계 profiles.update) 전에 차단.
+    //  (클라이언트 체크박스 가드만으로는 직접 POST 우회가 가능하므로 서버에서 재검증)
+    if (agree !== true) {
+      return res.status(400).json({ error: '동의 항목에 체크하지 않으면 처리할 수 없어요.' })
     }
 
     // 4) 자녀 특정 (class_id + number + role='student', 숨김 제외)
