@@ -86,6 +86,12 @@ export default function StudentsConsentPage() {
             </button>
           </div>
 
+          {/* 🆕 F-2: 제출된 동의서 보기 진입점 */}
+          <Link href={withImpersonation('/teacher/students/consent/submissions')}
+            className="block bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
+            📄 <strong>제출된 동의서 보기</strong> — 보호자명·동의일시·서명 확인 →
+          </Link>
+
           {/* 온라인 갈래 — ConsentPanel(왜동의/학운위/폴백 안내문 모두 이 안에 단일 출처) */}
           {mode === 'online' && classInfo && (
             <div className="space-y-3">

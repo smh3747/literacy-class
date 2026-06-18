@@ -149,9 +149,9 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
         <label className="block text-sm font-medium mb-1">부모 동의 안내</label>
         <button onClick={copyAnnouncement}
           className="w-full py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
-          {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 커뮤니티용 안내문 복사 (밴드·카톡)'}
+          {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 학부모 안내문 복사'}
         </button>
-        <p className="text-[11px] text-gray-500 mt-1 text-center">복사해서 학급 밴드·카톡에 그대로 붙여넣으면 돼요</p>
+        <p className="text-[11px] text-gray-500 mt-1 text-center">복사해서 학급 알림장·메신저(하이클래스 등)에 붙여넣으면 돼요</p>
 
         <p className="text-xs text-gray-500 mt-3 mb-1">또는 링크·QR만 따로:</p>
         <div className="flex gap-2 items-center">
