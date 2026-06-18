@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { toKST } from '../../lib/timeFormat'
+import { displayStudentName } from '../../lib/displayName'
 
 export default function FeedbackReports() {
   const router = useRouter()
@@ -31,7 +32,7 @@ export default function FeedbackReports() {
     if (!profile?.classes?.id) return
     // 우리 학급 학생들의 신고된 제출물만 (숨김 학생 제외)
     const { data: students } = await supabase.from('profiles')
-      .select('id, realname, username, number, is_hidden')
+      .select('id, realname, nickname, username, number, is_hidden')
       .eq('class_id', profile.classes.id).eq('role', 'student')
     const visibleStudents = (students || []).filter(s => !s.is_hidden)
     if (!visibleStudents) return
@@ -101,7 +102,7 @@ export default function FeedbackReports() {
                   <div className="flex justify-between items-start flex-wrap gap-2">
                     <div>
                       <div className="text-sm">
-                        <strong>{r.student?.realname || '?'}</strong>
+                        <strong>{displayStudentName(r.student)}</strong>
                         {r.student?.number && <span className="text-gray-500 ml-2">{r.student.number}번</span>}
                         <span className="text-gray-500 ml-2 text-xs">({r.student?.username})</span>
                       </div>

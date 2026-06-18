@@ -158,7 +158,7 @@ export default function TeacherSubmissions() {
   const openTopicWithClass = async (topic, cls, autoStudentId = null) => {
     setSelectedTopic(topic)
     const { data: students } = await supabase.from('profiles')
-      .select('id, realname, username, number, is_hidden')
+      .select('id, realname, nickname, username, number, is_hidden')
       .eq('class_id', cls.id).eq('role', 'student')
     const visibleStudents = (students || []).filter(s => !s.is_hidden)
     const studentIds = visibleStudents.map(s => s.id)
@@ -211,7 +211,7 @@ export default function TeacherSubmissions() {
     
     // 같은 학급 학생들의 이 주제 제출본 (숨김 학생 제외)
     const { data: students } = await supabase.from('profiles')
-      .select('id, realname, username, number, is_hidden')
+      .select('id, realname, nickname, username, number, is_hidden')
       .eq('class_id', classInfo.id).eq('role', 'student')
     const visibleStudents = (students || []).filter(s => !s.is_hidden)
     const studentIds = visibleStudents.map(s => s.id)

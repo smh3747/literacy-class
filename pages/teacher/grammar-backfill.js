@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
+import { displayStudentName } from '../../lib/displayName'
 
 export default function GrammarBackfill() {
   const router = useRouter()
@@ -62,7 +63,7 @@ export default function GrammarBackfill() {
 
     // 우리 반 학생만 (숨김 제외)
     const { data: studs } = await supabase.from('profiles')
-      .select('id, realname, username, number, is_hidden')
+      .select('id, realname, nickname, username, number, is_hidden')
       .eq('class_id', classInfo.id).eq('role', 'student')
     const visible = (studs || []).filter(s => !s.is_hidden)
     const ids = visible.map(s => s.id)
@@ -133,7 +134,7 @@ export default function GrammarBackfill() {
         addLog('⏸ 중단되었습니다')
         break
       }
-      const studentName = sub.student?.realname || '?'
+      const studentName = displayStudentName(sub.student)
       setProgress(p => ({ ...p, current: `${studentName}의 글 처리 중...`, done }))
 
       try {
@@ -305,7 +306,7 @@ export default function GrammarBackfill() {
                               {s.student?.number && (
                                 <span className="text-xs text-gray-500 font-mono">{s.student.number}번</span>
                               )}
-                              <span className="font-medium">{s.student?.realname || '?'}</span>
+                              <span className="font-medium">{displayStudentName(s.student)}</span>
                               <span className="text-xs text-gray-500">
                                 {(s.attempt || 1) === 1 ? '첫 글' : `수정본 ${s.attempt}`}
                               </span>
