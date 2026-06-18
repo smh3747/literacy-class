@@ -2063,7 +2063,7 @@ function AdminSubmissionsInner() {
     // (기존엔 전체 최근 200건에서 클라이언트 필터 → 다른 반 글이 많으면
     //  이 학급 글이 200건 밖으로 밀려나 "0건"으로 보이는 버그)
     let query = supabase.from('submissions')
-      .select('*, profiles!submissions_user_id_fkey(realname, username, class_id), topics(title, date)')
+      .select('*, profiles!submissions_user_id_fkey(realname, nickname, username, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -2407,7 +2407,7 @@ function SubmissionDetail({ sub, onBack }) {
 
       {/* 상단: 학생/주제 정보 */}
       <div className="bg-primary-light rounded-2xl p-4">
-        <div className="font-bold text-lg">{sub.profiles?.realname || '?'}</div>
+        <div className="font-bold text-lg">{displayStudentName(sub.profiles)}</div>
         <div className="text-sm text-gray-700 mt-1">
           📚 {sub.topic_title || topic?.title || '-'}
           {topic?.date && <span className="ml-2 text-xs">({topic.date})</span>}
