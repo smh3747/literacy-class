@@ -876,22 +876,39 @@ export default function StudentsPage() {
   }
 
   // 동의서 회신 체크 토글
+  // ★ 켤 때(newValue=true)는 종이 동의 처리 API(/api/consent-paper)를 경유해 실명 잠금까지 해제.
+  //   끌 때(false)는 기존대로 consent_received만 내림(실명 재잠금은 범위 밖).
   const toggleConsent = async (studentId, currentValue) => {
+    if (isImpersonating) return  // 임퍼소네이션(읽기 전용) 중엔 실행 안 함
     const newValue = !currentValue
     setSavingId(studentId)
     try {
-      const { error } = await supabase.from('profiles').update({
-        consent_received: newValue,
-        consent_received_at: newValue ? new Date().toISOString() : null
-      }).eq('id', studentId)
-      if (error) throw error
-      setStudents(prev => prev.map(s =>
-        s.id === studentId
-          ? { ...s, consent_received: newValue, consent_received_at: newValue ? new Date().toISOString() : null }
-          : s
-      ))
+      if (newValue) {
+        // 종이 동의 ✓ — 새 API로 실명 해제 + 동의 기록
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('로그인 세션이 만료됐어요. 새로고침 후 다시 시도해주세요.')
+        const res = await fetch('/api/consent-paper', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentIds: [studentId], accessToken: session.access_token })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) throw new Error(data.error || '처리에 실패했어요.')
+        const r = data.results || {}
+        if ((r.unlockFailed || []).length > 0) {
+          alert('동의 처리는 됐지만 실명 자동 표시에 실패했어요. 목록에서 이름을 직접 입력해주세요.')
+        }
+      } else {
+        // 동의 해제 — consent_received만 내림(기존 동작 유지)
+        const { error } = await supabase.from('profiles').update({
+          consent_received: false,
+          consent_received_at: null
+        }).eq('id', studentId)
+        if (error) throw error
+      }
+      await loadStudents(classInfo.id)  // realname도 바뀌므로 재조회
     } catch(e) {
-      alert('저장 실패: ' + e.message)
+      alert('저장 실패: ' + (e.message || e))
     }
     setSavingId(null)
   }
@@ -945,7 +962,10 @@ export default function StudentsPage() {
   }
 
   // 동의서 일괄 처리 (체크 / 해제)
+  // ★ 켤 때(newValue=true)는 종이 동의 API(/api/consent-paper) 1회 호출로 실명 잠금까지 해제.
+  //   끌 때(false)는 기존대로 consent_received만 내림(실명 재잠금 범위 밖).
   const bulkToggleConsent = async (newValue) => {
+    if (isImpersonating) return  // 임퍼소네이션(읽기 전용) 중엔 실행 안 함
     const targets = students.filter(s => !s.is_hidden && s.consent_received !== newValue)
     if (targets.length === 0) {
       alert(newValue ? '이미 모든 학생이 회신 처리되어 있어요' : '회신 처리된 학생이 없어요')
@@ -956,22 +976,47 @@ export default function StudentsPage() {
 
     setSavingId('bulk-consent')
     try {
-      const now = new Date().toISOString()
-      let success = 0, failed = 0
-      for (const s of targets) {
-        try {
-          const { error } = await supabase.from('profiles').update({
-            consent_received: newValue,
-            consent_received_at: newValue ? now : null
-          }).eq('id', s.id)
-          if (error) throw error
-          success++
-        } catch(e) { failed++ }
+      if (newValue) {
+        // 종이 동의 ✓ 일괄 — 새 API 1회 호출
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('로그인 세션이 만료됐어요. 새로고침 후 다시 시도해주세요.')
+        const res = await fetch('/api/consent-paper', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentIds: targets.map(s => s.id), accessToken: session.access_token })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) throw new Error(data.error || '처리에 실패했어요.')
+        const r = data.results || {}
+        const nUnlock = (r.unlocked || []).length
+        const nConsent = (r.consentOnly || []).length
+        const nAlready = (r.alreadyDone || []).length
+        const nFail = (r.unlockFailed || []).length
+        const nSkip = (r.skipped || []).length
+        let msg = `✅ 실명 표시 ${nUnlock}명 · 동의 처리 ${nConsent}명`
+        if (nAlready > 0) msg += `\n이미 완료 ${nAlready}명`
+        if (nSkip > 0) msg += `\n건너뜀 ${nSkip}명`
+        if (nFail > 0) msg += `\n⚠️ 이름 수동 입력 필요 ${nFail}명 (동의는 처리됨 — 목록에서 이름을 직접 입력해주세요)`
+        alert(msg)
+      } else {
+        // 미회신 일괄 해제 — consent_received만 내림(기존 동작 유지)
+        const now = null
+        let success = 0, failed = 0
+        for (const s of targets) {
+          try {
+            const { error } = await supabase.from('profiles').update({
+              consent_received: false,
+              consent_received_at: now
+            }).eq('id', s.id)
+            if (error) throw error
+            success++
+          } catch(e) { failed++ }
+        }
+        alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
       }
-      alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
       await loadStudents(classInfo.id)
     } catch(e) {
-      alert('실패: ' + e.message)
+      alert('실패: ' + (e.message || e))
     }
     setSavingId(null)
   }
