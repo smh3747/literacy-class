@@ -2167,13 +2167,13 @@ function AdminSubmissionsInner() {
     return Object.values(groups).sort((a, b) => b.items.length - a.items.length)
   }
 
-  // 🆕 통합 검색: 담임명·학교명·학생 표시이름(displayStudentName) 부분일치 — 이미 로드된 목록 내 클라이언트 필터(서버 재조회 없음)
+  // 🆕 통합 검색: 담임명·학교명·학생 표시이름(displayStudentName)·번호 부분일치 — 이미 로드된 목록 내 클라이언트 필터(서버 재조회 없음)
   // ⚠️ 잠긴 학생은 displayStudentName이 닉네임을 반환 → 닉네임으로만 검색됨. 실명 복호화/암호문 조회 절대 안 함.
   const sq = search.trim().toLowerCase()
   const matchSearch = (s) => {
     if (!sq) return true
     const cls = classMap?.[s.profiles?.class_id]
-    return [cls?.teacher_name, cls?.teacher_school, displayStudentName(s.profiles)]
+    return [cls?.teacher_name, cls?.teacher_school, displayStudentName(s.profiles), String(s.profiles?.number || '')]
       .some(f => f && String(f).toLowerCase().includes(sq))
   }
   const visibleSubmissions = submissions.filter(matchSearch)
