@@ -16,12 +16,13 @@
 //           SUPABASE_SERVICE_ROLE_KEY, NAME_ENCRYPTION_KEY (서버 전용)
 
 import { createClient } from '@supabase/supabase-js'
-import { decryptName } from '../../lib/encryptName'
+import { decryptName, encryptName } from '../../lib/encryptName'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { studentIds, accessToken } = req.body || {}
+  const { studentIds, accessToken, action } = req.body || {}
+  const mode = action === 'lock' ? 'lock' : 'unlock'   // 기본 unlock(동의 처리) — 기존 동작 보존
   const ids = Array.isArray(studentIds) ? studentIds.filter(Boolean) : []
   if (ids.length === 0) return res.status(400).json({ error: '대상 학생이 없어요' })
   if (!accessToken) return res.status(401).json({ error: '로그인이 필요해요' })
@@ -54,13 +55,13 @@ export default async function handler(req, res) {
 
   const now = new Date().toISOString()
   // 결과 집계: 상태별 studentId 모음
-  const results = { unlocked: [], consentOnly: [], alreadyDone: [], unlockFailed: [], skipped: [] }
+  const results = { unlocked: [], consentOnly: [], alreadyDone: [], unlockFailed: [], relocked: [], skipped: [] }
 
   for (const studentId of ids) {
     try {
       // 3) 대상 학생 조회 + 담임 검증
       const { data: stu } = await supabaseAdmin.from('profiles')
-        .select('id, class_id, role, consent_received')
+        .select('id, class_id, role, consent_received, realname')
         .eq('id', studentId)
         .maybeSingle()
       if (!stu || stu.role !== 'student') { results.skipped.push(studentId); continue }
@@ -69,6 +70,42 @@ export default async function handler(req, res) {
         const { data: cls } = await supabaseAdmin.from('classes')
           .select('teacher_id').eq('id', stu.class_id).maybeSingle()
         if (!cls || cls.teacher_id !== uid) { results.skipped.push(studentId); continue }
+      }
+
+      // ===== 재잠금(동의 철회) 분기 — action:'lock' =====
+      // ★복구 보장: ①빈값 스킵 ②암호화 성공 ③pending_names 저장 성공 — 셋 다 통과한 뒤에만 realname 비움.
+      //   하나라도 실패하면 realname을 그대로 두고 skipped 기록(절대 파괴 안 함).
+      if (mode === 'lock') {
+        // ① 빈값 스킵 — 이미 닉네임 상태(잠김) 또는 자가가입(realname 없음): 재잠금할 실명 없음.
+        //    단, 동의 플래그가 켜져 있으면(자가가입 consentOnly 등) 철회는 반영해 내려준다(realname 불변).
+        if (!stu.realname || !String(stu.realname).trim()) {
+          if (stu.consent_received === true) {
+            await supabaseAdmin.from('profiles').update({ consent_received: false, consent_received_at: null }).eq('id', studentId)
+          }
+          results.skipped.push(studentId); continue
+        }
+        // ② 선(先)암호화 — 실패(키 없음 등)면 realname 유지 + 스킵
+        let enc = null
+        try { enc = encryptName(String(stu.realname)) } catch (e) { console.error('encryptName 실패:', studentId, e?.message); enc = null }
+        if (!enc) { results.skipped.push(studentId); continue }
+        // ③ pending_names upsert(저장) 성공 후에만 realname 비움 (PK=student_id)
+        const { error: pnErr } = await supabaseAdmin.from('pending_names')
+          .upsert({ student_id: studentId, class_id: stu.class_id, enc_name: enc }, { onConflict: 'student_id' })
+        if (pnErr) { console.error('pending_names upsert 실패:', studentId, pnErr.message); results.skipped.push(studentId); continue }
+        // ④ 저장 확인 후 realname 비우고 동의 해제
+        const { error: upErr } = await supabaseAdmin.from('profiles').update({
+          realname: '', consent_received: false, consent_received_at: null,
+        }).eq('id', studentId)
+        if (upErr) { console.error('consent-paper lock update 실패:', studentId, upErr.message); results.skipped.push(studentId); continue }
+        // ⑤ 철회 이력 (서명·동의항목 없음)
+        const { error: cErr } = await supabaseAdmin.from('consents').insert({
+          student_id: studentId, class_id: stu.class_id,
+          parent_name: '(동의 철회)', signature: null,
+          consent_items: [], source: 'paper', consented_at: now,
+        })
+        if (cErr) console.error('consent-paper 철회 이력 insert 실패:', studentId, cErr.message)
+        results.relocked.push(studentId)
+        continue
       }
 
       // 4) 멱등 가드 — pending_names 조회
@@ -145,5 +182,5 @@ export default async function handler(req, res) {
   }
 
   // 8) 집계 응답 (PII 없음 — studentId만)
-  return res.status(200).json({ ok: true, results })
+  return res.status(200).json({ ok: true, action: mode, results })
 }

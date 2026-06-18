@@ -899,12 +899,16 @@ export default function StudentsPage() {
           alert('동의 처리는 됐지만 실명 자동 표시에 실패했어요. 목록에서 이름을 직접 입력해주세요.')
         }
       } else {
-        // 동의 해제 — consent_received만 내림(기존 동작 유지)
-        const { error } = await supabase.from('profiles').update({
-          consent_received: false,
-          consent_received_at: null
-        }).eq('id', studentId)
-        if (error) throw error
+        // 동의 철회 — 새 API(action:'lock')로 실명 재잠금(닉네임 전환) + 동의 해제
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('로그인 세션이 만료됐어요. 새로고침 후 다시 시도해주세요.')
+        const res = await fetch('/api/consent-paper', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentIds: [studentId], accessToken: session.access_token, action: 'lock' })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) throw new Error(data.error || '처리에 실패했어요.')
       }
       await loadStudents(classInfo.id)  // realname도 바뀌므로 재조회
     } catch(e) {
@@ -999,20 +1003,22 @@ export default function StudentsPage() {
         if (nFail > 0) msg += `\n⚠️ 이름 수동 입력 필요 ${nFail}명 (동의는 처리됨 — 목록에서 이름을 직접 입력해주세요)`
         alert(msg)
       } else {
-        // 미회신 일괄 해제 — consent_received만 내림(기존 동작 유지)
-        const now = null
-        let success = 0, failed = 0
-        for (const s of targets) {
-          try {
-            const { error } = await supabase.from('profiles').update({
-              consent_received: false,
-              consent_received_at: now
-            }).eq('id', s.id)
-            if (error) throw error
-            success++
-          } catch(e) { failed++ }
-        }
-        alert(`✅ 성공: ${success}명${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+        // 동의 일괄 철회 — 새 API(action:'lock')로 실명 재잠금(닉네임 전환) + 동의 해제
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('로그인 세션이 만료됐어요. 새로고침 후 다시 시도해주세요.')
+        const res = await fetch('/api/consent-paper', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentIds: targets.map(s => s.id), accessToken: session.access_token, action: 'lock' })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) throw new Error(data.error || '처리에 실패했어요.')
+        const r = data.results || {}
+        const nRelock = (r.relocked || []).length
+        const nSkip = (r.skipped || []).length
+        let msg = `✅ 닉네임으로 전환 ${nRelock}명`
+        if (nSkip > 0) msg += `\n이미 닉네임 상태 ${nSkip}명은 그대로`
+        alert(msg)
       }
       await loadStudents(classInfo.id)
     } catch(e) {
