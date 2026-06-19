@@ -115,6 +115,7 @@ export default function TeacherSubmissions() {
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [topicStudents, setTopicStudents] = useState([])
   const [expandedEssays, setExpandedEssays] = useState({})  // 🆕 전체 최종본 뷰: 학생별 본문 더보기 토글
+  const [navHintPulse, setNavHintPulse] = useState(false)   // 🆕 ←/→ 안내 첫 노출 펄스(교사별 1회, CSS 3회 후 멈춤)
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
 
@@ -276,6 +277,21 @@ export default function TeacherSubmissions() {
       syncUrl(selectedTopic?.id, next.profile.id)
       window.scrollTo({ top: 0 })
     }
+  }
+
+  // 🆕 ←/→ 키 안내 펄스 — 처음 본 교사에게만(교사별 localStorage). 끈 교사는 펄스 없음.
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      const dismissed = localStorage.getItem(`lc-essaynav-hint-dismissed:${user.id}`) === '1'
+      setNavHintPulse(!dismissed)
+    } catch { setNavHintPulse(false) }
+  }, [user?.id])
+
+  // 펄스 영구 끄기(다시 안 보기) — 교사별 키에 기록
+  const dismissNavHint = () => {
+    setNavHintPulse(false)
+    if (user?.id) { try { localStorage.setItem(`lc-essaynav-hint-dismissed:${user.id}`, '1') } catch {} }
   }
 
   // 🆕 키보드 ←/→ (입력 중일 땐 무시)
@@ -960,11 +976,24 @@ export default function TeacherSubmissions() {
                       다음 학생 →
                     </button>
                     {/* 키보드 단축키 안내 (데스크톱 전용 — 모바일에선 위 버튼으로) */}
-                    <span className="hidden lg:inline-flex items-center gap-1 ml-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 whitespace-nowrap"
+                    {/* 처음 본 교사에게만 펄스 3회 후 멈춤(무한 깜박임 금지). 안내 자체는 항상 표시. */}
+                    <style>{`
+                      @keyframes essaynavPulse {
+                        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+                        50% { transform: scale(1.06); box-shadow: 0 0 0 4px rgba(59,130,246,0.30); }
+                      }
+                      .essaynav-pulse { animation: essaynavPulse 0.9s ease-in-out 3; }
+                    `}</style>
+                    <span className={`hidden lg:inline-flex items-center gap-1 ml-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 whitespace-nowrap ${navHintPulse ? 'essaynav-pulse' : ''}`}
                       title="키보드 화살표 키로 이전/다음 학생 글을 넘길 수 있어요">
                       <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">←</kbd>
                       <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">→</kbd>
                       키로 학생 글 넘기기
+                      {navHintPulse && (
+                        <button onClick={dismissNavHint}
+                          className="ml-1 text-blue-400 hover:text-blue-700 font-bold leading-none"
+                          title="이 강조 다시 안 보기">×</button>
+                      )}
                     </span>
                   </div>
                 )}
@@ -1259,10 +1288,17 @@ export default function TeacherSubmissions() {
 
                 return (
                   <>
-                    {/* 최신 2개: 직전(왼쪽) vs 최신(오른쪽) 병렬 */}
+                    {/* 최신 2개: 직전(왼쪽) vs 최신(오른쪽) 병렬 — 카드 라벨로 위치를 분명히(모호한 ← 제거) */}
+                    {/* 1칸뿐(수정 안 한 학생)이면 비교 안내 자체를 숨김 */}
                     {topTwo.length >= 2 && (
-                      <div className="text-xs text-gray-500 mb-1">
-                        ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600 mb-2 bg-blue-50 border border-blue-100 rounded-lg py-2 px-3">
+                        <span className="text-gray-500">🔍 나란히 비교</span>
+                        <span className="font-semibold text-gray-800">{labelFor(topTwo[0])}</span>
+                        <span className="text-sm text-blue-400 font-bold">↔</span>
+                        <span className="font-semibold text-gray-800">{labelFor(topTwo[1])}</span>
+                        {older.length > 0 && (
+                          <span className="text-gray-400 sm:ml-auto">더 이전 글은 아래 [📂 이전 글 더 보기]에 있어요</span>
+                        )}
                       </div>
                     )}
                     <div className={`grid gap-4 items-stretch ${topTwo.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
