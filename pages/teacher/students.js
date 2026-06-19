@@ -19,6 +19,7 @@ export default function StudentsPage() {
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
   const [uploadStatus, setUploadStatus] = useState(null)
   const [parsedStudents, setParsedStudents] = useState([])
+  const [dragOver, setDragOver] = useState(false)   // 명렬표 드롭존 드래그 하이라이트
   const [uploading, setUploading] = useState(false)
   // 아이디 prefix (예: "hr" → hr5101)
   const [idPrefix, setIdPrefix] = useState('')
@@ -147,13 +148,17 @@ export default function StudentsPage() {
     )
   }
 
-  const handleFile = async (e) => {
-    const file = e.target.files[0]
+  // 이벤트(<input onChange>) 또는 파일(드래그앤드롭) 둘 다 허용.
+  const handleFile = async (eOrFile) => {
+    const isEvent = !!(eOrFile && eOrFile.target && eOrFile.target.files)
+    const file = isEvent ? eOrFile.target.files[0] : eOrFile
     if (!file) return
+    // input 값 초기화는 이벤트(파일 선택)일 때만 — 드롭 파일은 input과 무관.
+    const resetInput = () => { if (isEvent) { try { eOrFile.target.value = '' } catch {} } }
 
     if (!user?.school || !user.school.trim()) {
       alert('학교명이 등록되지 않았어요!\n선생님 메인 화면 → "✏️ 내 정보 수정"에서 학교명을 먼저 입력해주세요.')
-      e.target.value = ''
+      resetInput()
       return
     }
 
@@ -168,7 +173,7 @@ export default function StudentsPage() {
         '✅ PDF (.pdf) - 텍스트 PDF만 가능\n\n' +
         '나이스 → [기본학적관리] → [명렬표 출력] → [엑셀 내려받기]'
       )
-      e.target.value = ''
+      resetInput()
       return
     }
 
@@ -190,7 +195,7 @@ export default function StudentsPage() {
             '✅ 해결 방법:\n' +
             '나이스 → [엑셀 내려받기] 초록색 버튼으로 엑셀 파일을 받아 올려주세요.'
           )
-          e.target.value = ''
+          resetInput()
           return
         }
 
@@ -221,7 +226,7 @@ export default function StudentsPage() {
           '❌ PDF 처리 실패: ' + err.message + '\n\n' +
           '엑셀 파일로 다시 시도해주세요.'
         )
-        e.target.value = ''
+        resetInput()
         return
       }
     }
@@ -1374,6 +1379,18 @@ export default function StudentsPage() {
           {/* 일괄 등록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h3 className="font-bold mb-2">📋 학급명렬표 일괄 등록</h3>
+
+            {/* 🔒 명단 처리 안심 안내 — 카드 첫 요소(실명 올리기 전 가장 먼저 보이게). 코드로 확인된 사실만, 단정 금지. */}
+            <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded-lg mb-3 leading-relaxed">
+              <p className="font-semibold mb-1">🔒 학생 명단, 이렇게 안전하게 지켜져요</p>
+              <ul className="text-xs space-y-1.5 text-blue-800">
+                <li>· 명렬표 파일은 선생님 브라우저에서만 읽어요. 파일 자체는 서버에 올라가지 않아요.</li>
+                <li>· 학생 이름은 암호화돼 잠긴 채 보관되고, 화면엔 닉네임으로 표시돼요. AI 채점에도 실명은 안 가요(글 내용만).</li>
+                <li>· 실명은 학부모 동의를 받은 학생만 풀려요. 동의 전까진 닉네임으로 모든 기능을 써요 — 그래서 지금 동의를 먼저 안 받아도 명렬표를 올릴 수 있어요.</li>
+                <li>· 선생님 재량 사용은 학교운영위 심의 대상으로 보기 어려워요(학교가 정규 교육과정 교재로 공식 채택할 땐 심의 필요). 학교마다 기준이 다르니 확인은 권장드려요.</li>
+              </ul>
+            </div>
+
             <p className="text-sm text-gray-600 mb-3">
               <strong>나이스에서 다운받은 학급명렬표 엑셀(.xlsx)</strong>을 그대로 올리면 돼요.
               아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>123456</strong>입니다.
@@ -1415,26 +1432,35 @@ export default function StudentsPage() {
                 메인 화면 → "✏️ 내 정보 수정"에서 학교명을 먼저 입력해주세요.
               </div>
             )}
-            {/* 🔒 명단 처리 안심 안내 — 코드로 확인된 사실만 (과장 금지) */}
-            <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded-lg mb-3">
-              <p className="font-semibold mb-1">🔒 학생 명단은 이렇게 안전하게 처리돼요</p>
-              <ul className="text-xs space-y-1 text-blue-800">
-                <li>• 업로드한 명렬표 파일은 선생님 기기(브라우저)에서만 읽고, 우리 서버에 저장되지 않아요.</li>
-                <li>• 학생 이름은 AI 채점에 사용되지 않아요 (AI에는 글 내용만 전달돼요).</li>
-                <li>• 학생 정보는 담임 선생님과 관리자만 볼 수 있고, 외부에는 공개되지 않아요.</li>
-              </ul>
-            </div>
             <div className="space-y-3">
-              <label className="block">
-                <span className="sr-only">엑셀 또는 PDF 파일 선택</span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.pdf"
-                  onChange={handleFile}
-                  disabled={!user?.school}
-                  className="w-full text-sm border border-gray-200 rounded-lg p-2 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-primary file:text-white disabled:opacity-50"
-                />
-              </label>
+              {/* 드래그앤드롭 드롭존 — 드롭한 파일도 기존 handleFile 검증(확장자·이미지PDF 거부 등)을 그대로 탄다 */}
+              <div
+                onDragOver={(e) => { if (!user?.school) return; e.preventDefault(); setDragOver(true) }}
+                onDragLeave={(e) => { e.preventDefault(); setDragOver(false) }}
+                onDrop={(e) => {
+                  e.preventDefault(); setDragOver(false)
+                  if (!user?.school) return
+                  const f = e.dataTransfer?.files?.[0]
+                  if (f) handleFile(f)   // 이벤트가 아닌 파일을 직접 전달 → handleFile이 둘 다 허용
+                }}
+                className={`rounded-lg border-2 border-dashed p-4 text-center transition ${
+                  dragOver ? 'border-primary bg-primary-light' : 'border-gray-300 bg-gray-50'
+                } ${!user?.school ? 'opacity-50' : ''}`}>
+                <p className="text-sm text-gray-600 mb-2">
+                  📂 여기로 파일을 끌어다 놓거나, <strong>[파일 선택]</strong>을 눌러 올리세요
+                  <span className="block text-xs text-gray-400 mt-0.5">엑셀(.xlsx, .xls) · 텍스트 PDF(.pdf) 지원</span>
+                </p>
+                <label className="inline-block">
+                  <span className="sr-only">엑셀 또는 PDF 파일 선택</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.pdf"
+                    onChange={handleFile}
+                    disabled={!user?.school}
+                    className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-primary file:text-white file:cursor-pointer disabled:opacity-50"
+                  />
+                </label>
+              </div>
               {uploadStatus && (
                 <div className="text-sm bg-blue-50 text-blue-900 p-3 rounded-lg whitespace-pre-line">{uploadStatus}</div>
               )}
