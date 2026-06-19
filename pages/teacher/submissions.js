@@ -855,7 +855,13 @@ export default function TeacherSubmissions() {
                       className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
                       다음 학생 →
                     </button>
-                    <span className="hidden lg:inline text-gray-400 ml-1" title="본문에서 키보드 화살표로도 이동돼요">⌨️ ←/→</span>
+                    {/* 키보드 단축키 안내 (데스크톱 전용 — 모바일에선 위 버튼으로) */}
+                    <span className="hidden lg:inline-flex items-center gap-1 ml-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 whitespace-nowrap"
+                      title="키보드 화살표 키로 이전/다음 학생 글을 넘길 수 있어요">
+                      <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">←</kbd>
+                      <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">→</kbd>
+                      키로 학생 글 넘기기
+                    </span>
                   </div>
                 )}
               </div>
