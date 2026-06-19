@@ -27,7 +27,7 @@ export default function ConsentSubmissionsPage() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
@@ -101,12 +101,12 @@ export default function ConsentSubmissionsPage() {
     const s = selected.student
     const isConsented = s.consent_received === true
     if (!isConsented) {
-      return { school: user.school, className: classInfo?.name, student: s, status: 'none' }
+      return { school: user.school, className: classInfo?.name, grade: classInfo?.grade, student: s, status: 'none' }
     }
     const v = selected.valid
     const source = v?.source || 'paper'   // 동의됐는데 이력 없으면(구·자가가입) 종이로 간주
     return {
-      school: user.school, className: classInfo?.name, student: s,
+      school: user.school, className: classInfo?.name, grade: classInfo?.grade, student: s,
       parentName: v?.parent_name || '', signature: v?.signature || null,
       consentItems: v?.consent_items || (isConsented ? ['privacy', 'ai_processing'] : []),
       consentedAt: v?.consented_at || s.consent_received_at || null,

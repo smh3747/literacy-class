@@ -1,15 +1,17 @@
 // 동의서 양식 (공용) — 종이 인쇄(parent-consent.js)와 교사 뷰어(consent/submissions.js)가 함께 사용.
 // props 없으면 빈칸(기존 종이 인쇄와 동일한 빈 양식). props가 있으면 그 값으로 칸을 채운다.
-//   props: { school, className, student, parentName, signature, consentItems, consentedAt, status }
+//   props: { school, className, grade, student, parentName, signature, consentItems, consentedAt, status }
 //   status: 'online' | 'paper' | 'none'(미동의) | undefined(빈 양식)
 // 인쇄 CSS는 이 컴포넌트가 들고 다님 — 어느 페이지에서 써도 A4 한 장 압축 + "이 문서만" 인쇄.
 import { displayStudentName } from '../lib/displayName'
 
-export default function ConsentDocument({ school, className, student, parentName, signature, consentItems, consentedAt, status }) {
+export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status }) {
   const items = Array.isArray(consentItems) ? consentItems : []
   const has = (k) => items.includes(k)
   const studentName = student ? displayStudentName(student) : ''
-  const gradeClassNum = [className, (student && student.number) ? `${student.number}번` : ''].filter(Boolean).join(' ')
+  const gradeText = grade ? `${grade}학년` : ''
+  const gradeClassNum = [gradeText, className, (student && student.number) ? `${student.number}번` : '']
+    .filter(Boolean).join(' ')
   const d = consentedAt ? new Date(consentedAt) : null
   const dateText = d ? `날짜: ${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일` : '날짜: 2026년 _____ 월 _____ 일'
 
