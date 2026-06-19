@@ -1,105 +1,36 @@
-// 부모 동의 페이지 (비로그인 공개) — C방식: 학급코드 + 자녀번호 + 동의비밀번호 + 부모 서명
+// 부모 동의 페이지 (비로그인 공개) — 2단계 마법사
+//   1p: 자녀 번호 + 동의 비밀번호 → /api/consent-verify-child → "곽○윤 맞나요?" 확인
+//   2p: ConsentDocument 양식(학년·반·번호·마스킹명 자동 채움) + 보호자명 + 체크 + 서명 → 제출
 // URL: /consent/<학급코드>
+// ⚠️ 평문 실명은 끝까지 클라이언트로 내려오지 않는다. 1p verify는 마스킹명만 받고,
+//    실명 잠금 해제(기록)는 2p 최종 제출 시 /api/parent-consent 서버에서만 일어난다.
 // terms.js 레이아웃 패턴. Footer는 _app.js 전역 렌더.
 import Head from 'next/head'
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-
-// ── 서명 캔버스 (네이티브, 라이브러리 0) ──
-// Pointer Events로 마우스·터치·펜 통합, touch-action:none으로 스크롤 차단,
-// devicePixelRatio 스케일로 선명하게. 획이 있을 때만 onChange(dataURL), 지우면 onChange('').
-function SignaturePad({ onChange }) {
-  const canvasRef = useRef(null)
-  const drawing = useRef(false)
-  const hasDrawn = useRef(false)
-  const last = useRef({ x: 0, y: 0 })
-
-  // 캔버스 초기화 (클라이언트에서만)
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const dpr = window.devicePixelRatio || 1
-    const rect = canvas.getBoundingClientRect()
-    canvas.width = Math.max(1, Math.round(rect.width * dpr))
-    canvas.height = Math.max(1, Math.round(rect.height * dpr))
-    ctx.scale(dpr, dpr)
-    ctx.lineWidth = 2.5
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = '#1f2937'
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, rect.width, rect.height)  // 흰 배경(투명 PNG 방지)
-  }, [])
-
-  const posOf = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
-  }
-  const start = (e) => {
-    e.preventDefault()
-    drawing.current = true
-    last.current = posOf(e)
-    try { canvasRef.current.setPointerCapture?.(e.pointerId) } catch {}
-  }
-  const move = (e) => {
-    if (!drawing.current) return
-    e.preventDefault()
-    const ctx = canvasRef.current.getContext('2d')
-    const p = posOf(e)
-    ctx.beginPath()
-    ctx.moveTo(last.current.x, last.current.y)
-    ctx.lineTo(p.x, p.y)
-    ctx.stroke()
-    last.current = p
-    hasDrawn.current = true
-  }
-  const end = () => {
-    if (!drawing.current) return
-    drawing.current = false
-    if (hasDrawn.current) onChange(canvasRef.current.toDataURL('image/png'))
-  }
-  const clear = () => {
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    ctx.clearRect(0, 0, rect.width, rect.height)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, rect.width, rect.height)
-    hasDrawn.current = false
-    onChange('')
-  }
-
-  return (
-    <div>
-      <canvas
-        ref={canvasRef}
-        className="w-full border border-gray-300 rounded-lg bg-white"
-        style={{ height: 160, touchAction: 'none', maxWidth: 600 }}
-        onPointerDown={start}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerLeave={end}
-        onPointerCancel={end}
-      />
-      <div className="flex justify-between items-center mt-1">
-        <span className="text-[11px] text-gray-400">위 칸에 보호자 서명을 해주세요</span>
-        <button type="button" onClick={clear} className="text-xs text-gray-500 hover:text-gray-700 underline">지우기</button>
-      </div>
-    </div>
-  )
-}
+import SignaturePad from '../../components/SignaturePad'
+import ConsentDocument from '../../components/ConsentDocument'
 
 export default function ParentConsent() {
   const router = useRouter()
   const [classCode, setClassCode] = useState('')
   const [classInfo, setClassInfo] = useState(null)   // null=로딩전, 'loading', 'notfound', {name, school}
+
+  // 마법사 단계
+  const [step, setStep] = useState(1)                       // 1 | 2
+  const [confirmStage, setConfirmStage] = useState('input') // step1 내부: 'input' | 'confirm'
+  const [verified, setVerified] = useState(null)            // {masked, grade, className, number}
+
+  // 입력값 (번호·비번은 제출 때 parent-consent 가 다시 매칭하므로 계속 보관)
   const [studentNumber, setStudentNumber] = useState('')
   const [consentPassword, setConsentPassword] = useState('')
   const [parentName, setParentName] = useState('')
   const [agree, setAgree] = useState(false)
   const [signature, setSignature] = useState('')
+
+  // 상태 플래그
+  const [verifying, setVerifying] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)          // null | 'success' | 'already'
@@ -128,6 +59,61 @@ export default function ParentConsent() {
     })()
   }, [router.isReady, router.query])
 
+  // ── 1p: 자녀 확인 (읽기 전용 — 마스킹명만 받음) ──
+  const verify = async () => {
+    setError('')
+    if (!studentNumber.trim()) return setError('자녀의 번호를 입력해주세요')
+    if (!consentPassword.trim()) return setError('동의 비밀번호를 입력해주세요 (담임 선생님께 받으세요)')
+
+    setVerifying(true)
+    try {
+      const res = await fetch('/api/consent-verify-child', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          classCode,
+          studentNumber: studentNumber.trim(),
+          consentPassword: consentPassword.trim(),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      // 이미 동의된 학생 → 마스킹명 없이 완료 화면으로 종료
+      if (res.ok && data.ok && data.alreadyConsented) {
+        setResult('already')
+        return
+      }
+      if (res.ok && data.ok && data.masked) {
+        setVerified({
+          masked: data.masked,
+          grade: data.grade ?? null,
+          className: data.className || null,
+          number: data.number || studentNumber.trim(),
+        })
+        setConfirmStage('confirm')
+        return
+      }
+      // 403(비번)/404(번호없음)/409(중복)/429/400 → API 친절 메시지 그대로
+      setError(data.error || '확인에 실패했어요. 잠시 후 다시 시도해주세요.')
+    } catch (e) {
+      setError('네트워크 오류예요. 인터넷 연결을 확인하고 다시 시도해주세요.')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  // confirm: 맞아요 → 2p
+  const goToConsent = () => { setError(''); setStep(2) }
+  // confirm: 아니에요 → 번호만 비우고 다시 입력 (동의 비번은 유지)
+  const rejectMatch = () => {
+    setVerified(null)
+    setStudentNumber('')
+    setConfirmStage('input')
+    setError('')
+  }
+  // 2p: 뒤로 → 확인 카드로 (입력값·서명 유지)
+  const backToConfirm = () => { setError(''); setStep(1); setConfirmStage('confirm') }
+
+  // ── 2p: 제출 (기존 parent-consent 재사용 — 서버가 번호로 재매칭 + agree·비번 재검증 후 잠금 해제) ──
   const submit = async () => {
     setError('')
     if (!studentNumber.trim()) return setError('자녀의 번호를 입력해주세요')
@@ -211,82 +197,138 @@ export default function ParentConsent() {
             </div>
           ) : (
             <>
+              {/* 학급 헤더 + 진행 표시 */}
               <div className="bg-primary-light rounded-2xl p-5">
-                <p className="text-xs text-primary-dark">학부모 동의</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-primary-dark">학부모 동의</p>
+                  <span className="text-[11px] font-semibold text-primary-dark bg-white/60 rounded-full px-2 py-0.5">{step}/2 단계</span>
+                </div>
                 <h2 className="text-lg font-bold text-gray-900 mt-0.5">
                   {classInfo.school ? `${classInfo.school} · ` : ''}{classInfo.name}
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  자녀의 AI 글쓰기 수업 참여에 대한 보호자 동의를 받습니다. 아래 내용을 확인하고 동의해주세요.
+                  {step === 1
+                    ? '먼저 자녀를 확인할게요. 번호와 동의 비밀번호를 입력해주세요.'
+                    : '안내 내용을 확인하시고 보호자 동의와 서명을 해주세요.'}
                 </p>
               </div>
 
-              {/* 입력 폼 */}
-              <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">자녀의 번호</label>
-                  <input type="text" inputMode="numeric" value={studentNumber}
-                    onChange={e => setStudentNumber(e.target.value)}
-                    placeholder="예: 5"
-                    className="w-full p-3 border border-gray-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">동의 비밀번호</label>
-                  <input type="text" value={consentPassword}
-                    onChange={e => setConsentPassword(e.target.value)}
-                    placeholder="담임 선생님께 받은 비밀번호"
-                    className="w-full p-3 border border-gray-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">보호자 성함</label>
-                  <input type="text" value={parentName}
-                    onChange={e => setParentName(e.target.value)}
-                    placeholder="예: 홍길동"
-                    className="w-full p-3 border border-gray-200 rounded-lg" />
-                </div>
+              {/* ── STEP 1 · 입력 ── */}
+              {step === 1 && confirmStage === 'input' && (
+                <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+                  {/* 부모 안심 안내 (압축 — 사실 기반) */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 leading-relaxed">
+                    🔒 받는 정보는 <strong>보호자 성함·서명</strong>뿐이에요(연락처·주소는 받지 않아요). 동의는 <strong>선택</strong>이며, 거두고 싶으시면 담임 선생님께 말씀하시면 돼요.
+                  </div>
 
-                {/* 부모 안심 안내 (사실 기반 — 철회 가능 단정 금지) */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold">🔒 안심하세요</p>
-                  <p>· 받는 정보는 <strong>보호자 성함과 서명</strong>뿐이에요. 연락처·주소는 받지 않아요.</p>
-                  <p>· 자녀 실명은 <strong>동의한 우리 반</strong>에서 글쓰기 피드백 용도로만 쓰여요.</p>
-                  <p>· 동의는 <strong>선택</strong>이에요. 안 하셔도 자녀는 닉네임으로 모든 기능을 이용해요.</p>
-                  <p>· 동의를 거두고 싶으시면 <strong>담임 선생님께 말씀해</strong> 주세요.</p>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">자녀의 번호</label>
+                    <input type="text" inputMode="numeric" value={studentNumber}
+                      onChange={e => setStudentNumber(e.target.value)}
+                      placeholder="예: 5"
+                      className="w-full p-3 border border-gray-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">동의 비밀번호</label>
+                    <input type="text" value={consentPassword}
+                      onChange={e => setConsentPassword(e.target.value)}
+                      placeholder="담임 선생님께 받은 비밀번호"
+                      className="w-full p-3 border border-gray-200 rounded-lg" />
+                  </div>
+
+                  {error && (
+                    <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 whitespace-pre-line">{error}</div>
+                  )}
+
+                  <button onClick={verify} disabled={verifying}
+                    className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                    {verifying ? '확인 중...' : '자녀 확인하기'}
+                  </button>
                 </div>
+              )}
 
-                {/* 동의 항목 안내 (privacy.js 문구에 정합) */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold text-gray-900">📋 수집·이용 안내</p>
-                  <p><strong>수집 항목:</strong> 이름, 학년/반/번호, 아이디 · 작성한 글, AI 피드백 결과, 접속 기록</p>
-                  <p><strong>이용 목적:</strong> 회원 식별·서비스 제공 · AI 글쓰기 피드백 제공 · 학습 기록 관리·성장 추적</p>
-                  <p><strong>보유 기간:</strong> 회원정보=탈퇴 시까지 · 글·피드백=학기 종료 후 1년 후 삭제 · 접속 로그=3개월</p>
-                  <p><strong>제3자 제공:</strong> AI 피드백 생성을 위해 Google(Gemini)에 작성한 글이 전송됩니다 (이름 등 식별 정보 제외).</p>
-                  <p className="text-gray-500">자세한 내용은 <Link href="/privacy" target="_blank" className="text-primary underline">개인정보처리방침</Link>·<Link href="/terms" target="_blank" className="text-primary underline">이용약관</Link>을 참고하세요.</p>
-                  <p className="text-gray-500">※ 만 14세 미만 학생의 정보는 법정대리인(보호자)의 동의 하에 수집됩니다.</p>
+              {/* ── STEP 1 · 확인 ("곽○윤 맞나요?") ── */}
+              {step === 1 && confirmStage === 'confirm' && verified && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm text-center space-y-4">
+                  <div className="text-4xl">🧒</div>
+                  <div>
+                    <p className="text-sm text-gray-500">우리 반 {verified.number}번 학생이에요</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{verified.masked}</p>
+                    {(verified.grade || verified.className) && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        {[verified.grade ? `${verified.grade}학년` : '', verified.className].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-700">이 학생이 자녀가 맞나요?</p>
+                  {error && (
+                    <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">{error}</div>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={rejectMatch}
+                      className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-xl font-semibold">아니에요</button>
+                    <button onClick={goToConsent}
+                      className="flex-1 py-3 bg-primary text-white rounded-xl font-semibold">맞아요</button>
+                  </div>
                 </div>
+              )}
 
-                <label className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
-                  <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} className="w-4 h-4 mt-0.5" />
-                  <span className="text-sm text-blue-900">
-                    위 내용을 모두 확인했으며, <strong>보호자(법정대리인)</strong>로서 자녀의 「다온클래스」 이용 및 위 개인정보 처리에 <strong>동의합니다.</strong>
-                  </span>
-                </label>
+              {/* ── STEP 2 · 양식 + 동의 + 서명 ── */}
+              {step === 2 && verified && (
+                <>
+                  {/* 양식 본문 (고정 — 실시간 미리보기 없음. 마스킹명·학년·반·번호만 채움) */}
+                  <ConsentDocument
+                    school={classInfo.school}
+                    className={verified.className || classInfo.name}
+                    grade={verified.grade}
+                    student={{ realname: verified.masked, number: verified.number }}
+                  />
 
-                {/* 서명 */}
-                <div>
-                  <label className="block text-sm font-medium mb-1">보호자 서명 <span className="text-rose-500">*</span></label>
-                  <SignaturePad onChange={setSignature} />
-                </div>
+                  {/* 입력 영역 — ① 체크 → ② 서명 순서 안내 */}
+                  <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm space-y-5">
+                    {/* ① 동의 확인 */}
+                    <div>
+                      <p className="text-xs font-semibold text-primary-dark mb-2">① 동의 확인</p>
+                      <label className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
+                        <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} className="w-4 h-4 mt-0.5" />
+                        <span className="text-sm text-blue-900">
+                          위 내용을 모두 확인했으며, <strong>보호자(법정대리인)</strong>로서 자녀의 「다온클래스」 이용 및 위 개인정보 처리에 <strong>동의합니다.</strong>
+                        </span>
+                      </label>
+                      <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+                        자세한 내용은 <Link href="/privacy" target="_blank" className="text-primary underline">개인정보처리방침</Link>·<Link href="/terms" target="_blank" className="text-primary underline">이용약관</Link>을 참고하세요. ※ 만 14세 미만 학생의 정보는 법정대리인(보호자)의 동의 하에 수집됩니다.
+                      </p>
+                    </div>
 
-                {error && (
-                  <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 whitespace-pre-line">{error}</div>
-                )}
+                    {/* ② 보호자 성함 + 서명 */}
+                    <div>
+                      <p className="text-xs font-semibold text-primary-dark mb-2">② 보호자 성함과 서명</p>
+                      <label className="block text-sm font-medium mb-1">보호자 성함</label>
+                      <input type="text" value={parentName}
+                        onChange={e => setParentName(e.target.value)}
+                        placeholder="예: 홍길동"
+                        className="w-full p-3 border border-gray-200 rounded-lg" />
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium mb-1">보호자 서명 <span className="text-rose-500">*</span></label>
+                        <SignaturePad onChange={setSignature} initialValue={signature} />
+                      </div>
+                    </div>
 
-                <button onClick={submit} disabled={submitting}
-                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                  {submitting ? '제출 중...' : '동의하고 제출하기'}
-                </button>
-              </div>
+                    {error && (
+                      <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 whitespace-pre-line">{error}</div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button onClick={backToConfirm} disabled={submitting}
+                        className="px-5 py-3 bg-white border border-gray-300 text-gray-700 rounded-xl font-semibold disabled:opacity-50">← 뒤로</button>
+                      <button onClick={submit} disabled={submitting}
+                        className="flex-1 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                        {submitting ? '제출 중...' : '동의하고 제출하기'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </main>
