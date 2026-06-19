@@ -11,6 +11,7 @@ import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName } from '../../lib/displayName'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 function FeedbackList({ text, color = 'gray' }) {
@@ -115,7 +116,6 @@ export default function TeacherSubmissions() {
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [topicStudents, setTopicStudents] = useState([])
   const [expandedEssays, setExpandedEssays] = useState({})  // 🆕 전체 최종본 뷰: 학생별 본문 더보기 토글
-  const [navHintPulse, setNavHintPulse] = useState(false)   // 🆕 ←/→ 안내 첫 노출 펄스(교사별 1회, CSS 3회 후 멈춤)
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
 
@@ -277,21 +277,6 @@ export default function TeacherSubmissions() {
       syncUrl(selectedTopic?.id, next.profile.id)
       window.scrollTo({ top: 0 })
     }
-  }
-
-  // 🆕 ←/→ 키 안내 펄스 — 처음 본 교사에게만(교사별 localStorage). 끈 교사는 펄스 없음.
-  useEffect(() => {
-    if (!user?.id) return
-    try {
-      const dismissed = localStorage.getItem(`lc-essaynav-hint-dismissed:${user.id}`) === '1'
-      setNavHintPulse(!dismissed)
-    } catch { setNavHintPulse(false) }
-  }, [user?.id])
-
-  // 펄스 영구 끄기(다시 안 보기) — 교사별 키에 기록
-  const dismissNavHint = () => {
-    setNavHintPulse(false)
-    if (user?.id) { try { localStorage.setItem(`lc-essaynav-hint-dismissed:${user.id}`, '1') } catch {} }
   }
 
   // 🆕 키보드 ←/→ (입력 중일 땐 무시)
@@ -975,26 +960,8 @@ export default function TeacherSubmissions() {
                       className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
                       다음 학생 →
                     </button>
-                    {/* 키보드 단축키 안내 (데스크톱 전용 — 모바일에선 위 버튼으로) */}
-                    {/* 처음 본 교사에게만 펄스 3회 후 멈춤(무한 깜박임 금지). 안내 자체는 항상 표시. */}
-                    <style>{`
-                      @keyframes essaynavPulse {
-                        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59,130,246,0); }
-                        50% { transform: scale(1.06); box-shadow: 0 0 0 4px rgba(59,130,246,0.30); }
-                      }
-                      .essaynav-pulse { animation: essaynavPulse 0.9s ease-in-out 3; }
-                    `}</style>
-                    <span className={`hidden lg:inline-flex items-center gap-1 ml-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 whitespace-nowrap ${navHintPulse ? 'essaynav-pulse' : ''}`}
-                      title="키보드 화살표 키로 이전/다음 학생 글을 넘길 수 있어요">
-                      <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">←</kbd>
-                      <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded shadow-sm font-mono leading-none">→</kbd>
-                      키로 학생 글 넘기기
-                      {navHintPulse && (
-                        <button onClick={dismissNavHint}
-                          className="ml-1 text-blue-400 hover:text-blue-700 font-bold leading-none"
-                          title="이 강조 다시 안 보기">×</button>
-                      )}
-                    </span>
+                    {/* 키보드 단축키 안내 (공용 컴포넌트 — 데스크톱 전용, 펄스/끄기/교사별 dismiss 포함) */}
+                    <KeyNavHint label="학생 글 넘기기" storageKey="lc-essaynav-hint-dismissed" teacherId={user?.id} />
                   </div>
                 )}
               </div>

@@ -12,6 +12,7 @@ import { supabase } from '../../../../lib/supabase'
 import Header from '../../../../components/Header'
 import ImpersonationBanner from '../../../../components/ImpersonationBanner'
 import ConsentDocument from '../../../../components/ConsentDocument'
+import KeyNavHint from '../../../../components/KeyNavHint'
 import { displayStudentName } from '../../../../lib/displayName'
 import { getEffectiveProfile, withImpersonation } from '../../../../lib/impersonation'
 
@@ -141,7 +142,7 @@ export default function ConsentSubmissionsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* 좌측: 전체 학생 + 동의 상태 (인쇄 제외) */}
               <div className="no-print sm:col-span-1 bg-white rounded-2xl p-3 shadow-sm border border-gray-100 h-fit">
-                <p className="text-xs text-gray-500 px-1 mb-2">동의 {consentedCount}/{rows.length}명 · <span className="text-gray-400">←/→ 이동</span></p>
+                <p className="text-xs text-gray-500 px-1 mb-2">동의 {consentedCount}/{rows.length}명</p>
                 <ul className="space-y-1">
                   {rows.map(r => {
                     const isSel = r.student.id === selectedId
@@ -167,11 +168,12 @@ export default function ConsentSubmissionsPage() {
                 {selected && (
                   <>
                     <div className="no-print flex items-center justify-between gap-2">
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
                         <button onClick={goPrev} disabled={currentIdx <= 0}
                           className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm disabled:opacity-40">← 이전</button>
                         <button onClick={goNext} disabled={currentIdx >= rows.length - 1}
                           className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm disabled:opacity-40">다음 →</button>
+                        <KeyNavHint label="동의서 넘기기" storageKey="lc-consentnav-hint-dismissed" teacherId={user?.id} />
                       </div>
                       <button onClick={() => window.print()}
                         className="px-4 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">🖨 인쇄 / PDF 저장</button>
