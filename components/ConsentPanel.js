@@ -1,6 +1,11 @@
 // 학부모 동의 패널 (공용) — ClassSettings(설정)·students.js(학생관리 B카드) 양쪽에서 재사용.
 // ★ 동의번호 폴백·안내문 로직은 이 컴포넌트 한 곳에만 존재해야 함(복제 금지).
 //   폴백 규칙은 pages/api/parent-consent.js 검증과 반드시 동일: 설정값 있으면 그 값, 비웠으면 학급코드.
+//
+// 안내문 구조(step219): "상단 인사말(편집 가능) + 고정부(코드가 항상 자동 생성·잠금)".
+//   - 인사말: classes.consent_notice_intro (null이면 기본 인사말). 교사가 편집/되돌리기 가능.
+//   - 고정부: 사용법 한 줄 + 동의 링크 + 동의번호(effectivePw) + "동의는 선택/미동의 시 닉네임" 필수 문구.
+//     ★ 항상 코드가 생성 → 편집·삭제 불가. 복사/공유 시 (인사말 + 고정부)를 합쳐 출력한다.
 import { useState, useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
@@ -14,6 +19,12 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
   const [copiedAnno, setCopiedAnno] = useState(false)
   const [school, setSchool] = useState('')
   const [saving, setSaving] = useState(false)
+  // 안내문 인사말(편집)
+  const [noticeIntro, setNoticeIntro] = useState(null)      // 저장된 인사말 (null=기본 인사말)
+  const [editingNotice, setEditingNotice] = useState(false)
+  const [introDraft, setIntroDraft] = useState('')
+  const [savingNotice, setSavingNotice] = useState(false)
+  const [toast, setToast] = useState('')
   const qrRef = useRef(null)
 
   // origin (NEXT_PUBLIC_SITE_URL 우선)
@@ -24,14 +35,19 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
     setOrigin(o)
   }, [])
 
-  // consent_password·school(classInfo select엔 없음) + 동의 진행률
+  // consent_password·school·인사말(classInfo select엔 없음) + 동의 진행률
   useEffect(() => {
     if (!classInfo?.id) return
     let alive = true
     ;(async () => {
       try {
-        const { data: c } = await supabase.from('classes').select('consent_password, school').eq('id', classInfo.id).maybeSingle()
-        if (alive) { setConsentPw(c?.consent_password || ''); setConsentPwInput(c?.consent_password || ''); setSchool(c?.school || '') }
+        const { data: c } = await supabase.from('classes').select('consent_password, school, consent_notice_intro').eq('id', classInfo.id).maybeSingle()
+        if (alive) {
+          setConsentPw(c?.consent_password || '')
+          setConsentPwInput(c?.consent_password || '')
+          setSchool(c?.school || '')
+          setNoticeIntro(c?.consent_notice_intro ?? null)
+        }
         const { data: studs } = await supabase.from('profiles')
           .select('realname, consent_received, is_hidden').eq('class_id', classInfo.id).eq('role', 'student')
         if (alive) {
@@ -52,21 +68,32 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
   // ★ 동의번호 폴백(단일 규칙 — parent-consent.js 검증과 동일): 설정값 있으면 그 값, 비웠으면 학급코드.
   const effectivePw = (consentPw && consentPw.trim()) ? consentPw.trim() : (classInfo?.code || '')
 
-  // 커뮤니티(밴드·카톡)용 완성 안내문 — 동의번호=폴백값이라 검증과 항상 일치. 부모 안심 문구 포함.
-  const buildAnnouncement = () => {
+  // ── 안내문: 인사말(편집 가능) + 고정부(자동·잠금) ──
+  const defaultIntro = () => {
     const schoolLabel = school || '○○초'
     const className = classInfo?.name || '우리 반'
-    return `[${schoolLabel} ${className}] 학부모 동의 안내\n` +
-      `아래 링크에서 자녀 번호와 동의번호를 입력해 동의해 주세요.\n` +
-      `링크: ${consentUrl}\n` +
-      `동의번호: ${effectivePw}\n` +
-      `\n` +
-      `[안내]\n` +
-      `· 받는 정보는 보호자 성함과 서명뿐이에요(연락처·주소는 받지 않아요).\n` +
-      `· 자녀 실명은 동의한 우리 반에서 글쓰기 피드백 용도로만 쓰여요.\n` +
-      `· 동의는 선택이에요. 안 하셔도 자녀는 닉네임으로 모든 기능을 이용해요.\n` +
-      `· 동의를 거두고 싶으시면 담임 선생님께 말씀해 주세요.`
+    return `[${schoolLabel} ${className}] 학부모 동의 안내`
   }
+  // 저장된 인사말 있으면 그 값, 없으면(null/공백) 기본 인사말
+  const effectiveIntro = () => (noticeIntro != null && String(noticeIntro).trim() !== '') ? noticeIntro : defaultIntro()
+
+  // 고정부 — 코드가 항상 생성(편집·삭제 불가). 사용법 + 링크 + 동의번호 + 필수 안내.
+  const buildFixed = () =>
+    `아래 링크에서 자녀 번호와 동의번호를 입력해 동의해 주세요.\n` +
+    `링크: ${consentUrl}\n` +
+    `동의번호: ${effectivePw}\n` +
+    `\n` +
+    `[안내]\n` +
+    `· 받는 정보는 보호자 성함과 서명뿐이에요(연락처·주소는 받지 않아요).\n` +
+    `· 자녀 실명은 동의한 우리 반에서 글쓰기 피드백 용도로만 쓰여요.\n` +
+    `· 동의는 선택이에요. 안 하셔도 자녀는 닉네임으로 모든 기능을 이용해요.\n` +
+    `· 동의를 거두고 싶으시면 담임 선생님께 말씀해 주세요.`
+
+  // 복사·공유 시 항상 (인사말 + 고정부) 합본. 기본값은 기존 출력과 동일 → 편집 안 해도 바로 복사됨.
+  const buildAnnouncement = () => `${effectiveIntro()}\n${buildFixed()}`
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2800) }
+
   const copyAnnouncement = async () => {
     const text = buildAnnouncement()
     try {
@@ -76,6 +103,59 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
       try { window.prompt('아래 내용을 복사하세요:', text) } catch {}
     }
   }
+  // 📤 공유하기 — OS 공유 시트(navigator.share) 있으면 그걸로, 없으면 복사 폴백 + 토스트
+  const shareAnnouncement = async () => {
+    const text = buildAnnouncement()
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try { await navigator.share({ text, url: consentUrl }) } catch (e) { /* 사용자 취소/미지원 무시 */ }
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('공유를 지원하지 않아 안내문을 복사했어요. 붙여넣어 공유하세요')
+    } catch {
+      try { window.prompt('아래 내용을 복사하세요:', text) } catch {}
+    }
+  }
+  // 하이클래스 열기 — 안내문 복사 + 새 탭으로 hiclass 열기 + 토스트 (※ 글 미리채움 딥링크 불가 → 복사+열기 방식)
+  const openHiclass = async () => {
+    const text = buildAnnouncement()
+    // 팝업 차단 회피: 클릭 제스처 안에서 새 탭을 먼저 연다
+    try { window.open('https://www.hiclass.net/', '_blank', 'noopener') } catch {}
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('안내문을 복사했어요. 하이클래스에 붙여넣으세요')
+    } catch {
+      showToast('하이클래스를 열었어요. 안내문은 위 [복사] 버튼으로 복사해 붙여넣으세요')
+    }
+  }
+
+  const startEditNotice = () => { setIntroDraft(effectiveIntro()); setEditingNotice(true) }
+  const saveNotice = async () => {
+    if (readOnly) return
+    const v = introDraft.trim()
+    setSavingNotice(true)
+    try {
+      const { error } = await supabase.from('classes').update({ consent_notice_intro: v || null }).eq('id', classInfo.id)
+      if (error) throw error
+      setNoticeIntro(v || null)
+      setEditingNotice(false)
+    } catch (e) { alert('저장 실패: ' + e.message) }
+    setSavingNotice(false)
+  }
+  const resetNotice = async () => {
+    if (readOnly) return
+    setSavingNotice(true)
+    try {
+      const { error } = await supabase.from('classes').update({ consent_notice_intro: null }).eq('id', classInfo.id)
+      if (error) throw error
+      setNoticeIntro(null)
+      setIntroDraft(defaultIntro())
+      setEditingNotice(false)
+    } catch (e) { alert('저장 실패: ' + e.message) }
+    setSavingNotice(false)
+  }
+
   const copyLink = async () => {
     if (!consentUrl) return
     try {
@@ -108,20 +188,20 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
 
   return (
     <div>
-      {/* 왜 동의 (사실 기반) */}
-      <div className="text-xs text-blue-900 bg-blue-50 border border-blue-200 rounded-lg p-2.5 mb-2 leading-relaxed">
+      {/* 왜 동의 (사실 기반) — 법적 안내, 본문 키움 */}
+      <div className="text-sm text-blue-900 bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 leading-relaxed">
         💡 개인정보보호법상 만 14세 미만 학생의 실명을 처리하려면 보호자 동의가 필요해요.
         동의 전까지는 <strong>닉네임</strong>으로 운영되고, 동의한 학생만 실명으로 전환돼요. <strong>동의는 선택</strong>이에요.
       </div>
-      {/* 학운위 (확인 권장 — 단정 금지) */}
-      <div className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded p-2 mb-3 leading-relaxed">
+      {/* 학운위 (확인 권장 — 단정 금지) — 본문 키움 */}
+      <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded p-2.5 mb-3 leading-relaxed">
         ℹ️ 학교장이 교육자료로 '선정'하면 학교운영위원회 심의 대상이 될 수 있어요. 학급 재량 사용은 일반적으로 해당하지 않을 수 있지만,
         학교마다 기준이 다르니 소속 학교에 확인을 권장드려요.
       </div>
 
       {/* 진행률 */}
       {stats && (
-        <p className="text-xs text-gray-600 mb-3">
+        <p className="text-sm text-gray-600 mb-3">
           동의 완료 <strong className="text-primary">{stats.consented}</strong> / {stats.total}명
           {stats.locked > 0 && <span className="text-gray-400 ml-1">· 닉네임 표시(미동의) {stats.locked}명</span>}
         </p>
@@ -144,15 +224,61 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
         비워두면 <strong>학급코드</strong>가 동의번호로 쓰여요.
       </p>
 
-      {/* 부모 동의 안내문 + 링크 + QR */}
-      <div className="mt-3">
+      {/* 부모 동의 안내문 — 인사말(편집) + 고정부(자동) + 공유 버튼 */}
+      <div className="mt-4">
         <label className="block text-sm font-medium mb-1">부모 동의 안내</label>
-        <button onClick={copyAnnouncement}
-          className="w-full py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
-          {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 학부모 안내문 복사'}
-        </button>
-        <p className="text-[11px] text-gray-500 mt-1 text-center">복사해서 학급 알림장·메신저(하이클래스 등)에 붙여넣으면 돼요</p>
 
+        {!editingNotice ? (
+          <>
+            {/* 미리보기 박스 (합본) */}
+            <div className="relative bg-gray-50 border border-gray-200 rounded-lg p-3 pt-9 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              {!readOnly && (
+                <button onClick={startEditNotice}
+                  className="absolute top-2 right-2 text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100">✏️ 편집</button>
+              )}
+              {buildAnnouncement()}
+            </div>
+
+            {/* 공유 버튼 3개 */}
+            <button onClick={copyAnnouncement}
+              className="w-full mt-2 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
+              {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 학부모 안내문 복사'}
+            </button>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button onClick={shareAnnouncement}
+                className="py-2.5 bg-white border border-primary text-primary rounded-lg text-sm font-semibold hover:bg-primary-light">
+                📤 공유하기
+              </button>
+              <button onClick={openHiclass}
+                className="py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                하이클래스 열기
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 text-center">복사·공유해서 학급 알림장·메신저(하이클래스 등)에 붙여넣으면 돼요</p>
+            {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
+          </>
+        ) : (
+          <>
+            {/* 편집: 인사말만 수정, 고정부는 읽기전용 */}
+            <p className="text-xs text-gray-500 mb-1">상단 인사말만 자유롭게 바꿀 수 있어요.</p>
+            <textarea value={introDraft} onChange={e => setIntroDraft(e.target.value)} rows={3}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm leading-relaxed" />
+            <div className="mt-2 bg-gray-100 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 whitespace-pre-wrap leading-relaxed">
+              <p className="font-semibold text-gray-500 mb-1">🔒 이 아래는 자동으로 붙어요 (수정·삭제 불가)</p>
+              {buildFixed()}
+            </div>
+            <div className="flex gap-2 mt-2 flex-wrap">
+              <button onClick={saveNotice} disabled={savingNotice}
+                className="flex-1 min-w-[80px] py-2 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">저장</button>
+              <button onClick={resetNotice} disabled={savingNotice}
+                className="py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm disabled:opacity-50">기본 문구로 되돌리기</button>
+              <button onClick={() => setEditingNotice(false)} disabled={savingNotice}
+                className="py-2 px-3 bg-white border border-gray-300 text-gray-600 rounded-lg text-sm disabled:opacity-50">취소</button>
+            </div>
+          </>
+        )}
+
+        {/* 링크·QR (기존 유지) */}
         <p className="text-xs text-gray-500 mt-3 mb-1">또는 링크·QR만 따로:</p>
         <div className="flex gap-2 items-center">
           <code className="flex-1 min-w-0 bg-gray-50 px-2 py-2 rounded text-xs text-gray-700 break-all">{consentUrl || '...'}</code>
@@ -163,7 +289,7 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
         </div>
         <div className="mt-3 flex flex-col items-center">
           <canvas ref={qrRef} className="border border-gray-200 rounded" />
-          <p className="text-[11px] text-gray-400 mt-1">QR — 학부모가 스캔하면 동의 페이지로 이동</p>
+          <p className="text-xs text-gray-400 mt-1">QR — 학부모가 스캔하면 동의 페이지로 이동</p>
         </div>
       </div>
     </div>
