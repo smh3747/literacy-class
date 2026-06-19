@@ -881,6 +881,14 @@ export default function StudentsPage() {
   const toggleConsent = async (studentId, currentValue) => {
     if (isImpersonating) return  // 임퍼소네이션(읽기 전용) 중엔 실행 안 함
     const newValue = !currentValue
+    // 단건 확인 다이얼로그 — 실명 공개/철회는 학부모 재동의 없이는 되돌리기 부담이라 오클릭을 막는다.
+    //  표시 이름(displayStudentName)만 사용 — 잠금 상태면 닉네임/번호가 들어감(평문 실명을 새로 끌어오지 않음).
+    const s = students.find(x => x.id === studentId)
+    const who = s ? displayStudentName(s) : '이 학생'
+    const ok = confirm(newValue
+      ? `${who} 학생의 동의서를 받은 것으로 처리합니다.\n학생의 실명이 선생님 화면에 공개됩니다. 진행할까요?`
+      : `${who} 학생의 동의를 철회하고 실명을 다시 가립니다.\n학부모가 다시 동의해야 공개됩니다. 진행할까요?`)
+    if (!ok) return
     setSavingId(studentId)
     try {
       if (newValue) {
