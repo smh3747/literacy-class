@@ -96,7 +96,7 @@ export default function StudentsConsentPage() {
           {mode === 'online' && classInfo && (
             <div className="space-y-3">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
-                <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} />
+                <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} teacherSchool={user?.school} />
               </div>
               {/* 종이로 오가는 배너 */}
               <button onClick={() => setMode('paper')}

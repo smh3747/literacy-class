@@ -10,14 +10,15 @@ import { useState, useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
 
-export default function ConsentPanel({ classInfo, readOnly = false }) {
+export default function ConsentPanel({ classInfo, readOnly = false, teacherSchool = '' }) {
   const [consentPw, setConsentPw] = useState('')            // 저장된 값
   const [consentPwInput, setConsentPwInput] = useState('')  // 입력 중
   const [stats, setStats] = useState(null)                  // { total, consented, locked }
   const [origin, setOrigin] = useState('')
   const [copied, setCopied] = useState(false)
   const [copiedAnno, setCopiedAnno] = useState(false)
-  const [school, setSchool] = useState('')
+  const [school, setSchool] = useState('')              // 학급(classes.school)
+  const [fallbackSchool, setFallbackSchool] = useState('')  // 담임 프로필 학교(표시 폴백 — DB 변경 없음)
   const [saving, setSaving] = useState(false)
   // 안내문 인사말(편집)
   const [noticeIntro, setNoticeIntro] = useState(null)      // 저장된 인사말 (null=기본 인사말)
@@ -41,12 +42,24 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
     let alive = true
     ;(async () => {
       try {
-        const { data: c } = await supabase.from('classes').select('consent_password, school, consent_notice_intro').eq('id', classInfo.id).maybeSingle()
+        const { data: c } = await supabase.from('classes').select('consent_password, school, consent_notice_intro, teacher_id').eq('id', classInfo.id).maybeSingle()
         if (alive) {
           setConsentPw(c?.consent_password || '')
           setConsentPwInput(c?.consent_password || '')
           setSchool(c?.school || '')
           setNoticeIntro(c?.consent_notice_intro ?? null)
+        }
+        // 학교 폴백(표시 전용 — 절대 UPDATE 안 함): 학급 school 비고 + 부모가 내려준 teacherSchool도 없을 때만
+        //   담임(classes.teacher_id) 프로필의 school을 한 번 조회해 안내문 라벨에 쓴다.
+        const hasClassSchool = !!(c?.school && String(c.school).trim())
+        const hasPropSchool = !!(teacherSchool && String(teacherSchool).trim())
+        if (alive && !hasClassSchool && !hasPropSchool && c?.teacher_id) {
+          try {
+            const { data: t } = await supabase.from('profiles').select('school').eq('id', c.teacher_id).maybeSingle()
+            if (alive) setFallbackSchool(t?.school || '')
+          } catch { /* RLS/네트워크 실패 무시 */ }
+        } else if (alive) {
+          setFallbackSchool('')
         }
         const { data: studs } = await supabase.from('profiles')
           .select('realname, consent_received, is_hidden').eq('class_id', classInfo.id).eq('role', 'student')
@@ -68,11 +81,19 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
   // ★ 동의번호 폴백(단일 규칙 — parent-consent.js 검증과 동일): 설정값 있으면 그 값, 비웠으면 학급코드.
   const effectivePw = (consentPw && consentPw.trim()) ? consentPw.trim() : (classInfo?.code || '')
 
+  // 학교 폴백 체인(표시 전용): 학급 school → 부모가 내려준 담임 학교(prop) → 담임 프로필 학교(조회).
+  const effectiveSchool =
+    (school && school.trim()) ? school.trim()
+    : (teacherSchool && String(teacherSchool).trim()) ? String(teacherSchool).trim()
+    : (fallbackSchool && fallbackSchool.trim()) ? fallbackSchool.trim()
+    : ''
+
   // ── 안내문: 인사말(편집 가능) + 고정부(자동·잠금) ──
+  // 가짜 placeholder('○○초') 금지 — 학교가 끝까지 없으면 라벨에서 학교를 생략한다.
   const defaultIntro = () => {
-    const schoolLabel = school || '○○초'
-    const className = classInfo?.name || '우리 반'
-    return `[${schoolLabel} ${className}] 학부모 동의 안내`
+    const className = (classInfo?.name && classInfo.name.trim()) ? classInfo.name.trim() : '우리 반'
+    const label = [effectiveSchool, className].filter(Boolean).join(' ')
+    return `[${label}] 학부모 동의 안내`
   }
   // 저장된 인사말 있으면 그 값, 없으면(null/공백) 기본 인사말
   const effectiveIntro = () => (noticeIntro != null && String(noticeIntro).trim() !== '') ? noticeIntro : defaultIntro()
@@ -227,6 +248,13 @@ export default function ConsentPanel({ classInfo, readOnly = false }) {
       {/* 부모 동의 안내문 — 인사말(편집) + 고정부(자동) + 공유 버튼 */}
       <div className="mt-4">
         <label className="block text-sm font-medium mb-1">부모 동의 안내</label>
+
+        {/* 학교 미설정 안내 — 폴백까지 다 비었을 때만 */}
+        {!effectiveSchool && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 leading-relaxed">
+            🏫 학교 이름을 설정하면 안내문에 자동으로 들어가요 — <strong>[내 정보 수정]</strong>에서 입력하세요.
+          </p>
+        )}
 
         {!editingNotice ? (
           <>
