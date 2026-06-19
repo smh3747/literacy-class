@@ -1689,9 +1689,14 @@ export default function StudentsPage() {
                 {students.some(s => !s.is_hidden && !(s.realname && s.realname.trim())) && (
                   <div className="bg-blue-50 border border-blue-200 text-blue-900 text-xs sm:text-sm p-3 rounded-lg mb-3 leading-relaxed">
                     💡 개인정보 보호를 위해, 새로 등록되는 학생은 <strong>닉네임</strong>으로 표시됩니다.
-                    학부모 동의 절차는 <strong>준비 중</strong>이며, 동의가 완료되면 실명으로 표시될 예정입니다.
+                    동의가 완료된 학생은 실명으로 표시돼요.
                     <span className="text-blue-700/70"> (기존 학생은 그대로 표시됩니다)</span>
-                    <div className="text-[11px] text-blue-700/80 mt-1">아래 목록에서 <strong>🔒 동의 대기</strong> 표시가 있는 학생이 닉네임으로 보이는 중이에요.</div>
+                    <div className="mt-2 text-sm font-semibold text-blue-900">
+                      👉 학부모 동의는 <Link href={withImpersonation('/teacher/students/consent')} className="text-primary underline hover:text-primary-dark">[동의서 관리]</Link>에서 보내고 받을 수 있어요
+                    </div>
+                    <div className="text-[11px] text-blue-700/80 mt-1">
+                      아래 목록에서 <strong>🔒 동의 대기</strong> 표시가 있는 학생이 닉네임으로 보이는 중이에요 — <Link href={withImpersonation('/teacher/students/consent')} className="underline hover:text-blue-900">동의서 관리</Link>에서 동의를 받으면 실명으로 바뀌어요.
+                    </div>
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mb-2">
