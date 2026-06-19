@@ -111,9 +111,10 @@ export default function TeacherSubmissions() {
   const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState('topics') // topics / topicStudents / studentDetail
+  const [view, setView] = useState('topics') // topics / topicStudents / studentDetail / allFinal
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [topicStudents, setTopicStudents] = useState([])
+  const [expandedEssays, setExpandedEssays] = useState({})  // 🆕 전체 최종본 뷰: 학생별 본문 더보기 토글
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
 
@@ -708,6 +709,10 @@ export default function TeacherSubmissions() {
                       )}
                       {submittedCount > 0 && (
                         <>
+                          <button onClick={() => setView('allFinal')}
+                            className="bg-primary text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-primary-dark">
+                            📄 전체 최종본 한눈에 보기
+                          </button>
                           {noCommentCount > 0 && !isImpersonating && (
                             <button onClick={bulkEncourageComment}
                               className="bg-yellow-100 border border-yellow-300 text-yellow-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-yellow-200">
@@ -830,6 +835,105 @@ export default function TeacherSubmissions() {
                   })}
                 </div>
               )}
+            </>
+          )}
+
+          {/* 🆕 전체 학생 최종본 한눈에 보기 (통독 모드) — 추가 fetch 없이 topicStudents 재사용 */}
+          {view === 'allFinal' && selectedTopic && (
+            <>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <button onClick={() => setView('topicStudents')} className="text-sm text-gray-600">← 학생 목록</button>
+                <span className="hidden sm:inline text-xs text-gray-500">학생 이름을 누르면 상세(고쳐쓰기 기록)로 이동해요</span>
+              </div>
+              <div className="bg-primary-light rounded-2xl p-4">
+                <div className="text-xs text-primary-dark">📅 {selectedTopic.date}</div>
+                <h2 className="text-lg font-bold text-primary-dark">📄 전체 최종본 한눈에 보기</h2>
+                <div className="text-xs text-primary-dark mt-1">
+                  {selectedTopic.title} · ✅ {submittedStudents.length}명 최종본
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {topicStudents.map(g => {
+                  // 미제출 학생
+                  if (g.items.length === 0) {
+                    return (
+                      <div key={g.profile.id}
+                        className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-2 flex-wrap">
+                        {g.profile.number && (
+                          <span className="text-xs text-gray-500 font-mono w-10 text-center">{g.profile.number}번</span>
+                        )}
+                        <span className="font-semibold text-gray-800">{displayStudentName(g.profile)}</span>
+                        <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
+                      </div>
+                    )
+                  }
+                  // 최종본 = 최대 attempt (기존 max-attempt 패턴 재사용)
+                  const sorted = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+                  const last = sorted[sorted.length - 1]
+                  const attemptNo = last.attempt || 1
+                  const expanded = !!expandedEssays[g.profile.id]
+                  const isLong = (last.essay_text || '').length > 200
+                  return (
+                    <div key={g.profile.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                      {/* 헤더: 번호·이름(클릭→상세) + 점수 */}
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <button onClick={() => openStudent(g)} className="text-left group">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {g.profile.number && (
+                              <span className="text-xs text-gray-500 font-mono">{g.profile.number}번</span>
+                            )}
+                            <span className="font-bold text-base text-gray-900 group-hover:text-primary group-hover:underline underline-offset-2">
+                              {displayStudentName(g.profile)}
+                            </span>
+                            {attemptNo >= 2 && (
+                              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">수정본 {attemptNo - 1}차</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5">눌러서 상세 보기 →</div>
+                        </button>
+                        {typeof last.total_score === 'number' && (
+                          <div className="font-bold text-lg text-gray-900 flex-shrink-0">
+                            {last.total_score}<span className="text-sm text-gray-400">/{last.max_score}점</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 글 제목(주제) */}
+                      <div className="text-sm font-semibold text-gray-700 mt-3">📝 {selectedTopic.title}</div>
+
+                      {/* 본문 — 통독용 큰 글씨, 길면 line-clamp + 더보기 */}
+                      <div className="mt-1 bg-gray-50 rounded-lg p-4 text-[15px] leading-7 text-gray-800 whitespace-pre-wrap"
+                        style={{
+                          overflowWrap: 'anywhere', wordBreak: 'break-word',
+                          ...((!expanded && isLong) ? { display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {})
+                        }}>
+                        {last.essay_text}
+                      </div>
+                      {isLong && (
+                        <button
+                          onClick={() => setExpandedEssays(prev => ({ ...prev, [g.profile.id]: !expanded }))}
+                          className="mt-1 text-xs text-primary hover:underline">
+                          {expanded ? '접기 ▲' : '더보기 ▼'}
+                        </button>
+                      )}
+
+                      {/* AI 피드백 — 기본 접기 */}
+                      {last.feedback_overall && (
+                        <details className="mt-2 group">
+                          <summary className="cursor-pointer text-sm font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
+                            <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                            🤖 AI 피드백 보기
+                          </summary>
+                          <div className="mt-2 bg-blue-50 rounded-lg p-3 border border-blue-100 text-sm text-blue-900 break-keep leading-relaxed whitespace-pre-wrap">
+                            {last.feedback_overall}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </>
           )}
 
