@@ -19,6 +19,7 @@ import crypto from 'crypto'
 import { decryptName } from '../../lib/encryptName'
 import { maskKoreanName } from '../../lib/maskName'
 import { effectiveConsentPassword } from '../../lib/consentPassword'
+import { hasConsentTrace } from '../../lib/consentTrace'
 
 // ── 호출 제한 (parent-consent 패턴 동일, 버킷만 분리) ──
 const RL_BUCKET = 'parent_consent_verify'
@@ -111,13 +112,30 @@ export default async function handler(req, res) {
     }
     const studentId = kids[0].id
 
-    // 5) pending_names 조회 — 행이 없으면 이미 동의 완료(잠금 해제됨). 실명 미반환.
+    // 5) pending_names 조회 — 잠긴 적 없으면(행 없음) 동의 흔적이 있을 때만 '이미 동의'로 본다.
     const { data: pn } = await supabaseAdmin.from('pending_names')
       .select('enc_name')
       .eq('student_id', studentId)
       .maybeSingle()
     if (!pn) {
-      return res.status(200).json({ ok: true, alreadyConsented: true })
+      // 동의 흔적(consents OR consent_received) 판정 — pending_names 단독 판정의 오판 방지.
+      const traced = await hasConsentTrace(supabaseAdmin, studentId)
+      // 평문 실명 확인(마스킹만 반환 — 평문은 서버 밖으로 나가지 않음)
+      const { data: prof } = await supabaseAdmin.from('profiles')
+        .select('realname').eq('id', studentId).maybeSingle()
+      const hasName = !!(prof?.realname && String(prof.realname).trim())
+      // 진짜 이미 동의(흔적 있음) 또는 풀 이름 자체가 없음(닉네임 전용) → 더 할 일 없음
+      if (traced || !hasName) {
+        return res.status(200).json({ ok: true, alreadyConsented: true })
+      }
+      // 레거시 미동의(평문 실명 노출 + 흔적 없음) → 정상 확인 화면으로 진입(마스킹 이름 제공)
+      return res.status(200).json({
+        ok: true,
+        masked: maskKoreanName(prof.realname),
+        grade: (cls.grade ?? null),
+        className: cls.name || null,
+        number: String(studentNumber).trim(),
+      })
     }
 
     // 6) 복호화 → 마스킹만 추출 (평문은 서버 밖으로 나가지 않음)

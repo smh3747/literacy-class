@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { decryptName } from '../../lib/encryptName'
 import { effectiveConsentPassword } from '../../lib/consentPassword'
+import { hasConsentTrace } from '../../lib/consentTrace'
 
 // ── step165 호출 제한 (find-teacher-id 패턴 인라인) — 무차별 시도 방지 ──
 const RL_BUCKET = 'parent_consent'
@@ -136,13 +137,17 @@ export default async function handler(req, res) {
     }
 
     if (!pn) {
-      // 이미 동의됨(잠금 해제 완료 상태) → 잠금해제는 건너뛰고 동의 기록만 추가
+      // 잠긴 적 없음(pending_names 없음) → 동의 흔적(consents OR consent_received) 판정.
+      //  ★ 판정만 — realname·consent_received 등 어떤 쓰기도 추가하지 않는다.
+      //    기존처럼 동의 기록(consents)만 남기되, alreadyConsented 여부는 '흔적' 기준으로 돌려준다.
+      //    흔적 없음 = 닉네임-잠금 도입 이전의 레거시 미동의 학생 → 정상 신규 동의로 안내.
+      const traced = await hasConsentTrace(supabaseAdmin, studentId)
       const { error: cErr } = await supabaseAdmin.from('consents').insert(consentRow)
       if (cErr) {
-        console.error('parent-consent consents insert(이미동의) 실패:', cErr.message)
+        console.error('parent-consent consents insert(흔적판정) 실패:', cErr.message)
         return res.status(500).json({ error: '동의 기록 저장에 실패했어요. 잠시 후 다시 시도해주세요.' })
       }
-      return res.status(200).json({ ok: true, alreadyConsented: true })
+      return res.status(200).json({ ok: true, alreadyConsented: traced })
     }
 
     // 6) 잠금 해제 — enc_name 복호화
