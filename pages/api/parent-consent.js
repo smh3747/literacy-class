@@ -16,6 +16,7 @@
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { decryptName } from '../../lib/encryptName'
+import { effectiveConsentPassword } from '../../lib/consentPassword'
 
 // ── step165 호출 제한 (find-teacher-id 패턴 인라인) — 무차별 시도 방지 ──
 const RL_BUCKET = 'parent_consent'
@@ -92,9 +93,7 @@ export default async function handler(req, res) {
     }
     // 동의번호 폴백: 교사가 비번을 설정했으면 그 값, 비웠으면(빈값/null) 학급코드가 정답.
     //  ※ ClassSettings(표시·안내문)와 반드시 같은 규칙 — 안 그러면 "안내문엔 적혀있는데 거부" 사고.
-    const effectivePw = (cls.consent_password && String(cls.consent_password).trim() !== '')
-      ? String(cls.consent_password).trim()
-      : String(cls.code || normalizedCode || '').trim()
+    const effectivePw = effectiveConsentPassword(cls, normalizedCode)
     if (!effectivePw || String(consentPassword).trim() !== effectivePw) {
       return res.status(403).json({ error: '동의 비밀번호가 일치하지 않아요. 담임 선생님께 확인해주세요.' })
     }
