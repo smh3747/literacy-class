@@ -988,8 +988,11 @@ export default function StudentsPage() {
       alert(newValue ? '이미 모든 학생이 회신 처리되어 있어요' : '회신 처리된 학생이 없어요')
       return
     }
-    const action = newValue ? '회신 완료로 일괄 처리' : '미회신으로 일괄 해제'
-    if (!confirm(`${targets.length}명의 동의서를 "${action}"할까요?`)) return
+    // 해제(재잠금)는 실명 가림 경고를 명확히 — 체크와 다른 문구.
+    const ok = newValue
+      ? confirm(`${targets.length}명의 동의서를 "회신 완료로 일괄 처리"할까요?`)
+      : confirm('선택한 학생의 실명을 다시 가립니다. 학부모가 다시 동의해야 공개돼요. 진행할까요?')
+    if (!ok) return
 
     setSavingId('bulk-consent')
     try {
@@ -1382,48 +1385,17 @@ export default function StudentsPage() {
 
             {/* 🔒 명단 처리 안심 안내 — 카드 첫 요소(실명 올리기 전 가장 먼저 보이게). 코드로 확인된 사실만, 단정 금지. */}
             <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded-lg mb-3 leading-relaxed">
-              <p className="font-semibold mb-1">🔒 학생 명단, 이렇게 안전하게 지켜져요</p>
+              <p className="font-semibold mb-2">🔒 학생 명단, 이렇게 안전하게 지켜져요</p>
+              {/* 핵심 안심 — 흰 배경 강조 줄 */}
+              <p className="bg-white border border-blue-200 rounded-md px-3 py-2 mb-2 text-[15px] font-semibold text-blue-900 leading-relaxed">
+                👉 지금 학부모 동의를 먼저 안 받아도 명렬표를 올릴 수 있어요 — 실명은 동의 전까지 암호화돼 잠겨 있어요.
+              </p>
               <ul className="text-xs space-y-1.5 text-blue-800">
                 <li>· 명렬표 파일은 선생님 브라우저에서만 읽어요. 파일 자체는 서버에 올라가지 않아요.</li>
                 <li>· 학생 이름은 암호화돼 잠긴 채 보관되고, 화면엔 닉네임으로 표시돼요. AI 채점에도 실명은 안 가요(글 내용만).</li>
-                <li>· 실명은 학부모 동의를 받은 학생만 풀려요. 동의 전까진 닉네임으로 모든 기능을 써요 — 그래서 지금 동의를 먼저 안 받아도 명렬표를 올릴 수 있어요.</li>
+                <li>· 실명은 학부모 동의를 받은 학생만 풀려요. 동의 전까진 닉네임으로 모든 기능을 써요.</li>
                 <li>· 선생님 재량 사용은 학교운영위 심의 대상으로 보기 어려워요(학교가 정규 교육과정 교재로 공식 채택할 땐 심의 필요). 학교마다 기준이 다르니 확인은 권장드려요.</li>
               </ul>
-            </div>
-
-            <p className="text-sm text-gray-600 mb-3">
-              <strong>나이스에서 다운받은 학급명렬표 엑셀(.xlsx)</strong>을 그대로 올리면 돼요.
-              아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>123456</strong>입니다.
-            </p>
-
-            {/* 나이스 다운로드 경로 안내 */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-xs text-blue-900">
-              <p className="font-bold mb-2">📍 나이스에서 명렬표 받는 방법</p>
-              <ol className="list-decimal pl-5 space-y-1 leading-relaxed">
-                <li>나이스 접속 → <strong>[기본학적관리]</strong> 메뉴</li>
-                <li><strong>[명렬표 출력]</strong> 클릭</li>
-                <li><strong>[조회]</strong> 클릭하여 우리 반 학생 목록 표시</li>
-                <li>오른쪽 위 <strong className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">[엑셀 내려받기]</strong> 초록색 버튼 클릭 (권장)</li>
-                <li>다운로드된 파일을 아래에 업로드</li>
-              </ol>
-              <div className="mt-2 bg-white rounded p-2 space-y-1">
-                <p>✅ <strong>엑셀 (.xlsx)</strong> - 가장 정확, 권장</p>
-                <p>✅ <strong>PDF (.pdf)</strong> - 텍스트 PDF만 가능 (인식 후 결과 확인 필수)</p>
-                <p className="text-red-700">❌ <strong>이미지 PDF (스캔본)</strong> - 인식 불가</p>
-              </div>
-              {/* 🆕 나이스를 못 쓰는 경우 — 빈 양식 직접 작성 */}
-              <div className="mt-2 flex items-center justify-between flex-wrap gap-2 bg-white rounded p-2">
-                <span className="text-blue-900">
-                  📄 나이스 명렬표를 받기 어렵나요? 빈 양식을 받아 직접 채워도 돼요
-                  <span className="text-blue-700/70"> (전입생 추가 등록에도 좋아요)</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={downloadTemplate}
-                  className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 flex-shrink-0">
-                  📥 양식 다운로드
-                </button>
-              </div>
             </div>
 
             {!user?.school && (
@@ -1570,6 +1542,42 @@ export default function StudentsPage() {
                 </div>
               </details>
             </div>
+
+            {/* 설명 블록 — 드롭존 아래로 이동(드롭존을 설명보다 먼저 보이게) */}
+            <p className="text-sm text-gray-600 mt-4 mb-3">
+              <strong>나이스에서 다운받은 학급명렬표 엑셀(.xlsx)</strong>을 그대로 올리면 돼요.
+              아이디는 자동으로 만들어지고, 초기 비밀번호는 모두 <strong>123456</strong>입니다.
+            </p>
+
+            {/* 나이스 다운로드 경로 안내 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+              <p className="font-bold mb-2">📍 나이스에서 명렬표 받는 방법</p>
+              <ol className="list-decimal pl-5 space-y-1 leading-relaxed">
+                <li>나이스 접속 → <strong>[기본학적관리]</strong> 메뉴</li>
+                <li><strong>[명렬표 출력]</strong> 클릭</li>
+                <li><strong>[조회]</strong> 클릭하여 우리 반 학생 목록 표시</li>
+                <li>오른쪽 위 <strong className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">[엑셀 내려받기]</strong> 초록색 버튼 클릭 (권장)</li>
+                <li>다운로드된 파일을 위 업로드 칸에 올리기</li>
+              </ol>
+              <div className="mt-2 bg-white rounded p-2 space-y-1">
+                <p>✅ <strong>엑셀 (.xlsx)</strong> - 가장 정확, 권장</p>
+                <p>✅ <strong>PDF (.pdf)</strong> - 텍스트 PDF만 가능 (인식 후 결과 확인 필수)</p>
+                <p className="text-red-700">❌ <strong>이미지 PDF (스캔본)</strong> - 인식 불가</p>
+              </div>
+              {/* 🆕 나이스를 못 쓰는 경우 — 빈 양식 직접 작성 */}
+              <div className="mt-2 flex items-center justify-between flex-wrap gap-2 bg-white rounded p-2">
+                <span className="text-blue-900">
+                  📄 나이스 명렬표를 받기 어렵나요? 빈 양식을 받아 직접 채워도 돼요
+                  <span className="text-blue-700/70"> (전입생 추가 등록에도 좋아요)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={downloadTemplate}
+                  className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 flex-shrink-0">
+                  📥 양식 다운로드
+                </button>
+              </div>
+            </div>
           </div>
 
           </>)}
@@ -1610,24 +1618,26 @@ export default function StudentsPage() {
                     {(() => {
                       const active = students.filter(s => !s.is_hidden)
                       const notYet = active.filter(s => !s.consent_received).length
-                      const allReceived = notYet === 0 && active.length > 0
-                      if (allReceived) {
-                        return (
-                          <button onClick={() => bulkToggleConsent(false)}
-                            disabled={savingId === 'bulk-consent'}
-                            className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1 rounded-full disabled:opacity-50"
-                            title="모든 학생 동의서를 미회신으로 되돌리기">
-                            {savingId === 'bulk-consent' ? '⏳' : '↻ 동의서 일괄 해제'}
-                          </button>
-                        )
-                      }
+                      const received = active.length - notYet   // 동의 처리된(실명 공개) 학생 수
                       return (
-                        <button onClick={() => bulkToggleConsent(true)}
-                          disabled={savingId === 'bulk-consent'}
-                          className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full disabled:opacity-50"
-                          title="미회신 학생들을 일괄 회신 처리">
-                          {savingId === 'bulk-consent' ? '⏳' : `✓ 동의서 일괄 체크 (미회신 ${notYet}명)`}
-                        </button>
+                        <>
+                          {notYet > 0 && (
+                            <button onClick={() => bulkToggleConsent(true)}
+                              disabled={savingId === 'bulk-consent'}
+                              className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full disabled:opacity-50"
+                              title="미회신 학생들을 일괄 회신 처리">
+                              {savingId === 'bulk-consent' ? '⏳' : `✓ 동의서 일괄 체크 (미회신 ${notYet}명)`}
+                            </button>
+                          )}
+                          {received > 0 && (
+                            <button onClick={() => bulkToggleConsent(false)}
+                              disabled={savingId === 'bulk-consent'}
+                              className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1 rounded-full disabled:opacity-50"
+                              title="동의 처리된 학생의 실명을 다시 가림(닉네임으로 전환)">
+                              {savingId === 'bulk-consent' ? '⏳' : '↻ 동의서 일괄 해제'}
+                            </button>
+                          )}
+                        </>
                       )
                     })()}
                   </>
