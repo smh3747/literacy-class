@@ -7,18 +7,32 @@
 // 3. 학생 등록
 // 4. 첫 주제 만들기
 //
-// 모든 단계 완료되면 자동 숨김 (localStorage로 "다시 안 보기"도 가능)
+// 완료 판정은 전부 실데이터(props: 학급/API키/학생수/주제수/로그인안내)에서 도출 → 계정마다 자동으로 맞게 뜸.
+// "숨김/닫기"만 데이터로 못 푸는 플래그라 localStorage에 저장하되, 키를 교사 user-id로 분리한다.
+//   (전엔 브라우저 공용 키여서 한 계정이 닫으면 같은 브라우저의 다른 계정도 사라지던 버그 — school-banner와 동일 패턴으로 수정)
 // ============================================
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-const HIDE_KEY = 'lc-setup-checklist-hidden'
+// 교사별 숨김 키 — teacherId 없으면 null(저장/복원 안 함, 항상 표시)
+const hideKeyFor = (teacherId) => teacherId ? `lc-setup-checklist-hidden:${teacherId}` : null
 
-export default function SetupChecklist({ classInfo, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint }) {
-  const [hidden, setHidden] = useState(() => {
-    if (typeof window === 'undefined') return false
-    try { return localStorage.getItem(HIDE_KEY) === '1' } catch { return false }
-  })
+export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint }) {
+  const [hidden, setHidden] = useState(false)
+
+  // teacherId 준비되면 그 교사의 키로 숨김 여부를 읽는다(계정 섞임 방지)
+  useEffect(() => {
+    const key = hideKeyFor(teacherId)
+    if (!key) { setHidden(false); return }
+    try { setHidden(localStorage.getItem(key) === '1') } catch { setHidden(false) }
+  }, [teacherId])
+
+  // 숨김 처리 — 현재 교사의 키에만 기록
+  const dismiss = () => {
+    setHidden(true)
+    const key = hideKeyFor(teacherId)
+    if (key) { try { localStorage.setItem(key, '1') } catch {} }
+  }
 
   if (hidden) return null
 
@@ -94,10 +108,7 @@ export default function SetupChecklist({ classInfo, hasApiKey, studentCount, top
           <p className="text-xs text-green-700 mt-0.5">모든 준비가 끝났어요. 학생들이 글을 쓸 수 있어요.</p>
         </div>
         <button
-          onClick={() => {
-            setHidden(true)
-            try { localStorage.setItem(HIDE_KEY, '1') } catch {}
-          }}
+          onClick={dismiss}
           className="text-xs text-green-700 hover:bg-green-100 px-3 py-1.5 rounded">
           ✖ 이 안내 닫기
         </button>
@@ -117,8 +128,7 @@ export default function SetupChecklist({ classInfo, hasApiKey, studentCount, top
         <button
           onClick={() => {
             if (!confirm('이 안내를 다시 보지 않을까요?\n(설정에서 다시 켤 수 있어요)')) return
-            setHidden(true)
-            try { localStorage.setItem(HIDE_KEY, '1') } catch {}
+            dismiss()
           }}
           className="text-xs text-blue-600 hover:bg-blue-100 px-2 py-1 rounded"
           title="이 안내 숨기기">

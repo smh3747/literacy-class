@@ -395,6 +395,7 @@ export default function TeacherHome() {
           {!isImpersonating && (
             <SetupChecklist
               classInfo={classInfo}
+              teacherId={user?.id}
               hasApiKey={hasApiKey}
               studentCount={studentCountTotal}
               topicCount={topicCount}
