@@ -25,12 +25,18 @@ export default function ConsentDocument({ school, className, student, parentName
         .consent-doc h1 { font-size: 1.35rem; }
         .consent-doc h2 { font-size: 0.95rem; margin-bottom: 0.35rem; }
         .consent-doc section { margin-bottom: 0.7rem; }
+        /* 서명·이름 칸: 비어 있어도 줄 높이를 고정해 행끼리 어긋나지 않게 */
+        .consent-doc .sign-line { min-height: 1.6em; }
 
         /* 인쇄 시: 이 문서만, A4 한 장에 정확히 들어가도록 압축 */
         @media print {
           .no-print { display: none !important; }
           @page { size: A4 portrait; margin: 10mm 12mm; }
           html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          /* ★ 빈 페이지 방지: 문서 외 래퍼가 차지하던 잔여 높이 제거
+             (보이지 않는 page 래퍼의 min-h-screen=100vh가 뒤에 빈 2페이지를 만들던 문제) */
+          html, body { height: auto !important; min-height: 0 !important; }
+          .min-h-screen { min-height: 0 !important; }
           /* ★ 이 문서만 인쇄(주변 UI 숨김) */
           body * { visibility: hidden; }
           .consent-doc, .consent-doc * { visibility: visible; }
@@ -107,17 +113,17 @@ export default function ConsentDocument({ school, className, student, parentName
           <h2 className="font-bold text-gray-800">3. AI 서비스 제공 업체</h2>
           <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
             <li>피드백 생성을 위해 학생 글이 <strong>Google(Gemini API)</strong>로 전송됨 (개인정보·신상정보 미포함)</li>
-            <li>Google은 학습 데이터로 사용하지 않으며, 일정 기간 후 자동 삭제</li>
+            <li>전송된 글의 보관·삭제는 Google의 데이터 정책에 따릅니다</li>
           </ul>
         </section>
 
-        {/* 4. 학생/학부모 권리 + 보안 통합 */}
+        {/* 4. 글 공유 + 학생/학부모 권리 + 보안 통합 */}
         <section className="mb-3">
-          <h2 className="font-bold text-gray-800">4. 권리 및 보안 조치</h2>
+          <h2 className="font-bold text-gray-800">4. 글 공유 및 권리·보안</h2>
           <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
+            <li><strong>글 공유:</strong> 학생·교사가 공유를 선택한 글에 한해, 작성자를 익명(닉네임)으로 하여 다른 학급·학교와 공유될 수 있습니다 (선택, 강제 아님)</li>
             <li>본인 정보 열람·수정·삭제 요청 가능 (담임 교사를 통해 처리), 거부 시 학습 불이익 없음</li>
-            <li>HTTPS 암호화 통신, 비밀번호 단방향 암호화, 본인 글은 본인과 담임만 열람 가능</li>
-            <li>현재 <strong>베타 운영 중</strong>: 일부 기능이 추가·변경될 수 있으며, 중요한 변경 시 별도 안내드립니다</li>
+            <li>HTTPS 암호화 통신, 로그인 비밀번호는 단방향 암호화 저장</li>
           </ul>
         </section>
 
@@ -129,13 +135,9 @@ export default function ConsentDocument({ school, className, student, parentName
               <Box on={has('privacy')} />
               <span>위 안내 내용을 읽고 자녀의 「다온클래스」 이용에 <strong>동의합니다.</strong></span>
             </label>
-            <label className="flex items-start gap-2 mb-1 text-[13px]">
+            <label className="flex items-start gap-2 text-[13px]">
               <Box on={has('ai_processing')} />
               <span>자녀의 글이 AI 피드백을 위해 처리되는 것에 <strong>동의합니다.</strong></span>
-            </label>
-            <label className="flex items-start gap-2 text-[13px]">
-              <Box on={false} />
-              <span><strong>동의하지 않습니다.</strong> (자녀가 서비스를 이용하지 않습니다)</span>
             </label>
           </div>
         </section>
