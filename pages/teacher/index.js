@@ -65,6 +65,12 @@ export default function TeacherHome() {
 
   useEffect(() => { checkAuth() }, [])
 
+  // 🆕 옛 전역 체크리스트 키 1회 청소 (step220 이전 잔재 — 계정 섞임 혼란 유발)
+  //   ⚠️ 정확히 이 키만 제거. 교사별 키(lc-setup-checklist-hidden:<id>)는 절대 건드리지 않음.
+  useEffect(() => {
+    try { localStorage.removeItem('lc-setup-checklist-hidden') } catch {}
+  }, [])
+
   // 내 의견 중 답변 달린 것만 조회 (fb_select 완화로 본인 행 읽기 가능).
   // ⚠️ 임퍼소네이션 중엔 세션이 admin이라 본인 행 판정이 어긋나므로 비활성.
   useEffect(() => {
