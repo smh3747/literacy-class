@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
+import { displayStudentName } from '../../lib/displayName'
 
 async function loadSummaries(studentId) {
   const { data } = await supabase.from('submissions')
@@ -69,7 +70,7 @@ export default function RecordPage() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/teacher/login'); return }
     const { data: profile } = await supabase.from('profiles')
-      .select('*, classes:class_id(id, name, code, grade)')
+      .select('*, classes:class_id(id, name, code, grade, school)')
       .eq('id', authUser.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
@@ -93,7 +94,7 @@ export default function RecordPage() {
     setGradeText(gt)
 
     const { data: studs } = await supabase.from('profiles')
-      .select('id, realname, username, number, is_hidden')
+      .select('id, realname, nickname, username, number, is_hidden')
       .eq('class_id', profile.classes?.id).eq('role', 'student')
     const visible = (studs || []).filter(s => !s.is_hidden)
       .sort((a, b) => (parseInt(a.number) || 999) - (parseInt(b.number) || 999))
@@ -150,7 +151,7 @@ export default function RecordPage() {
 
     for (let i = 0; i < targets.length; i++) {
       const stu = targets[i]
-      setBatchProgress({ done: i, total: targets.length, current: stu.realname || stu.username })
+      setBatchProgress({ done: i, total: targets.length, current: displayStudentName(stu) })
       try {
         const studentSubs = await loadSummaries(stu.id)
         if (studentSubs.length === 0) {
@@ -263,7 +264,7 @@ export default function RecordPage() {
                 return (
                   <label key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${checked ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
                     <input type="checkbox" checked={checked} onChange={() => toggleStudent(s.id)} className="accent-primary" />
-                    <span className="truncate">{s.number ? `${s.number}번 ` : ''}{s.realname || s.username}</span>
+                    <span className="truncate">{s.number ? `${s.number}번 ` : ''}{displayStudentName(s)}</span>
                     {hasSaved && <span className="ml-auto text-[10px] text-green-600">●</span>}
                   </label>
                 )
@@ -293,7 +294,7 @@ export default function RecordPage() {
                   {/* 이름 (왼쪽 고정폭) */}
                   <div className="sm:w-32 sm:flex-shrink-0 flex sm:flex-col sm:justify-center gap-1">
                     <h3 className="text-sm font-bold text-gray-900">
-                      {student.number ? `${student.number}번 ` : ''}{student.realname || student.username}
+                      {student.number ? `${student.number}번 ` : ''}{displayStudentName(student)}
                     </h3>
                     {lv && <span className="text-[11px] text-gray-400">{lv}</span>}
                   </div>
@@ -339,7 +340,7 @@ export default function RecordPage() {
               >
                 <option value="">— 학생 선택 —</option>
                 {students.map(s => (
-                  <option key={s.id} value={s.id}>{s.number ? `${s.number}번 ` : ''}{s.realname || s.username}</option>
+                  <option key={s.id} value={s.id}>{s.number ? `${s.number}번 ` : ''}{displayStudentName(s)}</option>
                 ))}
               </select>
 

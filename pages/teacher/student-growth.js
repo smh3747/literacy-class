@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import { displayStudentName } from '../../lib/displayName'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, BarElement } from 'chart.js'
 import { Line, Bar } from 'react-chartjs-2'
 
@@ -23,7 +24,7 @@ export default function StudentGrowth() {
   const check = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name)').eq('id', au.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, school)').eq('id', au.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       router.push('/teacher/login'); return
     }
@@ -31,7 +32,7 @@ export default function StudentGrowth() {
     setClassInfo(profile.classes)
 
     if (profile.classes?.id) {
-      const { data: studentList } = await supabase.from('profiles').select('id, realname, username, is_hidden').eq('class_id', profile.classes.id).eq('role', 'student').order('username')
+      const { data: studentList } = await supabase.from('profiles').select('id, realname, nickname, username, number, is_hidden').eq('class_id', profile.classes.id).eq('role', 'student').order('username')
       const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
       setStudents(visibleStudents)
 
@@ -117,9 +118,9 @@ export default function StudentGrowth() {
         if (!cur || (s.attempt||1) > (cur.attempt||1)) byTopic[tId] = s
       })
       const items = Object.values(byTopic)
-      if (items.length === 0) return { name: student.realname, avg: 0, count: 0 }
+      if (items.length === 0) return { name: displayStudentName(student), avg: 0, count: 0 }
       const avg = items.reduce((sum, s) => sum + (s.total_score / s.max_score) * 100, 0) / items.length
-      return { name: student.realname, avg: Math.round(avg), count: items.length }
+      return { name: displayStudentName(student), avg: Math.round(avg), count: items.length }
     }).filter(s => s.count > 0).sort((a,b) => b.avg - a.avg)
 
     return {
@@ -178,11 +179,11 @@ export default function StudentGrowth() {
                   <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
                     className="text-sm border border-gray-200 rounded p-2">
                     <option value="all">학생 선택</option>
-                    {students.map(s => <option key={s.id} value={s.id}>{s.realname}</option>)}
+                    {students.map(s => <option key={s.id} value={s.id}>{displayStudentName(s)}</option>)}
                   </select>
                 </div>
                 {studentChart && studentChart.labels.length > 0 ? (
-                  <Line data={studentChart} options={chartOptions(students.find(s => s.id === selectedStudent)?.realname + ' 학생')} />
+                  <Line data={studentChart} options={chartOptions(displayStudentName(students.find(s => s.id === selectedStudent) || {}) + ' 학생')} />
                 ) : (
                   <p className="text-sm text-gray-500 py-8 text-center">학생을 선택해주세요</p>
                 )}

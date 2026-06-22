@@ -28,7 +28,7 @@ export default function SubmissionStatus() {
   const checkAuth = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name)').eq('id', au.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, school)').eq('id', au.id).maybeSingle()
     if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
@@ -52,7 +52,7 @@ export default function SubmissionStatus() {
 
       // 학급 학생 목록 (숨김 제외)
       const { data: studentList } = await supabase.from('profiles')
-        .select('id, realname, username, number, is_hidden')
+        .select('id, realname, nickname, username, number, is_hidden')
         .eq('class_id', profile.classes.id).eq('role', 'student')
       const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
       setStudents(visibleStudents)
