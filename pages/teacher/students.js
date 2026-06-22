@@ -46,6 +46,8 @@ export default function StudentsPage() {
   // 🆕 step207-D: 탭 전환 — 'register'(등록) | 'list'(목록). 동의는 별도 화면(/consent)으로 이동.
   //   null이면 학생 수에 따라 기본 탭을 파생(0명→등록, 있으면→목록). 사용자가 누르면 그 값으로 고정.
   const [mode, setMode] = useState(null)
+  // 🆕 step234: 실명→닉네임 전환 공지 배너 닫힘 여부 (교사별 localStorage, step220 방식 lc-..-dismissed:<id>)
+  const [relockNoticeDismissed, setRelockNoticeDismissed] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -58,6 +60,13 @@ export default function StudentsPage() {
     setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
+
+    // 🆕 step234: 닉네임 전환 공지 배너를 이 교사가 이미 닫았는지 복원 (교사별 키)
+    try {
+      if (profile?.id && localStorage.getItem('lc-relock-notice-dismissed:' + profile.id) === '1') {
+        setRelockNoticeDismissed(true)
+      }
+    } catch {}
 
     // 학교명에서 기본 prefix 계산 (예: "한국초등학교" → "hgc")
     if (profile.school) {
@@ -96,6 +105,12 @@ export default function StudentsPage() {
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }
     await supabase.auth.signOut(); router.push('/')
+  }
+
+  // 🆕 step234: 닉네임 전환 공지 배너 영구 닫기 — 교사별 localStorage에 기록
+  const dismissRelockNotice = () => {
+    setRelockNoticeDismissed(true)
+    try { if (user?.id) localStorage.setItem('lc-relock-notice-dismissed:' + user.id, '1') } catch {}
   }
 
   // 자동 아이디 생성 (prefix 기반)
@@ -1685,12 +1700,24 @@ export default function StudentsPage() {
               const clearSelection = () => setSelectedStudentIds(new Set())
               return (
               <>
+                {/* 🆕 step234: 실명→닉네임 전환 공지 — 잠긴(동의 대기) 학생이 있는 교사에게만, 교사별 1회 닫기 가능 */}
+                {conciergeLocked > 0 && !relockNoticeDismissed && (
+                  <div className="relative bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm p-3 pr-8 rounded-lg mb-3 leading-relaxed">
+                    <button
+                      onClick={dismissRelockNotice}
+                      className="absolute top-1.5 right-2 text-amber-400 hover:text-amber-700 font-bold leading-none text-base"
+                      title="이 안내 다시 안 보기"
+                      aria-label="안내 닫기">×</button>
+                    🔒 개인정보 보호를 위해, 학부모 동의가 없는 학생 이름을 닉네임으로 전환했어요.{' '}
+                    <Link href={withImpersonation('/teacher/students/consent')} className="font-semibold text-primary underline hover:text-primary-dark">[동의서 관리]</Link>에서 학부모 동의를 받으면 실명으로 다시 표시됩니다.{' '}
+                    <span className="text-amber-700/80">(학생들은 닉네임으로 모든 기능을 그대로 이용해요.)</span>
+                  </div>
+                )}
                 {/* 🔒 잠긴(동의 대기) 신규 학생이 한 명이라도 있을 때만 안내 — realname 빈값 기준 */}
                 {students.some(s => !s.is_hidden && !(s.realname && s.realname.trim())) && (
                   <div className="bg-blue-50 border border-blue-200 text-blue-900 text-xs sm:text-sm p-3 rounded-lg mb-3 leading-relaxed">
-                    💡 개인정보 보호를 위해, 새로 등록되는 학생은 <strong>닉네임</strong>으로 표시됩니다.
+                    💡 개인정보 보호를 위해, 동의 전 학생은 <strong>닉네임</strong>으로 표시됩니다.
                     동의가 완료된 학생은 실명으로 표시돼요.
-                    <span className="text-blue-700/70"> (기존 학생은 그대로 표시됩니다)</span>
                     <div className="mt-2 text-sm font-semibold text-blue-900">
                       👉 학부모 동의는 <Link href={withImpersonation('/teacher/students/consent')} className="text-primary underline hover:text-primary-dark">[동의서 관리]</Link>에서 보내고 받을 수 있어요
                     </div>
