@@ -167,7 +167,7 @@ export default function ParentConsent() {
                 ? '이 학생은 이미 동의 처리가 되어 있어요. 추가로 하실 일은 없습니다.'
                 : '이제 자녀의 이름이 담임 선생님 화면에 표시됩니다. 소중한 동의 감사합니다.'}
             </p>
-            <Link href="/" className="inline-block mt-6 text-sm text-primary underline">다온클래스 홈으로</Link>
+            <p className="text-xs text-gray-400 mt-6">이 창은 닫으셔도 돼요.</p>
           </div>
         </div>
       </>
@@ -180,7 +180,6 @@ export default function ParentConsent() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="max-w-2xl mx-auto flex items-center gap-3">
-            <Link href="/" className="text-gray-600 hover:text-gray-900">←</Link>
             <h1 className="text-base font-bold">학부모 동의</h1>
           </div>
         </header>
