@@ -22,7 +22,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { studentIds, accessToken, action } = req.body || {}
-  const mode = action === 'lock' ? 'lock' : 'unlock'   // 기본 unlock(동의 처리) — 기존 동작 보존
+  // 기본 unlock(동의 처리) — 기존 동작 보존. lock=재잠금, teacher_confirm=회색지대 증빙 마커.
+  const mode = action === 'lock' ? 'lock'
+    : action === 'teacher_confirm' ? 'teacher_confirm'
+    : 'unlock'
   const ids = Array.isArray(studentIds) ? studentIds.filter(Boolean) : []
   if (ids.length === 0) return res.status(400).json({ error: '대상 학생이 없어요' })
   if (!accessToken) return res.status(401).json({ error: '로그인이 필요해요' })
@@ -55,7 +58,7 @@ export default async function handler(req, res) {
 
   const now = new Date().toISOString()
   // 결과 집계: 상태별 studentId 모음
-  const results = { unlocked: [], consentOnly: [], alreadyDone: [], unlockFailed: [], relocked: [], skipped: [] }
+  const results = { unlocked: [], consentOnly: [], alreadyDone: [], unlockFailed: [], relocked: [], confirmed: [], skipped: [] }
 
   for (const studentId of ids) {
     try {
@@ -105,6 +108,26 @@ export default async function handler(req, res) {
         })
         if (cErr) console.error('consent-paper 철회 이력 insert 실패:', studentId, cErr.message)
         results.relocked.push(studentId)
+        continue
+      }
+
+      // ===== 회색지대 "확인 처리" 분기 — action:'teacher_confirm' =====
+      //   consent_received=true인데 consents 기록이 없는(증빙 공백) 학생에게 교사 확인 마커를 남긴다.
+      //   ★lock/unlock 경로는 건드리지 않음. 마커 insert만(realname·consent_received·pending_names 무변경).
+      if (mode === 'teacher_confirm') {
+        // 가드: 이미 consents 행이 하나라도 있으면 skip(회색지대 아님 + teacher_confirm 중복 방지 = 멱등)
+        const { count: cCount } = await supabaseAdmin.from('consents')
+          .select('id', { count: 'exact', head: true }).eq('student_id', studentId)
+        if ((cCount || 0) > 0) { results.skipped.push(studentId); continue }
+        // 마커 행 insert (동의 증빙 = 교사 확인) — unlock의 source='paper' 패턴 차용
+        const { error: cErr } = await supabaseAdmin.from('consents').insert({
+          student_id: studentId, class_id: stu.class_id,
+          parent_name: '(교사 확인)', signature: null,
+          consent_items: ['privacy', 'ai_processing'],
+          source: 'teacher_confirm', consented_at: now,
+        })
+        if (cErr) { console.error('consent-paper teacher_confirm insert 실패:', studentId, cErr.message); results.skipped.push(studentId); continue }
+        results.confirmed.push(studentId)
         continue
       }
 
