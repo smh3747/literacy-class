@@ -9,7 +9,7 @@ import { regradeSubmission } from '../../lib/regrade'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
-import { displayStudentName } from '../../lib/displayName'
+import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
@@ -966,7 +966,7 @@ export default function TeacherSubmissions() {
                 )}
               </div>
               <div className="bg-primary-light rounded-2xl p-4">
-                <h2 className="text-lg font-bold text-primary-dark">{displayStudentName(selectedStudent.profile)}</h2>
+                <h2 className="text-lg font-bold text-primary-dark">{displayStudentNameWithNumber(selectedStudent.profile)}</h2>
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
 
