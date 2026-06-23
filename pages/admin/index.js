@@ -107,35 +107,57 @@ export default function AdminHome() {
           }
         })
       }
-      // 학급별 학생 수도 같이
+      // 학급별 학생 수 + 채점 모델 통계
+      // 🆕 step251: PostgREST 기본 1000행 제한을 range 페이지 루프로 우회해 "전량" 수집한다.
+      //   (이전엔 단일 select라 전체 학생>1000명일 때 뒤쪽 학급이 student_count=0 으로 잘못 표시됨)
       const classIds = classes.map(c => c.id)
-      const { data: studentCounts } = await supabase.from('profiles')
-        .select('class_id').in('class_id', classIds).eq('role', 'student')
+      const PAGE_SIZE = 1000
+      // 읽기 전용: build(from,to)가 매번 새 쿼리를 만들어 range로 페이지를 받아 합친다.
+      const fetchAllPaged = async (build) => {
+        let from = 0, all = [], guard = 0
+        while (guard++ < 100) {  // 최대 10만행 가드 (무한 루프 방지)
+          const { data, error } = await build(from, from + PAGE_SIZE - 1)
+          if (error || !data || data.length === 0) break
+          all = all.concat(data)
+          if (data.length < PAGE_SIZE) break
+          from += PAGE_SIZE
+        }
+        return all
+      }
+      const chunkArr = (arr, n) => {
+        const out = []
+        for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+        return out
+      }
+
+      // 학생 전량(id, class_id) — student_count와 model_stats가 이 한 배열을 함께 재사용
+      const studentsWithClass = await fetchAllPaged((from, to) =>
+        supabase.from('profiles').select('id, class_id')
+          .in('class_id', classIds).eq('role', 'student').range(from, to))
+
       const countMap = {}
-      ;(studentCounts || []).forEach(s => {
+      const studentIdByClass = {}  // { classId: [studentId, ...] }
+      ;(studentsWithClass || []).forEach(s => {
         countMap[s.class_id] = (countMap[s.class_id] || 0) + 1
+        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
+        studentIdByClass[s.class_id].push(s.id)
       })
       classes.forEach(c => { c.student_count = countMap[c.id] || 0 })
 
       // 🆕 학급별 채점 모델 통계 (와이프 피드백 1번: 다른 학급도 어떤 모델로 채점했는지)
-      // 학급 → 학생 → 제출 → graded_with_model 집계
-      const studentIdByClass = {}  // { classId: [studentId, ...] }
-      ;(studentCounts || []).forEach(s => {
-        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
-      })
-      // 다시 학생 ID도 가져옴 (위에선 class_id만 가져왔음)
-      const { data: studentsWithClass } = await supabase.from('profiles')
-        .select('id, class_id').in('class_id', classIds).eq('role', 'student')
-      ;(studentsWithClass || []).forEach(s => {
-        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
-        studentIdByClass[s.class_id].push(s.id)
-      })
-      // 모든 학생의 제출물에서 모델 정보만 가져오기
+      // 학급 → 학생 → 제출 → graded_with_model 집계. studentsWithClass 재사용(별도 학생 쿼리 없음).
       const allStudentIds = (studentsWithClass || []).map(s => s.id)
       if (allStudentIds.length > 0) {
-        const { data: subs } = await supabase.from('submissions')
-          .select('user_id, graded_with_model, is_fallback_graded')
-          .in('user_id', allStudentIds)
+        // 제출물도 전량 수집. user_id IN 목록이 너무 길어지지 않도록 1000개씩 끊어서(URL 길이 안전)
+        // 각 묶음마다 range 페이지 루프로 받는다.
+        let subs = []
+        for (const idChunk of chunkArr(allStudentIds, 1000)) {
+          const part = await fetchAllPaged((from, to) =>
+            supabase.from('submissions')
+              .select('user_id, graded_with_model, is_fallback_graded')
+              .in('user_id', idChunk).range(from, to))
+          subs = subs.concat(part)
+        }
         // user_id → class_id 역매핑
         const classByStudent = {}
         ;(studentsWithClass || []).forEach(s => { classByStudent[s.id] = s.class_id })
