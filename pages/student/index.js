@@ -644,7 +644,7 @@ export default function StudentHome() {
 
     // 🆕 step201: 재제출(덮어쓰기 + AI 재채점) 실수 클릭 방지 — 1단계 확인.
     //   취소 시 아무 동작 없음(기존 글·점수 그대로). 확인해야만 아래 재제출 로직 진행.
-    if (!confirm('다시 제출하면 지금 글이 사라지고 새로 채점돼요.\n계속할까요?')) return
+    if (!confirm('다시 제출하면 지금 쓴 글로 바뀌고, AI가 다시 채점해요.\n제출할까요?')) return
 
     // 🆕 첫 글과 거의 같은지 검사 (맞춤법만 고친 경우)
     const norm = (t) => (t || '').replace(/\s/g, '')
