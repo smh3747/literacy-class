@@ -27,6 +27,7 @@ export default function AdminHome() {
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
+  const [classActivityFilter, setClassActivityFilter] = useState('all')  // 🆕 활동 상태: 'all' | 'active' | 'inactive' (보유값 기준)
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [replyDraft, setReplyDraft] = useState({})      // 🆕 피드백 답변 입력 { [id]: text }
@@ -1239,9 +1240,15 @@ export default function AdminHome() {
 
           {tab === 'classes' && (() => {
             // 🆕 비활성 학급 필터링 (와이프 피드백 9번)
-            const visibleClasses = showInactiveClasses
+            // 🆕 활동 상태(보유값): 활동 = 학생>0 && 채점글>0, 그 외 = 비활동(글 없음/학생 없음)
+            const isActiveClass = (c) => (c.student_count || 0) > 0 && ((c.model_stats?.total) || 0) > 0
+            const byActivity = (c) => classActivityFilter === 'all'
+              ? true
+              : classActivityFilter === 'active' ? isActiveClass(c) : !isActiveClass(c)
+            const visibleClasses = (showInactiveClasses
               ? classes
               : classes.filter(c => c.is_active !== false)
+            ).filter(byActivity)
             const inactiveCount = classes.filter(c => c.is_active === false).length
 
             return (
@@ -1253,12 +1260,29 @@ export default function AdminHome() {
                     <span className="text-xs text-gray-500"> + 비활성 {inactiveCount}개 숨김</span>
                   )})
                 </h3>
-                {inactiveCount > 0 && (
-                  <button onClick={() => setShowInactiveClasses(!showInactiveClasses)}
-                    className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
-                    {showInactiveClasses ? '👁️ 활성만 보기' : `🔍 비활성 포함 보기 (${inactiveCount})`}
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 🆕 활동 상태 필터 (보유값 기준: 학생>0 && 채점글>0) */}
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <span className="text-xs text-gray-600 px-1.5">활동:</span>
+                    {[{ v: 'all', l: '전체' }, { v: 'active', l: '활동' }, { v: 'inactive', l: '비활동' }].map(opt => (
+                      <button key={opt.v}
+                        onClick={() => setClassActivityFilter(opt.v)}
+                        className={`text-xs px-2 py-1 rounded ${
+                          classActivityFilter === opt.v
+                            ? 'bg-white shadow-sm font-semibold text-primary'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}>
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+                  {inactiveCount > 0 && (
+                    <button onClick={() => setShowInactiveClasses(!showInactiveClasses)}
+                      className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
+                      {showInactiveClasses ? '👁️ 활성만 보기' : `🔍 비활성 포함 보기 (${inactiveCount})`}
+                    </button>
+                  )}
+                </div>
               </div>
               {visibleClasses.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
@@ -2006,6 +2030,7 @@ function AdminSubmissionsInner() {
   const [dateFilter, setDateFilter] = useState('all')
   const [customDate, setCustomDate] = useState('')  // YYYY-MM-DD (custom일 때)
   const [search, setSearch] = useState('')  // 🆕 통합 검색(담임·학교·학생 표시이름) — 클라 필터
+  const [attemptFilter, setAttemptFilter] = useState('all')  // 🆕 글 종류: 'all' | 'first' | 'rewrite' (클라 필터)
 
   // 🆕 보조 데이터: 학생 → 학급 → 학교 매핑
   const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
@@ -2176,7 +2201,11 @@ function AdminSubmissionsInner() {
     return [cls?.teacher_name, cls?.teacher_school, displayStudentName(s.profiles), String(s.profiles?.number || '')]
       .some(f => f && String(f).toLowerCase().includes(sq))
   }
-  const visibleSubmissions = submissions.filter(matchSearch)
+  // 🆕 글 종류 필터 (첫 글 = attempt 1, 수정본 = 그 외) — SubmissionRow의 판정과 동일 기준
+  const matchAttempt = (s) => attemptFilter === 'all'
+    ? true
+    : attemptFilter === 'first' ? (s.attempt || 1) === 1 : (s.attempt || 1) !== 1
+  const visibleSubmissions = submissions.filter(s => matchSearch(s) && matchAttempt(s))
   const groups = buildGroups()
 
   return (
@@ -2205,6 +2234,21 @@ function AdminSubmissionsInner() {
                 onClick={() => { setGroupBy(opt.v); setExpandedGroups(new Set()) }}
                 className={`text-xs px-2.5 py-1 rounded ${
                   groupBy === opt.v
+                    ? 'bg-white shadow-sm font-semibold text-primary'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+          {/* 🆕 글 종류 필터 (첫 글 / 수정본) — 이미 받아온 목록에 클라 필터 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <span className="text-xs text-gray-600 px-1.5">글 종류:</span>
+            {[{ v: 'all', l: '전체' }, { v: 'first', l: '첫 글만' }, { v: 'rewrite', l: '수정본만' }].map(opt => (
+              <button key={opt.v}
+                onClick={() => setAttemptFilter(opt.v)}
+                className={`text-xs px-2 py-1 rounded ${
+                  attemptFilter === opt.v
                     ? 'bg-white shadow-sm font-semibold text-primary'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}>
