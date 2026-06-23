@@ -1116,22 +1116,23 @@ export default function AdminHome() {
                         const myClasses = classes.filter(c => c.teacher_id === t.id)
                         const totalStudents = myClasses.reduce((sum, c) => sum + (c.student_count || 0), 0)
                         const totalSubs = myClasses.reduce((sum, c) => sum + (c.submission_count || 0), 0)
+                        const totalFirst = myClasses.reduce((sum, c) => sum + (c.first_submission_count || 0), 0)
                         const lastActivity = myClasses.reduce((max, c) => {
                           if (!c.last_activity_at) return max
                           return !max || c.last_activity_at > max ? c.last_activity_at : max
                         }, null)
                         const isExpanded = expandedTeacherId === t.id
 
-                        // 활동 라벨
-                        let activityLabel = '활동 없음'
+                        // 활동 라벨(마지막 글 활동 기준) — step253: 문구 명확화
+                        let activityLabel = '활동 기록 없음'
                         let activityColor = 'text-gray-400'
                         if (lastActivity) {
                           const diffDays = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
                           if (diffDays === 0) { activityLabel = '오늘 활동'; activityColor = 'text-green-700' }
                           else if (diffDays === 1) { activityLabel = '어제 활동'; activityColor = 'text-green-700' }
-                          else if (diffDays <= 7) { activityLabel = `${diffDays}일 전`; activityColor = 'text-blue-700' }
-                          else if (diffDays <= 30) { activityLabel = `${diffDays}일 전`; activityColor = 'text-gray-600' }
-                          else { activityLabel = `${diffDays}일 전`; activityColor = 'text-amber-700' }
+                          else if (diffDays <= 7) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-blue-700' }
+                          else if (diffDays <= 30) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-gray-600' }
+                          else { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-amber-700' }
                         }
 
                         return (
@@ -1149,7 +1150,7 @@ export default function AdminHome() {
                                 ) : (
                                   <div className="flex flex-col gap-0.5">
                                     <span className="text-xs whitespace-nowrap">
-                                      🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건
+                                      🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
                                     </span>
                                     <span className={`text-[11px] ${activityColor}`}>{activityLabel}</span>
                                   </div>
@@ -1382,7 +1383,17 @@ export default function AdminHome() {
                         }
                         return (
                         <tr key={c.id} className={`border-b border-gray-100 ${c.is_active === false ? 'bg-gray-100 opacity-60' : ''}`}>
-                          <td className="p-2 font-medium">{c.name}</td>
+                          <td className="p-2 font-medium">
+                            <div>{c.name}</div>
+                            {/* 🆕 step253: 마지막 활동 + 누적 글수(표시만) */}
+                            <div className="text-[11px] text-gray-400 font-normal">
+                              {(() => {
+                                if (!c.last_activity_at) return '활동 기록 없음'
+                                const d = Math.floor((Date.now() - new Date(c.last_activity_at).getTime()) / 86400000)
+                                return d === 0 ? '오늘 활동' : `마지막 활동 ${d}일 전`
+                              })()} · 글 {c.submission_count || 0}개
+                            </div>
+                          </td>
                           <td className="p-2 text-gray-600">{c.teacher_profile?.realname || '-'}</td>
                           <td className="p-2 text-gray-600">{c.teacher_profile?.school || '-'}</td>
                           <td className="p-2 text-center text-gray-600">{c.student_count || 0}</td>
