@@ -993,6 +993,58 @@ export default function StudentsPage() {
     }
   }
 
+  // 🆕 step255: 선택 학생 일괄 숨김 (확인창·건수명시, 임퍼소네이션 차단)
+  const bulkHide = async () => {
+    if (isImpersonating) return  // 읽기 전용 모드 차단
+    const targets = students.filter(s => selectedStudentIds.has(s.id) && !s.is_hidden).map(s => s.id)
+    if (targets.length === 0) {
+      alert('선택한 학생이 이미 모두 숨김 처리돼 있어요')
+      return
+    }
+    if (!confirm(`선택한 ${targets.length}명을 숨길까요?\n\n통계·목록에서 빠지지만 학생 로그인·글은 그대로 보존돼요. 언제든 복원할 수 있어요.`)) return
+    const reason = prompt('사유 (선택, 예: 전출·휴학):', '전출')
+    if (reason === null) return  // 취소
+    setSavingId('bulk')
+    try {
+      const { error } = await supabase.from('profiles').update({
+        is_hidden: true,
+        hidden_at: new Date().toISOString(),
+        hidden_reason: (reason || '').trim() || null
+      }).in('id', targets)
+      if (error) throw error
+      clearSelection()
+      await loadStudents(classInfo.id)
+    } catch (e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
+  }
+
+  // 🆕 step255: 선택 학생 일괄 해제(복원)
+  const bulkUnhide = async () => {
+    if (isImpersonating) return  // 읽기 전용 모드 차단
+    const targets = students.filter(s => selectedStudentIds.has(s.id) && s.is_hidden).map(s => s.id)
+    if (targets.length === 0) {
+      alert('선택한 학생 중 숨김 상태가 없어요')
+      return
+    }
+    if (!confirm(`선택한 ${targets.length}명을 다시 보이게 할까요?`)) return
+    setSavingId('bulk')
+    try {
+      const { error } = await supabase.from('profiles').update({
+        is_hidden: false,
+        hidden_at: null,
+        hidden_reason: null
+      }).in('id', targets)
+      if (error) throw error
+      clearSelection()
+      await loadStudents(classInfo.id)
+    } catch (e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
+  }
+
   // 동의서 일괄 처리 (체크 / 해제)
   // ★ 켤 때(newValue=true)는 종이 동의 API(/api/consent-paper) 1회 호출로 실명 잠금까지 해제.
   //   끌 때(false)는 기존대로 consent_received만 내림(실명 재잠금 범위 밖).
@@ -1740,6 +1792,15 @@ export default function StudentsPage() {
                       <button onClick={resetPasswordsBulk}
                         className="text-xs bg-amber-500 text-white px-3 py-1 rounded hover:bg-amber-600 font-medium">
                         🔑 비밀번호 일괄 초기화
+                      </button>
+                      {/* 🆕 step255: 선택 학생 일괄 숨김/해제 */}
+                      <button onClick={bulkHide} disabled={isImpersonating}
+                        className="text-xs bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                        🙈 선택 숨김
+                      </button>
+                      <button onClick={bulkUnhide} disabled={isImpersonating}
+                        className="text-xs bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded hover:bg-gray-50 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                        ↻ 선택 해제(복원)
                       </button>
                       <button onClick={clearSelection}
                         className="text-xs text-gray-600 hover:text-gray-800 px-2">
