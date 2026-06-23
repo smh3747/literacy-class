@@ -22,6 +22,9 @@ export default function AdminHome() {
   const [idLookups, setIdLookups] = useState({})  // 🆕 step161: 아이디 찾기 후보 { [reqId]: {loading, list} }
   const [selectedReqIds, setSelectedReqIds] = useState(new Set())  // 🆕 step162: 요청함 일괄 선택
   const [errorLogs, setErrorLogs] = useState([])  // 🆕 step155: 에러 로그 (최근 50건)
+  const [errSeverity, setErrSeverity] = useState('all')  // 🆕 심각도: 'all' | 'action' | 'ignore'
+  const [errType, setErrType] = useState('all')          // 🆕 종류: 'all' | error_type 값
+  const [errView, setErrView] = useState('list')         // 🆕 보기: 'list' | 'byClass'
   const [logStudentNumbers, setLogStudentNumbers] = useState({})  // 🆕 에러로그 학생 번호 표시용 {user_id: number} (실명 미조회)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
@@ -1946,17 +1949,78 @@ export default function AdminHome() {
                 return { color: 'bg-gray-200 text-gray-500', label: '⚫ 확장노이즈', summary: '브라우저 확장 노이즈 · 무시 가능' }
               return { color: 'bg-gray-100 text-gray-600', label: '⚪ 기타', summary: '기타' }
             }
+            // 🆕 분류 라벨 → 심각도 (무시 가능 라벨만 명시, 그 외 = 조치 필요). 라벨 문자열 기준 상수.
+            const IGNORE_LABELS = new Set(['🟡 구글 혼잡', '⚪ 세션 만료', '⚪ 네트워크', '🟡 응답지연', '⚫ 확장노이즈'])
+            const severityOf = (msg) => IGNORE_LABELS.has(classifyError(msg).label) ? 'ignore' : 'action'
+            // 🆕 필터 적용(이미 받아온 grouped에 클라 필터) — 심각도 + 종류
+            const matchErr = (e) =>
+              (errSeverity === 'all' || severityOf(e.message) === errSeverity) &&
+              (errType === 'all' || e.error_type === errType)
+            const filteredGrouped = grouped.filter(matchErr)
+            // 🆕 종류 토글 후보(받아온 로그에 존재하는 error_type만)
+            const typeOptions = [...new Set(errorLogs.map(e => e.error_type).filter(Boolean))]
+            // 🆕 학급별 빈도(필터 반영, e.count 합산) — 내림차순
+            const classFreq = {}
+            filteredGrouped.forEach(e => {
+              const k = e.class_id || '(없음)'
+              if (!classFreq[k]) classFreq[k] = { count: 0 }
+              classFreq[k].count += (e.count || 1)
+            })
+            const classFreqArr = Object.entries(classFreq)
+              .map(([cid, v]) => ({ cid, count: v.count, info: classInfoById[cid] }))
+              .sort((a, b) => b.count - a.count)
+            const toggleBtn = (active) => `text-xs px-2 py-1 rounded ${active ? 'bg-white shadow-sm font-semibold text-primary' : 'text-gray-600 hover:text-gray-900'}`
             return (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-900">🚨 에러 로그 (최근 {errorLogs.length}건)</h3>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold text-gray-900">🚨 에러 로그 (최근 {errorLogs.length}건{filteredGrouped.length !== grouped.length ? ` · 필터 ${filteredGrouped.length}` : ''})</h3>
                   <span className="text-xs text-gray-500">30일 지나면 자동 삭제돼요</span>
                 </div>
-                {grouped.length === 0 ? (
-                  <div className="text-sm text-gray-400 py-8 text-center">아직 기록된 에러가 없어요 🎉</div>
+                {/* 🆕 필터 바: 심각도 / 종류 / 보기 */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <span className="text-xs text-gray-600 px-1.5">심각도:</span>
+                    {[{ v: 'all', l: '전체' }, { v: 'action', l: '🔴 조치 필요' }, { v: 'ignore', l: '⚪ 무시 가능' }].map(o => (
+                      <button key={o.v} onClick={() => setErrSeverity(o.v)} className={toggleBtn(errSeverity === o.v)}>{o.l}</button>
+                    ))}
+                  </div>
+                  {typeOptions.length > 0 && (
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 flex-wrap">
+                      <span className="text-xs text-gray-600 px-1.5">종류:</span>
+                      <button onClick={() => setErrType('all')} className={toggleBtn(errType === 'all')}>전체</button>
+                      {typeOptions.map(t => (
+                        <button key={t} onClick={() => setErrType(t)} className={toggleBtn(errType === t)}>{t}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <span className="text-xs text-gray-600 px-1.5">보기:</span>
+                    {[{ v: 'list', l: '목록' }, { v: 'byClass', l: '학급별 빈도' }].map(o => (
+                      <button key={o.v} onClick={() => setErrView(o.v)} className={toggleBtn(errView === o.v)}>{o.l}</button>
+                    ))}
+                  </div>
+                </div>
+                {/* 🆕 학급별 빈도 뷰 */}
+                {errView === 'byClass' ? (
+                  classFreqArr.length === 0 ? (
+                    <div className="text-sm text-gray-400 py-8 text-center">표시할 에러가 없어요 🎉</div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {classFreqArr.map(({ cid, count, info }) => (
+                        <div key={cid} className="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                          <span className="text-gray-800">
+                            {info ? <>{info.name}{info.school ? ` · ${info.school}` : ''}{info.teacher ? ` (담임 ${info.teacher})` : ''}</> : <span className="text-gray-400">학급 정보 없음 / 비학급 에러</span>}
+                          </span>
+                          <span className="text-sm font-bold text-rose-600 flex-shrink-0 ml-3">{count}회</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : filteredGrouped.length === 0 ? (
+                  <div className="text-sm text-gray-400 py-8 text-center">표시할 에러가 없어요 🎉</div>
                 ) : (
                   <div className="space-y-2">
-                    {grouped.map((e, i) => {
+                    {filteredGrouped.map((e, i) => {
                       const c = classifyError(e.message)
                       return (
                       <div key={e.id || i} className="border border-gray-100 rounded-lg p-3 text-sm">
