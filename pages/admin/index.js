@@ -1240,8 +1240,8 @@ export default function AdminHome() {
 
           {tab === 'classes' && (() => {
             // 🆕 비활성 학급 필터링 (와이프 피드백 9번)
-            // 🆕 활동 상태(보유값): 활동 = 학생>0 && 채점글>0, 그 외 = 비활동(글 없음/학생 없음)
-            const isActiveClass = (c) => (c.student_count || 0) > 0 && ((c.model_stats?.total) || 0) > 0
+            // 🆕 활동 상태(보유값): 활동 = 학생>0 OR 누적 글>0 (model_stats가 '-'로 비어도 학생 있으면 활동)
+            const isActiveClass = (c) => (c.student_count || 0) > 0 || ((c.model_stats?.total) || 0) > 0
             const byActivity = (c) => classActivityFilter === 'all'
               ? true
               : classActivityFilter === 'active' ? isActiveClass(c) : !isActiveClass(c)
@@ -2256,10 +2256,10 @@ function AdminSubmissionsInner() {
               </button>
             ))}
           </div>
-          {/* 학급 필터 (flat·topic·school·student에서 의미 있음) */}
-          {groupBy !== 'class' && (
+          {/* 학급 필터 — 항상 렌더(자리·폭 고정). 학급별 묶음일 땐 비활성으로 레이아웃 점프 제거 */}
             <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
-              className="text-sm border border-gray-200 rounded p-2 max-w-[280px]">
+              disabled={groupBy === 'class'}
+              className={`text-sm border border-gray-200 rounded p-2 w-[220px] ${groupBy === 'class' ? 'opacity-40 cursor-not-allowed' : ''}`}>
               <option value="all">모든 학급</option>
               {/* 🆕 학교별 그룹 + 담임명으로 같은 반 이름 구분 */}
               {Object.entries(
@@ -2279,7 +2279,6 @@ function AdminSubmissionsInner() {
                 </optgroup>
               ))}
             </select>
-          )}
           {/* 🆕 날짜 필터 (전체/오늘/최근7일/직접날짜) — 그룹화·학급 필터와 공존 */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             <span className="text-xs text-gray-600 px-1.5">기간:</span>
