@@ -101,7 +101,8 @@ export default function AdminHome() {
       let from = 0, all = [], guard = 0
       while (guard++ < 100) {  // 최대 10만행 가드 (무한 루프 방지)
         const { data, error } = await build(from, from + PAGE_SIZE - 1)
-        if (error || !data || data.length === 0) break
+        if (error) { console.error('fetchAllPaged 실패(부분 결과 반환):', error); break }  // 🆕 step256: 에러 가시화
+        if (!data || data.length === 0) break
         all = all.concat(data)
         if (data.length < PAGE_SIZE) break
         from += PAGE_SIZE
@@ -151,7 +152,7 @@ export default function AdminHome() {
         // 제출물도 전량 수집. user_id IN 목록이 너무 길어지지 않도록 1000개씩 끊어서(URL 길이 안전)
         // 각 묶음마다 range 페이지 루프로 받는다.
         let subs = []
-        for (const idChunk of chunkArr(allStudentIds, 1000)) {
+        for (const idChunk of chunkArr(allStudentIds, 150)) {  // 🆕 step256: IN 리스트 축소(URL 한도 회피)
           const part = await fetchAllPaged((from, to) =>
             supabase.from('submissions')
               .select('user_id, graded_with_model, is_fallback_graded')
@@ -226,7 +227,7 @@ export default function AdminHome() {
       if (allActiveStudentIds.length > 0) {
         // 제출물 전량 수집 (user_id IN 목록이 길어지지 않도록 1000개씩 끊어 range 루프). attempt 포함.
         let subStats = []
-        for (const idChunk of chunkArr(allActiveStudentIds, 1000)) {
+        for (const idChunk of chunkArr(allActiveStudentIds, 150)) {  // 🆕 step256: IN 리스트 축소(URL 한도 회피)
           const part = await fetchAllPaged((from, to) =>
             supabase.from('submissions')
               .select('user_id, created_at, attempt')
