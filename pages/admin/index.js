@@ -67,14 +67,18 @@ export default function AdminHome() {
 
   const loadAll = async () => {
     const today = new Date()
-    const todayKr = new Date(today.getTime() + (9 * 3600 * 1000) - (today.getTimezoneOffset() * 60 * 1000)).toISOString().slice(0, 10)
+    // 🆕 '오늘' 경계 = KST 자정의 UTC 순간 (학생글 탭 'today' 필터 kstDayStartUTC와 동일 기준).
+    //   기존엔 'KST날짜T00:00:00'(타임존 없음)이 UTC 자정으로 해석돼 KST 00~09시 글이 누락됐음.
+    const kstYmd = new Date(today.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)  // KST 날짜
+    const [ky, km, kd] = kstYmd.split('-').map(Number)
+    const todayStartUTC = new Date(Date.UTC(ky, km - 1, kd) - 9 * 3600 * 1000).toISOString()
 
     const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes] = await Promise.all([
       supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
-      supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayKr + 'T00:00:00'),
+      supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC),
       supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200)
     ])
 
