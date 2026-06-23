@@ -32,6 +32,8 @@ export default function AdminHome() {
   const [showInactiveClasses, setShowInactiveClasses] = useState(false)  // 🆕 비활성 학급 표시 토글 (기본 OFF)
   const [classActivityFilter, setClassActivityFilter] = useState('all')  // 🆕 활동 상태: 'all' | 'active' | 'inactive' (보유값 기준)
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
+  const [teacherSearch, setTeacherSearch] = useState('')  // 🆕 step249: 선생님 검색(이름·아이디·학교) — 클라 필터
+  const [classSearch, setClassSearch] = useState('')      // 🆕 step250: 학급 검색(학급명·담임·학교·코드) — 클라 필터
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [replyDraft, setReplyDraft] = useState({})      // 🆕 피드백 답변 입력 { [id]: text }
   const [editingReply, setEditingReply] = useState(null) // 🆕 답변 수정 중인 피드백 id
@@ -917,10 +919,16 @@ export default function AdminHome() {
           </div>
 
           {tab === 'overview' && (() => {
-            // 🆕 차단된 선생님 필터링
-            const visibleTeachers = showBannedTeachers
+            // 🆕 차단된 선생님 필터링 + step249 검색(이름·아이디·학교, 부분일치·대소문자무시)
+            const tq = teacherSearch.trim().toLowerCase()
+            const matchTeacher = (t) => !tq
+              || (t.realname || '').toLowerCase().includes(tq)
+              || (t.username || '').toLowerCase().includes(tq)
+              || (t.school || '').toLowerCase().includes(tq)
+            const visibleTeachers = (showBannedTeachers
               ? teachers
               : teachers.filter(t => !t.is_banned)
+            ).filter(matchTeacher)
             const bannedCount = teachers.filter(t => t.is_banned).length
 
             return (
@@ -1039,16 +1047,22 @@ export default function AdminHome() {
                     <span className="text-xs text-gray-500"> + 차단 {bannedCount}명 숨김</span>
                   )})
                 </h3>
-                {bannedCount > 0 && (
-                  <button onClick={() => setShowBannedTeachers(!showBannedTeachers)}
-                    className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
-                    {showBannedTeachers ? '👁️ 정상 계정만 보기' : `🔍 차단 포함 보기 (${bannedCount})`}
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 🆕 step249: 선생님 검색 (이름·아이디·학교) */}
+                  <input type="text" value={teacherSearch} onChange={e => setTeacherSearch(e.target.value)}
+                    placeholder="🔍 이름·아이디·학교"
+                    className="text-sm border border-gray-200 rounded p-2 w-[180px]" />
+                  {bannedCount > 0 && (
+                    <button onClick={() => setShowBannedTeachers(!showBannedTeachers)}
+                      className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
+                      {showBannedTeachers ? '👁️ 정상 계정만 보기' : `🔍 차단 포함 보기 (${bannedCount})`}
+                    </button>
+                  )}
+                </div>
               </div>
               {visibleTeachers.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
-                  {teachers.length === 0 ? '가입한 선생님이 없어요' : '정상 계정이 없어요. "차단 포함 보기"를 눌러주세요.'}
+                  {tq ? '검색 결과가 없어요' : teachers.length === 0 ? '가입한 선생님이 없어요' : '정상 계정이 없어요. "차단 포함 보기"를 눌러주세요.'}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
