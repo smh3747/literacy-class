@@ -445,6 +445,9 @@ export default function StudentHome() {
       return
     }
 
+    // 🆕 제출 전 확인 (어린이 화면 — 짧고 쉽게)
+    if (!confirm('이대로 제출할까요? 제출하면 AI가 채점해요.')) return
+
     setSubmitting(true)
     try {
       const rubrics = todayTopic.rubrics

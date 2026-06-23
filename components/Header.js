@@ -18,7 +18,7 @@ export default function Header({ user, onLogout }) {
               <>
                 <span className="hidden sm:inline text-sm text-gray-600">{user.realname} ({user.role === 'teacher' ? '선생님' : user.role === 'admin' ? '관리자' : '학생'})</span>
                 <button
-                  onClick={onLogout}
+                  onClick={() => { if (confirm('로그아웃할까요?')) onLogout() }}
                   className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 px-2 sm:px-3 py-1 rounded-full border border-gray-200 transition"
                 >
                   로그아웃

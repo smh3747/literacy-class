@@ -7,7 +7,7 @@ import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
-import { displayStudentName } from '../../lib/displayName'
+import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 
 export default function AdminHome() {
   const router = useRouter()
@@ -2386,7 +2386,7 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
         <div className="text-sm font-semibold text-gray-900">
           {hideField !== 'student' && (
             <>
-              {displayStudentName(s.profiles)}
+              {displayStudentNameWithNumber(s.profiles)}
               <span className="text-xs font-normal text-gray-500 ml-2">({s.attempt === 1 ? '첫 글' : `수정본 ${s.attempt - 1}차`})</span>
             </>
           )}
