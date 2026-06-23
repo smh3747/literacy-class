@@ -1266,10 +1266,17 @@ export default function AdminHome() {
             const byActivity = (c) => classActivityFilter === 'all'
               ? true
               : classActivityFilter === 'active' ? isActiveClass(c) : !isActiveClass(c)
+            // 🆕 step250 검색(학급명·담임·학교·코드, 부분일치·대소문자무시) — 활동 필터와 AND
+            const cq = classSearch.trim().toLowerCase()
+            const matchClass = (c) => !cq
+              || (c.name || '').toLowerCase().includes(cq)
+              || (c.teacher_profile?.realname || '').toLowerCase().includes(cq)
+              || (c.teacher_profile?.school || '').toLowerCase().includes(cq)
+              || (c.code || '').toLowerCase().includes(cq)
             const visibleClasses = (showInactiveClasses
               ? classes
               : classes.filter(c => c.is_active !== false)
-            ).filter(byActivity)
+            ).filter(byActivity).filter(matchClass)
             const inactiveCount = classes.filter(c => c.is_active === false).length
 
             return (
@@ -1282,6 +1289,10 @@ export default function AdminHome() {
                   )})
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
+                  {/* 🆕 step250: 학급 검색 (학급명·담임·학교·코드) */}
+                  <input type="text" value={classSearch} onChange={e => setClassSearch(e.target.value)}
+                    placeholder="🔍 학급명·담임·학교·코드"
+                    className="text-sm border border-gray-200 rounded p-2 w-[200px]" />
                   {/* 🆕 활동 상태 필터 (보유값 기준: 학생>0 && 채점글>0) */}
                   <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
                     <span className="text-xs text-gray-600 px-1.5">활동:</span>
@@ -1307,7 +1318,7 @@ export default function AdminHome() {
               </div>
               {visibleClasses.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
-                  {classes.length === 0 ? '학급이 없어요' : '활성 학급이 없어요. "비활성 포함 보기"를 눌러주세요.'}
+                  {cq ? '검색 결과가 없어요' : classes.length === 0 ? '학급이 없어요' : '활성 학급이 없어요. "비활성 포함 보기"를 눌러주세요.'}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
