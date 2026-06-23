@@ -523,20 +523,27 @@ export default function TeacherLogin() {
               </div>
 
             <div className="mt-4 text-center space-y-1.5">
-              {mode === 'login' && (
-                <p className="text-xs text-gray-500">
-                  🔑 아이디 또는 비밀번호를 잊으셨나요?{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowResetRequest(true)}
-                    className="text-blue-600 font-medium underline hover:text-blue-800">
-                    찾기 요청하기
-                  </button>
-                  <br />
-                  <span className="text-amber-700">재가입하지 마세요</span>
-                  <span className="text-gray-400"> — 기존 학급·학생·글과 연결이 끊겨요.</span>
-                </p>
-              )}
+              {/* 로그인·가입 양쪽 표시(단일 정의) — 아이디 잊은 교사의 재가입(빈 계정 생성·기존 학급 고아화) 방지 */}
+              <p className="text-xs text-gray-500">
+                {mode === 'signup' ? (
+                  <>이미 계정이 있으신가요? 새로 가입하면 <span className="text-amber-700">기존 학급·학생·글과 연결이 끊겨요.</span>{' '}아이디를 잊으셨다면{' '}</>
+                ) : (
+                  <>🔑 아이디 또는 비밀번호를 잊으셨나요?{' '}</>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowResetRequest(true)}
+                  className="text-blue-600 font-medium underline hover:text-blue-800">
+                  {mode === 'signup' ? '아이디·비밀번호 찾기' : '찾기 요청하기'}
+                </button>
+                {mode === 'login' && (
+                  <>
+                    <br />
+                    <span className="text-amber-700">재가입하지 마세요</span>
+                    <span className="text-gray-400"> — 기존 학급·학생·글과 연결이 끊겨요.</span>
+                  </>
+                )}
+              </p>
               <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary inline-block">
                 Gemini API 키 발급 방법 →
               </Link>
