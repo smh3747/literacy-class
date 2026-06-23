@@ -1310,7 +1310,7 @@ export default function AdminHome() {
                           </td>
                           <td className="p-2">
                             {ms.total === 0 ? (
-                              <span className="text-xs text-gray-400">-</span>
+                              <span className="text-xs text-gray-400">{(c.student_count || 0) === 0 ? '- (학생 없음)' : '- (글 없음)'}</span>
                             ) : (
                               <div className="space-y-0.5">
                                 <div className="text-xs text-gray-700">
@@ -1871,7 +1871,7 @@ export default function AdminHome() {
           {/* 🆕 step155: 에러 로그 탭 */}
           {tab === 'errors' && (() => {
             const classInfoById = {}
-            classes.forEach(c => { classInfoById[c.id] = { name: c.name, teacher: c.teacher_profile?.realname || '' } })
+            classes.forEach(c => { classInfoById[c.id] = { name: c.name, teacher: c.teacher_profile?.realname || '', school: c.teacher_profile?.school || '' } })
             // 같은 message 연속 발생을 묶어서 (N회) 표기
             const grouped = []
             for (const e of errorLogs) {
@@ -1937,7 +1937,7 @@ export default function AdminHome() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleBadge(e.role)}`}>{e.role || 'unknown'}</span>
                           {e.class_id && classInfoById[e.class_id] && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                              {classInfoById[e.class_id].name}{classInfoById[e.class_id].teacher ? ` (담임 ${classInfoById[e.class_id].teacher})` : ''}
+                              {classInfoById[e.class_id].name}{classInfoById[e.class_id].school ? ` · ${classInfoById[e.class_id].school}` : ''}{classInfoById[e.class_id].teacher ? ` (담임 ${classInfoById[e.class_id].teacher})` : ''}
                             </span>
                           )}
                           {e.role === 'student' && e.user_id && logStudentNumbers[e.user_id] && (
