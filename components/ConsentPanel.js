@@ -26,10 +26,6 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
   const [introDraft, setIntroDraft] = useState('')
   const [savingNotice, setSavingNotice] = useState(false)
   const [toast, setToast] = useState('')
-  // 회색지대(동의 ✓는 켜졌는데 동의서 기록 없음 + 실명 노출) 학생
-  const [gray, setGray] = useState(null)        // null=미로드, []=없음, [{id,number,realname}]
-  const [grayBusy, setGrayBusy] = useState(false)
-  const [grayMsg, setGrayMsg] = useState('')
   const qrRef = useRef(null)
 
   // origin (NEXT_PUBLIC_SITE_URL 우선)
@@ -197,68 +193,6 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
     }
   }, [consentUrl])
 
-  // ── 회색지대 학생 로드 (담임 본인 학급) ──
-  const flashGray = (m) => { setGrayMsg(m); setTimeout(() => setGrayMsg(''), 3500) }
-  const loadGray = async () => {
-    if (!classInfo?.id) return
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) { setGray([]); return }
-      const res = await fetch('/api/consent-grayzone-list', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classId: classInfo.id, accessToken: session.access_token }),
-      })
-      const d = await res.json().catch(() => ({}))
-      setGray(res.ok && d.ok ? (d.students || []) : [])
-    } catch { setGray([]) }
-  }
-  useEffect(() => { loadGray() }, [classInfo?.id])
-
-  // 공용 처리 — consent-paper에 action 전달(teacher_confirm / lock)
-  const runGrayAction = async (ids, action) => {
-    if (readOnly || !ids || ids.length === 0) return null
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) { flashGray('세션이 만료됐어요. 새로고침 후 다시 시도해주세요.'); return null }
-    const res = await fetch('/api/consent-paper', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentIds: ids, accessToken: session.access_token, action }),
-    })
-    const d = await res.json().catch(() => ({}))
-    if (!res.ok || !d.ok) { flashGray(d.error || '처리에 실패했어요.'); return null }
-    return d.results || {}
-  }
-  const confirmOne = async (s) => {
-    if (readOnly) return
-    setGrayBusy(true)
-    const r = await runGrayAction([s.id], 'teacher_confirm')
-    if (r) { flashGray((r.confirmed || []).length ? `${s.realname} 확인 처리했어요` : `${s.realname}: 이미 처리됨(건너뜀)`); await loadGray() }
-    setGrayBusy(false)
-  }
-  const lockOne = async (s) => {
-    if (readOnly) return
-    setGrayBusy(true)
-    const r = await runGrayAction([s.id], 'lock')
-    if (r) { flashGray((r.relocked || []).length ? `${s.realname} 닉네임으로 가렸어요` : `${s.realname}: 처리 건너뜀`); await loadGray() }
-    setGrayBusy(false)
-  }
-  const lockAll = async () => {
-    if (readOnly || !gray || gray.length === 0) return
-    if (!confirm(`${gray.length}명 전원을 닉네임으로 가립니다. 진행할까요?`)) return
-    setGrayBusy(true)
-    const r = await runGrayAction(gray.map(s => s.id), 'lock')
-    if (r) { flashGray(`닉네임으로 가림 ${(r.relocked || []).length}명 · 건너뜀 ${(r.skipped || []).length}명`); await loadGray() }
-    setGrayBusy(false)
-  }
-  const confirmAll = async () => {
-    if (readOnly || !gray || gray.length === 0) return
-    const msg = `이 ${gray.length}명 전원의 종이 동의서를 실제로 받으셨나요?\n\n한 명이라도 아니라면 취소하고 학생별로 확인해주세요.\n확인 처리하면 실명이 노출 상태로 확정됩니다.`
-    if (!confirm(msg)) return   // 취소가 안전한 기본 — 강한 경고
-    setGrayBusy(true)
-    const r = await runGrayAction(gray.map(s => s.id), 'teacher_confirm')
-    if (r) { flashGray(`확인 처리 ${(r.confirmed || []).length}명 · 건너뜀 ${(r.skipped || []).length}명`); await loadGray() }
-    setGrayBusy(false)
-  }
-
   return (
     <div>
       {/* 왜 동의 (사실 기반) — 법적 안내, 가독성 강화(폰트·패딩·줄간격) */}
@@ -278,42 +212,6 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
           동의 완료 <strong className="text-primary">{stats.consented}</strong> / {stats.total}명
           {stats.locked > 0 && <span className="text-gray-400 ml-1">· 닉네임 표시(미동의) {stats.locked}명</span>}
         </p>
-      )}
-
-      {/* 회색지대 — 동의 증빙 확인 필요 (✓ 켜졌는데 동의서 기록 없음 + 실명 노출) */}
-      {gray && gray.length > 0 && (
-        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-3">
-          <p className="text-sm font-bold text-amber-900">⚠️ 동의 증빙 확인 필요 ({gray.length}명)</p>
-          <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-            <strong>✓는 켜져 있는데 동의서 기록이 없는 학생</strong>이에요. 종이 동의서를 실제로 받으셨다면 <strong>[확인]</strong>,
-            잘못 눌린 거라면 <strong>[다시 가리기]</strong>를 눌러주세요.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {gray.map(s => (
-              <li key={s.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-amber-200">
-                <span className="text-sm text-gray-800 min-w-0 truncate">
-                  {s.number ? <span className="text-gray-400 font-mono mr-1">{s.number}.</span> : null}
-                  {s.realname}
-                </span>
-                <span className="flex gap-1.5 flex-shrink-0">
-                  <button onClick={() => confirmOne(s)} disabled={readOnly || grayBusy}
-                    className="text-xs px-2.5 py-1 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">확인</button>
-                  <button onClick={() => lockOne(s)} disabled={readOnly || grayBusy}
-                    className="text-xs px-2.5 py-1 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50">다시 가리기</button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          {/* 일괄 — 비대칭(가리기는 가벼운 confirm, 확인은 강한 경고) */}
-          <div className="flex gap-2 mt-2 flex-wrap">
-            <button onClick={lockAll} disabled={readOnly || grayBusy}
-              className="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 disabled:opacity-50">↩ 모두 다시 가리기</button>
-            <button onClick={confirmAll} disabled={readOnly || grayBusy}
-              className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50">✓ 모두 확인 처리</button>
-          </div>
-          {readOnly && <p className="text-[11px] text-amber-700 mt-1">엿보기 모드에서는 처리할 수 없어요.</p>}
-          {grayMsg && <p className="text-xs text-amber-900 mt-2 bg-white rounded p-2 border border-amber-200">{grayMsg}</p>}
-        </div>
       )}
 
       {/* 동의 비밀번호 */}

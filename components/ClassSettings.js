@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import ConsentPanel from './ConsentPanel'
+import GrayZonePanel from './GrayZonePanel'
 
 export default function ClassSettings({ classInfo, onUpdate }) {
   const [saving, setSaving] = useState(false)
@@ -126,6 +127,7 @@ export default function ClassSettings({ classInfo, onUpdate }) {
           {/* 🆕 학부모 동의 (공용 컴포넌트 — 학생관리 B카드와 동일 로직) */}
           <div className="border-t border-gray-100 pt-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-2">🔒 학부모 동의 <span className="text-xs font-normal text-gray-400">(선택)</span></h4>
+            <GrayZonePanel classInfo={classInfo} />
             <ConsentPanel classInfo={classInfo} />
           </div>
 

@@ -10,6 +10,7 @@ import { supabase } from '../../../lib/supabase'
 import Header from '../../../components/Header'
 import ImpersonationBanner from '../../../components/ImpersonationBanner'
 import ConsentPanel from '../../../components/ConsentPanel'
+import GrayZonePanel from '../../../components/GrayZonePanel'
 import { getEffectiveProfile, withImpersonation } from '../../../lib/impersonation'
 
 export default function StudentsConsentPage() {
@@ -91,6 +92,9 @@ export default function StudentsConsentPage() {
             className="block bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
             📄 <strong>제출된 동의서 보기</strong> — 보호자명·동의일시·서명 확인
           </Link>
+
+          {/* 회색지대 배너 — 탭 분기 위 공통 영역(온라인·종이 양쪽에서 보임). 0명이면 안 뜸 */}
+          <GrayZonePanel classInfo={classInfo} readOnly={isImpersonating} />
 
           {/* 온라인 갈래 — ConsentPanel(왜동의/학운위/폴백 안내문 모두 이 안에 단일 출처) */}
           {mode === 'online' && classInfo && (
