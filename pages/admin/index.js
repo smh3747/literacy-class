@@ -93,6 +93,25 @@ export default function AdminHome() {
 
     // 학급별 담임 정보를 별도로 조회해서 매핑 (외래키 명시 안 함 - 더 안정적)
     const classes = classesRes.data || []
+    // 🆕 step251/252: PostgREST 기본 1000행 제한을 range 페이지 루프로 우회해 "전량" 수집(읽기 전용 헬퍼).
+    //   build(from,to)가 매번 새 쿼리를 만들어 range로 페이지를 받아 합친다. 두 집계 블록이 공유.
+    const PAGE_SIZE = 1000
+    const fetchAllPaged = async (build) => {
+      let from = 0, all = [], guard = 0
+      while (guard++ < 100) {  // 최대 10만행 가드 (무한 루프 방지)
+        const { data, error } = await build(from, from + PAGE_SIZE - 1)
+        if (error || !data || data.length === 0) break
+        all = all.concat(data)
+        if (data.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+      return all
+    }
+    const chunkArr = (arr, n) => {
+      const out = []
+      for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+      return out
+    }
     if (classes.length > 0) {
       const teacherIds = [...new Set(classes.map(c => c.teacher_id).filter(Boolean))]
       if (teacherIds.length > 0) {
@@ -107,28 +126,8 @@ export default function AdminHome() {
           }
         })
       }
-      // 학급별 학생 수 + 채점 모델 통계
-      // 🆕 step251: PostgREST 기본 1000행 제한을 range 페이지 루프로 우회해 "전량" 수집한다.
-      //   (이전엔 단일 select라 전체 학생>1000명일 때 뒤쪽 학급이 student_count=0 으로 잘못 표시됨)
+      // 학급별 학생 수 + 채점 모델 통계 (헬퍼 fetchAllPaged/chunkArr는 상위 스코프에서 정의)
       const classIds = classes.map(c => c.id)
-      const PAGE_SIZE = 1000
-      // 읽기 전용: build(from,to)가 매번 새 쿼리를 만들어 range로 페이지를 받아 합친다.
-      const fetchAllPaged = async (build) => {
-        let from = 0, all = [], guard = 0
-        while (guard++ < 100) {  // 최대 10만행 가드 (무한 루프 방지)
-          const { data, error } = await build(from, from + PAGE_SIZE - 1)
-          if (error || !data || data.length === 0) break
-          all = all.concat(data)
-          if (data.length < PAGE_SIZE) break
-          from += PAGE_SIZE
-        }
-        return all
-      }
-      const chunkArr = (arr, n) => {
-        const out = []
-        for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
-        return out
-      }
 
       // 학생 전량(id, class_id) — student_count와 model_stats가 이 한 배열을 함께 재사용
       const studentsWithClass = await fetchAllPaged((from, to) =>
@@ -212,34 +211,43 @@ export default function AdminHome() {
     const trashedClasses = classes.filter(c => c.deleted_at)
 
     // 🆕 학급별 제출 통계 + 마지막 활동 시각
+    // 🆕 step252: 학생/제출을 range 페이지 루프로 전량 수집(1000행 제한 우회). 상위 fetchAllPaged/chunkArr 재사용.
     const activeClassIds = activeClasses.map(c => c.id)
     if (activeClassIds.length > 0) {
-      // 학급에 속한 모든 학생 id
-      const { data: studentsForActivity } = await supabase.from('profiles')
-        .select('id, class_id').in('class_id', activeClassIds).eq('role', 'student')
+      // 학급에 속한 모든 학생 id (전량)
+      const studentsForActivity = await fetchAllPaged((from, to) =>
+        supabase.from('profiles').select('id, class_id')
+          .in('class_id', activeClassIds).eq('role', 'student').range(from, to))
       const studentToClass = {}
       ;(studentsForActivity || []).forEach(s => { studentToClass[s.id] = s.class_id })
       const allActiveStudentIds = (studentsForActivity || []).map(s => s.id)
 
       if (allActiveStudentIds.length > 0) {
-        // 제출물 카운트 + 최근 제출 시각 (학생 단위로 집계 후 학급 단위로 묶음)
-        const { data: subStats } = await supabase.from('submissions')
-          .select('user_id, created_at')
-          .in('user_id', allActiveStudentIds)
-          .order('created_at', { ascending: false })
+        // 제출물 전량 수집 (user_id IN 목록이 길어지지 않도록 1000개씩 끊어 range 루프). attempt 포함.
+        let subStats = []
+        for (const idChunk of chunkArr(allActiveStudentIds, 1000)) {
+          const part = await fetchAllPaged((from, to) =>
+            supabase.from('submissions')
+              .select('user_id, created_at, attempt')
+              .in('user_id', idChunk).range(from, to))
+          subStats = subStats.concat(part)
+        }
 
-        const classSubCount = {}     // { classId: 제출 수 }
+        const classSubCount = {}     // { classId: 전체 제출 수(수정본 포함) }
+        const classFirstCount = {}   // { classId: 첫 글 수(attempt=1) }
         const classLastActivity = {} // { classId: 최근 제출 시각 }
         ;(subStats || []).forEach(sub => {
           const cid = studentToClass[sub.user_id]
           if (!cid) return
           classSubCount[cid] = (classSubCount[cid] || 0) + 1
+          if ((sub.attempt || 1) === 1) classFirstCount[cid] = (classFirstCount[cid] || 0) + 1
           if (!classLastActivity[cid] || sub.created_at > classLastActivity[cid]) {
             classLastActivity[cid] = sub.created_at
           }
         })
         activeClasses.forEach(c => {
           c.submission_count = classSubCount[c.id] || 0
+          c.first_submission_count = classFirstCount[c.id] || 0
           c.last_activity_at = classLastActivity[c.id] || null
         })
       }
