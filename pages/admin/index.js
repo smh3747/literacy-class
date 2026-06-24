@@ -918,7 +918,7 @@ export default function AdminHome() {
       <Head><title>관리자 페이지 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
-        <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+        <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
           
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
