@@ -1,8 +1,19 @@
 /** @type {import('next').NextConfig} */
+const { execSync } = require('child_process')
 
 // 🆕 배포마다 고유 ID — Vercel 커밋 SHA 기반 (빌드 내내 고정)
 // Date.now()를 쓰면 API 함수 cold start 때 재평가되어 항상 불일치 → 배너 무한 표시 버그
-const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA || 'dev').slice(0, 12)
+// 1순위: Vercel이 주입하는 커밋 SHA / 2순위: 빌드 시점 git HEAD (로컬·시스템변수 미노출 폴백)
+function resolveBuildId() {
+  if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 12)
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim().slice(0, 12)
+  } catch (e) {
+    return 'dev'
+  }
+}
+const BUILD_ID = resolveBuildId()
 
 const nextConfig = {
   reactStrictMode: true,
