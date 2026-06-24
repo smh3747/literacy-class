@@ -624,8 +624,8 @@ export default function TeacherSubmissions() {
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
-        <main className={`mx-auto px-4 py-6 space-y-4 ${
-          view === 'studentDetail' ? 'max-w-4xl xl:max-w-[1600px] xl:px-8' : 'max-w-7xl'
+        <main className={`mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4 ${
+          view === 'studentDetail' ? 'max-w-4xl xl:max-w-[1600px]' : 'max-w-[1400px]'
         }`}>
           
           {view === 'topics' && (

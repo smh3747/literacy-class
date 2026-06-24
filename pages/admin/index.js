@@ -918,7 +918,7 @@ export default function AdminHome() {
       <Head><title>관리자 페이지 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
         <Header user={user} onLogout={logout} />
-        <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <main className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
           
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -1200,7 +1200,7 @@ export default function AdminHome() {
                                 )}
                               </td>
                               <td className="p-2 text-center align-middle" onClick={e => e.stopPropagation()}>
-                                <div className="flex flex-col sm:flex-row gap-1 justify-center">
+                                <div className="flex flex-wrap gap-1 justify-center">
                                   {/* 🆕 비밀번호 초기화 (비번 잊은 선생님 구제) */}
                                   {!t.is_banned && (
                                     <button onClick={() => resetTeacherPassword(t)}
@@ -2383,7 +2383,9 @@ function AdminSubmissionsInner() {
             </span>
           )}
         </h3>
-        <div className="flex items-center gap-2 flex-wrap">
+      </div>
+      {/* 🆕 step266: 컨트롤을 제목과 분리해 전체 폭에서 한 흐름으로 (검색 단독 줄빠짐 방지) */}
+      <div className="flex flex-wrap items-center gap-2">
           {/* 🆕 그룹화 모드 셀렉터 */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             <span className="text-xs text-gray-600 px-2">묶음:</span>
@@ -2466,7 +2468,6 @@ function AdminSubmissionsInner() {
             placeholder="🔍 담임·학교·학생 검색"
             className="text-sm border border-gray-200 rounded p-2 w-[170px]" />
         </div>
-      </div>
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8 text-center">로딩 중...</p>
