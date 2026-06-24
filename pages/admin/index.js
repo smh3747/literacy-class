@@ -1142,16 +1142,16 @@ export default function AdminHome() {
                         }, null)
                         const isExpanded = expandedTeacherId === t.id
 
-                        // 활동 라벨(마지막 글 활동 기준) — step253: 문구 명확화
+                        // 활동 라벨(마지막 글 활동 기준) — step253: 문구 명확화 / step263: 뱃지 색상
                         let activityLabel = '활동 기록 없음'
-                        let activityColor = 'text-gray-400'
+                        let activityBadge = 'bg-gray-100 text-gray-400'
                         if (lastActivity) {
                           const diffDays = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
-                          if (diffDays === 0) { activityLabel = '오늘 활동'; activityColor = 'text-green-700' }
-                          else if (diffDays === 1) { activityLabel = '어제 활동'; activityColor = 'text-green-700' }
-                          else if (diffDays <= 7) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-blue-700' }
-                          else if (diffDays <= 30) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-gray-600' }
-                          else { activityLabel = `마지막 활동 ${diffDays}일 전`; activityColor = 'text-amber-700' }
+                          if (diffDays === 0) { activityLabel = '오늘 활동'; activityBadge = 'bg-green-100 text-green-700' }
+                          else if (diffDays === 1) { activityLabel = '어제 활동'; activityBadge = 'bg-green-100 text-green-700' }
+                          else if (diffDays <= 7) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-blue-100 text-blue-700' }
+                          else if (diffDays <= 30) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-gray-100 text-gray-600' }
+                          else { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-amber-100 text-amber-700' }
                         }
 
                         // 🆕 step254: 마지막 로그인(글 활동과 별개 신호 — auth.users.last_sign_in_at)
@@ -1167,39 +1167,39 @@ export default function AdminHome() {
                             <tr
                               className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${t.is_banned ? 'bg-red-50' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
                               onClick={() => setExpandedTeacherId(isExpanded ? null : t.id)}>
-                              <td className="p-2 text-gray-400 select-none">{isExpanded ? '▼' : '▶'}</td>
-                              <td className="p-2 font-medium whitespace-nowrap">{t.realname}</td>
-                              <td className="p-2 text-gray-600 whitespace-nowrap">{t.school || '-'}</td>
-                              <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap">{t.username}</td>
-                              <td className="p-2 text-gray-600 whitespace-nowrap">
+                              <td className="p-2 text-gray-400 select-none align-middle">{isExpanded ? '▼' : '▶'}</td>
+                              <td className="p-2 font-medium whitespace-nowrap align-middle">{t.realname}</td>
+                              <td className="p-2 text-gray-600 whitespace-nowrap align-middle">{t.school || '-'}</td>
+                              <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap align-middle">{t.username}</td>
+                              <td className="p-2 text-gray-600 whitespace-nowrap align-middle">
                                 {myClasses.length === 0 ? (
                                   <span className="text-xs text-gray-400">운영 학급 없음</span>
                                 ) : (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="text-xs whitespace-nowrap">
-                                      🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
-                                    </span>
-                                    <span className={`text-[11px] ${activityColor}`}>{activityLabel}</span>
-                                  </div>
+                                  <span className="text-xs whitespace-nowrap inline-flex items-center gap-1.5">
+                                    🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${activityBadge}`}>{activityLabel}</span>
+                                  </span>
                                 )}
                               </td>
-                              <td className="p-2">
+                              <td className="p-2 align-middle">
                                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${t.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                                   {t.role === 'admin' ? '관리자' : '교사'}
                                 </span>
                               </td>
-                              <td className="p-2 text-xs text-gray-500">
-                                {toKSTDate(t.created_at)}
-                                <div className="text-[11px] text-gray-400">🔑 {loginLabel}</div>
+                              <td className="p-2 text-xs text-gray-500 whitespace-nowrap align-middle">
+                                <div className="flex flex-col gap-0.5">
+                                  <span>{toKSTDate(t.created_at).slice(2).replace(/-/g, '.')}</span>
+                                  <span className="w-fit rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-[11px]">🔑 {loginLabel}</span>
+                                </div>
                               </td>
-                              <td className="p-2">
+                              <td className="p-2 align-middle">
                                 {t.is_banned ? (
                                   <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">차단됨</span>
                                 ) : (
                                   <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">정상</span>
                                 )}
                               </td>
-                              <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
+                              <td className="p-2 text-center align-middle" onClick={e => e.stopPropagation()}>
                                 <div className="flex flex-col sm:flex-row gap-1 justify-center">
                                   {/* 🆕 비밀번호 초기화 (비번 잊은 선생님 구제) */}
                                   {!t.is_banned && (
