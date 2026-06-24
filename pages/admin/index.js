@@ -2420,7 +2420,25 @@ function AdminSubmissionsInner() {
               </button>
             ))}
           </div>
-          {/* 학급 필터 — 항상 렌더(자리·폭 고정). 학급별 묶음일 땐 비활성으로 레이아웃 점프 제거 */}
+          {/* 🆕 날짜 필터 (전체/오늘/최근7일/직접날짜) — 그룹화·학급 필터와 공존 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <span className="text-xs text-gray-600 px-1.5">기간:</span>
+            {[{ v: 'all', l: '전체' }, { v: 'today', l: '오늘' }, { v: 'week', l: '최근7일' }].map(opt => (
+              <button key={opt.v}
+                onClick={() => { setDateFilter(opt.v); setCustomDate('') }}
+                className={`text-xs px-2 py-1 rounded ${
+                  dateFilter === opt.v
+                    ? 'bg-white shadow-sm font-semibold text-primary'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}>
+                {opt.l}
+              </button>
+            ))}
+            <input type="date" value={customDate}
+              onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
+              className="text-xs border border-gray-200 rounded p-1" />
+          </div>
+          {/* 학급 필터 — 항상 렌더(자리·폭 고정). 기간·검색과 한 그룹(맨 오른쪽). 학급별 묶음일 땐 비활성으로 레이아웃 점프 제거 */}
             <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
               disabled={groupBy === 'class'}
               className={`text-sm border border-gray-200 rounded p-2 w-[220px] ${groupBy === 'class' ? 'opacity-40 cursor-not-allowed' : ''}`}>
@@ -2443,24 +2461,6 @@ function AdminSubmissionsInner() {
                 </optgroup>
               ))}
             </select>
-          {/* 🆕 날짜 필터 (전체/오늘/최근7일/직접날짜) — 그룹화·학급 필터와 공존 */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <span className="text-xs text-gray-600 px-1.5">기간:</span>
-            {[{ v: 'all', l: '전체' }, { v: 'today', l: '오늘' }, { v: 'week', l: '최근7일' }].map(opt => (
-              <button key={opt.v}
-                onClick={() => { setDateFilter(opt.v); setCustomDate('') }}
-                className={`text-xs px-2 py-1 rounded ${
-                  dateFilter === opt.v
-                    ? 'bg-white shadow-sm font-semibold text-primary'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}>
-                {opt.l}
-              </button>
-            ))}
-            <input type="date" value={customDate}
-              onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
-              className="text-xs border border-gray-200 rounded p-1" />
-          </div>
           {/* 🆕 통합 검색 (담임·학교·학생 표시이름) — 로드된 목록 내 클라 필터 */}
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="🔍 담임·학교·학생 검색"
