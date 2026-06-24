@@ -625,7 +625,7 @@ export default function TeacherSubmissions() {
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
         <main className={`mx-auto px-4 py-6 space-y-4 ${
-          view === 'studentDetail' ? 'max-w-4xl xl:max-w-[1600px] xl:px-8' : 'max-w-4xl'
+          view === 'studentDetail' ? 'max-w-4xl xl:max-w-[1600px] xl:px-8' : 'max-w-screen-2xl'
         }`}>
           
           {view === 'topics' && (
