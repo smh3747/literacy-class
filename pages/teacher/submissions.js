@@ -425,7 +425,7 @@ export default function TeacherSubmissions() {
     setRegradeResult(null)
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser()
-      const result = await regradeSubmission(sub, selectedTopic, authUser?.id)
+      const result = await regradeSubmission(sub, selectedTopic, authUser?.id, { withExample: true })
       if (!result.success) {
         alert('재평가 실패: ' + result.error)
       } else {
