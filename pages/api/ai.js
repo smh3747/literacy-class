@@ -138,7 +138,7 @@ export default async function handler(req, res) {
       }
       prompt = gradingPrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
-      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0.2 }
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
 
     } else if (type === 'rewriteGrading') {
       const { topic, rewriteEssay, rubrics } = payload || {}
@@ -147,7 +147,7 @@ export default async function handler(req, res) {
       }
       prompt = rewriteGradingPrompt({ topic, rewriteEssay, rubrics })
       schema = SCHEMAS.essayFeedback
-      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0.2 }
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
 
     } else if (type === 'regrade') {
       const { topic, essay, rubrics } = payload || {}
@@ -156,7 +156,7 @@ export default async function handler(req, res) {
       }
       prompt = regradePrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
-      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0.2 }
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
 
     } else if (type === 'rubricHint') {
       const { topic, rubrics } = payload || {}
