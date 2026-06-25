@@ -769,20 +769,18 @@ export default function TeacherSubmissions() {
                     if (g.items.length === 0) {
                       return (
                         <div key={g.profile.id}
-                          className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex justify-between items-center opacity-90">
-                          <div className="flex items-center gap-2">
-                            {g.profile.number && (
-                              <span className="text-xs text-gray-500 font-mono w-10 text-center">{g.profile.number}번</span>
-                            )}
-                            <div>
-                              <div className="font-medium text-sm text-gray-800">
-                                {displayStudentName(g.profile)}
-                                <span className="ml-2 text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
-                              </div>
-                              <div className="text-xs text-gray-500 mt-0.5">@{g.profile.username}</div>
+                          className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 opacity-90">
+                          {g.profile.number && (
+                            <span className="text-xs text-gray-500 font-mono w-10 text-center shrink-0">{g.profile.number}번</span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm text-gray-800">
+                              {displayStudentName(g.profile)}
+                              <span className="ml-2 text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
                             </div>
+                            <div className="text-xs text-gray-500 mt-0.5">@{g.profile.username}</div>
                           </div>
-                          <div className="text-xs text-amber-700">-</div>
+                          <div className="text-xs text-amber-700 w-32 text-right shrink-0">-</div>
                         </div>
                       )
                     }
@@ -796,30 +794,28 @@ export default function TeacherSubmissions() {
                     const noComment = !sorted.some(s => s.teacher_comment)  // 🆕 코멘트 안 단 학생
                     return (
                       <button key={g.profile.id} onClick={() => openStudent(g)}
-                        className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          {g.profile.number && (
-                            <span className="text-xs text-gray-500 font-mono w-10 text-center">{g.profile.number}번</span>
-                          )}
-                          <div>
-                            <div className="font-medium text-sm">
-                              {displayStudentName(g.profile)}
-                              {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
-                              {sorted.some(s => s.is_fallback_graded) && (
-                                <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
-                                  🔁 보조 채점
-                                </span>
-                              )}
-                              {noComment && (
-                                <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full" title="아직 담임 코멘트를 안 달았어요">
-                                  💬 코멘트 전
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
+                        className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition flex items-center gap-3">
+                        {g.profile.number && (
+                          <span className="text-xs text-gray-500 font-mono w-10 text-center shrink-0">{g.profile.number}번</span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm">
+                            {displayStudentName(g.profile)}
+                            {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
+                            {sorted.some(s => s.is_fallback_graded) && (
+                              <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
+                                🔁 보조 채점
+                              </span>
+                            )}
+                            {noComment && (
+                              <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full" title="아직 담임 코멘트를 안 달았어요">
+                                💬 코멘트 전
+                              </span>
+                            )}
                           </div>
+                          <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
                         </div>
-                        <div className="text-right text-xs">
+                        <div className="text-right text-xs w-32 shrink-0">
                           {isImproved ? (
                             <>
                               <div className="text-gray-500">첫 {first.total_score}점</div>
