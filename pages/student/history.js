@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
+import { findOriginalRange } from '../../lib/koreanRules'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -48,12 +49,21 @@ function applyGrammar(essayText, corrections) {
     const reason = c.reason || c.type || ''
     if (!orig) return
     let from = 0
+    let placed = false
     while (true) {
       const idx = essayText.indexOf(orig, from)
       if (idx === -1) break
       const overlap = matches.some(m => idx < m.end && idx + orig.length > m.start)
-      if (!overlap) { matches.push({ start: idx, end: idx + orig.length, orig, corr, reason }); break }
+      if (!overlap) { matches.push({ start: idx, end: idx + orig.length, orig, corr, reason }); placed = true; break }
       from = idx + 1
+    }
+    // 🆕 정확 일치 실패 시 공백 허용 매칭 (위치 불확실하면 긋지 않음)
+    if (!placed) {
+      const range = findOriginalRange(essayText, orig)
+      if (range && !range.exact) {
+        const overlap = matches.some(m => range.start < m.end && range.end > m.start)
+        if (!overlap) { matches.push({ start: range.start, end: range.end, orig: essayText.slice(range.start, range.end), corr, reason }) }
+      }
     }
   })
   matches.sort((a,b) => a.start - b.start)

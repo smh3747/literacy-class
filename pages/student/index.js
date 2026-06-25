@@ -13,6 +13,7 @@ import StudentTutorial from '../../components/StudentTutorial'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
+import { findOriginalRange } from '../../lib/koreanRules'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -120,17 +121,30 @@ function applyGrammarHighlights(essayText, corrections) {
     const correction = c.correction || c.fixed || c.suggestion || ''
     const reason = c.reason || c.type || c.category || ''
     if (!original) return
-    
+
     let from = 0
+    let placed = false
     while (true) {
       const idx = essayText.indexOf(original, from)
       if (idx === -1) break
       const overlaps = matches.some(m => idx < m.end && idx + original.length > m.start)
       if (!overlaps) {
         matches.push({ start: idx, end: idx + original.length, original, correction, reason })
+        placed = true
         break
       }
       from = idx + 1
+    }
+    // 🆕 정확 일치로 못 그었으면 공백 허용 매칭으로 한 번 더 (위치 불확실하면 긋지 않음)
+    if (!placed) {
+      const range = findOriginalRange(essayText, original)
+      if (range && !range.exact) {
+        const overlaps = matches.some(m => range.start < m.end && range.end > m.start)
+        if (!overlaps) {
+          const actual = essayText.slice(range.start, range.end)
+          matches.push({ start: range.start, end: range.end, original: actual, correction, reason })
+        }
+      }
     }
   })
 

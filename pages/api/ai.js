@@ -217,7 +217,7 @@ export default async function handler(req, res) {
       if (!essay) return res.status(400).json({ error: '글 내용이 필요해요' })
       prompt = grammarOnlyPrompt({ essay })
       schema = SCHEMAS.grammarOnly
-      opts = { taskType: 'quality', maxTokens: 2000 }
+      opts = { taskType: 'grammar', maxTokens: 2000 }
 
     } else if (type === 'feedbackSummary') {
       const { feedbacks } = payload || {}

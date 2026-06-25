@@ -1,6 +1,7 @@
 import useGrammarTooltip from '../lib/useGrammarTooltip'
 import { toKST } from '../lib/timeFormat'
 import { splitFeedbackItems } from '../lib/feedbackFormat'
+import { findOriginalRange } from '../lib/koreanRules'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -25,7 +26,6 @@ export function filterValidCorrections(essayText, corrections) {
     const reason = (c.reason || c.type || c.category || '').toLowerCase()
 
     if (!original) continue
-    if (!essayText.includes(original)) continue
     if (reason.includes('마침표') || reason.includes('문장 끝') || reason.includes('온점') || reason.includes('찍어')) {
       if (/[.!?。]$/.test(original)) continue
     }
@@ -36,7 +36,7 @@ export function filterValidCorrections(essayText, corrections) {
     if (seen.has(key)) continue
 
     // 🆕 본문에서 다른 claimed 구간과 안 겹치는 자리를 찾을 수 있는지 검사
-    // applyGrammarHighlights와 같은 로직: 첫 번째로 안 겹치는 위치 찾기
+    // applyGrammarHighlights와 같은 로직: 정확 일치 우선(겹침 회피), 없으면 공백 허용 매칭
     let placedStart = -1
     let placedEnd = -1
     let from = 0
@@ -51,6 +51,14 @@ export function filterValidCorrections(essayText, corrections) {
         break
       }
       from = idx + 1
+    }
+    // 🆕 정확 일치로 못 잡으면 공백 허용 매칭 (공백 차이로 멀쩡한 교정이 개수에서 빠지던 것 복구)
+    if (placedStart === -1) {
+      const range = findOriginalRange(essayText, original)
+      if (range && !range.exact) {
+        const overlaps = claimed.some(([s, e]) => range.start < e && range.end > s)
+        if (!overlaps) { placedStart = range.start; placedEnd = range.end }
+      }
     }
     // 자리 못 찾으면 실제 화면에 밑줄 안 그려지므로 카운트에서도 제외
     if (placedStart === -1) continue
@@ -78,15 +86,28 @@ export function applyGrammarHighlights(essayText, corrections) {
     if (!original) return
 
     let from = 0
+    let placed = false
     while (true) {
       const idx = essayText.indexOf(original, from)
       if (idx === -1) break
       const overlaps = matches.some(m => idx < m.end && idx + original.length > m.start)
       if (!overlaps) {
         matches.push({ start: idx, end: idx + original.length, original, correction, reason })
+        placed = true
         break
       }
       from = idx + 1
+    }
+    // 🆕 정확 일치 실패 시 공백 허용 매칭 (위치 불확실하면 긋지 않음)
+    if (!placed) {
+      const range = findOriginalRange(essayText, original)
+      if (range && !range.exact) {
+        const overlaps = matches.some(m => range.start < m.end && range.end > m.start)
+        if (!overlaps) {
+          const actual = essayText.slice(range.start, range.end)
+          matches.push({ start: range.start, end: range.end, original: actual, correction, reason })
+        }
+      }
     }
   })
 
