@@ -1059,7 +1059,7 @@ export default function TeacherSubmissions() {
                     )}
                     {/* 🆕 맞춤법 AI 보조 안내 + 다시 검사(재평가) 배너 — 기존 regradeOne 재사용 */}
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2 flex-wrap">
-                      <p className="text-[11px] text-amber-800 leading-snug flex-1 min-w-[140px]">{GRAMMAR_NOTICE_TEACHER}</p>
+                      <p className="text-sm text-amber-800 leading-snug flex-1 min-w-[140px]">{GRAMMAR_NOTICE_TEACHER}</p>
                       <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
                         disabled={regrading === s.id || bulkRegrading}
                         className="text-xs bg-amber-600 text-white px-2.5 py-1 rounded-lg hover:bg-amber-700 transition disabled:opacity-50 whitespace-nowrap">

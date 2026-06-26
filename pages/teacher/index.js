@@ -491,8 +491,8 @@ export default function TeacherHome() {
                       isDanger ? 'text-red-800' : 'text-amber-800'
                     }`}>
                       {isDanger
-                        ? `한도에 가까워졌어요. 한도 도달 시 자동으로 다른 모델로 전환됩니다. 자정(한국 시간 ${getKoreanResetTime()})에 자동 리셋돼요.`
-                        : '사용량이 많아지고 있어요. 한도 도달 시 자동으로 다른 모델로 전환되니 안심하셔도 돼요.'}
+                        ? `한도에 가까워졌어요. 자정(한국 시간 ${getKoreanResetTime()})에 자동으로 리셋돼요.`
+                        : '사용량이 많아지고 있어요. 자정에 리셋되니 너무 걱정 마세요.'}
                     </p>
                   </div>
                 </div>

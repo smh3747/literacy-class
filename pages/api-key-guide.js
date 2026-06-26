@@ -247,7 +247,7 @@ export default function ApiKeyGuide() {
             <div className="text-sm space-y-2">
               <p>AI 채점에 드는 비용은 구글의 <strong>무료 한도</strong>로 충분해서, 따로 돈이 나가지 않아요. (선생님이 등록한 키로 무료 한도 안에서 작동해요.)</p>
               <p className="text-gray-600">
-                Google이 정한 일일 한도가 있긴 하지만, 우리 앱은 한도 도달 시 자동으로 다른 모델로 전환되어 학생들이 끊김 없이 사용할 수 있도록 설계되어 있어요.
+                Google이 정한 일일 한도가 있긴 하지만, 학급 단위로 쓰기엔 넉넉해서 끊김 없이 사용할 수 있어요.
               </p>
               <p className="text-gray-600 text-xs">
                 💡 학급 25명이 매일 글쓰기 + 수정해도 한도 안에서 안정적으로 운영 가능해요.

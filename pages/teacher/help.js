@@ -108,7 +108,7 @@ export default function TeacherHelp() {
       title: '⚠️ 문제 해결',
       content: [
         { q: '"403 PERMISSION_DENIED" 오류', a: 'API 키가 차단된 상태. 학교 계정으로 발급한 키일 가능성 높아요. 개인 Gmail로 새 키 발급.' },
-        { q: '"429 Too Many Requests" 오류', a: '앱이 자동으로 잠시 기다렸다 재시도하거나 다른 모델로 전환하니, 보통 그대로 두면 처리돼요. 시간을 분산할 필요 없어요.' },
+        { q: '"429 Too Many Requests" 오류', a: '앱이 자동으로 잠시 기다렸다 재시도하니, 보통 그대로 두면 처리돼요. 시간을 분산할 필요 없어요.' },
         { q: '"503 Service Unavailable" 오류', a: 'Gemini 서버 일시 과부하. 30초~1분 후 재시도하면 보통 풀려요.' },
         { q: '"422" 오류 (회원가입)', a: '대부분 이미 가입된 아이디. "로그인" 탭으로 변경하세요. 또는 비번 6자 미만일 때.' },
         { q: '비밀번호 초기화가 안 돼요', a: '"SUPABASE_SERVICE_ROLE_KEY가 없다"는 메시지면 Vercel 환경변수에 추가 필요. 운영자에게 문의.' },
