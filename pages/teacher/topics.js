@@ -116,6 +116,8 @@ export default function TopicsPage() {
   const [logsLoading, setLogsLoading] = useState(false)
   // 🆕 마지막에 선택된 추천 로그 ID (주제 등록 시 link 위해)
   const [lastSelectedLogId, setLastSelectedLogId] = useState(null)
+  // 🆕 다른 선생님 공유 주제를 가져왔을 때의 출처 { logId, index } (등록 완료 시 topic_copies 기록용)
+  const [copiedSource, setCopiedSource] = useState(null)
   // 편집 모드 (특정 주제 수정 중인지)
   const [editingTopicId, setEditingTopicId] = useState(null)
 
@@ -518,6 +520,21 @@ export default function TopicsPage() {
           } catch(e) { console.warn('로그 연결 실패:', e) }
           setLastSelectedLogId(null)
         }
+        // 🆕 다른 선생님 공유 주제를 가져와 등록한 경우 출처 기록 (집계용 — 화면 변화 없음)
+        // 새 주제는 독립 유지(resulting_topic_id 재연결 안 함). 기록 실패는 등록 흐름을 막지 않음.
+        if (!error && r.data?.id && copiedSource?.logId) {
+          try {
+            const { error: copyErr } = await supabase.from('topic_copies').insert({
+              source_log_id: copiedSource.logId,
+              source_index: copiedSource.index,
+              copied_by_teacher_id: user.id,
+              copied_topic_id: r.data.id,
+            })
+            // UNIQUE 중복 등은 무시(같은 교사 재가져오기) — 등록은 정상 완료
+            if (copyErr) console.warn('출처 기록 건너뜀(등록은 정상):', copyErr.message)
+          } catch(e) { console.warn('출처 기록 예외(등록은 정상):', e) }
+          setCopiedSource(null)
+        }
       }
 
       if (error) throw error
@@ -748,6 +765,9 @@ export default function TopicsPage() {
     setTitle(sug.title)
     setDesc(sug.description || '')
     setLastSelectedLogId(null)
+    // 🆕 "다른 선생님" 공유 카드에서 온 경우만 출처 기억 (내 추천/직접작성은 null)
+    // sourceIndex는 0일 수 있으니 logId 존재 여부로 판정
+    setCopiedSource(sug.sourceLogId ? { logId: sug.sourceLogId, index: sug.sourceIndex } : null)
 
     if (!hasApiKey) {
       // 평가기준 없이도 폼은 채워짐
@@ -1872,6 +1892,8 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
           description: picked.description,
           category: picked.category,
           usedDate: log.resulting_topic?.date,
+          sourceLogId: log.id,                 // 🆕 가져오기 출처(집계용)
+          sourceIndex: log.selected_index,
         })
         seen.add(log.selected_index)
       }
@@ -1887,6 +1909,8 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
         title: s.title,
         description: s.description,
         category: s.category,
+        sourceLogId: log.id,                   // 🆕 가져오기 출처(집계용)
+        sourceIndex: idx,
       })
       seen.add(idx)
     }
@@ -1947,7 +1971,9 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
                   onClick={() => onSelect?.({
                     title: item.title,
                     description: item.description,
-                    category: item.category
+                    category: item.category,
+                    sourceLogId: item.sourceLogId,   // 🆕 공유 카드일 때만 존재
+                    sourceIndex: item.sourceIndex
                   })}
                   disabled={generating}
                   className="text-left bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50 rounded-lg p-2 transition disabled:opacity-50 disabled:cursor-not-allowed">

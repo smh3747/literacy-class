@@ -94,6 +94,8 @@ export default function SuggestionLogPanel({
           category: picked.category,
           createdAt: log.created_at,
           usedDate: log.resulting_topic?.date,
+          sourceLogId: log.id,                 // 🆕 가져오기 출처(집계용)
+          sourceIndex: log.selected_index,
         })
         seen.add(log.selected_index)
       }
@@ -110,6 +112,8 @@ export default function SuggestionLogPanel({
         description: s.description,
         category: s.category,
         createdAt: log.created_at,
+        sourceLogId: log.id,                   // 🆕 가져오기 출처(집계용)
+        sourceIndex: idx,
       })
       seen.add(idx)
     }
@@ -227,7 +231,9 @@ export default function SuggestionLogPanel({
                           onSelect?.({
                             title: item.title,
                             description: item.description,
-                            category: item.category
+                            category: item.category,
+                            sourceLogId: item.sourceLogId,   // 🆕 공유 카드일 때만 존재
+                            sourceIndex: item.sourceIndex
                           })
                         }}
                         disabled={disabled}
