@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
 import { findOriginalRange } from '../../lib/koreanRules'
+import { GRAMMAR_NOTICE_TEACHER } from '../../lib/notices'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
@@ -1056,6 +1057,15 @@ export default function TeacherSubmissions() {
                         맞춤법/띄어쓰기 {s.corrections.length}개
                       </span>
                     )}
+                    {/* 🆕 맞춤법 AI 보조 안내 + 다시 검사(재평가) 배너 — 기존 regradeOne 재사용 */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2 flex-wrap">
+                      <p className="text-[11px] text-amber-800 leading-snug flex-1 min-w-[140px]">{GRAMMAR_NOTICE_TEACHER}</p>
+                      <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
+                        disabled={regrading === s.id || bulkRegrading}
+                        className="text-xs bg-amber-600 text-white px-2.5 py-1 rounded-lg hover:bg-amber-700 transition disabled:opacity-50 whitespace-nowrap">
+                        {regrading === s.id ? '🔄 평가 중...' : '🔄 다시 평가하기'}
+                      </button>
+                    </div>
                     <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap ${
                       ordered.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
                     }`}

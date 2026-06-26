@@ -14,6 +14,7 @@ import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
+import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -1238,6 +1239,7 @@ export default function StudentHome() {
                       {feedbackResult.corrections?.length > 0 && (
                         <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하거나 클릭하면 올바른 표기를 볼 수 있어요</p>
                       )}
+                      <p className="text-[11px] text-gray-400 mt-1 leading-snug">{GRAMMAR_NOTICE_STUDENT}</p>
                     </div>
 
                     {/* 점수 막대 + 점수 근거 (와이프 피드백: 왜 감점됐는지 학생이 납득해야 함) */}

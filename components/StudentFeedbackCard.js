@@ -2,6 +2,7 @@ import useGrammarTooltip from '../lib/useGrammarTooltip'
 import { toKST } from '../lib/timeFormat'
 import { splitFeedbackItems } from '../lib/feedbackFormat'
 import { findOriginalRange } from '../lib/koreanRules'
+import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -373,6 +374,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
               </li>
             ))}
           </ul>
+          <p className="text-[11px] text-red-700/70 mt-2 leading-snug">{GRAMMAR_NOTICE_STUDENT}</p>
         </div>
       )}
 
