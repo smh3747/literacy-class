@@ -120,6 +120,9 @@ export default function TopicsPage() {
   const [copiedSource, setCopiedSource] = useState(null)
   // 🆕 손제작 주제를 다른 선생님 추천 풀에 공유할지 (옵트인) — 켜면 등록 시 합성 추천 로그 생성
   const [shareToPool, setShareToPool] = useState(false)
+  // 🆕 step278: 체크 없이 등록한 손제작 주제에 대해 등록 직후 공유 여부 1회 확인 { topicId, title, description }
+  const [sharePrompt, setSharePrompt] = useState(null)
+  const [dontAskShare, setDontAskShare] = useState(false) // 이번 세션 한정 "다시 묻지 않기"
   // 편집 모드 (특정 주제 수정 중인지)
   const [editingTopicId, setEditingTopicId] = useState(null)
 
@@ -552,6 +555,11 @@ export default function TopicsPage() {
             })
             if (shareErr) console.warn('풀 공유 건너뜀(등록은 정상):', shareErr.message)
           } catch(e) { console.warn('풀 공유 예외(등록은 정상):', e) }
+        }
+        // 🆕 step278: 체크 없이 등록한 손제작 주제면 등록 직후 1회 공유 여부 확인
+        // (폼이 곧 리셋되므로 title/description을 함께 보관)
+        if (!error && r.data?.id && !lastSelectedLogId && !shareToPool && !dontAskShare) {
+          setSharePrompt({ topicId: r.data.id, title: title.trim(), description: desc.trim() })
         }
       }
 
@@ -1641,12 +1649,12 @@ export default function TopicsPage() {
 
               {/* 🆕 손제작 주제 추천 풀 공유 (옵트인) — 새 주제 등록 시에만 */}
               {!editingTopicId && !lastSelectedLogId && (
-                <div className="border border-gray-200 rounded-lg p-3">
+                <div className="border-2 border-blue-300 bg-blue-50 rounded-lg p-3">
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={shareToPool}
                       onChange={e => setShareToPool(e.target.checked)}
-                      className="w-4 h-4" />
-                    <span className="text-sm font-medium">🌐 이 주제를 다른 선생님 추천 풀에 공유</span>
+                      className="w-5 h-5 accent-blue-600" />
+                    <span className="text-sm font-semibold text-blue-900">🌐 이 주제를 다른 선생님 추천 풀에 공유</span>
                   </label>
                   <p className="text-xs text-gray-500 mt-2">
                     💡 주제(제목·설명)만 다른 선생님께 공유돼요. 학생 글·이름·평가기준은 공유되지 않아요.
@@ -1666,6 +1674,48 @@ export default function TopicsPage() {
               </button>
             </div>
           </div>
+          )}
+
+          {/* 🆕 step278: 체크 없이 등록한 손제작 주제 — 등록 직후 공유 여부 확인 (고정 모달) */}
+          {sharePrompt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-xl">
+                <h3 className="text-base font-bold text-blue-900 mb-2">🌐 방금 만든 주제, 다른 선생님께도 공유할까요?</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  주제(제목·설명)만 공유돼요. 학생 글·이름·평가기준은 공유되지 않아요.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { error: shareErr } = await supabase.from('topic_suggestion_logs').insert({
+                          teacher_id: user.id,
+                          class_id: classInfo?.id ?? null,
+                          suggestions: [{ title: sharePrompt.title, description: sharePrompt.description, category: '직접 작성' }],
+                          selected_index: 0,
+                          resulting_topic_id: sharePrompt.topicId,
+                          model_used: null,
+                        })
+                        if (shareErr) console.warn('풀 공유 건너뜀:', shareErr.message)
+                      } catch(e) { console.warn('풀 공유 예외:', e) }
+                      setSharePrompt(null)
+                    }}
+                    className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-semibold">
+                    🌐 공유하기
+                  </button>
+                  <button
+                    onClick={() => setSharePrompt(null)}
+                    className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">
+                    아니요
+                  </button>
+                  <button
+                    onClick={() => { setDontAskShare(true); setSharePrompt(null) }}
+                    className="w-full py-1 text-gray-400 text-xs">
+                    다시 묻지 않기
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
 
