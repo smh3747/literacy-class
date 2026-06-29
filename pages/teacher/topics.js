@@ -961,6 +961,23 @@ export default function TopicsPage() {
     }
   }
 
+  // 🆕 step279: 등록 주제 공유 취소 (추천 풀에서 내리기)
+  // - DELETE 금지(topic_copies가 source_log_id ON DELETE CASCADE라 행 삭제 시
+  //   가져간 추적이 연쇄삭제됨). resulting_topic_id=null로 무력화 → 추적·FK 보존.
+  // - 손제작/AI 구분 없이 resulting_topic_id로 공유 중인 주제면 동일하게 취소 가능.
+  const cancelTopicShare = async (topicId) => {
+    if (!topicId || !user?.id) return
+    if (!confirm('이 주제를 추천 풀에서 내릴까요? 이미 가져간 선생님 자료는 그대로예요.')) return
+    try {
+      const { error } = await supabase.from('topic_suggestion_logs')
+        .update({ resulting_topic_id: null, is_shared: false, shared_indexes: [] })
+        .eq('resulting_topic_id', topicId)
+        .eq('teacher_id', user.id)
+      if (error) throw error
+      await Promise.all([ loadTopics(user.id, classInfo?.id), loadSuggestionLogs(user.id) ])
+    } catch(e) { alert('공유 취소 실패: ' + e.message) }
+  }
+
   // 역방향 기능: 선생님이 주제만 입력 → AI가 설명 + 평가기준 자동 생성
   const generateFromTopic = async () => {
     if (!title.trim()) {
@@ -1734,7 +1751,11 @@ export default function TopicsPage() {
               const futureTopics = topics.filter(t => t.date > today)
               const pastTopics = topics.filter(t => t.date < today)
 
+              // 🆕 step279: 추천 풀에 공유 중인 주제 id 집합 (배지·취소 버튼용)
+              const sharedTopicIds = new Set((suggestionLogs || []).filter(l => l.resulting_topic_id).map(l => l.resulting_topic_id))
+
               const renderTopic = (t) => {
+                const isShared = sharedTopicIds.has(t.id)
                 const submitted = t.submitted_count || 0
                 const total = t.total_students || 0
                 const allSubmitted = total > 0 && submitted === total
@@ -1781,9 +1802,21 @@ export default function TopicsPage() {
                               <span className="text-emerald-700">📅 마감 {t.deadline_date.slice(5)}</span>
                             </>
                           )}
+                          {isShared && (
+                            <>
+                              <span>·</span>
+                              <span className="px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">🌐 공유 중</span>
+                            </>
+                          )}
                         </div>
                       </button>
                       <div className="flex gap-1 flex-shrink-0 ml-2">
+                        {isShared && (
+                          <button onClick={() => cancelTopicShare(t.id)}
+                            className="text-xs text-purple-600 hover:bg-purple-50 px-2 py-1 rounded">
+                            공유 취소
+                          </button>
+                        )}
                         <Link
                           href={`/teacher/submissions?topic=${t.id}`}
                           className="text-xs text-primary hover:bg-primary-light px-2 py-1 rounded"
@@ -1929,6 +1962,7 @@ export default function TopicsPage() {
           onSelect={applyFromLog}
           onRefresh={() => loadSuggestionLogs()}
           onToggleShare={toggleShareSuggestion}
+          onCancelShare={cancelTopicShare}
           disabled={false}
         />
       </div>

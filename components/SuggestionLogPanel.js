@@ -18,6 +18,7 @@ export default function SuggestionLogPanel({
   onSelect,
   onRefresh,
   onToggleShare,  // 🆕 (logId, isShared) => void - 본인 로그 공유 토글
+  onCancelShare,  // 🆕 step279 (resultingTopicId) => void - 등록 주제 공유 취소
   disabled,
 }) {
   const [open, setOpen] = useState(() => {
@@ -69,7 +70,8 @@ export default function SuggestionLogPanel({
         usedDate: isSelected && log.resulting_topic?.date,
         wasSelected: isSelected,
         isShared: sharedIdxs.includes(idx),                    // 🆕 이 카드만 공유 중인지
-        isAutoShared: isSelected && !!log.resulting_topic_id   // 🆕 등록된 카드만 자동 공유
+        isAutoShared: isSelected && !!log.resulting_topic_id,  // 🆕 등록된 카드만 자동 공유
+        resultingTopicId: log.resulting_topic_id               // 🆕 step279 공유 취소용
       })
     })
   }
@@ -276,7 +278,17 @@ export default function SuggestionLogPanel({
                       {tab === 'mine' && onToggleShare && (
                         <div className="border-t border-gray-100 px-2.5 py-1.5 flex items-center justify-between bg-gray-50">
                           {item.isAutoShared ? (
-                            <span className="text-[10px] text-green-700">🌐 등록되어 자동 공유 중</span>
+                            <>
+                              <span className="text-[10px] text-green-700">🌐 등록되어 자동 공유 중</span>
+                              {onCancelShare && item.resultingTopicId && (
+                                <button
+                                  onClick={() => onCancelShare(item.resultingTopicId)}
+                                  disabled={disabled}
+                                  className="text-[10px] text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
+                                  공유 취소
+                                </button>
+                              )}
+                            </>
                           ) : item.isShared ? (
                             <>
                               <span className="text-[10px] text-purple-700">🔗 이 주제 공유 중</span>
