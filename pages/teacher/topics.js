@@ -118,6 +118,8 @@ export default function TopicsPage() {
   const [lastSelectedLogId, setLastSelectedLogId] = useState(null)
   // 🆕 다른 선생님 공유 주제를 가져왔을 때의 출처 { logId, index } (등록 완료 시 topic_copies 기록용)
   const [copiedSource, setCopiedSource] = useState(null)
+  // 🆕 손제작 주제를 다른 선생님 추천 풀에 공유할지 (옵트인) — 켜면 등록 시 합성 추천 로그 생성
+  const [shareToPool, setShareToPool] = useState(false)
   // 편집 모드 (특정 주제 수정 중인지)
   const [editingTopicId, setEditingTopicId] = useState(null)
 
@@ -535,6 +537,22 @@ export default function TopicsPage() {
           } catch(e) { console.warn('출처 기록 예외(등록은 정상):', e) }
           setCopiedSource(null)
         }
+        // 🆕 손제작 주제를 추천 풀에 공유(옵트인): 합성 추천 로그를 만들어 자동공유 경로에 얹는다.
+        // AI 추천 출신(lastSelectedLogId)은 이미 resulting_topic_id로 공유되므로 중복 생성 안 함.
+        // 기록 실패는 등록 흐름을 막지 않음(topic_copies와 동일 패턴).
+        if (!error && r.data?.id && shareToPool && !lastSelectedLogId) {
+          try {
+            const { error: shareErr } = await supabase.from('topic_suggestion_logs').insert({
+              teacher_id: user.id,
+              class_id: classInfo?.id ?? null,
+              suggestions: [{ title: title.trim(), description: desc.trim(), category: '직접 작성' }],
+              selected_index: 0,
+              resulting_topic_id: r.data.id,
+              model_used: null,
+            })
+            if (shareErr) console.warn('풀 공유 건너뜀(등록은 정상):', shareErr.message)
+          } catch(e) { console.warn('풀 공유 예외(등록은 정상):', e) }
+        }
       }
 
       if (error) throw error
@@ -551,6 +569,7 @@ export default function TopicsPage() {
       setDeadlineEnabled(false)
       setDeadlineDate('')
       setDeadlineTime('23:59')
+      setShareToPool(false)
       setEditingTopicId(null) // 편집 모드 해제
       await loadTopics(user.id, classInfo?.id)
     } catch(e) {
@@ -1619,6 +1638,21 @@ export default function TopicsPage() {
                   </>
                 )}
               </div>
+
+              {/* 🆕 손제작 주제 추천 풀 공유 (옵트인) — 새 주제 등록 시에만 */}
+              {!editingTopicId && !lastSelectedLogId && (
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={shareToPool}
+                      onChange={e => setShareToPool(e.target.checked)}
+                      className="w-4 h-4" />
+                    <span className="text-sm font-medium">🌐 이 주제를 다른 선생님 추천 풀에 공유</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 주제(제목·설명)만 다른 선생님께 공유돼요. 학생 글·이름·평가기준은 공유되지 않아요.
+                  </p>
+                </div>
+              )}
 
               {/* 🆕 step159: 평가기준 생성 완료 후 등록 유도 */}
               {highlightRegister && !generatingRubrics && (
