@@ -83,12 +83,35 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 그 변동성은 `koreanRules` 규칙으로 **'모양이 일정한 패턴'만** 보강 가능. **임의 띄어쓰기(의미 기반 끊기)는 규칙으로 불가** — AI 담당.
 
 ## 12. 다음 작업
-- **A1 핵심(손제작 주제 올리기) 완료 — step277.** 등록 폼 옵트인 체크박스 → 등록 시 `topic_suggestion_logs`에 합성 추천 로그(resulting_topic_id 채움)를 만들어 기존 자동공유 경로에 얹음. `topics.js` 단일 수정, 마이그레이션·RLS 변경 없음.
-  - ✅ **해소(step279, 방식1+2)** — 공통 함수 `cancelTopicShare(topicId)`(topics.js): `topic_suggestion_logs`의 `resulting_topic_id=null, is_shared=false, shared_indexes=[]`로 무력화(행 DELETE 금지 — topic_copies가 source_log_id ON DELETE CASCADE라 가져간 추적 보존). 방식1=주제 목록 "🌐 공유 중" 배지+[공유 취소] 버튼, 방식2=추천 패널(내 추천 탭) 자동공유 카드 [공유 취소]. 성공 시 loadTopics+loadSuggestionLogs로 양쪽 동기화. 손제작/AI 구분 없이 동작.
-- **A2 — "N명 사용" 배지 + 인기순 정렬**(`topic_copies`/`topic_copy_counts()` 기반): A1 완료. **데이터 1~2주 대기.**
-- **회색지대(실명 노출+동의 증빙 공백) 교사 판정 UI**: ✅ **per-class UI 완료(step237/240)** — `components/GrayZonePanel.js`(`pages/teacher/students/consent.js:97` 렌더). 담임이 자기 학급 그레이존 학생을 1명씩/일괄 [확인](`teacher_confirm` 마커 insert)·[다시 가리기](`lock` 실명 암호화 후 가림, 복구 가능) 처리. 식별=`pages/api/consent-grayzone-list.js`(학급 단위), 쓰기=`pages/api/consent-paper.js`(매 건 `.eq('id', studentId)`, WHERE 없는 일괄변경 없음, 비가역 PII 파괴 없음).
-  - ⚠️ "777"은 코드 어디에도 없는 외부 수동 집계치(전 학급 합산). 앱 내 식별은 학급 단위뿐.
-  - **남은 것(미구현, 설계만 — `C1 plan` 참고):** ①admin 전체 집계·진행률 뷰(읽기 전용 `consent-grayzone-summary` API, cross-class 일괄쓰기는 의도적 배제) ②per-class 패널 발견성(교사 대시보드/students에 N명 배지+링크). ③(경미) 그레이존 판정에서 `(동의 철회)`-only 행 제외 보정.
+- 구체적 백로그는 **§13으로 일원화**(중복 제거). 완료 항목 상세는 각 step 커밋(`git log`) 참조.
+- **회색지대 남은 설계(미구현, 설계만):** ①admin 전체 집계·진행률 뷰(읽기 전용 `consent-grayzone-summary` API, cross-class 일괄쓰기는 의도적 배제) ②per-class 패널 발견성(교사 대시보드/students에 N명 배지+링크) ③(경미) 그레이존 판정에서 `(동의 철회)`-only 행 제외 보정. ⚠️ "777"은 코드 어디에도 없는 외부 수동 집계치(전 학급 합산) — 앱 내 식별은 학급 단위뿐.
+
+## 13. 백로그 (다음 할 일 — 항상 여기만 보면 됨)
+> ⚠️ 매 작업 세션 종료 시 이 §13을 갱신할 것(끝낸 항목은 '종료'로 이동, 새 할 일 추가).
+
+**[지금 손댈 수 있음]**
+- A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies/topic_copy_counts 기반). 해자 핵심.
+  ※ A1(공유) 구현 후 시간 지났으니 데이터 쌓였는지 SQL 먼저 확인 → 쌓였으면 구현.
+- 교사 대시보드 리디자인 — 로그인 첫 화면. 전환·정착 직결. (먼저 plan mode 현황 분석)
+- B1 — AI가 놓치는 맞춤법 패턴 규칙화. 상시. 글 보다 걸리면 koreanRules에 추가.
+
+**[수익화 — 의사결정 진행 중]**
+- 첫 유료 가치 방향: "교사의 빈 종이를 없앤다(판단 피로 제거)". 후보 C='이 앱을 수업·창체에서 이렇게 써보세요'식 활용법 안내(검증된 레시피, AI 창작 아님). 유료 vs 무료정착은 미정.
+- 결제 시스템 / 소셜 로그인(Google→Kakao→Naver): 수익화 관문. 출시 시점 유보 중.
+- 원칙: 교사가 "무조건 이득·편함"을 느낄 때만 지불. 학생·학부모용 가치(문집 등)는 교사 지불 동기 약함.
+
+**[대기]**
+- A2 데이터 1~2주 / 회색지대 G1·G2(발견성·admin뷰)는 사용자 늘면.
+
+**[보류]**
+- 전체 UI 폴리시 패스(기능 안정 후 마지막).
+- A3 만든 교사 평판 표시(개인정보 trade-off).
+
+**[종료된 항목 — 다시 만들지 말 것]**
+- ✅ 회색지대 교사 판정 UI(step237/240, 안전 확인 완료).
+- ✅ 손제작 주제 공유 올리기·내리기(step277/278/279).
+- ✅ 맞춤법 입니다/수있 규칙(step275/276).
+- ❌ '맞춤법 누락 자동수집(A)' — 원천 데이터 없어 무거움. B1 규칙 보강으로 대체(폐기).
 
 ## 워킹트리 상태
 - HEAD=dc8dc6f(step279)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
