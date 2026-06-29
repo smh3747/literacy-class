@@ -1,11 +1,13 @@
-# 핸드오버 데이터 (HEAD = 4bb6af7 (step275))
+# 핸드오버 데이터 (HEAD = 5ed7b37 (step277))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화.
 > pages 46파일 / components 24 / lib 23 / migrations 76.
 
 ## 1. 현재 HEAD
-- `4bb6af7` — **step275: koreanRules에 '입니다/습니다 앞 띄어쓰기' 규칙 추가(fixedPatterns)**
+- `5ed7b37` — **step277: 손제작 주제 추천 풀 공유(옵트인+합성 로그, topics.js 단일, 마이그레이션 없음)**
+- `febf86b` — **step276: '수있/수없' 띄어쓰기 규칙을 ㄹ받침 판정으로 일반화(생길수있·알수있 등 포함)**
+- `4bb6af7` — step275: koreanRules에 '입니다/습니다 앞 띄어쓰기' 규칙 추가(fixedPatterns)
 - `da1d08c` — step274: 교사 맞춤법 배너 문구 부드럽게 + 글씨 `text-sm` + 'AI 모델 자동전환' 안내 4곳 제거
 - `2e7fecf` — step273: 맞춤법 AI 보조 안내문구 + 교사 재평가 배너 + 무의미 교정 제거
 - 직전: `f7a8989` step272(공유 가져오기 출처 기록), `97f421d` step271(재평가 규칙 통일+번째), `cb974f6` step270(공백 허용 매칭).
@@ -79,10 +81,11 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 그 변동성은 `koreanRules` 규칙으로 **'모양이 일정한 패턴'만** 보강 가능. **임의 띄어쓰기(의미 기반 끊기)는 규칙으로 불가** — AI 담당.
 
 ## 12. 다음 작업
-- **1순위 A1 — 손으로 만든 주제(topics)도 공유 풀에 올리기.** 현재 공유는 `topic_suggestion_logs`(AI 추천)에만 묶여 있어 직접 작성 주제는 공유 불가. **현재 plan mode 분석 진입.**
-- **A2 — "N명 사용" 배지 + 인기순 정렬**(`topic_copies`/`topic_copy_counts()` 기반): **A1 선행 필요 + 데이터 1~2주 대기.**
+- **A1 핵심(손제작 주제 올리기) 완료 — step277.** 등록 폼 옵트인 체크박스 → 등록 시 `topic_suggestion_logs`에 합성 추천 로그(resulting_topic_id 채움)를 만들어 기존 자동공유 경로에 얹음. `topics.js` 단일 수정, 마이그레이션·RLS 변경 없음.
+  - ⚠️ **미구현: 공유 "해제"** — 한 번 올린 주제를 다시 내리는 경로가 없음. 합성 로그의 `resulting_topic_id`를 null로 돌리거나 행 자체를 삭제하는 방식으로 추후 설계 필요.
+- **A2 — "N명 사용" 배지 + 인기순 정렬**(`topic_copies`/`topic_copy_counts()` 기반): A1 완료. **데이터 1~2주 대기.**
 - **잊지 말 것 — 회색지대 777명 교사 판정 UI**: 법적 리스크. **API만 배포·UI 미완성** 상태.
 
 ## 워킹트리 상태
-- HEAD=4bb6af7(step275)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
+- HEAD=5ed7b37(step277)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
 - untracked: `_report*.md`, `_snapshot/`, `FEATURE-MAP.md`, `scripts/make-snapshot.js`, `migrations/step205·206-*.sql`.
