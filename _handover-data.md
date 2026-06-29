@@ -1,10 +1,12 @@
-# 핸드오버 데이터 (HEAD = 5ed7b37 (step277))
+# 핸드오버 데이터 (HEAD = dc8dc6f (step279))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화.
 > pages 46파일 / components 24 / lib 23 / migrations 76.
 
 ## 1. 현재 HEAD
+- `dc8dc6f` — **step279: 공유 취소 기능(주제 목록 배지·버튼 + 추천 패널 버튼, 공통 함수 cancelTopicShare)**
+- `7d02940` — **step278: 손제작 주제 공유 노출 강화(체크박스 강조 + 등록 후 확인 모달)**
 - `5ed7b37` — **step277: 손제작 주제 추천 풀 공유(옵트인+합성 로그, topics.js 단일, 마이그레이션 없음)**
 - `febf86b` — **step276: '수있/수없' 띄어쓰기 규칙을 ㄹ받침 판정으로 일반화(생길수있·알수있 등 포함)**
 - `4bb6af7` — step275: koreanRules에 '입니다/습니다 앞 띄어쓰기' 규칙 추가(fixedPatterns)
@@ -82,10 +84,10 @@ export const GRAMMAR_NOTICE_TEACHER =
 
 ## 12. 다음 작업
 - **A1 핵심(손제작 주제 올리기) 완료 — step277.** 등록 폼 옵트인 체크박스 → 등록 시 `topic_suggestion_logs`에 합성 추천 로그(resulting_topic_id 채움)를 만들어 기존 자동공유 경로에 얹음. `topics.js` 단일 수정, 마이그레이션·RLS 변경 없음.
-  - ⚠️ **미구현: 공유 "해제"** — 한 번 올린 주제를 다시 내리는 경로가 없음. 합성 로그의 `resulting_topic_id`를 null로 돌리거나 행 자체를 삭제하는 방식으로 추후 설계 필요.
+  - ✅ **해소(step279, 방식1+2)** — 공통 함수 `cancelTopicShare(topicId)`(topics.js): `topic_suggestion_logs`의 `resulting_topic_id=null, is_shared=false, shared_indexes=[]`로 무력화(행 DELETE 금지 — topic_copies가 source_log_id ON DELETE CASCADE라 가져간 추적 보존). 방식1=주제 목록 "🌐 공유 중" 배지+[공유 취소] 버튼, 방식2=추천 패널(내 추천 탭) 자동공유 카드 [공유 취소]. 성공 시 loadTopics+loadSuggestionLogs로 양쪽 동기화. 손제작/AI 구분 없이 동작.
 - **A2 — "N명 사용" 배지 + 인기순 정렬**(`topic_copies`/`topic_copy_counts()` 기반): A1 완료. **데이터 1~2주 대기.**
 - **잊지 말 것 — 회색지대 777명 교사 판정 UI**: 법적 리스크. **API만 배포·UI 미완성** 상태.
 
 ## 워킹트리 상태
-- HEAD=5ed7b37(step277)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
+- HEAD=dc8dc6f(step279)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
 - untracked: `_report*.md`, `_snapshot/`, `FEATURE-MAP.md`, `scripts/make-snapshot.js`, `migrations/step205·206-*.sql`.
