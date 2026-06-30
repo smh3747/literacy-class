@@ -223,8 +223,9 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
       {/* 🤖 AI 점수·피드백 — 기본 접힘 (글·코멘트 먼저) */}
       <details className="group">
         <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
-          <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+          <span className="inline-block transition-transform group-open:rotate-90 motion-safe:animate-bounce group-open:animate-none">▶</span>
           🤖 AI 점수·피드백 보기
+          <span className="group-open:hidden text-xs font-normal text-amber-600">👆 눌러서 펼쳐보세요</span>
           <span className="ml-auto font-bold text-gray-900">{sub.total_score ?? 0}/{totalMax}점</span>
         </summary>
         <div className="space-y-4 mt-3">
