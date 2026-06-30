@@ -578,6 +578,12 @@ export default function TeacherSubmissions() {
   const recheckGrammarOne = async (sub) => {
     if (isImpersonating || grammarOneId) return
     if (!hasApiKey) return alert('AI 기능이 활성화되지 않았어요')
+    // 🆕 step297: 토스트에 학생(번호+표시이름, 동의 전이면 닉네임 자동) + 첫글/수정본 + 교정 변화량
+    const before = Array.isArray(sub.corrections) ? sub.corrections.length : 0
+    const num = (selectedStudent?.profile?.number != null && String(selectedStudent.profile.number).trim() !== '')
+      ? `${String(selectedStudent.profile.number).trim()}번 ` : ''
+    const who = num + displayStudentName(selectedStudent?.profile)
+    const attemptLabel = (sub.attempt || 1) === 1 ? '첫 글' : `수정본 ${(sub.attempt || 1) - 1}차`
     setGrammarOneId(sub.id)
     try {
       const { mergeCorrections } = await import('../../lib/koreanRules')
@@ -587,7 +593,7 @@ export default function TeacherSubmissions() {
       const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
       if (error) throw error
       patchLocalCorrections(sub.id, corrections)
-      flashGrammarToast(`✅ 맞춤법 다시 검사 — 교정 ${corrections.length}개`)
+      flashGrammarToast(`✅ ${who} (${attemptLabel}) 맞춤법 검사 완료 — 교정 ${before}개 → ${corrections.length}개`)
     } catch (e) {
       alert('맞춤법 검사에 실패했어요: ' + (e?.message || ''))
     }
