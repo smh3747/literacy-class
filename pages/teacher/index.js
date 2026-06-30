@@ -679,38 +679,38 @@ export default function TeacherHome() {
         <div className="hidden lg:flex flex-col gap-1.5 fixed right-3 top-1/2 -translate-y-1/2 z-30">
           {!isImpersonating && (
             <button onClick={() => togglePanel('api')} title="Gemini 키 등록·관리"
-              className={`w-16 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'api' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
-              <span className="text-lg leading-none">🔑</span><span className="text-[10px] text-gray-600">키</span>
+              className={`w-24 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'api' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
+              <span className="text-lg leading-none">🔑</span><span className="text-[10px] text-gray-600 text-center leading-tight">API 키 관리</span>
             </button>
           )}
           <button onClick={() => togglePanel('login')} title="학생 로그인 안내"
-            className={`w-16 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'login' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
-            <span className="text-lg leading-none">📋</span><span className="text-[10px] text-gray-600">로그인</span>
+            className={`w-24 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'login' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
+            <span className="text-lg leading-none">📋</span><span className="text-[10px] text-gray-600 text-center leading-tight">학생 로그인 안내</span>
           </button>
           {!isImpersonating && (
             <button onClick={() => togglePanel('settings')} title="학급 설정"
-              className={`w-16 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'settings' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
-              <span className="text-lg leading-none">⚙️</span><span className="text-[10px] text-gray-600">설정</span>
+              className={`w-24 py-1.5 rounded-xl bg-white shadow-md border hover:bg-gray-50 flex flex-col items-center gap-0.5 ${activePanel === 'settings' ? 'border-primary ring-2 ring-primary/30' : 'border-gray-200'}`}>
+              <span className="text-lg leading-none">⚙️</span><span className="text-[10px] text-gray-600 text-center leading-tight">학급 설정</span>
             </button>
           )}
           <Link href={withImpersonation("/teacher/feedback-reports")} title="피드백 신고함"
-            className="relative w-16 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
-            <span className="text-lg leading-none">🚨</span><span className="text-[10px] text-gray-600">신고함</span>
+            className="relative w-24 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
+            <span className="text-lg leading-none">🚨</span><span className="text-[10px] text-gray-600 text-center leading-tight">오류 신고함</span>
             {stats.reports > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{stats.reports}</span>
             )}
           </Link>
           <Link href={withImpersonation("/teacher/grammar-backfill")} title="맞춤법 일괄 적용"
-            className="w-16 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
-            <span className="text-lg leading-none">📝</span><span className="text-[10px] text-gray-600">맞춤법</span>
+            className="w-24 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
+            <span className="text-lg leading-none">📝</span><span className="text-[10px] text-gray-600 text-center leading-tight">맞춤법 일괄 검사</span>
           </Link>
           <Link href={withImpersonation("/teacher/trash")} title="쓰레기통"
-            className="w-16 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
-            <span className="text-lg leading-none">🗑️</span><span className="text-[10px] text-gray-600">휴지통</span>
+            className="w-24 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
+            <span className="text-lg leading-none">🗑️</span><span className="text-[10px] text-gray-600 text-center leading-tight">삭제된 글 확인</span>
           </Link>
           <Link href={withImpersonation("/teacher/help")} title="도움말 / FAQ"
-            className="w-16 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
-            <span className="text-lg leading-none">📖</span><span className="text-[10px] text-gray-600">도움말</span>
+            className="w-24 py-1.5 rounded-xl bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex flex-col items-center gap-0.5">
+            <span className="text-lg leading-none">📖</span><span className="text-[10px] text-gray-600 text-center leading-tight">도움말</span>
           </Link>
         </div>
         {/* 드로어 오버레이 (데스크탑만) */}
