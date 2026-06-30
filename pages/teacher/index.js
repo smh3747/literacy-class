@@ -64,6 +64,8 @@ export default function TeacherHome() {
   // 🆕 step205-C: 내 의견에 달린 운영자 답변 알림
   const [replyNotifs, setReplyNotifs] = useState([])
   const [showReplies, setShowReplies] = useState(false)
+  // 🆕 step287: 안내 배너(심의/학부모동의) 펼침 — 모바일 탭 토글용(데스크탑은 CSS hover 병행)
+  const [openGuide, setOpenGuide] = useState(null)  // 'simui' | 'consent' | null
   // 🆕 step280: 신규 교사 맛보기(샘플 피드백) 노출 여부
   const [showTaste, setShowTaste] = useState(false)
 
@@ -405,6 +407,36 @@ export default function TeacherHome() {
                 🛡️ 관리자 모드
               </Link>
             )}
+          </div>
+
+          {/* 🆕 step287: 교사 안심 안내 배너 2개 (심의 / 학부모 동의) — 반복 질문 해소. 데스크탑 hover + 모바일 탭 토글 */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            {/* ① 학교운영위 심의 */}
+            <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <button type="button" onClick={() => setOpenGuide(openGuide === 'simui' ? null : 'simui')}
+                className="w-full text-left flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-gray-800">🏛️ 학교운영위원회 심의가 궁금하신가요?</span>
+                <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'simui' ? '▲' : 'ⓘ'}</span>
+              </button>
+              <div className={`${openGuide === 'simui' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed`}>
+                학교장이 교육자료로 '선정'하면 학교운영위원회 심의 대상이 될 수 있어요. 학급 재량으로 쓰는 경우는 일반적으로 해당하지 않을 수 있지만, 학교마다 기준이 다르니 소속 학교에 확인을 권장드려요.
+              </div>
+            </div>
+            {/* ② 학부모 동의 (+ 액션 2개) */}
+            <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <button type="button" onClick={() => setOpenGuide(openGuide === 'consent' ? null : 'consent')}
+                className="w-full text-left flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-gray-800">👨‍👩‍👧 학부모 동의가 궁금하신가요?</span>
+                <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'consent' ? '▲' : 'ⓘ'}</span>
+              </button>
+              <div className={`${openGuide === 'consent' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed space-y-2`}>
+                <p>개인정보보호법상 만 14세 미만 학생의 실명을 처리하려면 보호자 동의가 필요해요. 하지만 학급 재량으로 쓰는 동안에는 굳이 동의를 받지 않아도 돼요 — 동의 전에는 닉네임으로 운영되고, 동의는 선택이에요. 학급 명렬표(나이스)로 학생을 등록하는 것은 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Link href={withImpersonation("/teacher/students")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
+                  <Link href={withImpersonation("/teacher/students/consent")} className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">✍️ 학부모 온라인 동의서 받기</Link>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 학급 정보 카드 */}

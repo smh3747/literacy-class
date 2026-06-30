@@ -1457,6 +1457,14 @@ export default function StudentsPage() {
               <p className="bg-white border border-blue-200 rounded-md px-3 py-2 mb-2 text-[15px] font-semibold text-blue-900 leading-relaxed">
                 👉 지금 학부모 동의를 먼저 안 받아도 명렬표를 올릴 수 있어요 — 실명은 동의 전까지 암호화돼 잠겨 있어요.
               </p>
+              {/* 🆕 step287: 3단계 안심 흐름 (시각 요약) */}
+              <div className="flex items-center gap-1.5 flex-wrap text-[11px] mb-2">
+                <span className="bg-white border border-green-300 text-green-800 rounded-full px-2.5 py-1 font-medium">① 실명은 선생님 화면에만</span>
+                <span className="text-green-500">→</span>
+                <span className="bg-white border border-green-300 text-green-800 rounded-full px-2.5 py-1 font-medium">② 동의 전엔 닉네임 운영</span>
+                <span className="text-green-500">→</span>
+                <span className="bg-white border border-green-300 text-green-800 rounded-full px-2.5 py-1 font-medium">③ 실명·글 외부로 안 나감</span>
+              </div>
               <ul className="text-xs space-y-1.5 text-blue-800">
                 <li>· 명렬표 파일은 선생님 브라우저에서만 읽어요. 파일 자체는 서버에 올라가지 않아요.</li>
                 <li>· 학생 이름은 암호화돼 잠긴 채 보관되고, 화면엔 닉네임으로 표시돼요. AI 채점에도 실명은 안 가요(글 내용만).</li>
