@@ -2195,6 +2195,8 @@ function AdminSubmissionsInner() {
   const [customDate, setCustomDate] = useState('')  // YYYY-MM-DD (custom일 때)
   const [search, setSearch] = useState('')  // 🆕 통합 검색(담임·학교·학생 표시이름) — 클라 필터
   const [attemptFilter, setAttemptFilter] = useState('all')  // 🆕 글 종류: 'all' | 'first' | 'rewrite' (클라 필터)
+  // 🆕 step286: 활성/휴지통/전체 (서버 필터). 기본 'active' — soft delete 글이 목록에 섞이지 않게.
+  const [subStatusFilter, setSubStatusFilter] = useState('active')  // 'active' | 'trashed' | 'all'
 
   // 🆕 보조 데이터: 학생 → 학급 → 학교 매핑
   const [studentMap, setStudentMap] = useState({})  // { userId: { realname, username, class_id } }
@@ -2209,7 +2211,7 @@ function AdminSubmissionsInner() {
     router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
   }
 
-  useEffect(() => { load() }, [selectedClass, dateFilter, customDate])
+  useEffect(() => { load() }, [selectedClass, dateFilter, customDate, subStatusFilter])
 
   // 새로고침 시: 글 목록 로드된 뒤 URL의 sub ID로 상세 복원
   useEffect(() => {
@@ -2288,6 +2290,11 @@ function AdminSubmissionsInner() {
       const end = new Date(new Date(start).getTime() + 86400000).toISOString()
       query = query.gte('created_at', start).lt('created_at', end)
     }
+
+    // 🆕 step286: 활성/휴지통/전체 (보기 목록 전용 — 일괄작업 쿼리엔 적용 안 함)
+    if (subStatusFilter === 'active') query = query.is('deleted_at', null)
+    else if (subStatusFilter === 'trashed') query = query.not('deleted_at', 'is', null)
+    // 'all' → 필터 없음
 
     const { data } = await query
     const filtered = data || []
@@ -2440,6 +2447,21 @@ function AdminSubmissionsInner() {
               onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
               className="text-xs border border-gray-200 rounded p-1" />
           </div>
+          {/* 🆕 step286: 상태 필터 (활성/휴지통/전체) — soft delete 가시성 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <span className="text-xs text-gray-600 px-1.5">상태:</span>
+            {[{ v: 'active', l: '활성' }, { v: 'trashed', l: '휴지통' }, { v: 'all', l: '전체' }].map(opt => (
+              <button key={opt.v}
+                onClick={() => setSubStatusFilter(opt.v)}
+                className={`text-xs px-2 py-1 rounded ${
+                  subStatusFilter === opt.v
+                    ? 'bg-white shadow-sm font-semibold text-primary'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
           {/* 학급 필터 — 항상 렌더(자리·폭 고정). 기간·검색과 한 그룹(맨 오른쪽). 학급별 묶음일 땐 비활성으로 레이아웃 점프 제거 */}
             <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
               disabled={groupBy === 'class'}
@@ -2543,9 +2565,14 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
   const sub = [cls?.teacher_school, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
   const pct = s.max_score ? s.total_score / s.max_score : 0
   const scoreColor = pct >= 0.8 ? 'text-green-600' : pct >= 0.6 ? 'text-amber-600' : 'text-rose-600'
+  // 🆕 step286: 휴지통(soft delete) 행 — 반투명 + 사유 뱃지. step284 중복정리는 통일 표기.
+  const trashed = !!s.deleted_at
+  const reasonLabel = s.delete_reason
+    ? (s.delete_reason.startsWith('dup-cleanup step284') ? '중복정리' : s.delete_reason)
+    : null
   return (
     <button onClick={onClick}
-      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center gap-3">
+      className={`w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg p-3 flex justify-between items-center gap-3 ${trashed ? 'opacity-50' : ''}`}>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-gray-900">
           {hideField !== 'student' && (
@@ -2559,6 +2586,7 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
           )}
           {s.paste_detected && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
           {s.is_fallback_graded && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">폴백</span>}
+          {trashed && <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">🗑️ {reasonLabel || '삭제됨'}</span>}
         </div>
         <div className="text-xs text-gray-500 mt-1">
           {cls?.name && (
