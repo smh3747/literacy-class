@@ -30,10 +30,13 @@ export default function TeacherHome() {
   const [apiOpenSignal, setApiOpenSignal] = useState(0)       // 🆕 카드 자동 펼침 신호
   const [loginHintOpenSignal, setLoginHintOpenSignal] = useState(0)
   const [guideTarget, setGuideTarget] = useState(null)        // 🆕 손가락 포인터 대상 ('api'|'loginHint')
+  const settingsRef = useRef(null)                            // 🆕 step290: 학급 설정 스크롤(드로어)
+  const [drawerOpen, setDrawerOpen] = useState(false)         // 🆕 step290: 우측 드로어(데스크탑 lg+) 열림
 
   // 공통: 카드로 스크롤 + 자동 펼침 + 빨간 깜빡임 + 손가락 포인터
   const guideToCard = (ref, which) => {
     if (!ref.current) return
+    setDrawerOpen(true)  // 🆕 step290: 데스크탑은 드로어 먼저 열고(모바일은 무효과) 해당 패널로 스크롤 → 셋업 동선 보존
     // 1) 자동 펼침 신호
     if (which === 'api') setApiOpenSignal(s => s + 1)
     if (which === 'loginHint') setLoginHintOpenSignal(s => s + 1)
@@ -53,6 +56,11 @@ export default function TeacherHome() {
 
   const scrollToApiKey = () => guideToCard(apiKeyRef, 'api')
   const scrollToLoginHint = () => guideToCard(loginHintRef, 'loginHint')
+  // 🆕 step290: 학급 설정으로(드로어 열고 스크롤). ClassSettings는 접힘 없어 openSignal 불필요.
+  const scrollToSettings = () => {
+    setDrawerOpen(true)
+    setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150)
+  }
   const [loading, setLoading] = useState(true)
   const [showPwModal, setShowPwModal] = useState(false)
   const [mustChangePw, setMustChangePw] = useState(false)  // 🆕 step161: 초기화 후 강제 변경
@@ -536,27 +544,44 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
-          {classInfo && (
-            <div ref={loginHintRef} className="rounded-2xl transition-all relative">
-              {guideTarget === 'loginHint' && <div className="guide-pointer">👇</div>}
-              <StudentLoginInfoCard
-                classInfo={classInfo}
-                students={studentSamples}
-                isImpersonating={isImpersonating}
-                onUpdate={checkAuth}
-                openSignal={loginHintOpenSignal}
-              />
+          {/* 🆕 step290: 보조 패널 묶음 — <lg 인라인(현행 유지) / lg+ 우측 드로어(툴바로 열기) */}
+          <aside className={`space-y-5 lg:fixed lg:top-0 lg:right-0 lg:h-screen lg:w-[420px] lg:max-w-[90vw] lg:bg-white lg:shadow-xl lg:overflow-y-auto lg:z-40 lg:p-5 lg:space-y-4 lg:transition-transform ${drawerOpen ? 'lg:translate-x-0' : 'lg:translate-x-full'}`}>
+            {/* 드로어 헤더(데스크탑만) */}
+            <div className="hidden lg:flex items-center justify-between">
+              <span className="text-sm font-bold text-gray-700">⚙️ 설정 · 안내</span>
+              <button onClick={() => setDrawerOpen(false)}
+                className="text-gray-500 hover:bg-gray-100 rounded p-1 text-sm">✖ 닫기</button>
             </div>
-          )}
 
-          {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}
-          {!isImpersonating && (
-            <div ref={apiKeyRef} className="rounded-2xl transition-all relative">
-              {guideTarget === 'api' && <div className="guide-pointer">👇</div>}
-              <ApiKeyManager classId={classInfo?.id} openSignal={apiOpenSignal} />
-            </div>
-          )}
+            {/* 🆕 학생 로그인 안내 카드 (와이프 피드백: 학생이 "선생님 아이디 뭐예요?" 안 물어보게) */}
+            {classInfo && (
+              <div ref={loginHintRef} className="rounded-2xl transition-all relative">
+                {guideTarget === 'loginHint' && <div className="guide-pointer">👇</div>}
+                <StudentLoginInfoCard
+                  classInfo={classInfo}
+                  students={studentSamples}
+                  isImpersonating={isImpersonating}
+                  onUpdate={checkAuth}
+                  openSignal={loginHintOpenSignal}
+                />
+              </div>
+            )}
+
+            {/* API 키 관리 (임퍼소네이션 중 가림 — 다른 선생님 키를 건드리면 안 됨) */}
+            {!isImpersonating && (
+              <div ref={apiKeyRef} className="rounded-2xl transition-all relative">
+                {guideTarget === 'api' && <div className="guide-pointer">👇</div>}
+                <ApiKeyManager classId={classInfo?.id} openSignal={apiOpenSignal} />
+              </div>
+            )}
+
+            {/* 학급 설정 (랭킹/게시판) */}
+            {classInfo && !isImpersonating && (
+              <div ref={settingsRef} className="rounded-2xl transition-all relative">
+                <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />
+              </div>
+            )}
+          </aside>
 
           {/* 오늘 API 사용량 (추정) */}
           {/* 사용량 카드: 진짜 한도 임박할 때만 표시
@@ -593,9 +618,6 @@ export default function TeacherHome() {
             )
           })()}
 
-          {/* 학급 설정 (랭킹/게시판) */}
-          {classInfo && !isImpersonating && <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />}
-
           {/* 메뉴 */}
           <div className="grid sm:grid-cols-2 gap-3">
             <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
@@ -606,7 +628,7 @@ export default function TeacherHome() {
             <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">👥</div>
               <h3 className="font-bold mb-1">학생 관리</h3>
-              <p className="text-xs text-gray-500">학급명렬표 일괄 등록</p>
+              <p className="text-xs text-gray-500">학급 명렬표 일괄 등록 · 학부모 동의 관리</p>
             </Link>
             <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📋</div>
@@ -628,7 +650,7 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">생기부 평어 도우미</h3>
               <p className="text-xs text-gray-500">학생 글 기반 평어 초안 생성</p>
             </Link>
-            <Link href={withImpersonation("/teacher/feedback-reports")} className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
+            <Link href={withImpersonation("/teacher/feedback-reports")} className={`lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
               stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
             } relative`}>
               <div className="text-3xl mb-2">🚨</div>
@@ -641,23 +663,53 @@ export default function TeacherHome() {
               </h3>
               <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
             </Link>
-            <Link href={withImpersonation("/teacher/grammar-backfill")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/grammar-backfill")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">맞춤법 일괄 적용</h3>
               <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
             </Link>
-            <Link href={withImpersonation("/teacher/trash")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/trash")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">🗑️</div>
               <h3 className="font-bold mb-1">쓰레기통</h3>
               <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
             </Link>
-            <Link href={withImpersonation("/teacher/help")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+            <Link href={withImpersonation("/teacher/help")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📖</div>
               <h3 className="font-bold mb-1">도움말 / FAQ</h3>
               <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
             </Link>
           </div>
         </main>
+
+        {/* 🆕 step290: 우측 세로 툴바 (데스크탑 lg+ 전용). 모바일은 위 인라인 패널/메뉴 유지 */}
+        <div className="hidden lg:flex flex-col gap-2 fixed right-3 top-1/2 -translate-y-1/2 z-30">
+          {!isImpersonating && (
+            <button onClick={scrollToApiKey} title="Gemini 키 등록·관리"
+              className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">🔑</button>
+          )}
+          <button onClick={scrollToLoginHint} title="학생 로그인 안내"
+            className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">📋</button>
+          {!isImpersonating && (
+            <button onClick={scrollToSettings} title="학급 설정"
+              className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">⚙️</button>
+          )}
+          <Link href={withImpersonation("/teacher/feedback-reports")} title="피드백 신고함"
+            className="relative w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">
+            🚨
+            {stats.reports > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{stats.reports}</span>
+            )}
+          </Link>
+          <Link href={withImpersonation("/teacher/grammar-backfill")} title="맞춤법 일괄 적용"
+            className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">📝</Link>
+          <Link href={withImpersonation("/teacher/trash")} title="쓰레기통"
+            className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">🗑️</Link>
+          <Link href={withImpersonation("/teacher/help")} title="도움말 / FAQ"
+            className="w-11 h-11 rounded-full bg-white shadow-md border border-gray-200 hover:bg-gray-50 flex items-center justify-center text-lg">📖</Link>
+        </div>
+        {/* 드로어 오버레이 (데스크탑만) */}
+        {drawerOpen && <div className="hidden lg:block fixed inset-0 bg-black/30 z-30" onClick={() => setDrawerOpen(false)} />}
+
         {showPwModal && (
           <PasswordChangeModal
             onClose={() => setShowPwModal(false)}
