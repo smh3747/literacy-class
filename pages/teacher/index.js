@@ -618,11 +618,6 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">학생 글 보기</h3>
               <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
             </Link>
-            <Link href={withImpersonation("/teacher/parent-consent")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📋</div>
-              <h3 className="font-bold mb-1">학부모 동의서</h3>
-              <p className="text-xs text-gray-500">인쇄 / PDF 다운로드</p>
-            </Link>
             <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📊</div>
               <h3 className="font-bold mb-1">학생 성장 그래프</h3>

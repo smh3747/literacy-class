@@ -1,10 +1,8 @@
-// 학급 설정 - 랭킹 on/off, 게시판 범위, 학년, 학부모 동의(ConsentPanel 재사용)
+// 학급 설정 - 랭킹 on/off, 게시판 범위, 학년
 // (학생 로그인 안내는 StudentLoginInfoCard로 이관됨 - step90.5)
-// (학부모 동의 로직은 components/ConsentPanel.js 한 곳에만 — step203 추출)
+// (학부모 동의는 학생 관리 동의 페이지로 일원화 — step289에서 학급설정 노출 제거)
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import ConsentPanel from './ConsentPanel'
-import GrayZonePanel from './GrayZonePanel'
 
 export default function ClassSettings({ classInfo, onUpdate }) {
   const [saving, setSaving] = useState(false)
@@ -123,13 +121,6 @@ export default function ClassSettings({ classInfo, onUpdate }) {
               </p>
             </div>
           )}
-
-          {/* 🆕 학부모 동의 (공용 컴포넌트 — 학생관리 B카드와 동일 로직) */}
-          <div className="border-t border-gray-100 pt-4">
-            <h4 className="text-sm font-semibold text-gray-900 mb-2">🔒 학부모 동의 <span className="text-xs font-normal text-gray-400">(선택)</span></h4>
-            <GrayZonePanel classInfo={classInfo} />
-            <ConsentPanel classInfo={classInfo} />
-          </div>
 
           {saving && <p className="text-xs text-gray-500">💾 저장 중...</p>}
         </div>
