@@ -198,6 +198,9 @@ export default function StudentHome() {
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
+  // 🆕 step283: 제출 동기 재진입 가드 — state(submitting/rewriting)는 re-render 후에야 반영돼
+  //   같은 프레임 연타·await 창 재진입을 못 막음(중복 insert 원인). ref는 즉시 잠겨 확실히 차단.
+  const submittingRef = useRef(false)
 
   useEffect(() => {
     if (!router.isReady) return
@@ -443,7 +446,7 @@ export default function StudentHome() {
 
   // 첫 글 제출
   const submitEssay = async () => {
-    if (submitting) return
+    if (submitting || submittingRef.current) return
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
     if (essay.trim().length < minLen) {
@@ -463,6 +466,7 @@ export default function StudentHome() {
     // 🆕 제출 전 확인 (어린이 화면 — 짧고 쉽게)
     if (!confirm('이대로 제출할까요? 제출하면 AI가 채점해요.')) return
 
+    submittingRef.current = true  // 🆕 step283: 첫 await 전 동기 잠금(연타 중복 방지)
     setSubmitting(true)
     try {
       const rubrics = todayTopic.rubrics
@@ -567,6 +571,7 @@ export default function StudentHome() {
         showReload: isAuthExpired
       })
     }
+    submittingRef.current = false
     setSubmitting(false); setRetryMessage(null)
   }
 
@@ -647,7 +652,7 @@ export default function StudentHome() {
 
   // 수정본 제출
   const submitRewrite = async () => {
-    if (rewriting) return
+    if (rewriting || submittingRef.current) return
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
     if (rewriteEssay.trim().length < minLen) {
@@ -703,6 +708,10 @@ export default function StudentHome() {
       return
     }
 
+    // 🆕 step283: 첫 await(중복확인 쿼리) 전에 동기 잠금 — 연타/재진입으로 같은 attempt 중복 insert 방지.
+    //   read-then-insert(아래 existingSubs→insert)가 비원자라, 동시 진입 시 모두 같은 attempt로 insert되던 버그.
+    submittingRef.current = true
+
     // 추가 수정 권한 체크
     const { data: existingSubs } = await supabase.from('submissions')
       .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
@@ -712,6 +721,7 @@ export default function StudentHome() {
     const maxRewrites = todayTopic?.max_rewrites !== undefined && todayTopic?.max_rewrites !== null
       ? todayTopic.max_rewrites : 1
     if (maxRewrites === 0) {
+      submittingRef.current = false  // 🆕 잠금 해제 후 종료
       return alert('이 주제는 수정이 허용되지 않아요.')
     }
 
@@ -723,6 +733,7 @@ export default function StudentHome() {
       if (maxAtt >= 1 + maxRewrites) {
         const latest = existingSubs.find(s => s.attempt === maxAtt)
         if (!latest || !latest.extra_rewrite_allowed) {
+          submittingRef.current = false  // 🆕 잠금 해제 후 종료
           return alert(
             `수정 횟수를 모두 사용했어요 (${maxRewrites}회).\n` +
             `추가 수정을 원하면 선생님께 요청해주세요.`
@@ -839,6 +850,7 @@ export default function StudentHome() {
         showReload: isAuthExpired
       })
     }
+    submittingRef.current = false
     setRewriting(false); setRetryMessage(null)
   }
 
