@@ -527,6 +527,7 @@ export default function TeacherSubmissions() {
   const [grammarBusy, setGrammarBusy] = useState(false)
   const [grammarProg, setGrammarProg] = useState({ done: 0, total: 0 })
   const [grammarToast, setGrammarToast] = useState(null)
+  const [grammarOneId, setGrammarOneId] = useState(null)  // 🆕 step295: 단일 글 맞춤법 재검사 중인 글 id
   const gSleep = (ms) => new Promise(r => setTimeout(r, ms))
   const flashGrammarToast = (msg) => { setGrammarToast(msg); setTimeout(() => setGrammarToast(null), 8000) }
   // 로컬 상태만 갱신(재로드·뷰 점프 없이 본 자리에서 빨간 밑줄 반영)
@@ -571,6 +572,26 @@ export default function TeacherSubmissions() {
     }
     setGrammarBusy(false)
     flashGrammarToast(`✅ 맞춤법 검사 완료 — ${glassed}개 글에 교정 ${added}개 추가${errors ? ` · 실패 ${errors}개` : ''}`)
+  }
+
+  // 🆕 step295: 단일 글 "맞춤법만 다시 검사" — 점수·피드백 불변, corrections만. 보던 자리에서 갱신.
+  const recheckGrammarOne = async (sub) => {
+    if (isImpersonating || grammarOneId) return
+    if (!hasApiKey) return alert('AI 기능이 활성화되지 않았어요')
+    setGrammarOneId(sub.id)
+    try {
+      const { mergeCorrections } = await import('../../lib/koreanRules')
+      const result = await callAI('grammarOnly', { essay: sub.essay_text })
+      let corrections = Array.isArray(result.corrections) ? result.corrections : []
+      try { corrections = mergeCorrections(corrections, sub.essay_text) } catch (e) { /* 규칙 보강 실패 무시 */ }
+      const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
+      if (error) throw error
+      patchLocalCorrections(sub.id, corrections)
+      flashGrammarToast(`✅ 맞춤법 다시 검사 — 교정 ${corrections.length}개`)
+    } catch (e) {
+      alert('맞춤법 검사에 실패했어요: ' + (e?.message || ''))
+    }
+    setGrammarOneId(null)
   }
 
   // 일괄 추가 수정 허용
@@ -1117,6 +1138,13 @@ export default function TeacherSubmissions() {
                     {/* 🆕 맞춤법 AI 보조 안내 + 다시 검사(재평가) 배너 — 기존 regradeOne 재사용 */}
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2 flex-wrap">
                       <p className="text-sm text-amber-800 leading-snug flex-1 min-w-[140px]">{GRAMMAR_NOTICE_TEACHER}</p>
+                      {!isImpersonating && (
+                        <button onClick={() => recheckGrammarOne(s)}
+                          disabled={grammarOneId === s.id || bulkRegrading || grammarBusy}
+                          className="text-xs bg-white border border-rose-300 text-rose-700 px-2.5 py-1 rounded-lg hover:bg-rose-50 transition disabled:opacity-50 whitespace-nowrap">
+                          {grammarOneId === s.id ? '🔍 검사 중...' : '🔍 맞춤법만 다시 검사'}
+                        </button>
+                      )}
                       <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
                         disabled={regrading === s.id || bulkRegrading}
                         className="text-xs bg-amber-600 text-white px-2.5 py-1 rounded-lg hover:bg-amber-700 transition disabled:opacity-50 whitespace-nowrap">
