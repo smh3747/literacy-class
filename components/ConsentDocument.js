@@ -27,8 +27,9 @@ export default function ConsentDocument({ school, className, grade, student, par
         .consent-doc h1 { font-size: 1.35rem; }
         .consent-doc h2 { font-size: 0.95rem; margin-bottom: 0.35rem; }
         .consent-doc section { margin-bottom: 0.7rem; }
-        /* 서명·이름 칸: 비어 있어도 줄 높이를 고정해 행끼리 어긋나지 않게 */
-        .consent-doc .sign-line { min-height: 1.6em; }
+        /* 서명·이름 칸: 비어 있어도 줄 높이를 고정해 행끼리 어긋나지 않게.
+           ★ rem(폰트크기 무관) 고정 — 전엔 em이라 "(인)"(11px) 칸만 박스가 짧아 성명/서명 밑줄이 어긋났음(step296). */
+        .consent-doc .sign-line { min-height: 1.5rem; }
 
         /* 인쇄 시: 이 문서만, A4 한 장에 정확히 들어가도록 압축 */
         @media print {

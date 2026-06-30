@@ -18,7 +18,7 @@ export default function ParentConsent() {
 
   const checkAuth = async () => {
     // 🆕 step292: 임퍼소네이션 고려(?as= 시 해당 교사 학급 기준)
-    const { profile } = await getEffectiveProfile('*, classes:class_id(id, name)')
+    const { profile } = await getEffectiveProfile('*, classes:class_id(id, name, grade)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       router.push('/teacher/login'); return
@@ -72,8 +72,8 @@ export default function ParentConsent() {
         </div>
 
         <main className="max-w-3xl mx-auto px-4 py-6">
-          {/* 공용 양식 컴포넌트 — props 없이 빈 양식(학년/반/번호·성명·서명 모두 손 기입). step294: 학급명만 부분 전달돼 칸 어긋나던 것 복구 */}
-          <ConsentDocument />
+          {/* step296: 학년·반은 미리 인쇄(grade+className 함께 — grade 없으면 학급명만), 번호·학생성명·학부모 성명/서명은 빈 줄(손 기입). student 미전달. */}
+          <ConsentDocument grade={classInfo?.grade} className={classInfo?.name} />
         </main>
       </div>
     </>
