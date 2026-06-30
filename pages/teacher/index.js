@@ -451,15 +451,19 @@ export default function TeacherHome() {
           )}
 
           {/* 🆕 step280: 신규 교사용 맛보기 — 실제 피드백을 한 번도 못 본 교사에게만(설정 전 가치 체감) */}
+          {/* step281: 점선 프레임 + "예시" 뱃지로 실제 데이터 카드와 시각적으로 명확히 구분 */}
           {!isImpersonating && showTaste && (
-            <div className="space-y-2">
+            <div className="rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/60 p-3 sm:p-4 space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <p className="text-sm text-gray-700">👀 미리 보기 — 학생이 글을 쓰면 이런 피드백이 자동으로 달려요</p>
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
+                  👀 예시 미리보기
+                </span>
                 <button onClick={dismissTaste}
-                  className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded flex-shrink-0">
+                  className="text-xs text-gray-500 hover:bg-white/70 px-2 py-1 rounded flex-shrink-0">
                   ✖ 닫기
                 </button>
               </div>
+              <p className="text-xs text-violet-800/80">학생이 글을 쓰면 이런 피드백이 자동으로 달려요. (아래는 예시예요)</p>
               <StudentFeedbackCard
                 sub={SAMPLE_TASTE.sub}
                 topic={SAMPLE_TASTE.topic}
