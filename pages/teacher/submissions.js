@@ -522,6 +522,57 @@ export default function TeacherSubmissions() {
     await openTopic(selectedTopic) // 새로고침
   }
 
+  // 🆕 step293: 맞춤법 일괄 검사 (백그라운드 + 우하단 토스트). 로직은 grammar-backfill 재사용.
+  //   대상=현재 주제 글 중 corrections 비어있는 것. 점수·의견 불변, corrections만 추가.
+  const [grammarBusy, setGrammarBusy] = useState(false)
+  const [grammarProg, setGrammarProg] = useState({ done: 0, total: 0 })
+  const [grammarToast, setGrammarToast] = useState(null)
+  const gSleep = (ms) => new Promise(r => setTimeout(r, ms))
+  const flashGrammarToast = (msg) => { setGrammarToast(msg); setTimeout(() => setGrammarToast(null), 8000) }
+  // 로컬 상태만 갱신(재로드·뷰 점프 없이 본 자리에서 빨간 밑줄 반영)
+  const patchLocalCorrections = (id, corrections) => {
+    const patch = (it) => (it.id === id ? { ...it, corrections } : it)
+    setTopicStudents(prev => prev.map(g => ({ ...g, items: g.items.map(patch) })))
+    setSelectedStudent(prev => (prev ? { ...prev, items: prev.items.map(patch) } : prev))
+  }
+  const runGrammarBatch = async () => {
+    if (isImpersonating || grammarBusy || !selectedTopic) return
+    const targets = topicStudents.flatMap(g => g.items)
+      .filter(s => !(Array.isArray(s.corrections) && s.corrections.length > 0))
+    if (targets.length === 0) { flashGrammarToast('이미 모든 글에 맞춤법 정보가 있어요'); return }
+    if (!hasApiKey) return alert('AI 기능이 활성화되지 않았어요')
+    if (!confirm(
+      `🔍 맞춤법 일괄 검사\n\n` +
+      `대상: ${targets.length}개 글 (맞춤법 정보 없는 글)\n` +
+      `※ AI 호출 ${targets.length}회 · 점수·의견은 그대로, 빨간 밑줄만 추가\n\n` +
+      `검사하는 동안 다른 글을 계속 보실 수 있어요. 계속할까요?`
+    )) return
+
+    setGrammarBusy(true)
+    setGrammarProg({ done: 0, total: targets.length })
+    const { mergeCorrections } = await import('../../lib/koreanRules')
+    let glassed = 0, added = 0, errors = 0
+    for (let i = 0; i < targets.length; i++) {
+      const sub = targets[i]
+      try {
+        const result = await callAI('grammarOnly', { essay: sub.essay_text })
+        let corrections = Array.isArray(result.corrections) ? result.corrections : []
+        try { corrections = mergeCorrections(corrections, sub.essay_text) } catch (e) { /* 규칙 보강 실패 무시 */ }
+        const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
+        if (error) throw error
+        if (corrections.length > 0) { glassed++; added += corrections.length }
+        patchLocalCorrections(sub.id, corrections)
+      } catch (e) {
+        errors++
+        if (String(e?.message || '').includes('429')) await gSleep(30000)  // 한도 초과 → 30초 대기 후 재개
+      }
+      setGrammarProg({ done: i + 1, total: targets.length })
+      if (i < targets.length - 1) await gSleep(1500)  // rate limit 보호
+    }
+    setGrammarBusy(false)
+    flashGrammarToast(`✅ 맞춤법 검사 완료 — ${glassed}개 글에 교정 ${added}개 추가${errors ? ` · 실패 ${errors}개` : ''}`)
+  }
+
   // 일괄 추가 수정 허용
   const allowAllExtraRewrites = async () => {
     if (!selectedTopic) return
@@ -735,6 +786,12 @@ export default function TeacherSubmissions() {
                             className="bg-blue-100 border border-blue-300 text-blue-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-200 disabled:opacity-50">
                             🔄 전체 다시 평가 ({submittedCount}명)
                           </button>
+                          {!isImpersonating && (
+                            <button onClick={runGrammarBatch} disabled={grammarBusy}
+                              className="bg-rose-100 border border-rose-300 text-rose-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-rose-200 disabled:opacity-50">
+                              {grammarBusy ? `🔍 검사 중… ${grammarProg.done}/${grammarProg.total}` : '🔍 맞춤법 일괄 검사'}
+                            </button>
+                          )}
                           <button onClick={downloadExcel}
                             className="bg-white border border-primary text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary-light">
                             📥 Excel 다운로드
@@ -1306,6 +1363,27 @@ export default function TeacherSubmissions() {
           )}
         </main>
       </div>
+
+      {/* 🆕 step293: 맞춤법 일괄 검사 우하단 토스트(비차단) — 진행 중 미니 진행바 / 완료 메시지 */}
+      {(grammarBusy || grammarToast) && (
+        <div className="fixed bottom-4 right-4 z-50 bg-white shadow-xl border border-gray-200 rounded-xl px-4 py-3 text-sm max-w-xs">
+          {grammarBusy ? (
+            <div>
+              <div className="font-semibold text-gray-800">🔍 맞춤법 검사 중… {grammarProg.done}/{grammarProg.total}</div>
+              <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                <div className="h-full bg-rose-500 transition-all"
+                  style={{ width: `${grammarProg.total > 0 ? (grammarProg.done / grammarProg.total) * 100 : 0}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1.5">다른 글을 보셔도 계속 진행돼요.</p>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2">
+              <span className="flex-1 text-gray-800">{grammarToast}</span>
+              <button onClick={() => setGrammarToast(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">✖</button>
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 }
