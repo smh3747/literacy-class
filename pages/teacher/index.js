@@ -10,7 +10,9 @@ import PasswordChangeModal from '../../components/PasswordChangeModal'
 import ProfileEditModal from '../../components/ProfileEditModal'
 import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
 import SetupChecklist from '../../components/SetupChecklist'
+import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
 
@@ -62,6 +64,16 @@ export default function TeacherHome() {
   // 🆕 step205-C: 내 의견에 달린 운영자 답변 알림
   const [replyNotifs, setReplyNotifs] = useState([])
   const [showReplies, setShowReplies] = useState(false)
+  // 🆕 step280: 신규 교사 맛보기(샘플 피드백) 노출 여부
+  const [showTaste, setShowTaste] = useState(false)
+
+  // 맛보기 닫기 — 교사별 영구 숨김 (SetupChecklist 닫기 패턴과 동일, 반드시 teacherId 포함)
+  const dismissTaste = () => {
+    setShowTaste(false)
+    if (typeof window !== 'undefined' && user?.id) {
+      try { localStorage.setItem('lc-taste-feedback-dismissed:' + user.id, '1') } catch {}
+    }
+  }
 
   useEffect(() => { checkAuth() }, [])
 
@@ -154,6 +166,33 @@ export default function TeacherHome() {
 
         // 🆕 셋업 체크리스트용 학생 수
         setStudentCountTotal(studentIds?.length || 0)
+
+        // 🆕 step280: 맛보기(샘플 피드백) 노출 판정
+        //   임퍼소네이션 아님 + 안 닫음 + 아직 실제 AI 피드백 0건(feedback_overall 존재하는 제출 없음)
+        if (!imp) {
+          const tasteDismissed = typeof window !== 'undefined' &&
+            localStorage.getItem('lc-taste-feedback-dismissed:' + profile.id) === '1'
+          if (tasteDismissed) {
+            setShowTaste(false)
+          } else {
+            let seenFeedback = false
+            try {
+              if (studentIds && studentIds.length > 0) {
+                // 존재 여부만 — limit 1, 무거운 집계 금지
+                const { data: fbRow } = await supabase.from('submissions')
+                  .select('id')
+                  .in('user_id', studentIds.map(x => x.id))
+                  .not('feedback_overall', 'is', null)
+                  .is('deleted_at', null)
+                  .limit(1)
+                seenFeedback = !!(fbRow && fbRow.length > 0)
+              }
+            } catch { seenFeedback = false }
+            setShowTaste(!seenFeedback)
+          }
+        } else {
+          setShowTaste(false)
+        }
 
         // 🆕 셋업 체크리스트용 주제 수
         const { count: tc } = await supabase.from('topics')
@@ -409,6 +448,24 @@ export default function TeacherHome() {
               onScrollToApi={scrollToApiKey}
               onScrollToLoginHint={scrollToLoginHint}
             />
+          )}
+
+          {/* 🆕 step280: 신규 교사용 맛보기 — 실제 피드백을 한 번도 못 본 교사에게만(설정 전 가치 체감) */}
+          {!isImpersonating && showTaste && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm text-gray-700">👀 미리 보기 — 학생이 글을 쓰면 이런 피드백이 자동으로 달려요</p>
+                <button onClick={dismissTaste}
+                  className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded flex-shrink-0">
+                  ✖ 닫기
+                </button>
+              </div>
+              <StudentFeedbackCard
+                sub={SAMPLE_TASTE.sub}
+                topic={SAMPLE_TASTE.topic}
+                headerLabel="📋 맛보기 — AI가 이렇게 채점·피드백해요"
+              />
+            </div>
           )}
 
           {/* 🆕 step163: 학교 다시 선택 안내 배너 (표준학교코드 없는 기존 교사) */}
