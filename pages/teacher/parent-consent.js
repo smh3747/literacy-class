@@ -72,8 +72,8 @@ export default function ParentConsent() {
         </div>
 
         <main className="max-w-3xl mx-auto px-4 py-6">
-          {/* 공용 양식 컴포넌트 — props 없이 빈 양식(기존 종이 인쇄와 동일) */}
-          <ConsentDocument school={user.school} className={classInfo?.name} />
+          {/* 공용 양식 컴포넌트 — props 없이 빈 양식(학년/반/번호·성명·서명 모두 손 기입). step294: 학급명만 부분 전달돼 칸 어긋나던 것 복구 */}
+          <ConsentDocument />
         </main>
       </div>
     </>
