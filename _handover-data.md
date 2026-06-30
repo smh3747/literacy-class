@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = dc8dc6f (step279))
+# 핸드오버 데이터 (HEAD = 7132500 (step283))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화.
@@ -94,6 +94,15 @@ export const GRAMMAR_NOTICE_TEACHER =
   ※ A1(공유) 구현 후 시간 지났으니 데이터 쌓였는지 SQL 먼저 확인 → 쌓였으면 구현.
 - 교사 대시보드 리디자인 — 로그인 첫 화면. 전환·정착 직결. (먼저 plan mode 현황 분석)
 - B1 — AI가 놓치는 맞춤법 패턴 규칙화. 상시. 글 보다 걸리면 koreanRules에 추가.
+- 중복 제출 데이터 정리 + DB 백스톱 (step283 후속, ⚠️ 고위험 SQL):
+  · 배경: 학생 중복 제출 버그로 같은 제출이 여러 행 insert됨(예: 한 학생 attempt 3이 8행). 원인(클라이언트 가드)은 step283에서 막음 → 새 중복은 안 쌓임. 그러나 과거 쌓인 중복은 DB에 남음.
+  · ①기존 중복 정리(soft delete): (user_id,topic_id,attempt) 그룹별 최초 1행만 남기고 나머지 deleted_at 처리. ⚠️ 1437명 사고 영역 — 반드시 미리보기 SELECT 먼저, WHERE 명시, 하드삭제 금지.
+  · ②정리 후 부분 UNIQUE 인덱스 (user_id,topic_id,attempt) where deleted_at is null 생성(하드 백스톱). 순서 고정: 정리 → 인덱스(중복 있으면 인덱스 생성 실패).
+  · SQL 초안은 plan 파일(c1-plan-mode-twinkly-pelican.md §5-B·§6)에 있음. 실행은 수동.
+- 개인정보/심의 안내 "각인" (교사 안심 + 반복 질문 감소):
+  · 배경: 교사가 "학교 심의 받아야 하나?"를 반복 질문 → 안내가 학생관리 탭 안쪽에 묻혀 안 봄.
+  · 학생 실명 처음 등록/동의 기능 처음 켤 때 1회 "확인했어요" 안내(학급 재량은 심의 대상 아님 + 동의는 선택)로 각인 유도.
+  · 방식(상시표시 vs 1회 차단) 미정 — 설계 시 결정. 톤: 겁주지 말고 안심시키기.
 
 **[수익화 — 의사결정 진행 중]**
 - 첫 유료 가치 방향: "교사의 빈 종이를 없앤다(판단 피로 제거)". 후보 C='이 앱을 수업·창체에서 이렇게 써보세요'식 활용법 안내(검증된 레시피, AI 창작 아님). 유료 vs 무료정착은 미정.
@@ -108,11 +117,13 @@ export const GRAMMAR_NOTICE_TEACHER =
 - A3 만든 교사 평판 표시(개인정보 trade-off).
 
 **[종료된 항목 — 다시 만들지 말 것]**
+- ✅ 학생 중복 제출 방지 클라이언트 가드(step283, submittingRef 동기 잠금) — 연타/await창 재진입 차단. (단 DB 정리·백스톱은 위 [지금 손댈 수 있음]에 남음)
+- ✅ 맛보기 샘플 AI 피드백 카드(step280~282) — 신규 교사 첫 화면, StudentFeedbackCard 재사용·정적.
 - ✅ 회색지대 교사 판정 UI(step237/240, 안전 확인 완료).
 - ✅ 손제작 주제 공유 올리기·내리기(step277/278/279).
 - ✅ 맞춤법 입니다/수있 규칙(step275/276).
 - ❌ '맞춤법 누락 자동수집(A)' — 원천 데이터 없어 무거움. B1 규칙 보강으로 대체(폐기).
 
 ## 워킹트리 상태
-- HEAD=dc8dc6f(step279)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
+- HEAD=7132500(step283)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
 - untracked: `_report*.md`, `_snapshot/`, `FEATURE-MAP.md`, `scripts/make-snapshot.js`, `migrations/step205·206-*.sql`.
