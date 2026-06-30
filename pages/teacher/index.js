@@ -432,7 +432,7 @@ export default function TeacherHome() {
               <div className={`${openGuide === 'consent' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed space-y-2`}>
                 <p>개인정보보호법상 만 14세 미만 학생의 실명을 처리하려면 보호자 동의가 필요해요. 하지만 학급 재량으로 쓰는 동안에는 굳이 동의를 받지 않아도 돼요 — 동의 전에는 닉네임으로 운영되고, 동의는 선택이에요. 학급 명렬표(나이스)로 학생을 등록하는 것은 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <Link href={withImpersonation("/teacher/students")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
+                  <Link href={withImpersonation("/teacher/students?mode=register")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
                   <Link href={withImpersonation("/teacher/students/consent")} className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">✍️ 학부모 온라인 동의서 받기</Link>
                 </div>
               </div>

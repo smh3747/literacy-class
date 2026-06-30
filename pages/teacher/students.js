@@ -1262,7 +1262,10 @@ export default function StudentsPage() {
   const conciergeLocked = students.filter(s => !s.is_hidden && !(s.realname && String(s.realname).trim())).length
   const conciergeStep = conciergeActive === 0 ? 1 : (conciergeLocked > 0 ? 2 : 3)
   // 기본 탭: 활성 0명이면 등록, 있으면 목록. 사용자가 누르면 mode가 고정됨.
-  const effectiveMode = mode || (conciergeActive === 0 ? 'register' : 'list')
+  // 🆕 step288: URL ?mode= 를 초기 탭으로 반영 — 우선순위 state mode > URL 쿼리 > 학생수 파생.
+  //   (router.query는 첫 렌더에 비었다가 채워짐 → 파생값이라 자동 반영, 별도 effect 불필요.)
+  const queryMode = (router.query.mode === 'register' || router.query.mode === 'list') ? router.query.mode : null
+  const effectiveMode = mode || queryMode || (conciergeActive === 0 ? 'register' : 'list')
 
   return (
     <>
