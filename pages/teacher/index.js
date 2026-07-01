@@ -20,7 +20,7 @@ export default function TeacherHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [classInfo, setClassInfo] = useState(null)
-  const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0, todayApiCalls: 0 })
+  const [stats, setStats] = useState({ students: 0, topics: 0, reports: 0, todayApiCalls: 0, todaySubmissions: 0 })
   const [studentSamples, setStudentSamples] = useState([])  // 🆕 안내 카드용 학생 일부
   const [topicCount, setTopicCount] = useState(0)            // 🆕 셋업 체크리스트용
   const [studentCountTotal, setStudentCountTotal] = useState(0)  // 🆕 셋업 체크리스트용
@@ -160,6 +160,7 @@ export default function TeacherHome() {
       let reportCount = 0
       // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
       let todayApiCalls = 0
+      let todaySubmissions = 0  // 🆕 step315: 오늘 제출 수(새 쿼리 없이 subCount 재사용)
       try {
         const { data: studentIds } = await supabase.from('profiles')
           .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
@@ -256,9 +257,10 @@ export default function TeacherHome() {
             .is('deleted_at', null)
           // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출
           todayApiCalls = (subCount || 0) * 2
+          todaySubmissions = subCount || 0
         }
       } catch(e) { /* 컬럼 없으면 무시 */ }
-      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount, todayApiCalls })
+      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
     }
     setLoading(false)
   }
@@ -323,6 +325,14 @@ export default function TeacherHome() {
     const [h] = kr.split(':')
     return `오후 ${parseInt(h) - 12}시`
   }
+
+  // 🆕 step315: 신규/정착 판정 (SetupChecklist 5단계 done 조건과 동일)
+  const setupDone =
+    !!classInfo &&
+    hasApiKey &&
+    studentCountTotal > 0 &&
+    topicCount > 0 &&
+    !!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)
 
   return (
     <>
@@ -467,8 +477,30 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내) */}
-          {!isImpersonating && (
+          {/* 🆕 step315: 정착 교사용 오늘 현황 카드 (신규 쿼리 없이 stats 재사용) */}
+          {setupDone && (
+            <div className="bg-white border-2 border-primary rounded-2xl p-5">
+              <div className="text-xs text-primary-dark font-semibold mb-1">📅 오늘 우리 반</div>
+              {stats.todaySubmissions === 0 ? (
+                <p className="text-sm text-gray-700 mt-1">아직 오늘 제출이 없어요. 학생들에게 오늘 주제를 안내해 보세요.</p>
+              ) : (
+                <p className="text-base font-bold text-gray-900 mt-1">오늘 {stats.todaySubmissions}건 제출 · 학생 {stats.students}명</p>
+              )}
+              {stats.reports > 0 && (
+                <p className="text-sm font-semibold text-rose-600 mt-2">🚨 신고된 피드백 {stats.reports}건 확인이 필요해요</p>
+              )}
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Link href={withImpersonation('/teacher/status')} className="text-sm bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">제출 현황 보기</Link>
+                <Link href={withImpersonation('/teacher/submissions')} className="text-sm bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">학생 글 보기</Link>
+                {stats.todaySubmissions === 0 && (
+                  <Link href={withImpersonation('/teacher/topics')} className="text-sm bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">주제 관리</Link>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김) */}
+          {!isImpersonating && !setupDone && (
             <SetupChecklist
               classInfo={classInfo}
               teacherId={user?.id}
