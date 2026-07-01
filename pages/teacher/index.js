@@ -418,7 +418,7 @@ export default function TeacherHome() {
                 <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'simui' ? '▲' : 'ⓘ'}</span>
               </button>
               <div className={`${openGuide === 'simui' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed`}>
-                학교장이 교육자료로 '선정'하면 학교운영위원회 심의 대상이 될 수 있어요. 학급 재량으로 쓰는 경우는 일반적으로 해당하지 않을 수 있지만, 학교마다 기준이 다르니 소속 학교에 확인을 권장드려요.
+                학급에서 선생님 재량으로 쓰는 건 심의 대상이 아니에요. 학교운영위원회 심의는 학교가 이 도구를 정규 교육과정 교재로 공식 채택할 때만 해당돼요. 다만 학교마다 기준이 조금 다를 수 있으니, 걱정되면 소속 학교에 한번 확인해 보세요.
               </div>
             </div>
             {/* ② 학부모 동의 (+ 액션 2개) */}
@@ -429,7 +429,7 @@ export default function TeacherHome() {
                 <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'consent' ? '▲' : 'ⓘ'}</span>
               </button>
               <div className={`${openGuide === 'consent' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed space-y-2`}>
-                <p>개인정보보호법상 만 14세 미만 학생의 실명을 처리하려면 보호자 동의가 필요해요. 하지만 학급 재량으로 쓰는 동안에는 굳이 동의를 받지 않아도 돼요 — 동의 전에는 닉네임으로 운영되고, 동의는 선택이에요. 학급 명렬표(나이스)로 학생을 등록하는 것은 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
+                <p>학부모 동의는 선택이에요. 안 받으셔도 모든 기능을 그대로 쓸 수 있어요. 다만 학생 실명을 쓰시려면 동의가 필요한데, 만 14세 미만은 개인정보보호법 때문이에요. 동의 전까지는 닉네임으로 운영되고, 동의를 받으면 실명으로 바뀌어요. 학급 명렬표(나이스)로 등록하는 것도 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Link href={withImpersonation("/teacher/students?mode=register")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
                   <Link href={withImpersonation("/teacher/students/consent")} className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">✍️ 학부모 온라인 동의서 받기</Link>

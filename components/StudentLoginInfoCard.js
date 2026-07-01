@@ -213,7 +213,13 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
         <div className="px-5 pb-5 space-y-3">
           {!editing && (
             <>
-              <div className="bg-white rounded-xl p-4 border border-blue-200">
+              {/* ─── 구획 1: 학생에게 보여줄 안내문 (복사·인쇄해서 배포) ─── */}
+              <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+                <div className="bg-blue-100/60 px-4 py-2 border-b border-blue-200">
+                  <div className="text-sm font-bold text-blue-900">📄 학생에게 보여줄 안내문</div>
+                  <div className="text-[11px] text-blue-700/80 mt-0.5">복사하거나 인쇄해서 학생에게 나눠주세요</div>
+                </div>
+                <div className="p-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex flex-col sm:flex-row items-start gap-3">
                     <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -281,13 +287,11 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={copyAnnouncement}
                   disabled={!loginHintEnabled || !prefix}
-                  className={`flex-1 min-w-[180px] py-2.5 px-4 rounded-lg font-semibold text-sm transition ${
+                  className={`w-full mt-3 py-2.5 px-4 rounded-lg font-semibold text-sm transition ${
                     copied
                       ? 'bg-green-500 text-white'
                       : loginHintEnabled && prefix
@@ -296,9 +300,23 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
                   }`}>
                   {copied ? '✅ 복사됨!' : '📋 안내문 통째로 복사'}
                 </button>
+                </div>
+              </div>
+
+              {/* ─── 구획 2: 선생님 안내 방법 (교사 전용) ─── */}
+              <div className="bg-amber-50 rounded-xl border border-amber-200 p-4 space-y-3">
+                <div className="text-sm font-bold text-amber-900">🧑‍🏫 선생님 안내 방법</div>
+                <div className="text-xs text-gray-700 leading-relaxed">
+                  <p>첫 수업에 이 안내문을 학생에게 직접 보여주는 게 가장 쉬워요.</p>
+                  <ul className="list-disc pl-4 mt-1.5 space-y-1">
+                    <li>QR 코드를 화면에 띄우면 학생들이 각자 기기로 바로 접속해요.</li>
+                    <li>종이로 주고 싶으면 '🔍 크게·인쇄'로 출력하거나 '📋 안내문 통째로 복사'로 게시판에 붙이세요.</li>
+                    <li>로그인이 안 되는 학생은 아이디(접두사 + 두 자리 번호)와 기본 비밀번호부터 확인해 주세요.</li>
+                  </ul>
+                </div>
 
                 {!isImpersonating && (
-                  <>
+                  <div className="flex flex-wrap gap-2">
                     {(!loginHintEnabled || !prefix) && (
                       <button
                         onClick={fillAutomatically}
@@ -319,7 +337,7 @@ export default function StudentLoginInfoCard({ classInfo, students, isImpersonat
                         🔕 안내 끄기
                       </button>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
 
