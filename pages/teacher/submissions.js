@@ -529,12 +529,19 @@ export default function TeacherSubmissions() {
   const [grammarToast, setGrammarToast] = useState(null)
   const [grammarOneId, setGrammarOneId] = useState(null)  // 🆕 step295: 단일 글 맞춤법 재검사 중인 글 id
   const gSleep = (ms) => new Promise(r => setTimeout(r, ms))
-  const flashGrammarToast = (msg) => { setGrammarToast(msg); setTimeout(() => setGrammarToast(null), 8000) }
+  // 🆕 step300: 토스트 = { msg, targetStudentId }. targetStudentId 있으면 클릭 시 그 학생 글로 이동
+  const flashGrammarToast = (msg, targetStudentId = null) => { setGrammarToast({ msg, targetStudentId }); setTimeout(() => setGrammarToast(null), 8000) }
   // 로컬 상태만 갱신(재로드·뷰 점프 없이 본 자리에서 빨간 밑줄 반영)
   const patchLocalCorrections = (id, corrections) => {
     const patch = (it) => (it.id === id ? { ...it, corrections } : it)
     setTopicStudents(prev => prev.map(g => ({ ...g, items: g.items.map(patch) })))
     setSelectedStudent(prev => (prev ? { ...prev, items: prev.items.map(patch) } : prev))
+  }
+  // 🆕 step300: 단일 맞춤법 검사 완료 토스트 클릭 → 그 학생 글로 이동(topicStudents는 patchLocalCorrections로 최신 corrections 보유)
+  const goToGrammarTarget = (studentId) => {
+    const group = topicStudents.find(g => g.profile.id === studentId)
+    if (group) { openStudent(group); window.scrollTo({ top: 0 }) }
+    setGrammarToast(null)
   }
   const runGrammarBatch = async () => {
     if (isImpersonating || grammarBusy || !selectedTopic) return
@@ -583,6 +590,7 @@ export default function TeacherSubmissions() {
     const num = (selectedStudent?.profile?.number != null && String(selectedStudent.profile.number).trim() !== '')
       ? `${String(selectedStudent.profile.number).trim()}번 ` : ''
     const who = num + displayStudentName(selectedStudent?.profile)
+    const targetStudentId = selectedStudent?.profile?.id  // 🆕 step300: 검사 중 다른 학생으로 넘어가도 A로 되돌아올 대상 고정
     const attemptLabel = (sub.attempt || 1) === 1 ? '첫 글' : `수정본 ${(sub.attempt || 1) - 1}차`
     setGrammarOneId(sub.id)
     try {
@@ -594,7 +602,7 @@ export default function TeacherSubmissions() {
       const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
       if (error) throw error
       patchLocalCorrections(sub.id, corrections)
-      flashGrammarToast(`✅ ${who} (${attemptLabel}) 맞춤법 검사 완료 — 교정 ${before}개 → ${corrections.length}개`)
+      flashGrammarToast(`✅ ${who} (${attemptLabel}) 맞춤법 검사 완료 — 교정 ${before}개 → ${corrections.length}개`, targetStudentId)
     } catch (e) {
       alert('맞춤법 검사에 실패했어요: ' + (e?.message || ''))
     }
@@ -1413,7 +1421,17 @@ export default function TeacherSubmissions() {
             </div>
           ) : (
             <div className="flex items-start gap-2">
-              <span className="flex-1 text-gray-800">{grammarToast}</span>
+              {grammarToast.targetStudentId ? (
+                <button
+                  onClick={() => goToGrammarTarget(grammarToast.targetStudentId)}
+                  className="flex-1 text-left text-gray-800 hover:text-primary-dark cursor-pointer"
+                  title="이 학생 글로 이동"
+                >
+                  {grammarToast.msg} <span className="text-primary underline whitespace-nowrap">글 보기 →</span>
+                </button>
+              ) : (
+                <span className="flex-1 text-gray-800">{grammarToast.msg}</span>
+              )}
               <button onClick={() => setGrammarToast(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">✖</button>
             </div>
           )}
