@@ -253,21 +253,33 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
               {buildAnnouncement()}
             </div>
 
-            {/* 안내문 보내기 — 복사 vs 하이클래스 시각 분리 */}
+            {/* 안내문 보내기 — ① 복사 → ② 하이클래스 순서 유도(복사 여부에 따라 강조 이동) */}
             <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
               <p className="text-xs font-semibold text-gray-700 mb-2">안내문 보내기</p>
               <div className="grid sm:grid-cols-2 gap-2">
+                {/* ① 복사 — 복사 전 강조(pulse), 복사 후 완료 표시 */}
                 <button onClick={copyAnnouncement}
-                  className="py-2.5 px-3 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark text-center">
-                  {copiedAnno ? '✅ 복사됐어요!' : '📋 안내문 복사'}
-                  <span className="block text-[11px] font-normal opacity-90 mt-0.5">카톡·문자에 붙여넣기</span>
+                  className={`py-2.5 px-3 rounded-lg text-sm font-semibold text-center transition ${
+                    copiedAnno
+                      ? 'bg-green-500 text-white'
+                      : 'bg-primary text-white hover:bg-primary-dark animate-pulse'
+                  }`}>
+                  {copiedAnno ? '✅ 복사됐어요' : '① 안내문 복사'}
                 </button>
+                {/* ② 하이클래스 — 복사 전 차분, 복사 후 강조(ring + pulse) */}
                 <button onClick={openHiclass}
-                  className="py-2.5 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50 text-center">
-                  🏫 하이클래스 열기
-                  <span className="block text-[11px] font-normal text-gray-500 mt-0.5">열고 나서 붙여넣어 발송</span>
+                  className={`py-2.5 px-3 rounded-lg text-sm font-semibold text-center transition ${
+                    copiedAnno
+                      ? 'bg-primary text-white hover:bg-primary-dark ring-2 ring-primary ring-offset-1 animate-pulse'
+                      : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'
+                  }`}>
+                  ② 하이클래스 열기
+                  <span className="block text-[11px] font-normal opacity-90 mt-0.5">열고 나서 붙여넣어 발송</span>
                 </button>
               </div>
+              {copiedAnno && (
+                <p className="text-xs text-center text-primary-dark font-medium mt-2">이제 ②를 눌러 붙여넣으세요</p>
+              )}
               {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
             </div>
           </>

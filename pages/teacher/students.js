@@ -1494,11 +1494,15 @@ export default function StudentsPage() {
                   if (f) handleFile(f)   // 이벤트가 아닌 파일을 직접 전달 → handleFile이 둘 다 허용
                 }}
                 className={`rounded-lg border-2 border-dashed p-4 text-center transition ${
-                  dragOver ? 'border-primary bg-primary-light' : 'border-gray-300 bg-gray-50'
+                  (dragOver || (!uploadStatus && parsedStudents.length === 0 && user?.school))
+                    ? 'border-primary bg-primary-light' : 'border-gray-300 bg-gray-50'
                 } ${!user?.school ? 'opacity-50' : ''}`}>
+                {!uploadStatus && parsedStudents.length === 0 && user?.school && (
+                  <div className="text-xs font-bold text-primary mb-1 animate-bounce">👆 여기에 올리면 돼요</div>
+                )}
                 <p className="text-sm text-gray-600 mb-2">
-                  📂 여기로 파일을 끌어다 놓거나, <strong>[파일 선택]</strong>을 눌러 올리세요
-                  <span className="block text-xs text-gray-400 mt-0.5">엑셀(.xlsx, .xls) · 텍스트 PDF(.pdf) 지원</span>
+                  📂 나이스 학급명렬표 파일을 여기로 끌어다 놓거나, <strong>[파일 선택]</strong>을 눌러 올리세요
+                  <span className="block text-xs text-gray-400 mt-0.5">나이스 파일이 없으면 아래 &lsquo;📄 빈 양식&rsquo;을 받아 채워 올리셔도 돼요 · 엑셀(.xlsx, .xls)·PDF 지원</span>
                 </p>
                 <label className="inline-block">
                   <span className="sr-only">엑셀 또는 PDF 파일 선택</span>
