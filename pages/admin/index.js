@@ -19,6 +19,7 @@ export default function AdminHome() {
   const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
   const [trashedClasses, setTrashedClasses] = useState([])
   const [sharedSuggestionLogs, setSharedSuggestionLogs] = useState([])  // 🆕 공유 추천 추적
+  const [topicCopies, setTopicCopies] = useState([])  // 🆕 주제 공유 추적(누가 누구 주제를 가져갔나)
   const [resetRequests, setResetRequests] = useState([])  // 🆕 비밀번호 초기화 요청
   const [idLookups, setIdLookups] = useState({})  // 🆕 step161: 아이디 찾기 후보 { [reqId]: {loading, list} }
   const [selectedReqIds, setSelectedReqIds] = useState(new Set())  // 🆕 step162: 요청함 일괄 선택
@@ -306,6 +307,25 @@ export default function AdminHome() {
     } catch(e) {
       console.warn('공유 추천 로드 실패:', e)
       setSharedSuggestionLogs([])
+    }
+
+    // 🆕 주제 공유 추적 로드 (관리자 전용 — 누가 누구 주제를 가져갔나). RLS로 admin만 전량 조회.
+    try {
+      const { data: copies } = await supabase.from('topic_copies')
+        .select(`
+          id, source_index, copied_at,
+          copied_by:topic_copies_copied_by_teacher_id_fkey ( id, realname, school ),
+          source_log:topic_copies_source_log_id_fkey (
+            id, suggestions,
+            author:topic_suggestion_logs_teacher_id_fkey ( id, realname, school )
+          )
+        `)
+        .order('copied_at', { ascending: false })
+        .limit(200)
+      setTopicCopies(copies || [])
+    } catch(e) {
+      console.warn('주제 공유 추적 로드 실패:', e)
+      setTopicCopies([])
     }
 
     // 🆕 비밀번호 초기화 요청 (pending만)
@@ -957,6 +977,7 @@ export default function AdminHome() {
               { id: 'submissions', label: '📝 학생 글' },
               { id: 'feedbacks', label: `💬 의견 (${feedbacks.filter(f => !f.is_hidden).length})` },
               { id: 'shared-suggestions', label: `📚 추천 공유${sharedSuggestionLogs.length > 0 ? ` (${sharedSuggestionLogs.length})` : ''}` },
+              { id: 'topic-copies', label: `🔗 주제 공유 추적${topicCopies.length > 0 ? ` (${topicCopies.length})` : ''}` },
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
               { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
@@ -1883,6 +1904,71 @@ export default function AdminHome() {
               </div>
             </div>
           )}
+
+          {/* 🆕 주제 공유 추적 탭 (admin 전용 조회) */}
+          {tab === 'topic-copies' && (() => {
+            const rows = topicCopies
+            const teacherLabel = (p) => {
+              if (!p) return '(알 수 없음)'
+              const nm = (p.realname && p.realname.trim()) ? p.realname.trim() : '(이름 없음)'
+              return (p.school && p.school.trim()) ? `${nm} (${p.school.trim()})` : nm
+            }
+            // 원본 교사별 가져간 횟수 집계
+            const byAuthor = {}
+            rows.forEach(r => {
+              const a = r.source_log?.author
+              if (!a) return
+              const key = a.id || a.realname || 'unknown'
+              if (!byAuthor[key]) byAuthor[key] = { label: teacherLabel(a), count: 0 }
+              byAuthor[key].count++
+            })
+            const ranked = Object.values(byAuthor).sort((x, y) => y.count - x.count)
+            return (
+              <div className="space-y-4">
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-900 leading-relaxed">
+                  🔗 누가 어느 선생님의 주제를 가져갔는지 볼 수 있어요. 공유 주제를 가져오기 버튼으로 담은 기록이에요.
+                </div>
+
+                {ranked.length > 0 && (
+                  <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <h3 className="text-sm font-bold text-gray-800 mb-2">원본 교사별 가져간 횟수</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {ranked.map((a, i) => (
+                        <span key={i} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                          {a.label} · {a.count}번
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  {rows.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-6">아직 가져간 기록이 없어요.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {rows.map(r => {
+                        const title = r.source_log?.suggestions?.[r.source_index]?.title || '(주제 정보 없음)'
+                        return (
+                          <div key={r.id} className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50">
+                            <div className="text-sm text-gray-800">
+                              <span className="font-semibold text-blue-700">{teacherLabel(r.copied_by)}</span>
+                              <span className="text-gray-400 mx-1">←</span>
+                              <span className="font-semibold text-gray-700">{teacherLabel(r.source_log?.author)}</span>
+                              <span className="text-gray-500">님의 </span>
+                              <span className="text-gray-900">{`'${title}'`}</span>
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">{toKSTDate(r.copied_at)}</div>
+                          </div>
+                        )
+                      })}
+                      <p className="text-xs text-gray-400 text-center pt-2">최근 200건까지 표시</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* 🆕 휴지통 탭 (B4) */}
           {tab === 'trash' && (
