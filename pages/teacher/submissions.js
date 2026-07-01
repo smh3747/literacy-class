@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -528,9 +528,14 @@ export default function TeacherSubmissions() {
   const [grammarProg, setGrammarProg] = useState({ done: 0, total: 0 })
   const [grammarToast, setGrammarToast] = useState(null)
   const [grammarOneId, setGrammarOneId] = useState(null)  // 🆕 step295: 단일 글 맞춤법 재검사 중인 글 id
+  const grammarToastTimer = useRef(null)  // 🆕 step301: 토스트 자동 해제 타이머(겹침 방지)
   const gSleep = (ms) => new Promise(r => setTimeout(r, ms))
   // 🆕 step300: 토스트 = { msg, targetStudentId }. targetStudentId 있으면 클릭 시 그 학생 글로 이동
-  const flashGrammarToast = (msg, targetStudentId = null) => { setGrammarToast({ msg, targetStudentId }); setTimeout(() => setGrammarToast(null), 8000) }
+  const flashGrammarToast = (msg, targetStudentId = null) => {
+    if (grammarToastTimer.current) clearTimeout(grammarToastTimer.current)  // 🆕 step301: 이전 타이머 취소 → 조기 소멸 방지
+    setGrammarToast({ msg, targetStudentId })
+    grammarToastTimer.current = setTimeout(() => { setGrammarToast(null); grammarToastTimer.current = null }, 8000)
+  }
   // 로컬 상태만 갱신(재로드·뷰 점프 없이 본 자리에서 빨간 밑줄 반영)
   const patchLocalCorrections = (id, corrections) => {
     const patch = (it) => (it.id === id ? { ...it, corrections } : it)
