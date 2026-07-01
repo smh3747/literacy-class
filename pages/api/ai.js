@@ -14,7 +14,7 @@ import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
-  grammarOnlyPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
+  grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -218,6 +218,15 @@ export default async function handler(req, res) {
       prompt = grammarOnlyPrompt({ essay })
       schema = SCHEMAS.grammarOnly
       opts = { taskType: 'grammar', maxTokens: 2000 }
+
+    } else if (type === 'grammarStrict') {
+      // 🆕 맞춤법만 다시 검사(recheckGrammarOne 전용) — 정식 채점과 동일한 규칙·모델·temperature로
+      //    corrections만 생성해 품질을 정식 검사와 일치시킨다. (batch용 grammarOnly는 그대로 유지)
+      const { essay } = payload || {}
+      if (!essay) return res.status(400).json({ error: '글 내용이 필요해요' })
+      prompt = grammarStrictPrompt({ essay })
+      schema = SCHEMAS.grammarOnly            // corrections만 (점수 필드 없음)
+      opts = { taskType: 'grading', maxTokens: 4000, temperature: 0 }  // 정식과 동일 모델·결정성
 
     } else if (type === 'feedbackSummary') {
       const { feedbacks } = payload || {}

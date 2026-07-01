@@ -587,7 +587,8 @@ export default function TeacherSubmissions() {
     setGrammarOneId(sub.id)
     try {
       const { mergeCorrections } = await import('../../lib/koreanRules')
-      const result = await callAI('grammarOnly', { essay: sub.essay_text })
+      // 🆕 step299: 정식 검사와 동일 품질을 위해 grammarStrict 사용(정식 채점과 같은 규칙·모델·temperature)
+      const result = await callAI('grammarStrict', { essay: sub.essay_text })
       let corrections = Array.isArray(result.corrections) ? result.corrections : []
       try { corrections = mergeCorrections(corrections, sub.essay_text) } catch (e) { /* 규칙 보강 실패 무시 */ }
       const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
