@@ -179,23 +179,49 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
         </div>
       )}
 
-      {/* 나머지 단계 — 작게(완료 ✓ / 예정 흐리게) */}
+      {/* 나머지 단계 — 완료 ✓(비클릭) / 미완료는 눌러서 바로 이동(A안). action은 기존 것 그대로 재사용 */}
       <div className="space-y-1.5">
         {steps.map((s, idx) => {
           if (s === nextStep) return null
+          const badge = (
+            <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+              s.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {s.done ? '✓' : idx + 1}
+            </span>
+          )
+          // 완료 줄 — 지금 그대로(비클릭)
+          if (s.done) {
+            return (
+              <div key={s.id} className="flex items-center gap-2 text-sm px-1">
+                {badge}
+                <span className="flex-shrink-0 text-gray-500">{s.label}</span>
+                {s.detail && (
+                  <span className="text-xs text-gray-400 truncate hidden sm:inline">· {s.detail}</span>
+                )}
+              </div>
+            )
+          }
+          // 미완료 줄 — 해당 step.action으로 바로 이동(클릭 가능). 강조는 위 큰 카드가 담당
+          const rowClass = 'flex items-center gap-2 text-sm px-1 rounded cursor-pointer hover:bg-gray-50 transition'
+          const inner = (
+            <>
+              {badge}
+              <span className="text-gray-700">{s.label}</span>
+              <span className="ml-auto text-gray-300 text-xs" aria-hidden="true">→</span>
+            </>
+          )
+          if (s.action?.type === 'link') {
+            return <Link key={s.id} href={s.action.href} className={rowClass}>{inner}</Link>
+          }
+          if (s.action?.type === 'scroll') {
+            return <button key={s.id} type="button" onClick={s.action.onClick} className={`${rowClass} w-full text-left`}>{inner}</button>
+          }
+          // action 없으면(이론상 없음) 비클릭 표시
           return (
             <div key={s.id} className="flex items-center gap-2 text-sm px-1">
-              <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                s.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
-              }`}>
-                {s.done ? '✓' : idx + 1}
-              </span>
-              <span className={`flex-shrink-0 ${s.done ? 'text-gray-500' : 'text-gray-400'}`}>
-                {s.label}
-              </span>
-              {s.done && s.detail && (
-                <span className="text-xs text-gray-400 truncate hidden sm:inline">· {s.detail}</span>
-              )}
+              {badge}
+              <span className="text-gray-500">{s.label}</span>
             </div>
           )
         })}
