@@ -195,15 +195,15 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
 
   return (
     <div>
-      {/* 왜 동의 (사실 기반) — 법적 안내, 가독성 강화(폰트·패딩·줄간격) */}
+      {/* 왜 동의 (사실 기반) — 결론(동의는 선택) 먼저, 가독성 강화(폰트·패딩·줄간격) */}
       <div className="text-[15px] text-blue-900 bg-blue-50 border border-blue-200 rounded-lg p-3.5 mb-2.5 leading-7">
-        💡 개인정보보호법상 만 14세 미만 학생의 실명을 처리하려면 보호자 동의가 필요해요.
-        동의 전까지는 <strong>닉네임</strong>으로 운영되고, 동의한 학생만 실명으로 전환돼요. <strong>동의는 선택</strong>이에요.
+        💡 <strong>동의는 선택이에요.</strong> 동의 전까지는 <strong>닉네임</strong>으로 운영되고, 동의한 학생만 실명으로 전환돼요.
+        만 14세 미만 학생의 실명을 처리하려면 개인정보보호법상 보호자 동의가 필요하거든요.
       </div>
-      {/* 학운위 (확인 권장 — 단정 금지) — 가독성 강화(폰트·패딩·줄간격 + 글자색 진하게) */}
+      {/* 학운위 (확인 권장 — 단정 금지) — 결론 먼저, step302 대시보드 톤과 통일 */}
       <div className="text-[15px] text-gray-800 bg-gray-50 border border-gray-200 rounded-lg p-3.5 mb-3 leading-7">
-        ℹ️ 학교장이 교육자료로 '선정'하면 학교운영위원회 심의 대상이 될 수 있어요. 학급 재량 사용은 일반적으로 해당하지 않을 수 있지만,
-        학교마다 기준이 다르니 소속 학교에 확인을 권장드려요.
+        ℹ️ 학급에서 재량으로 쓰는 건 심의 대상이 아니에요. 학교운영위원회 심의는 학교가 정규 교육과정 교재로 공식 채택할 때만 해당돼요.
+        다만 학교마다 기준이 조금 다를 수 있으니, 걱정되면 소속 학교에 확인해 보세요.
       </div>
 
       {/* 진행률 */}
@@ -253,17 +253,23 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
               {buildAnnouncement()}
             </div>
 
-            {/* 공유 버튼 3개 */}
-            <button onClick={copyAnnouncement}
-              className="w-full mt-2 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
-              {copiedAnno ? '✅ 안내문이 복사됐어요!' : '📋 학부모 안내문 복사'}
-            </button>
-            <button onClick={openHiclass}
-              className="w-full mt-2 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50">
-              하이클래스 열기
-            </button>
-            <p className="text-xs text-gray-500 mt-1 text-center">복사해서 학급 알림장·메신저(하이클래스 등)에 붙여넣으면 돼요</p>
-            {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
+            {/* 안내문 보내기 — 복사 vs 하이클래스 시각 분리 */}
+            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+              <p className="text-xs font-semibold text-gray-700 mb-2">안내문 보내기</p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <button onClick={copyAnnouncement}
+                  className="py-2.5 px-3 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark text-center">
+                  {copiedAnno ? '✅ 복사됐어요!' : '📋 안내문 복사'}
+                  <span className="block text-[11px] font-normal opacity-90 mt-0.5">카톡·문자에 붙여넣기</span>
+                </button>
+                <button onClick={openHiclass}
+                  className="py-2.5 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50 text-center">
+                  🏫 하이클래스 열기
+                  <span className="block text-[11px] font-normal text-gray-500 mt-0.5">열고 나서 붙여넣어 발송</span>
+                </button>
+              </div>
+              {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
+            </div>
           </>
         ) : (
           <>

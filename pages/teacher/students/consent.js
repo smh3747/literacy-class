@@ -70,65 +70,50 @@ export default function StudentsConsentPage() {
           )}
 
           <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-4 rounded-2xl leading-relaxed">
-            🔒 동의받으면 그 학생만 실명으로 표시돼요. <strong>동의는 선택이에요</strong> — 받지 않아도 닉네임으로 안전하게 수업을 진행할 수 있어요.
+            🔒 <strong>동의는 선택이에요.</strong> 받지 않아도 닉네임으로 안전하게 수업할 수 있어요. 동의를 받으면 그 학생만 실명으로 표시돼요.
           </div>
 
-          {/* 두 갈래 선택 */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* 3구획 — 온라인 / 종이 / 제출 조회 (대등한 카드) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button onClick={() => setMode('online')}
               className={`rounded-2xl p-4 text-left border-2 transition ${mode === 'online' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
               <div className="text-lg font-bold">🔗 온라인으로 받기</div>
-              <div className="text-xs text-gray-600 mt-1">링크·QR·동의번호를 보내 학부모가 휴대폰으로 동의</div>
+              <div className="text-xs text-gray-600 mt-1">링크와 QR를 보내면 학부모가 휴대폰으로 바로 동의해요.</div>
             </button>
             <button onClick={() => setMode('paper')}
               className={`rounded-2xl p-4 text-left border-2 transition ${mode === 'paper' ? 'border-primary bg-primary-light shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
               <div className="text-lg font-bold">🖨 종이로 받기</div>
-              <div className="text-xs text-gray-600 mt-1">A4 한 장으로 인쇄해 가정통신문으로 배부·회수</div>
+              <div className="text-xs text-gray-600 mt-1">A4로 인쇄해 가정통신문으로 나눠주고 회수해요.</div>
             </button>
+            <Link href={withImpersonation('/teacher/students/consent/submissions')}
+              className="rounded-2xl p-4 text-left border-2 border-gray-200 bg-white hover:border-gray-300 transition">
+              <div className="text-lg font-bold">📄 제출된 동의서 보기</div>
+              <div className="text-xs text-gray-600 mt-1">이미 받은 동의를 확인하는 곳이에요. 보호자명과 동의 일시, 서명을 볼 수 있어요.</div>
+            </Link>
           </div>
-
-          {/* 🆕 F-2: 제출된 동의서 보기 진입점 */}
-          <Link href={withImpersonation('/teacher/students/consent/submissions')}
-            className="block bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
-            📄 <strong>제출된 동의서 보기</strong> — 보호자명·동의일시·서명 확인
-          </Link>
 
           {/* 회색지대 배너 — 탭 분기 위 공통 영역(온라인·종이 양쪽에서 보임). 0명이면 안 뜸 */}
           <GrayZonePanel classInfo={classInfo} readOnly={isImpersonating} />
 
           {/* 온라인 갈래 — ConsentPanel(왜동의/학운위/폴백 안내문 모두 이 안에 단일 출처) */}
           {mode === 'online' && classInfo && (
-            <div className="space-y-3">
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
-                <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} teacherSchool={user?.school} />
-              </div>
-              {/* 종이로 오가는 배너 */}
-              <button onClick={() => setMode('paper')}
-                className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
-                🖨 종이가 편하세요? → <strong>종이로 받기</strong>
-              </button>
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
+              <ConsentPanel classInfo={classInfo} readOnly={isImpersonating} teacherSchool={user?.school} />
             </div>
           )}
 
           {/* 종이 갈래 — 기존 인쇄 화면 연결(방식 b: print 동작·출력물 그대로 유지) */}
           {mode === 'paper' && (
-            <div className="space-y-3">
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
-                <h3 className="font-bold text-gray-900 mb-1">🖨 종이 동의서 (A4 한 장)</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  가정통신문으로 배부할 인쇄용 동의서예요. 아래 버튼을 누르면 인쇄 화면이 열리고, 거기서 <strong>🖨️ 인쇄하기</strong>로 출력하면 됩니다.
-                  학생이 받아온 종이의 동의 여부는 학생 목록에서 <strong>동의서 ✓</strong>로 직접 체크하세요.
-                </p>
-                <Link href={withImpersonation('/teacher/parent-consent')}
-                  className="inline-block mt-3 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
-                  📄 인쇄용 동의서 열기
-                </Link>
-              </div>
-              {/* 온라인으로 오가는 배너 */}
-              <button onClick={() => setMode('online')}
-                className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition text-sm">
-                ← <strong>온라인으로 받기</strong> (링크·QR로 더 간편하게)
-              </button>
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-blue-100">
+              <h3 className="font-bold text-gray-900 mb-1">🖨 종이 동의서 (A4 한 장)</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                가정통신문으로 나눠줄 인쇄용 동의서예요. 아래 버튼을 누르면 인쇄 화면이 열려요. 거기서 <strong>🖨️ 인쇄하기</strong>로 출력하면 됩니다.
+                학생이 받아온 종이의 동의 여부는 학생 목록에서 <strong>동의서 ✓</strong>로 직접 체크하세요.
+              </p>
+              <Link href={withImpersonation('/teacher/parent-consent')}
+                className="inline-block mt-3 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-dark">
+                📄 인쇄용 동의서 열기
+              </Link>
             </div>
           )}
         </main>
