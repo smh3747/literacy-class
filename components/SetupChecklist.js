@@ -98,6 +98,8 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
 
   const doneCount = steps.filter(s => s.done).length
   const allDone = doneCount === steps.length
+  // 🆕 다음 할 일 하나 = 미완료 중 순서상 첫 단계 (allDone이면 undefined)
+  const nextStep = steps.find(s => !s.done)
 
   // 모든 단계 완료되면 작은 축하 카드만 + "닫기"
   if (allDone) {
@@ -122,7 +124,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
         <div>
           <h3 className="font-bold text-blue-900">🎯 첫 셋업 체크리스트</h3>
           <p className="text-xs text-blue-700 mt-1">
-            {doneCount} / {steps.length} 단계 완료 — 학생들이 글을 쓰려면 모든 단계가 필요해요
+            {doneCount} / {steps.length} 단계 완료. 아래 &lsquo;지금 할 일&rsquo;부터 하나씩 하면 돼요.
           </p>
         </div>
         <button
@@ -144,66 +146,59 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
         />
       </div>
 
-      {/* 단계 목록 */}
-      <div className="space-y-2">
-        {steps.map((s, idx) => (
-          <div
-            key={s.id}
-            className={`bg-white rounded-lg p-3 border ${s.done ? 'border-green-200' : 'border-gray-200'} flex items-center gap-3 flex-wrap`}>
-            {/* 상태 표시 */}
-            <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
-              s.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {s.done ? '✓' : idx + 1}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className={`font-semibold text-sm ${s.done ? 'text-gray-600' : 'text-gray-900'}`}>
-                {s.label}
-              </div>
-              {s.detail && (
-                <div className={`text-xs ${s.done ? 'text-gray-500' : 'text-gray-600'} mt-0.5`}>
-                  {s.detail}
-                </div>
+      {/* ⭐ 다음 할 일 하나 — 크게 강조 */}
+      {nextStep && (
+        <div className="bg-white rounded-xl p-4 border-2 border-blue-400 shadow-sm">
+          <div className="text-[11px] font-bold text-blue-600 tracking-wide">👉 지금 할 일</div>
+          <div className="font-bold text-lg text-gray-900 mt-1">{nextStep.label}</div>
+          {nextStep.detail && (
+            <div className="text-sm text-gray-600 mt-1">{nextStep.detail}</div>
+          )}
+          {nextStep.action && (
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              {nextStep.action.type === 'link' ? (
+                <Link
+                  href={nextStep.action.href}
+                  className="inline-block px-4 py-2.5 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700">
+                  {nextStep.action.text}
+                </Link>
+              ) : (
+                <button
+                  onClick={nextStep.action.onClick}
+                  className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700">
+                  {nextStep.action.text}
+                </button>
+              )}
+              {nextStep.help && (
+                <Link href={nextStep.help.href} target="_blank" className="text-xs text-blue-600 hover:underline">
+                  {nextStep.help.text}
+                </Link>
               )}
             </div>
+          )}
+        </div>
+      )}
 
-            {/* 액션 버튼 */}
-            {s.action && !s.done && (
-              <div className="flex items-center gap-2">
-                {s.help && (
-                  <Link href={s.help.href} target="_blank" className="text-xs text-blue-600 hover:underline">
-                    {s.help.text}
-                  </Link>
-                )}
-                {s.action.type === 'link' ? (
-                  <Link
-                    href={s.action.href}
-                    className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700">
-                    {s.action.text}
-                  </Link>
-                ) : (
-                  <button
-                    onClick={s.action.onClick}
-                    className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700">
-                    {s.action.text}
-                  </button>
-                )}
-              </div>
-            )}
-            {s.action && s.done && (
-              <div className="flex items-center gap-2">
-                {s.action.type === 'link' && (
-                  <Link
-                    href={s.action.href}
-                    className="text-xs px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded hover:bg-gray-50">
-                    {s.action.text}
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+      {/* 나머지 단계 — 작게(완료 ✓ / 예정 흐리게) */}
+      <div className="space-y-1.5">
+        {steps.map((s, idx) => {
+          if (s === nextStep) return null
+          return (
+            <div key={s.id} className="flex items-center gap-2 text-sm px-1">
+              <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                s.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+              }`}>
+                {s.done ? '✓' : idx + 1}
+              </span>
+              <span className={`flex-shrink-0 ${s.done ? 'text-gray-500' : 'text-gray-400'}`}>
+                {s.label}
+              </span>
+              {s.done && s.detail && (
+                <span className="text-xs text-gray-400 truncate hidden sm:inline">· {s.detail}</span>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
