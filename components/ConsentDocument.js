@@ -27,9 +27,9 @@ export default function ConsentDocument({ school, className, grade, student, par
         .consent-doc h1 { font-size: 1.35rem; }
         .consent-doc h2 { font-size: 0.95rem; margin-bottom: 0.35rem; }
         .consent-doc section { margin-bottom: 0.7rem; }
-        /* 서명·이름 칸: 비어 있어도 줄 높이를 고정해 행끼리 어긋나지 않게.
-           ★ rem(폰트크기 무관) 고정 — 전엔 em이라 "(인)"(11px) 칸만 박스가 짧아 성명/서명 밑줄이 어긋났음(step296). */
-        .consent-doc .sign-line { min-height: 1.5rem; }
+        /* 서명·이름 칸: 고정 height로 빈 칸·글자 든 칸 높이를 동일하게 박아 네 칸 밑줄 정렬(step298).
+           (min-height는 최소값이라 내용 들면 칸이 커져 어긋났음. 서명 이미지는 .sign-line 아님 → 영향 없음.) */
+        .consent-doc .sign-line { height: 1.6rem; display: flex; align-items: flex-end; box-sizing: border-box; white-space: nowrap; }
 
         /* 인쇄 시: 이 문서만, A4 한 장에 정확히 들어가도록 압축 */
         @media print {
@@ -166,7 +166,7 @@ export default function ConsentDocument({ school, className, grade, student, par
             ) : status === 'paper' ? (
               <div className="sign-line border-b border-gray-700 mt-3 text-[11px] text-gray-500">종이로 제출됨 (원본 보관)</div>
             ) : (
-              <div className="sign-line border-b border-gray-700 mt-3 text-right pr-1 text-[11px] text-gray-600">(인)</div>
+              <div className="sign-line border-b border-gray-700 mt-3 justify-end pr-1 text-[11px] text-gray-600">(인)</div>
             )}
           </div>
         </section>
