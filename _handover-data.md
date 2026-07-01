@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = 1694ea7 (step303))
+# 핸드오버 데이터 (HEAD = b34bcbf (step307))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 
@@ -21,6 +21,10 @@
 > pages 46파일 / components 24 / lib 24 / migrations 76.
 
 ## 1. 현재 HEAD
+- `b34bcbf` — **step307: 운영자용 주제 공유 추적 뷰(admin/index.js "🔗 주제 공유 추적" 탭). topic_copies nested select 조인(가져간교사 copied_by_teacher_id→profiles / 원본교사 source_log_id→topic_suggestion_logs.teacher_id→profiles / 주제=suggestions[source_index].title). "[가져간교사]←[원본교사]의 주제(날짜)" 최신순+원본교사별 집계. admin 전용(RLS), 조회만. ※주의: "공유 가져오기 버튼"으로 온 것만 잡힘(직접 입력 복사는 topic_copies에 기록 안 됨).**
+- `3ba20e3` — **step306: 신규 교사 온보딩 P1 — SetupChecklist "다음 할 일 하나" 강조(nextStep=steps.find(!done) 맨위 큰 카드, 나머지 소형+진행바). 완료판정·action·숨김로직·props 불변, 표시구조만.**
+- `a89ebd1` step305(핸드오버 §0 작업폼) · `f043fcc` step304(CLAUDE.md 작업원칙 추가).
+- ⚠️ **병렬 세션 진행 중**: 별도 claude.ai 대화 + 별도 Claude Code로 맞춤법 수정(lib/koreanRules.js·prompts.server.js 전담). 이 세션과 파일 안 겹침. **커밋 전 `git pull --rebase` + git log로 step 번호 확인 필수**(번호 충돌 방지). 맞춤법 세션 결과는 다음에 확인.
 - `1694ea7` — **step303: 동의 허브 3구획(온라인/종이/제출 대등 카드) + 두괄식 + 안내문복사/하이클래스 시각분리(consent.js·ConsentPanel.js, 로직 불변)**
 - `5b2e34f` — **step302: 대시보드 배너 두괄식(심의·동의 결론 먼저, 대시 제거) + 학생 로그인 안내 2구획 분리(학생용/교사용, index.js·StudentLoginInfoCard.js)**
 - `35dd489` — **step301: 맞춤법 토스트 조기소멸 버그 수정(flashGrammarToast useRef로 타이머 겹침 방지 — A→B 연속검사 시 낡은 타이머가 새 토스트 지우던 것)**
@@ -118,8 +122,9 @@ export const GRAMMAR_NOTICE_TEACHER =
 > ⚠️ 매 작업 세션 종료 시 이 §13을 갱신할 것(끝낸 항목은 '종료'로 이동, 새 할 일 추가).
 
 **[지금 진행 중 — 새 대화 1순위]**
-- A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies/topic_copy_counts). 해자 핵심. **데이터 쌓였는지 SQL 먼저 확인** → 충분하면 구현, 아직이면 더 대기. SQL 한 번이면 갈림길 결정됨. (읽기전용 쿼리: select count(*), count(distinct copied_by_teacher_id), count(distinct source_log_id), 최근14일 from topic_copies)
-- 교사 대시보드 P1·P3 (전환·정착): P1=첫 화면이 '다음 한 가지 행동'으로 못 좁힘(신규=다음스텝/복귀=오늘할일 부재). P3=화면이 사용자 상태(신규/복귀)에 적응 안 함. ※분석 완료. A2와 우선순위 택1.
+- 교사 대시보드 **P3** (신규/정착 상태별 화면 분기): 화면이 사용자 상태(신규/복귀)에 적응 안 함. ※P1(다음 한 가지 행동 좁히기)는 step306으로 완료(SetupChecklist nextStep 강조). P3는 이보다 큼 — "이 교사가 신규냐 정착이냐" 상위 판단이 코드에 없음(grep 확인). 신규=온보딩 강조, 정착=오늘 현황. **신규 전환이 지금 최우선**(신규 많이 받아야 함). P1 효과 보고 P3 착수 판단.
+- A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies). **[2026-07-01 데이터 확인 완료 → 대기 확정]** 결과: total_copies 11 / distinct_copiers 8 / distinct_sources 11. 원본 주제 11개가 각각 딱 1번씩만 복사됨 = **"여러 명이 쓴 인기 주제"가 0개.** 지금 만들면 "N명"의 N이 다 1이라 초라(역효과). → 인기 주제 생길 때까지 대기. 재확인: select source_log_id, count(*) from topic_copies group by 1 order by 2 desc; 상위 2 이상이면 구현.
+- 출처 추적 확장 (선택): step307로 admin 조회 뷰는 완료. 단 **"공유 가져오기 버튼"으로 온 것만 잡힘**. 강수현 케이스처럼 남의 주제를 눈으로 보고 직접 입력한 복사는 topic_copies에 기록 안 됨. 이걸 잡으려면 (가)가져오기 버튼 유도 or (나)사후 내용매칭 필요. ⚠️(나)는 AI추천으로 우연히 같은 주제 받는 경우와 구분 안 돼 위험(틀린 추적). A2와 묶어서 판단 — 지금은 보류.
 
 **[대형 항목 — 별도 설계 세션 필요]**
 - ★ 범용 알림 센터 (우측 하단 알림 로그, 카톡 알림함/GitHub 알림 스타일). 계속 저장(새로고침해도 남음). 모든 실시간 알림 통합: 맞춤법 검사 완료, 학생 제출(누가 냈는지), 관리자→교사 의견 답장 도착, 그 외 교사가 실시간으로 알아야 할 변화. 각 알림 클릭 시 해당 대상으로 이동. **지시문 던지기 금지 — 반드시 설계 세션부터.** 필요 요소: 새 DB 테이블(notifications, RLS로 교사 자기 알림만), 알림 생성 지점 매핑(제출·의견답장·검사완료 등 여러 곳에 심기), 실시간 방식(Supabase Realtime vs 폴링), 읽음/안읽음 관리, 학생 PII·권한 주의. UI 정리·A2 마무리 후 착수. ※발단: 맞춤법 토스트를 "딴 글 보다 돌아가는" 용도로 쓰다가 "모든 알림 통합" 니즈로 확장됨.
@@ -156,7 +161,9 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ❌ 맞춤법 누락 자동수집(폐기, 규칙보강으로 대체).
 
 ## 워킹트리 상태
-- HEAD=1694ea7(step303)까지 전부 커밋·push 완료. origin/main 동기화 확인됨.
+- HEAD=b34bcbf(step307)까지 전부 커밋·push 완료. origin/main 동기화 확인됨.
+- 이번 세션(step289~307) 커밋 완료. step304 CLAUDE.md·step305 핸드오버·step306 SetupChecklist·step307 admin 공유추적.
+- ⚠️ **병렬 맞춤법 세션 진행 중**(별도 대화+Code, koreanRules.js·prompts.server.js). 그쪽 커밋이 섞여 들어올 수 있으니 다음 세션 시작 시 git log로 최신 상태 먼저 확인. 이 세션에서 커밋할 때도 git pull --rebase 먼저.
   · 이번 세션 커밋: step289 2529c50, step290 173c388, step291 3fb7841, step292 f021cc6, step293 e13c820, step294 1681eb5, step296(sign-line)·step297·step298(밑줄정렬)·step299 ffce2e4·step300 95b061d·step301 35dd489, step302 5b2e34f, step303 1694ea7. (일부 커밋해시는 §1 참조)
   · step284는 SQL 정리에 예약된 번호(코드 커밋 아님 — 91행 hard delete는 수동 SQL).
   · ⚠️ Code가 커밋 후 push 빠뜨리는 경우 있음(step299에서 발생) — 커밋 지시 시 "push까지" 명시할 것.
