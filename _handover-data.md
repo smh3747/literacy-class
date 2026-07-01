@@ -1,18 +1,46 @@
-# 핸드오버 데이터 (HEAD = 7132500 (step283))
+# 핸드오버 데이터 (HEAD = 1694ea7 (step303))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
+
+## 0. 작업/보고 폼 (★ 항상 이렇게 — 퍼니훈님이 좋다고 확정한 방식)
+**Code 작업 결과를 받으면 이 순서로 보고:**
+1. 결과 요약 — 무엇이 됐는지 + 커밋 해시·push 여부.
+2. 핵심 검증 포인트 강조 — 특히 지시문에 박은 안전장치(임퍼소네이션 가드/PII 보호/로직 불변 등)가 지켜졌는지 짚기.
+3. "확인하실 것" 체크리스트 — Vercel Ready 확인 + 화면에서 눈으로 볼 구체 항목.
+4. 다음 순서 제시 — 남은 것 + 다음 할 일, 선택지 있으면 추천과 함께.
+
+**작업 지시(Code 지시문) 전에는:**
+- 추측 금지. 코드/데이터(스냅샷·grep·SELECT) 먼저 확인하고 지시.
+- 지시문에 안전 제약을 명시적으로 박기(불변 대상, PII 보호, 가드 유지 등).
+- 큰 작업·민감 영역은 plan mode 먼저(분석→승인→구현).
+- 커밋 지시 시 반드시 "커밋하고 push까지" 명시 — Code가 push 빠뜨리는 경우 있음(step299에서 실제 발생).
+- 배포 확인은 Vercel 대시보드에서 커밋 해시 Ready 직접 확인(`/api/version`은 stale, Code는 Vercel CLI 없음).
+
+**소통 톤:** 결정·지시·결론은 짧고 직설. 원인 분석·설계 설명은 쉽고 자세하게(구조·예시). 존댓말·비서 포지션.
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화.
 > pages 46파일 / components 24 / lib 24 / migrations 76.
 
 ## 1. 현재 HEAD
+- `1694ea7` — **step303: 동의 허브 3구획(온라인/종이/제출 대등 카드) + 두괄식 + 안내문복사/하이클래스 시각분리(consent.js·ConsentPanel.js, 로직 불변)**
+- `5b2e34f` — **step302: 대시보드 배너 두괄식(심의·동의 결론 먼저, 대시 제거) + 학생 로그인 안내 2구획 분리(학생용/교사용, index.js·StudentLoginInfoCard.js)**
+- `35dd489` — **step301: 맞춤법 토스트 조기소멸 버그 수정(flashGrammarToast useRef로 타이머 겹침 방지 — A→B 연속검사 시 낡은 타이머가 새 토스트 지우던 것)**
+- `95b061d` — **step300: 맞춤법 단일검사 완료 토스트 클릭→그 학생 글로 이동(토스트 {msg,targetStudentId} 객체화, goToGrammarTarget, 전체일괄은 비클릭)**
+- `138ea71` — **step297: 맞춤법 단일검사 토스트 문구(N번 학생명·첫글/수정본·교정 X→Y개, displayStudentName 마스킹 준수)**
+- `ffce2e4` — **step299: 맞춤법만 다시검사 품질을 정식검사와 동일화(원인=경량프롬프트+temp0.7+구모델. CORRECTIONS_RULES 단일소스 추출 + grammarStrict 타입 신설: taskType grading·temp0. recheckGrammarOne만 전환, 전체일괄 grammarOnly 불변)**
+- `1681eb5` — **step294: 동의서 인쇄 양식 복구(ConsentDocument props 제거→빈양식, step292 부작용). +step296(sign-line height 고정), +step298(min-height→height로 밑줄 격자정렬)**
+- `f021cc6` — **step292: 동의서 인쇄화면 동의현황(미동의 N명, getEffectiveProfile 전환·consentStats 조회) + 툴바 라벨 풀어쓰기(w-24)**
+- `e13c820` — **step293: 맞춤법 일괄검사를 학생글보기 편입(grammar-backfill 루프 재사용, 백그라운드·비차단, 우하단 토스트). ※단일검사(step295 recheckGrammarOne)와 별개로 전체일괄 유지**
+- `173c388`·`3fb7841` — **step290·291: 교사 대시보드 우측 세로 툴바(데스크탑 lg+만) + 패널 3개(로그인/키/설정) 단일 aside 드로어. step291: drawerOpen→activePanel(버튼별 1개만) + 라벨. SetupChecklist 동선 guideToPanel 재연결, 임퍼소네이션 가드**
+- `2529c50` — **step289: 학부모 동의 노출 2곳 제거(학급설정 ClassSettings·대시보드 카드) — 학생관리 동의 페이지로 일원화, GrayZonePanel/ConsentPanel은 students/consent.js에 존재해 유실 없음**
+- `af685ef` — **step288: 배너 '학생 등록하러 가기' deeplink(students.js effectiveMode에 ?mode= 우선 반영)**
+- `4d44df4` — **step287: 교사 대시보드 안내 배너 2개(학운위 심의·학부모 동의) + 학생 등록 안전 3단계 시각화**
+- `31d4fab` — **step286: admin submissions 활성/휴지통/전체 토글(보기 목록 전용) + 휴지통 행 표시**
+- `2ae71cc` — **step285: 맛보기 'AI 점수·피드백 보기' 펼치기 유도(화살표 통통+힌트, CSS만)**
+- (step284 = SQL 중복정리 91행 hard delete에 예약된 번호, 코드 커밋 아님)
 - `dc8dc6f` — **step279: 공유 취소 기능(주제 목록 배지·버튼 + 추천 패널 버튼, 공통 함수 cancelTopicShare)**
 - `7d02940` — **step278: 손제작 주제 공유 노출 강화(체크박스 강조 + 등록 후 확인 모달)**
 - `5ed7b37` — **step277: 손제작 주제 추천 풀 공유(옵트인+합성 로그, topics.js 단일, 마이그레이션 없음)**
-- `febf86b` — **step276: '수있/수없' 띄어쓰기 규칙을 ㄹ받침 판정으로 일반화(생길수있·알수있 등 포함)**
-- `4bb6af7` — step275: koreanRules에 '입니다/습니다 앞 띄어쓰기' 규칙 추가(fixedPatterns)
-- `da1d08c` — step274: 교사 맞춤법 배너 문구 부드럽게 + 글씨 `text-sm` + 'AI 모델 자동전환' 안내 4곳 제거
-- `2e7fecf` — step273: 맞춤법 AI 보조 안내문구 + 교사 재평가 배너 + 무의미 교정 제거
-- 직전: `f7a8989` step272(공유 가져오기 출처 기록), `97f421d` step271(재평가 규칙 통일+번째), `cb974f6` step270(공백 허용 매칭).
+- `febf86b` — step276~ 이하 맞춤법 규칙(수있/수없·입니다 띄어쓰기 등) 및 공유 관련. (상세 생략)
 
 ## 2. lib/koreanRules.js — 함수 역할 + 줄 위치
 | 함수 | 줄 | 역할(1줄) |
@@ -90,35 +118,46 @@ export const GRAMMAR_NOTICE_TEACHER =
 > ⚠️ 매 작업 세션 종료 시 이 §13을 갱신할 것(끝낸 항목은 '종료'로 이동, 새 할 일 추가).
 
 **[지금 진행 중 — 새 대화 1순위]**
-- ⚠️ 중복 제출 데이터 정리 (고위험 SQL, 1437명 사고 영역):
-  · 원인(클라이언트 가드)은 step283에서 막음(submittingRef 동기 잠금). 새 중복은 안 쌓임.
-  · 미해결: 과거 쌓인 중복 184행이 DB에 남아 있음(미리보기 SELECT로 확인됨, grp_cnt>1 그룹 다수).
-  · 남은 순서 ①step283 가드 검증(6975에서 수정본 연타+Slow3G → 1행만 생기는지 SQL 확인) ②미리보기 SELECT로 184행 재확인 ③soft delete(rn>1만 deleted_at, 그룹별 최초 1행 보존, 하드삭제 금지) ④정리 후 부분 UNIQUE 인덱스 (user_id,topic_id,attempt) where deleted_at is null 생성. 순서 고정: 정리→인덱스(중복 있으면 인덱스 실패).
-  · SQL 초안: plan c1-plan-mode-twinkly-pelican.md §5-B·§6. 실행은 수동.
+- A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies/topic_copy_counts). 해자 핵심. **데이터 쌓였는지 SQL 먼저 확인** → 충분하면 구현, 아직이면 더 대기. SQL 한 번이면 갈림길 결정됨. (읽기전용 쿼리: select count(*), count(distinct copied_by_teacher_id), count(distinct source_log_id), 최근14일 from topic_copies)
+- 교사 대시보드 P1·P3 (전환·정착): P1=첫 화면이 '다음 한 가지 행동'으로 못 좁힘(신규=다음스텝/복귀=오늘할일 부재). P3=화면이 사용자 상태(신규/복귀)에 적응 안 함. ※분석 완료. A2와 우선순위 택1.
 
-**[지금 손댈 수 있음]**
-- 맛보기 "AI 점수·피드백 보기" 펼치기 유도 (작은 작업): 교사가 접힌 칸에 핵심(총평)이 있는 걸 모름. 접힌 "AI 점수·피드백 보기" 줄에 통통 튀는 화살표 + "👆 눌러서 펼쳐보세요" 힌트, 펼치면 사라지게. 대상 components/StudentFeedbackCard.js의 details 토글 부분.
-- 개인정보/심의 안내 각인 (반복 질문 해소): 교사가 "학교 심의 받아야 하나?" 반복 질문. 현재 안내가 학부모 동의서 화면(consent.js) 안쪽에 묻혀 안 봄. 학생 실명 처음 등록/동의 처음 켤 때 1회 "확인했어요" 안내(학급 재량은 심의 대상 아님 + 동의는 선택)로 각인. 방식(상시 vs 1회차단) 미정. 톤: 겁주지 말고 안심.
-  · ※결론(서류 검토로 확인): 전국 공통 심의 관문 없음. 학급 재량 사용은 심의 대상 아님. 학교장이 교육자료로 '선정'해 공식 도입할 때만 학교운영위 심의 대상. 앱 동의서 화면에 이미 같은 문구 있음(만14세미만 기본 닉네임/동의 선택, 학교장 선정 시 심의).
-- 동의서 화면(consent.js) 문구 자연스럽게 다듬기: 현재 문구가 인위적 — "~돼요/~에요" 한 문장에 욱여넣음, 법조문 말투, "~수 있어요" 회피어미 남발. 원칙: 법조문 빼고 / 한 문장에 한 가지만 / "~할 수 있어요"→"~하면 돼요". 겁주지 말고 편하게. (구체 before/after 예시는 이번 세션 대화 참고.)
-- A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies/topic_copy_counts). 해자 핵심. 데이터 쌓였는지 SQL 먼저 확인 → 쌓였으면 구현.
-- 교사 대시보드 P1·P3 (전환·정착): P1=첫 화면이 '다음 한 가지 행동'으로 못 좁힘(신규=다음스텝/복귀=오늘할일 부재). P3=화면이 사용자 상태(신규/복귀)에 적응 안 함. ※분석 완료(plan에 있음). ※(가) 신규 전환 우선 확정 → 첫 한 방 '맛보기'는 step280~282로 구현됨. 다음은 P1/P3 또는 위 펼치기 유도.
+**[대형 항목 — 별도 설계 세션 필요]**
+- ★ 범용 알림 센터 (우측 하단 알림 로그, 카톡 알림함/GitHub 알림 스타일). 계속 저장(새로고침해도 남음). 모든 실시간 알림 통합: 맞춤법 검사 완료, 학생 제출(누가 냈는지), 관리자→교사 의견 답장 도착, 그 외 교사가 실시간으로 알아야 할 변화. 각 알림 클릭 시 해당 대상으로 이동. **지시문 던지기 금지 — 반드시 설계 세션부터.** 필요 요소: 새 DB 테이블(notifications, RLS로 교사 자기 알림만), 알림 생성 지점 매핑(제출·의견답장·검사완료 등 여러 곳에 심기), 실시간 방식(Supabase Realtime vs 폴링), 읽음/안읽음 관리, 학생 PII·권한 주의. UI 정리·A2 마무리 후 착수. ※발단: 맞춤법 토스트를 "딴 글 보다 돌아가는" 용도로 쓰다가 "모든 알림 통합" 니즈로 확장됨.
 
 **[수익화 — 의사결정]**
 - 첫 유료 가치 방향 C: "이 앱을 수업·창체에서 이렇게 써보세요"식 검증된 활용 레시피 안내(AI 창작 아님, 교사 판단피로 제거). ※문집 등 학생·학부모용 가치는 철회(교사 지불동기 약함 — 교사 본인이 편해질 때만 지불). 유료 vs 무료정착 미정. 결제/소셜로그인은 출시 시점 유보.
 
 **[대기]**
-- A2 데이터 1~2주 / 회색지대 G1·G2(발견성 배지·admin 집계뷰).
+- ⚠️ DB 부분 UNIQUE 인덱스(중복 후속, 보류): (user_id,topic_id,attempt) where deleted_at is null로 걸려 했으나, 별개 글 8건이 제약과 충돌. md5(essay_text) 유니크 대안 검토했으나 미적용. 현 방어=step283 코드 가드뿐(한-화면 연타만). "두 기기/두 탭 동시 제출"은 무방비. 급하진 않음.
+- 회색지대 G1·G2(발견성 배지·admin 집계뷰).
+- 맞춤법 전체일괄(step293 runGrammarBatch, 학생글보기 주제헤더 + grammar-backfill 페이지 + 대시보드 툴바) — 단일검사(step295~301)와 공존 중. 셋 다 유지할지 grammar-backfill 페이지 정리할지는 추후 판단.
 
 **[보류]**
 - 전체 UI 폴리시(기능 안정 후) / A3 교사 평판 표시(개인정보 trade-off).
 
 **[종료 — 다시 만들지 말 것]**
-- ✅ step283 학생 중복 제출 클라이언트 가드(submittingRef 동기 잠금).
-- ✅ step280~282 맛보기 샘플 카드(실제 학생글 "시간 멈추기", 밑줄 6개, 점선 프레임). 단 펼치기 유도는 미완(위).
-- ✅ 회색지대 교사 판정 UI(step237/240) / 손제작 주제 공유(step277~279) / 맞춤법 입니다·수있(step275/276).
-- ❌ 맞춤법 누락 자동수집(원천데이터 없어 폐기, B1 규칙보강으로 대체).
+- ✅ **이번 세션 트랙 B — 문구 두괄식 + 구조 분리 (step302~303):**
+  · step302 대시보드 배너 2개(심의·동의) 두괄식(결론 먼저) + 대시(—) 제거 + 학생 로그인 안내 2구획(📄학생용 안내문+복사 / 🧑‍🏫선생님 안내방법+설정버튼, 파란/amber 배경). index.js·StudentLoginInfoCard.js. 로직 불변.
+  · step303 동의 허브(students/consent.js) 3구획 대등 카드(🔗온라인/🖨종이/📄제출) + 인트로·ConsentPanel 배너 두괄식 + 안내문복사vs하이클래스 "안내문 보내기" 박스로 시각분리(용도 설명 포함). ConsentPanel 소비자 consent.js 단독 확인. GrayZonePanel 불변.
+  · ★두괄식 원칙: 결론 먼저, 대시(—)·과한 콜론 금지, 짧은 문장, AI 티 안 나게(선생님 말투).
+- ✅ **이번 세션 맞춤법 트랙 (step293·295·297·299·300·301):**
+  · step293 전체일괄 검사를 학생글보기 편입(백그라운드·비차단, 우하단 토스트). grammar-backfill 루프 재사용.
+  · step295 단일 글 "🔍 맞춤법만 다시 검사"(recheckGrammarOne) — 배너 "다시 평가하기" 옆, 첫글/수정본 각각. corrections만, 점수 불변.
+  · step297 토스트 문구(N번 학생명·첫글/수정본·교정 X→Y개, 마스킹 준수).
+  · **step299 핵심 — 단일검사 품질을 정식검사와 동일화.** 원인=grammarOnly가 정식과 3가지 다름(경량 프롬프트 / temperature 0.7 / 구모델 gemini-2.5-flash). 해결=CORRECTIONS_RULES 상수를 gradingPrompt에서 바이트동일 추출(단일소스) + grammarStrict 타입 신설(taskType 'grading'·temp 0·같은 모델). recheckGrammarOne만 grammarOnly→grammarStrict. **전체일괄(runGrammarBatch)은 grammarOnly 그대로**(채점 500 RPD 풀 보호). lib/prompts.server.js·pages/api/ai.js·submissions.js.
+  · step300 토스트 클릭→그 학생 글 이동(토스트 {msg,targetStudentId} 객체, goToGrammarTarget이 topicStudents에서 최신 corrections 그룹 조회 후 openStudent 재사용). 전체일괄 토스트는 targetStudentId 없어 비클릭.
+  · step301 토스트 조기소멸(1~2초) 버그 — flashGrammarToast가 호출마다 clearTimeout 없이 새 setTimeout 겹쳐 걸어 A→B 연속검사 시 낡은 타이머가 새 토스트 지움. useRef(grammarToastTimer)로 이전 타이머 clear.
+- ✅ **이번 세션 화면 정리 (step289~294, 296, 298):**
+  · step289 학부모 동의 노출 2곳 제거(ClassSettings·대시보드 카드) — students/consent.js로 일원화. GrayZonePanel/ConsentPanel은 consent.js에 존재해 유실 없음.
+  · step290·291 교사 대시보드 우측 세로 툴바(데스크탑 lg+만, 모바일 현행). 패널 3개(로그인/키/설정) 단일 aside 드로어, activePanel로 버튼별 1개만. 라벨 풀어씀(step292 w-24: API 키 관리/학생 로그인 안내/학급 설정/오류 신고함/맞춤법 일괄 검사/삭제된 글 확인/도움말). 신고함·쓰레기통·도움말도 툴바로(lg:hidden). ★SetupChecklist 동선 guideToPanel 재연결, 임퍼소네이션 가드(🔑/⚙️ = !isImpersonating).
+  · step292 동의서 인쇄화면 동의현황(미동의 N명, getEffectiveProfile·consentStats).
+  · step294·296·298 동의서 인쇄 양식 정렬 — step294 ConsentDocument props 제거(빈양식 복구, step292 부작용). ②학년/반 채우기는 step296(grade+className 넘김, 지난번 grade 없이 className만 넘겨 깨졌던 것 수정). ①밑줄 격자정렬 step298(sign-line min-height→height 고정 1.6rem, "(인)" justify-end. em이 폰트크기 상대라 11px칸만 짧던 것). ConsentDocument는 공용(서명이미지는 순수 img라 고정높이 영향 없음).
+- ✅ step285~288(맛보기 펼치기·admin 휴지통토글·대시보드 배너·등록 deeplink), 학생 중복제출 정리(91행 hard delete, 1437명 영역), step283 클라 가드, step280~282 맛보기 샘플카드. (상세는 git log)
+- ❌ 맞춤법 누락 자동수집(폐기, 규칙보강으로 대체).
 
 ## 워킹트리 상태
-- HEAD=7132500(step283)까지 전부 커밋·push 완료(이 문서 갱신 커밋 별도).
-- untracked: `_report*.md`, `_snapshot/`, `FEATURE-MAP.md`, `scripts/make-snapshot.js`, `migrations/step205·206-*.sql`.
+- HEAD=1694ea7(step303)까지 전부 커밋·push 완료. origin/main 동기화 확인됨.
+  · 이번 세션 커밋: step289 2529c50, step290 173c388, step291 3fb7841, step292 f021cc6, step293 e13c820, step294 1681eb5, step296(sign-line)·step297·step298(밑줄정렬)·step299 ffce2e4·step300 95b061d·step301 35dd489, step302 5b2e34f, step303 1694ea7. (일부 커밋해시는 §1 참조)
+  · step284는 SQL 정리에 예약된 번호(코드 커밋 아님 — 91행 hard delete는 수동 SQL).
+  · ⚠️ Code가 커밋 후 push 빠뜨리는 경우 있음(step299에서 발생) — 커밋 지시 시 "push까지" 명시할 것.
+- untracked(미커밋, 급하지 않음): `_report*.md`(19개), `_snapshot/`, `FEATURE-MAP.md`, `scripts/make-snapshot.js`, `migrations/step205·206-*.sql`. 세션 정리 시 .gitignore 처리 판단.
