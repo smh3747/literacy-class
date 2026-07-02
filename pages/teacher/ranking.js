@@ -153,7 +153,7 @@ export default function TeacherRanking() {
         {list.length === 0 ? (
           <p className="text-sm text-gray-500 py-4 text-center">아직 데이터가 부족해요</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
             {list.map((item, idx) => {
               const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`
               return (
@@ -207,10 +207,12 @@ export default function TeacherRanking() {
             </div>
           </div>
 
-          {renderRanking('⭐ 평균 점수', rankings.avgScore, '점',
-            '지금까지 쓴 주제들의 최고점을 평균 낸 점수예요. 한 편의 점수와는 달라요.')}
-          {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개')}
-          {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑')}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {renderRanking('⭐ 평균 점수', rankings.avgScore, '점',
+              '지금까지 쓴 주제들의 최고점을 평균 낸 점수예요. 한 편의 점수와는 달라요.')}
+            {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개')}
+            {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑')}
+          </div>
         </main>
       </div>
     </>
