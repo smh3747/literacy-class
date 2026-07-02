@@ -255,9 +255,17 @@ export default function TeacherHome() {
             .in('user_id', ids)
             .gte('created_at', todayStartIso)
             .is('deleted_at', null)
-          // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출
+          // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출 (Gemini 한도 추정 — PT 자정 기준 유지)
           todayApiCalls = (subCount || 0) * 2
-          todaySubmissions = subCount || 0
+          // 🆕 step319: 카드용 "오늘 제출 수"는 한국(KST) 자정 기준으로 따로 카운트
+          const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
+          const kstMidnightUtc = new Date(kstNow.toISOString().slice(0, 10) + 'T00:00:00+09:00').toISOString()
+          const { count: kstSubCount } = await supabase.from('submissions')
+            .select('id', { count: 'exact', head: true })
+            .in('user_id', ids)
+            .gte('created_at', kstMidnightUtc)
+            .is('deleted_at', null)
+          todaySubmissions = kstSubCount || 0
         }
       } catch(e) { /* 컬럼 없으면 무시 */ }
       setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
