@@ -29,6 +29,7 @@ export default function StudentRanking() {
   const [loading, setLoading] = useState(true)
   const [myRanks, setMyRanks] = useState({ avgScore: null, totalSubs: null, improvement: null })
   const [myAvgDetail, setMyAvgDetail] = useState(null)  // 🆕 step320: 내 평균 점수 근거(값·주제 수), avgList 재사용
+  const [expandedCards, setExpandedCards] = useState({})  // 🆕 step337: 카드별 "전체 보기" 펼침 상태(기본 top3 압축)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { if (user?.class_id) loadRankings(user, period) }, [period])
@@ -175,7 +176,36 @@ export default function StudentRanking() {
   const myNickname = user?.nickname || `${user?.number || ''}번`
 
   // 한 랭킹 카드 렌더링
-  const renderRanking = (title, list, unit, myRank, subtitle = null, myDetail = null) => (
+  // 한 행 렌더 (idx = 전체 순위 0-based)
+  const renderRankRow = (item, idx, unit) => {
+    const isMe = item.student.id === user?.id
+    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`
+    return (
+      <div key={item.student.id}
+        className={`flex items-center justify-between p-2.5 rounded-lg ${
+          isMe ? 'bg-primary-light border-2 border-primary' : 'bg-gray-50'
+        }`}>
+        <div className="flex items-center gap-3">
+          <span className={`w-7 text-center ${idx < 3 ? 'text-xl' : 'text-sm font-bold text-gray-500'}`}>
+            {medal}
+          </span>
+          <span className={`font-medium ${isMe ? 'text-primary-dark' : ''}`}>
+            {item.student.nickname || `${item.student.number || '?'}번`}
+            {isMe && <span className="ml-1 text-xs text-primary">(나)</span>}
+          </span>
+        </div>
+        <span className="font-mono font-bold">{item.value}{unit}</span>
+      </div>
+    )
+  }
+
+  const renderRanking = (title, list, unit, myRank, subtitle = null, myDetail = null, cardKey = '') => {
+    // 🆕 step337: 기본 top3만 + 내가 4등↓이면 ···내 줄, "전체 보기"로 펼침(카드별 독립)
+    const isExpanded = !!expandedCards[cardKey]
+    const rows = isExpanded ? list : list.slice(0, 3)
+    const myIdx = user?.id ? list.findIndex(x => x.student.id === user.id) : -1
+    const showMyRow = !isExpanded && myIdx >= 3   // 4등 이하이고 top10 리스트에 있음(1~3등은 이미 위에)
+    return (
     <div className="bg-white rounded-2xl p-5 shadow-sm">
       <h3 className={`font-bold ${subtitle ? 'mb-1' : 'mb-3'}`}>{title}</h3>
       {subtitle && <p className="text-xs text-gray-500 mb-3 leading-relaxed">{subtitle}</p>}
@@ -184,28 +214,20 @@ export default function StudentRanking() {
       ) : (
         <>
           <div className="space-y-2">
-            {list.map((item, idx) => {
-              const isMe = item.student.id === user?.id
-              const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`
-              return (
-                <div key={item.student.id}
-                  className={`flex items-center justify-between p-2.5 rounded-lg ${
-                    isMe ? 'bg-primary-light border-2 border-primary' : 'bg-gray-50'
-                  }`}>
-                  <div className="flex items-center gap-3">
-                    <span className={`w-7 text-center ${idx < 3 ? 'text-xl' : 'text-sm font-bold text-gray-500'}`}>
-                      {medal}
-                    </span>
-                    <span className={`font-medium ${isMe ? 'text-primary-dark' : ''}`}>
-                      {item.student.nickname || `${item.student.number || '?'}번`}
-                      {isMe && <span className="ml-1 text-xs text-primary">(나)</span>}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold">{item.value}{unit}</span>
-                </div>
-              )
-            })}
+            {rows.map((item, idx) => renderRankRow(item, idx, unit))}
+            {showMyRow && (
+              <>
+                <div className="text-center text-gray-300 text-sm leading-none py-0.5" aria-hidden="true">···</div>
+                {renderRankRow(list[myIdx], myIdx, unit)}
+              </>
+            )}
           </div>
+          {list.length > 3 && (
+            <button onClick={() => setExpandedCards(p => ({ ...p, [cardKey]: !isExpanded }))}
+              className="w-full mt-2 text-xs text-primary hover:bg-primary-light/50 py-1.5 rounded font-medium">
+              {isExpanded ? '접기' : '전체 보기'}
+            </button>
+          )}
           {myDetail ? (
             <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
               ⭐ 내 순위: <strong className="text-primary">{myRank}등</strong>
@@ -219,7 +241,8 @@ export default function StudentRanking() {
         </>
       )}
     </div>
-  )
+    )
+  }
 
   return (
     <>
@@ -261,9 +284,9 @@ export default function StudentRanking() {
 
           {renderRanking('⭐ 평균 점수', rankings.avgScore, '점', myRanks.avgScore,
             '지금까지 쓴 주제들의 최고점을 평균 낸 점수예요. 한 편의 점수와는 달라요.',
-            myAvgDetail)}
-          {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개', myRanks.totalSubs)}
-          {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑', myRanks.improvement)}
+            myAvgDetail, 'avgScore')}
+          {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개', myRanks.totalSubs, null, null, 'totalSubs')}
+          {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑', myRanks.improvement, null, null, 'improvement')}
 
           <div className="bg-white rounded-2xl p-4 shadow-sm text-xs text-gray-600 leading-relaxed">
             <p className="font-bold mb-1">📋 랭킹 계산 방법</p>

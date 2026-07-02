@@ -122,10 +122,15 @@ export default function ConsentSubmissionsPage() {
         {isImpersonating && <div className="no-print"><ImpersonationBanner targetName={user.realname} targetSchool={user.school} /></div>}
         <div className="no-print"><Header user={user} onLogout={logout} /></div>
         <main className="max-w-5xl mx-auto px-4 py-6 space-y-4">
-          <div className="no-print flex items-center gap-3">
+          <div className="no-print flex items-center gap-3 flex-wrap">
             <Link href={withImpersonation('/teacher/students/consent')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">제출된 동의서</h1>
             {classInfo && <span className="text-sm text-gray-500">· {classInfo.name}</span>}
+            {/* 🆕 step337: 감사 증빙용 일괄 인쇄 — 동의 완료 학생만 1인 1페이지(임퍼소네이션 시 숨김) */}
+            {!isImpersonating && consentedCount > 0 && (
+              <Link href="/teacher/students/consent/print"
+                className="ml-auto px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark">🖨️ 동의서 일괄 인쇄</Link>
+            )}
           </div>
 
           {/* ★PII 보호: 임퍼소네이션 중에는 접근 차단 */}

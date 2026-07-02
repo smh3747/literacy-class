@@ -5,7 +5,7 @@
 // 인쇄 CSS는 이 컴포넌트가 들고 다님 — 어느 페이지에서 써도 A4 한 장 압축 + "이 문서만" 인쇄.
 import { displayStudentName } from '../lib/displayName'
 
-export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status }) {
+export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status, bulk = false }) {
   const items = Array.isArray(consentItems) ? consentItems : []
   const has = (k) => items.includes(k)
   const studentName = student ? displayStudentName(student) : ''
@@ -40,10 +40,12 @@ export default function ConsentDocument({ school, className, grade, student, par
              (보이지 않는 page 래퍼의 min-h-screen=100vh가 뒤에 빈 2페이지를 만들던 문제) */
           html, body { height: auto !important; min-height: 0 !important; }
           .min-h-screen { min-height: 0 !important; }
-          /* ★ 이 문서만 인쇄(주변 UI 숨김) */
+          /* ★ 단일 인쇄: 이 문서만(주변 UI 숨김). 일괄(bulk)에선 트릭 생략 — 인쇄 페이지가 page-break로 제어 */
+          ${bulk ? '' : `
           body * { visibility: hidden; }
           .consent-doc, .consent-doc * { visibility: visible; }
           .consent-doc { position: absolute; left: 0; top: 0; width: 100%; }
+          `}
           .consent-doc {
             box-shadow: none !important;
             border: none !important;
