@@ -119,7 +119,8 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
     const text = buildAnnouncement()
     try {
       await navigator.clipboard.writeText(text)
-      setCopiedAnno(true); setTimeout(() => setCopiedAnno(false), 2500)
+      // 🆕 step341: 자동 해제 제거 — 하이클래스 다녀오는 동안 ② 강조 유지(안내문 저장 시 리셋)
+      setCopiedAnno(true)
     } catch {
       try { window.prompt('아래 내용을 복사하세요:', text) } catch {}
     }
@@ -147,6 +148,7 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
       if (error) throw error
       setNoticeIntro(v || null)
       setEditingNotice(false)
+      setCopiedAnno(false)   // 🆕 step341: 안내문 바뀜 → 다시 ①부터 유도
     } catch (e) { alert('저장 실패: ' + e.message) }
     setSavingNotice(false)
   }
@@ -159,6 +161,7 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
       setNoticeIntro(null)
       setIntroDraft(defaultIntro())
       setEditingNotice(false)
+      setCopiedAnno(false)   // 🆕 step341: 안내문 바뀜 → 다시 ①부터 유도
     } catch (e) { alert('저장 실패: ' + e.message) }
     setSavingNotice(false)
   }
@@ -233,10 +236,12 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
       </div>
 
       {/* 2. 접힘 — 안내문 내용 확인·수정 */}
-      <details className="bg-white border border-gray-200 rounded-2xl p-4">
-        <summary className="cursor-pointer text-sm font-semibold text-gray-800 flex items-center gap-2 min-w-0">
-          <span className="flex-shrink-0">안내문 내용 확인·수정</span>
+      <details className="group bg-white border border-gray-200 rounded-2xl p-4">
+        <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 min-w-0 -mx-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+          <span className="text-gray-400 flex-shrink-0 transition-transform group-open:rotate-90">▶</span>
+          <span className="text-sm font-semibold text-gray-800 flex-shrink-0">안내문 내용 확인·수정</span>
           <span className="text-xs font-normal text-gray-400 truncate">{effectiveIntro()}</span>
+          <span className="ml-auto flex-shrink-0 text-xs text-gray-400 group-open:hidden">눌러서 펼치기</span>
         </summary>
         <div className="mt-3">
           {/* 학교 미설정 안내 — 폴백까지 다 비었을 때만 */}
@@ -295,8 +300,12 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
       </details>
 
       {/* 3. 접힘 — 동의 비밀번호 설정 */}
-      <details className="bg-white border border-gray-200 rounded-2xl p-4">
-        <summary className="cursor-pointer text-sm font-semibold text-gray-800">동의 비밀번호 설정</summary>
+      <details className="group bg-white border border-gray-200 rounded-2xl p-4">
+        <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 -mx-2 px-2 py-1 rounded-lg hover:bg-gray-50">
+          <span className="text-gray-400 flex-shrink-0 transition-transform group-open:rotate-90">▶</span>
+          <span className="text-sm font-semibold text-gray-800">동의 비밀번호 설정</span>
+          <span className="ml-auto flex-shrink-0 text-xs text-gray-400 group-open:hidden">눌러서 펼치기</span>
+        </summary>
         <div className="mt-3">
           <div className="flex gap-2">
             <input type="text" value={consentPwInput}
