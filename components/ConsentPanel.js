@@ -194,130 +194,126 @@ export default function ConsentPanel({ classInfo, readOnly = false, teacherSchoo
   }, [consentUrl])
 
   return (
-    <div>
-      {/* 왜 동의 (사실 기반) — 결론(동의는 선택) 먼저, 가독성 강화(폰트·패딩·줄간격) */}
-      <div className="text-[15px] text-blue-900 bg-blue-50 border border-blue-200 rounded-lg p-3.5 mb-2.5 leading-7">
-        💡 <strong>동의는 선택이에요.</strong> 동의 전까지는 <strong>닉네임</strong>으로 운영되고, 동의한 학생만 실명으로 전환돼요.
-        만 14세 미만 학생의 실명을 처리하려면 개인정보보호법상 보호자 동의가 필요하거든요.
-      </div>
-      {/* 학운위 (확인 권장 — 단정 금지) — 결론 먼저, step302 대시보드 톤과 통일 */}
-      <div className="text-[15px] text-gray-800 bg-gray-50 border border-gray-200 rounded-lg p-3.5 mb-3 leading-7">
-        ℹ️ 학급에서 재량으로 쓰는 건 심의 대상이 아니에요. 학교운영위원회 심의는 학교가 정규 교육과정 교재로 공식 채택할 때만 해당돼요.
-        다만 학교마다 기준이 조금 다를 수 있으니, 걱정되면 소속 학교에 확인해 보세요.
-      </div>
-
-      {/* 진행률 */}
-      {stats && (
-        <p className="text-sm text-gray-600 mb-3">
-          동의 완료 <strong className="text-primary">{stats.consented}</strong> / {stats.total}명
-          {stats.locked > 0 && <span className="text-gray-400 ml-1">· 닉네임 표시(미동의) {stats.locked}명</span>}
-        </p>
-      )}
-
-      {/* 동의 비밀번호 */}
-      <label className="block text-sm font-medium mb-1">동의 비밀번호</label>
-      <div className="flex gap-2">
-        <input type="text" value={consentPwInput}
-          onChange={e => setConsentPwInput(e.target.value)}
-          placeholder="비워두면 학급코드 사용"
-          disabled={readOnly}
-          className="flex-1 p-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100" />
-        <button onClick={saveConsentPw} disabled={saving || readOnly}
-          className="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50">저장</button>
-      </div>
-      <p className="text-xs text-gray-500 mt-1">
-        동의번호: <code className="bg-gray-100 px-1 rounded">{effectivePw}</code>
-        {consentPw ? ' (직접 설정)' : ' (학급코드 기본값)'} · 학부모가 동의할 때 입력하는 번호예요.
-        비워두면 <strong>학급코드</strong>가 동의번호로 쓰여요.
-      </p>
-
-      {/* 부모 동의 안내문 — 인사말(편집) + 고정부(자동) + 공유 버튼 */}
-      <div className="mt-4">
-        <label className="block text-sm font-medium mb-1">부모 동의 안내</label>
-
-        {/* 학교 미설정 안내 — 폴백까지 다 비었을 때만 */}
-        {!effectiveSchool && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 leading-relaxed">
-            🏫 학교 이름을 설정하면 안내문에 자동으로 들어가요 — <strong>[내 정보 수정]</strong>에서 입력하세요.
-          </p>
-        )}
-
-        {!editingNotice ? (
-          <>
-            {/* 미리보기 박스 (합본) */}
-            <div className="relative bg-gray-50 border border-gray-200 rounded-lg p-3 pt-9 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-              {!readOnly && (
-                <button onClick={startEditNotice}
-                  className="absolute top-2 right-2 text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100">✏️ 편집</button>
-              )}
-              {buildAnnouncement()}
-            </div>
-
-            {/* 안내문 보내기 — ① 복사 → ② 하이클래스 순서 유도(복사 여부에 따라 강조 이동) */}
-            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-              <p className="text-xs font-semibold text-gray-700 mb-2">안내문 보내기</p>
-              <div className="grid sm:grid-cols-2 gap-2">
-                {/* ① 복사 — 복사 전 강조(pulse), 복사 후 완료 표시 */}
-                <button onClick={copyAnnouncement}
-                  className={`py-2.5 px-3 rounded-lg text-sm font-semibold text-center transition ${
-                    copiedAnno
-                      ? 'bg-green-500 text-white'
-                      : 'bg-primary text-white hover:bg-primary-dark animate-pulse'
-                  }`}>
-                  {copiedAnno ? '✅ 복사됐어요' : '① 안내문 복사'}
-                </button>
-                {/* ② 하이클래스 — 복사 전 차분, 복사 후 강조(ring + pulse) */}
-                <button onClick={openHiclass}
-                  className={`py-2.5 px-3 rounded-lg text-sm font-semibold text-center transition ${
-                    copiedAnno
-                      ? 'bg-primary text-white hover:bg-primary-dark ring-2 ring-primary ring-offset-1 animate-pulse'
-                      : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'
-                  }`}>
-                  ② 하이클래스 열기
-                  <span className="block text-[11px] font-normal opacity-90 mt-0.5">열고 나서 붙여넣어 발송</span>
-                </button>
-              </div>
-              {copiedAnno && (
-                <p className="text-xs text-center text-primary-dark font-medium mt-2">이제 ②를 눌러 붙여넣으세요</p>
-              )}
-              {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
-            </div>
-          </>
-        ) : (
-          <>
-            {/* 편집: 인사말만 수정, 고정부는 읽기전용 */}
-            <p className="text-xs text-gray-500 mb-1">상단 인사말만 자유롭게 바꿀 수 있어요.</p>
-            <textarea value={introDraft} onChange={e => setIntroDraft(e.target.value)} rows={3}
-              className="w-full p-2 border border-gray-300 rounded-lg text-sm leading-relaxed" />
-            <div className="mt-2 bg-gray-100 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 whitespace-pre-wrap leading-relaxed">
-              <p className="font-semibold text-gray-500 mb-1">🔒 이 아래는 자동으로 붙어요 (수정·삭제 불가)</p>
-              {buildFixed()}
-            </div>
-            <div className="flex gap-2 mt-2 flex-wrap">
-              <button onClick={saveNotice} disabled={savingNotice}
-                className="flex-1 min-w-[80px] py-2 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">저장</button>
-              <button onClick={resetNotice} disabled={savingNotice}
-                className="py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm disabled:opacity-50">기본 문구로 되돌리기</button>
-              <button onClick={() => setEditingNotice(false)} disabled={savingNotice}
-                className="py-2 px-3 bg-white border border-gray-300 text-gray-600 rounded-lg text-sm disabled:opacity-50">취소</button>
-            </div>
-          </>
-        )}
-
-        {/* 링크·QR (기존 유지) */}
-        <p className="text-xs text-gray-500 mt-3 mb-1">또는 링크·QR만 따로:</p>
-        <div className="flex gap-2 items-center">
-          <code className="flex-1 min-w-0 bg-gray-50 px-2 py-2 rounded text-xs text-gray-700 break-all">{consentUrl || '...'}</code>
-          <button onClick={copyLink}
-            className="px-3 py-2 border border-gray-200 rounded text-xs hover:bg-gray-50 flex-shrink-0">
-            {copied ? '✅ 복사됨' : '📋 복사'}
+    <div className="space-y-3">
+      {/* 1. 히어로 — 학부모에게 안내 보내기 (행동 우선, 첫 화면) */}
+      <div className="bg-white border-2 border-primary rounded-2xl p-5">
+        <div className="flex items-start justify-between gap-2 flex-wrap mb-3">
+          <h3 className="font-bold text-primary-dark">📤 학부모에게 안내 보내기</h3>
+          {stats && (
+            <span className="text-xs font-semibold bg-primary-light text-primary-dark px-2.5 py-1 rounded-full flex-shrink-0">
+              동의 완료 {stats.consented}/{stats.total}명
+            </span>
+          )}
+        </div>
+        {/* ① 복사 → ② 하이클래스 단계 유도(복사 여부에 따라 강조 이동) */}
+        <div className="grid sm:grid-cols-2 gap-2">
+          <button onClick={copyAnnouncement}
+            className={`py-3 px-3 rounded-lg text-sm font-semibold text-center transition ${
+              copiedAnno
+                ? 'bg-green-500 text-white'
+                : 'bg-primary text-white hover:bg-primary-dark animate-pulse'
+            }`}>
+            {copiedAnno ? '✅ 복사됐어요' : '① 안내문 복사'}
+          </button>
+          <button onClick={openHiclass}
+            className={`py-3 px-3 rounded-lg text-sm font-semibold text-center transition ${
+              copiedAnno
+                ? 'bg-primary text-white hover:bg-primary-dark ring-2 ring-primary ring-offset-1 animate-pulse'
+                : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'
+            }`}>
+            ② 하이클래스 열기
+            <span className="block text-[11px] font-normal opacity-90 mt-0.5">열고 나서 붙여넣어 발송</span>
           </button>
         </div>
-        <div className="mt-3 flex flex-col items-center">
-          <canvas ref={qrRef} className="border border-gray-200 rounded" />
-          <p className="text-xs text-gray-400 mt-1">QR — 학부모가 스캔하면 동의 페이지로 이동</p>
-        </div>
+        {copiedAnno && (
+          <p className="text-xs text-center text-primary-dark font-medium mt-2">이제 ②를 눌러 붙여넣으세요</p>
+        )}
+        {toast && <p className="text-xs text-center text-green-800 bg-green-50 border border-green-200 rounded p-2 mt-2 leading-relaxed">{toast}</p>}
+        <p className="text-xs text-gray-600 mt-3 leading-relaxed">💡 동의는 선택이에요. 동의 전에는 닉네임으로, 동의한 학생만 실명으로 운영돼요.</p>
       </div>
+
+      {/* 2. 접힘 — 안내문 내용 확인·수정 */}
+      <details className="bg-white border border-gray-200 rounded-2xl p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-800 flex items-center gap-2 min-w-0">
+          <span className="flex-shrink-0">안내문 내용 확인·수정</span>
+          <span className="text-xs font-normal text-gray-400 truncate">{effectiveIntro()}</span>
+        </summary>
+        <div className="mt-3">
+          {/* 학교 미설정 안내 — 폴백까지 다 비었을 때만 */}
+          {!effectiveSchool && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 leading-relaxed">
+              🏫 학교 이름을 설정하면 안내문에 자동으로 들어가요. <strong>[내 정보 수정]</strong>에서 입력하세요.
+            </p>
+          )}
+
+          {!editingNotice ? (
+            <>
+              {/* 미리보기 박스 (합본) */}
+              <div className="relative bg-gray-50 border border-gray-200 rounded-lg p-3 pt-9 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                {!readOnly && (
+                  <button onClick={startEditNotice}
+                    className="absolute top-2 right-2 text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100">✏️ 편집</button>
+                )}
+                {buildAnnouncement()}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 편집: 인사말만 수정, 고정부는 읽기전용 */}
+              <p className="text-xs text-gray-500 mb-1">상단 인사말만 자유롭게 바꿀 수 있어요.</p>
+              <textarea value={introDraft} onChange={e => setIntroDraft(e.target.value)} rows={3}
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm leading-relaxed" />
+              <div className="mt-2 bg-gray-100 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 whitespace-pre-wrap leading-relaxed">
+                <p className="font-semibold text-gray-500 mb-1">🔒 이 아래는 자동으로 붙어요 (수정·삭제 불가)</p>
+                {buildFixed()}
+              </div>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <button onClick={saveNotice} disabled={savingNotice}
+                  className="flex-1 min-w-[80px] py-2 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">저장</button>
+                <button onClick={resetNotice} disabled={savingNotice}
+                  className="py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm disabled:opacity-50">기본 문구로 되돌리기</button>
+                <button onClick={() => setEditingNotice(false)} disabled={savingNotice}
+                  className="py-2 px-3 bg-white border border-gray-300 text-gray-600 rounded-lg text-sm disabled:opacity-50">취소</button>
+              </div>
+            </>
+          )}
+
+          {/* 링크·QR */}
+          <p className="text-xs text-gray-500 mt-3 mb-1">또는 링크·QR만 따로:</p>
+          <div className="flex gap-2 items-center">
+            <code className="flex-1 min-w-0 bg-gray-50 px-2 py-2 rounded text-xs text-gray-700 break-all">{consentUrl || '...'}</code>
+            <button onClick={copyLink}
+              className="px-3 py-2 border border-gray-200 rounded text-xs hover:bg-gray-50 flex-shrink-0">
+              {copied ? '✅ 복사됨' : '📋 복사'}
+            </button>
+          </div>
+          <div className="mt-3 flex flex-col items-center">
+            <canvas ref={qrRef} className="border border-gray-200 rounded" />
+            <p className="text-xs text-gray-400 mt-1">QR — 학부모가 스캔하면 동의 페이지로 이동</p>
+          </div>
+        </div>
+      </details>
+
+      {/* 3. 접힘 — 동의 비밀번호 설정 */}
+      <details className="bg-white border border-gray-200 rounded-2xl p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-800">동의 비밀번호 설정</summary>
+        <div className="mt-3">
+          <div className="flex gap-2">
+            <input type="text" value={consentPwInput}
+              onChange={e => setConsentPwInput(e.target.value)}
+              placeholder="비워두면 학급코드 사용"
+              disabled={readOnly}
+              className="flex-1 p-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100" />
+            <button onClick={saveConsentPw} disabled={saving || readOnly}
+              className="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50">저장</button>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            동의번호: <code className="bg-gray-100 px-1 rounded">{effectivePw}</code>
+            {consentPw ? ' (직접 설정)' : ' (학급코드 기본값)'} · 학부모가 동의할 때 입력하는 번호예요.
+            비워두면 <strong>학급코드</strong>가 동의번호로 쓰여요.
+          </p>
+        </div>
+      </details>
     </div>
   )
 }
