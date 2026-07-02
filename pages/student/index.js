@@ -174,7 +174,8 @@ export default function StudentHome() {
   const [unreadComments, setUnreadComments] = useState([]) // 🆕 미확인 담임 코멘트
   const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
-  
+  const [loadError, setLoadError] = useState(false)  // 🆕 진입 실패/타임아웃 시 재시도 화면
+
   const [step, setStep] = useState('write') // write / feedback / done
   const [essay, setEssay] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -221,25 +222,43 @@ export default function StudentHome() {
     return () => { if (backupTimerRef.current) clearTimeout(backupTimerRef.current) }
   }, [essay, rewriteEssay, step, todayTopic, user])
 
+  // 🆕 step327: 어떤 조회든 무한 대기 방지 — 10초 타임아웃
+  const withTimeout = (p, ms = 10000) => Promise.race([
+    p, new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT')), ms))
+  ])
+
   const checkAuth = async () => {
     const tStart = performance.now()
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/student/login'); return }
-    const tProfile = performance.now()
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled)').eq('id', authUser.id).maybeSingle()
-    console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
-    if (!profile || profile.role !== 'student') {
-      await supabase.auth.signOut(); router.push('/student/login'); return
-    }
-    setUser(profile)
-    setClassInfo(profile.classes)
-    // 키 서버격리(step153~): 학생은 API 키를 다루지 않는다. AI 호출 시 서버가 학급 키를 조회한다.
+    setLoadError(false)
+    try {
+      // 🆕 step327: 진입 인증은 getSession(로컬 세션, 네트워크 왕복 없음) — getUser rate limit 회피.
+      //   실질 검증은 아래 profile 조회의 RLS(토큰 검증) + role 가드가 담당.
+      const tAuth = performance.now()
+      const { data: { session } } = await supabase.auth.getSession()
+      console.log(`[perf] auth 확인: ${Math.round(performance.now() - tAuth)}ms`)
+      const uid = session?.user?.id
+      if (!uid) { router.push('/student/login'); return }
 
-    // URL 쿼리에 topic_id 있으면 그 주제로 진입 (history에서 "추가 수정" 등)
-    const queryTopicId = router.query?.topic
-    await loadTodayTopic(profile, queryTopicId || null)
-    setLoading(false)
-    console.log(`[perf] 학생 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
+      const tProfile = performance.now()
+      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id)').eq('id', uid).maybeSingle())
+      console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
+      if (!profile || profile.role !== 'student') {
+        await supabase.auth.signOut(); router.push('/student/login'); return
+      }
+      setUser(profile)
+      setClassInfo(profile.classes)
+      // 키 서버격리(step153~): 학생은 API 키를 다루지 않는다. AI 호출 시 서버가 학급 키를 조회한다.
+
+      // URL 쿼리에 topic_id 있으면 그 주제로 진입 (history에서 "추가 수정" 등)
+      const queryTopicId = router.query?.topic
+      await loadTodayTopic(profile, queryTopicId || null)
+      console.log(`[perf] 학생 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
+    } catch (e) {
+      console.warn('[perf] 진입 실패:', e?.message || e)
+      setLoadError(true)   // 무한 스피너 대신 재시도 UI
+    } finally {
+      setLoading(false)    // 어떤 경로로든 스피너 종료 보장
+    }
   }
 
   // 지난 주제 중 학생이 아직 제출하지 않은 것들 로드
@@ -295,21 +314,20 @@ export default function StudentHome() {
   }
 
   const loadTodayTopic = async (profile, targetTopicId = null) => {
+   try {
     if (!profile.class_id) return
 
-    // 학급 담임 찾기
-    const tClass = performance.now()
-    const { data: classData } = await supabase.from('classes').select('teacher_id').eq('id', profile.class_id).maybeSingle()
-    console.log(`[perf] classData 조회: ${Math.round(performance.now() - tClass)}ms, rows=${classData ? 1 : 0}`)
-    if (!classData) return
+    // 🆕 step327: 담임 id는 profile.classes join에서 (classes 재조회 제거)
+    const teacherId = profile.classes?.teacher_id
+    if (!teacherId) return
 
     let topic = null
     if (targetTopicId) {
       // 특정 주제 로드 (지난 주제 선택 시 또는 URL ?topic=)
-      const { data } = await supabase.from('topics')
-        .select('*').eq('id', targetTopicId).maybeSingle()
+      const { data } = await withTimeout(supabase.from('topics')
+        .select('*').eq('id', targetTopicId).maybeSingle()).catch(() => ({ data: null }))
       // 우리 학급 담임 주제인지 검증 (다른 학급 침입 방지)
-      if (data && data.teacher_id === classData.teacher_id) {
+      if (data && data.teacher_id === teacherId) {
         topic = data
       }
     }
@@ -317,20 +335,23 @@ export default function StudentHome() {
     // 특정 주제가 없거나 검증 실패 → 오늘 주제로 폴백
     if (!topic) {
       const today = todayStr()
-      // 오늘 주제가 여러 개일 수 있음 → 미제출인 것 우선 선택
+      // 🆕 step327: 독립 조회 동시 실행 — todayTopics(핵심) + 지난주제(보조) + 미확인코멘트(보조)
       const tToday = performance.now()
-      const { data: todayTopics } = await supabase.from('topics')
-        .select('*').eq('teacher_id', classData.teacher_id).eq('date', today)
-        .order('created_at', { ascending: true })
+      const todayTopicsP = withTimeout(supabase.from('topics')
+        .select('*').eq('teacher_id', teacherId).eq('date', today)
+        .order('created_at', { ascending: true }))
+      const pendingP = loadPendingTopics(profile, teacherId).catch(() => setPendingTopics([]))
+      const unreadP = loadUnreadComments(profile)   // 내부 try/catch 유지
+      const { data: todayTopics } = await todayTopicsP
       console.log(`[perf] todayTopics 조회: ${Math.round(performance.now() - tToday)}ms, rows=${(todayTopics || []).length}`)
 
       if (todayTopics && todayTopics.length > 0) {
         // 학생이 아직 제출 안 한 주제 ID 찾기
         const topicIds = todayTopics.map(t => t.id)
         const tTodaySubs = performance.now()
-        const { data: mySubs } = await supabase.from('submissions')
+        const { data: mySubs } = await withTimeout(supabase.from('submissions')
           .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', topicIds)
-          .is('deleted_at', null)
+          .is('deleted_at', null)).catch(() => ({ data: [] }))
         console.log(`[perf] todayTopic mySubs 조회: ${Math.round(performance.now() - tTodaySubs)}ms, rows=${(mySubs || []).length}`)
 
         // 각 주제별로 최대 attempt 계산
@@ -361,10 +382,8 @@ export default function StudentHome() {
         }
       }
 
-      // 지난 미제출 주제 목록도 같이 조회
-      await loadPendingTopics(profile, classData.teacher_id)
-      // 🆕 미확인 담임 코멘트 알림도
-      await loadUnreadComments(profile)
+      // 보조 조회(지난 주제·미확인 코멘트) 완료 보장 — 실패해도 진행(화면 결과 동일)
+      await Promise.allSettled([pendingP, unreadP])
     }
 
     if (!topic) return
@@ -377,13 +396,14 @@ export default function StudentHome() {
     setCurrentSub(null)
     setStep('write')
 
-    // 이미 제출했나 확인
+    // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
-    const { data: existing } = await supabase.from('submissions')
-      .select('*').eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
-      .is('deleted_at', null)
+    const { data: existing } = await withTimeout(supabase.from('submissions')
+      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed')
+      .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
+      .is('deleted_at', null))
     console.log(`[perf] existing 제출 조회: ${Math.round(performance.now() - tExisting)}ms, rows=${(existing || []).length}`)
-    
+
     if (existing && existing.length > 0) {
       const sorted = [...existing].sort((a,b) => (b.attempt||1) - (a.attempt||1))
       const last = sorted[0]
@@ -451,6 +471,11 @@ export default function StudentHome() {
         }
       } catch(e) {}
     }
+   } catch (e) {
+     // 🆕 step327: 핵심 조회 타임아웃/실패 → 무한 스피너 대신 재시도 화면
+     console.warn('[perf] 주제 로드 실패:', e?.message || e)
+     setLoadError(true)
+   }
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
@@ -873,6 +898,21 @@ export default function StudentHome() {
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
+
+  // 🆕 step327: 진입 실패/타임아웃 시 무한 스피너 대신 재시도 화면
+  if (loadError) return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="text-center space-y-3 max-w-xs">
+        <div className="text-3xl">📡</div>
+        <p className="text-gray-700 leading-relaxed">연결이 불안정해요. 다시 시도해 주세요.</p>
+        <button
+          onClick={() => { setLoadError(false); setLoading(true); checkAuth() }}
+          className="px-5 py-2.5 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark">
+          다시 시도
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <>
