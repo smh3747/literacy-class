@@ -105,7 +105,9 @@ export default function StudentHistory() {
   }, [selectedIdx])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
+    // 🆕 step331: 진입 인증은 getSession(로컬, 왕복 없음). 실질 검증은 아래 profile RLS+role 가드.
+    const { data: { session } } = await supabase.auth.getSession()
+    const au = session?.user
     if (!au) { router.push('/student/login'); return }
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
