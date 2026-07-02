@@ -15,6 +15,7 @@ export default function AdminHome() {
   const [stats, setStats] = useState({ teachers: 0, classes: 0, students: 0, submissions: 0, today: 0 })
   const [teachers, setTeachers] = useState([])
   const [teacherLastLogin, setTeacherLastLogin] = useState({})  // 🆕 step254: { userId: last_sign_in_at } (auth.users 읽기)
+  const [lastLoginLoaded, setLastLoginLoaded] = useState(false)  // 🆕 step334: 마지막 로그인 비차단 로딩 완료 여부(로딩 중 placeholder)
   const [classes, setClasses] = useState([])
   const [trashedTeachers, setTrashedTeachers] = useState([])  // 🆕 휴지통 (B4)
   const [trashedClasses, setTrashedClasses] = useState([])
@@ -193,22 +194,25 @@ export default function AdminHome() {
     setTrashedClasses(trashedClasses)
     setFeedbacks(feedbacksWithAuthor)
 
-    // 🆕 step254: 교사 마지막 로그인 시각(auth.users.last_sign_in_at)을 서버(service-role)에서 읽어옴.
-    //   실패해도 화면 나머지는 정상 동작(로그인 표시만 비워둠).
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        const r = await fetch('/api/admin-last-logins', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: session.access_token })
-        })
-        if (r.ok) {
-          const j = await r.json()
-          setTeacherLastLogin(j.lastLogins || {})
+    // 🆕 step334: 교사 마지막 로그인(auth.users.last_sign_in_at)은 보조 정보이고 조회가 느리므로(listUsers)
+    //   비차단으로 처리 — 화면/setLoading을 막지 않고 백그라운드로 보내 응답 오면 해당 칼럼만 채운다.
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          const r = await fetch('/api/admin-last-logins', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: session.access_token })
+          })
+          if (r.ok) {
+            const j = await r.json()
+            setTeacherLastLogin(j.lastLogins || {})
+          }
         }
-      }
-    } catch (e) { /* 무시: 로그인 표시는 보조 정보 */ }
+      } catch (e) { console.warn('마지막 로그인 로드 실패(보조 정보):', e?.message || e) }
+      finally { setLastLoginLoaded(true) }
+    })()
 
     setStats({
       teachers: activeTeachers.filter(t => t.role !== 'admin').length,
@@ -1099,7 +1103,7 @@ export default function AdminHome() {
 
                         // 🆕 step254: 마지막 로그인(글 활동과 별개 신호 — auth.users.last_sign_in_at)
                         const lastLogin = teacherLastLogin[t.id]
-                        let loginLabel = '로그인 기록 없음'
+                        let loginLabel = lastLoginLoaded ? '로그인 기록 없음' : '·'  // 🆕 step334: 비차단 로딩 전엔 placeholder
                         if (lastLogin) {
                           const ld = Math.floor((Date.now() - new Date(lastLogin).getTime()) / 86400000)
                           loginLabel = ld === 0 ? '오늘 로그인' : `${ld}일 전 로그인`
