@@ -222,9 +222,12 @@ export default function StudentHome() {
   }, [essay, rewriteEssay, step, todayTopic, user])
 
   const checkAuth = async () => {
+    const tStart = performance.now()
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/student/login'); return }
+    const tProfile = performance.now()
     const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled)').eq('id', authUser.id).maybeSingle()
+    console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
     if (!profile || profile.role !== 'student') {
       await supabase.auth.signOut(); router.push('/student/login'); return
     }
@@ -236,18 +239,21 @@ export default function StudentHome() {
     const queryTopicId = router.query?.topic
     await loadTodayTopic(profile, queryTopicId || null)
     setLoading(false)
+    console.log(`[perf] 학생 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
   }
 
   // 지난 주제 중 학생이 아직 제출하지 않은 것들 로드
   const loadPendingTopics = async (profile, teacherId) => {
     const today = todayStr()
     // 최근 30일 이내 주제 중 오늘보다 이전 것
+    const tPast = performance.now()
     const { data: pastTopics } = await supabase.from('topics')
       .select('id, date, title, description')
       .eq('teacher_id', teacherId)
       .lt('date', today)
       .order('date', { ascending: false })
       .limit(30)
+    console.log(`[perf] pastTopics 조회: ${Math.round(performance.now() - tPast)}ms, rows=${(pastTopics || []).length}`)
 
     if (!pastTopics || pastTopics.length === 0) {
       setPendingTopics([])
@@ -256,11 +262,13 @@ export default function StudentHome() {
 
     // 이 학생의 제출 기록 확인
     const topicIds = pastTopics.map(t => t.id)
+    const tPendSubs = performance.now()
     const { data: mySubs } = await supabase.from('submissions')
       .select('topic_id')
       .eq('user_id', profile.id)
       .in('topic_id', topicIds)
       .is('deleted_at', null)
+    console.log(`[perf] pendingTopics mySubs 조회: ${Math.round(performance.now() - tPendSubs)}ms, rows=${(mySubs || []).length}`)
 
     const submittedSet = new Set((mySubs || []).map(s => s.topic_id))
     const pending = pastTopics.filter(t => !submittedSet.has(t.id))
@@ -270,6 +278,7 @@ export default function StudentHome() {
   // 🆕 미확인 담임 코멘트 (학생 알림 — AI 추천 기록처럼 로그 형태)
   const loadUnreadComments = async (profile) => {
     try {
+      const tUnread = performance.now()
       const { data } = await supabase.from('submissions')
         .select('id, topic_id, teacher_comment, teacher_comment_at, attempt, topics(title, date)')
         .eq('user_id', profile.id)
@@ -278,6 +287,7 @@ export default function StudentHome() {
         .is('deleted_at', null)
         .order('teacher_comment_at', { ascending: false })
         .limit(10)
+      console.log(`[perf] unreadComments 조회: ${Math.round(performance.now() - tUnread)}ms, rows=${(data || []).length}`)
       setUnreadComments(data || [])
     } catch(e) {
       setUnreadComments([])
@@ -288,7 +298,9 @@ export default function StudentHome() {
     if (!profile.class_id) return
 
     // 학급 담임 찾기
+    const tClass = performance.now()
     const { data: classData } = await supabase.from('classes').select('teacher_id').eq('id', profile.class_id).maybeSingle()
+    console.log(`[perf] classData 조회: ${Math.round(performance.now() - tClass)}ms, rows=${classData ? 1 : 0}`)
     if (!classData) return
 
     let topic = null
@@ -306,16 +318,20 @@ export default function StudentHome() {
     if (!topic) {
       const today = todayStr()
       // 오늘 주제가 여러 개일 수 있음 → 미제출인 것 우선 선택
+      const tToday = performance.now()
       const { data: todayTopics } = await supabase.from('topics')
         .select('*').eq('teacher_id', classData.teacher_id).eq('date', today)
         .order('created_at', { ascending: true })
+      console.log(`[perf] todayTopics 조회: ${Math.round(performance.now() - tToday)}ms, rows=${(todayTopics || []).length}`)
 
       if (todayTopics && todayTopics.length > 0) {
         // 학생이 아직 제출 안 한 주제 ID 찾기
         const topicIds = todayTopics.map(t => t.id)
+        const tTodaySubs = performance.now()
         const { data: mySubs } = await supabase.from('submissions')
           .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', topicIds)
           .is('deleted_at', null)
+        console.log(`[perf] todayTopic mySubs 조회: ${Math.round(performance.now() - tTodaySubs)}ms, rows=${(mySubs || []).length}`)
 
         // 각 주제별로 최대 attempt 계산
         const maxAttemptByTopic = {}
@@ -362,9 +378,11 @@ export default function StudentHome() {
     setStep('write')
 
     // 이미 제출했나 확인
+    const tExisting = performance.now()
     const { data: existing } = await supabase.from('submissions')
       .select('*').eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null)
+    console.log(`[perf] existing 제출 조회: ${Math.round(performance.now() - tExisting)}ms, rows=${(existing || []).length}`)
     
     if (existing && existing.length > 0) {
       const sorted = [...existing].sort((a,b) => (b.attempt||1) - (a.attempt||1))
