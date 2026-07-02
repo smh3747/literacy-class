@@ -183,7 +183,7 @@ export default function TeacherRanking() {
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
-        <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+        <main className="max-w-7xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
             <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">🏆 우리 반 랭킹</h1>

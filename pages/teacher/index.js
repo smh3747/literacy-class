@@ -342,6 +342,128 @@ export default function TeacherHome() {
     topicCount > 0 &&
     !!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)
 
+  // 🆕 step335: 순서 재배치용 — 심의/동의 배너·메뉴 grid만 const로 추출(내부 로직·props 불변). setupDone에 따라 위치만 다름.
+  const bannersBlock = (
+    <div className="grid sm:grid-cols-2 gap-3">
+      {/* ① 학교운영위 심의 */}
+      <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <button type="button" onClick={() => setOpenGuide(openGuide === 'simui' ? null : 'simui')}
+          className="w-full text-left flex items-center justify-between gap-2">
+          <span className="text-sm font-bold text-gray-800">🏛️ 학교운영위원회 심의가 궁금하신가요?</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'simui' ? '▲' : 'ⓘ'}</span>
+        </button>
+        <div className={`${openGuide === 'simui' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed`}>
+          학급에서 선생님 재량으로 쓰는 건 심의 대상이 아니에요. 학교운영위원회 심의는 학교가 이 도구를 정규 교육과정 교재로 공식 채택할 때만 해당돼요. 다만 학교마다 기준이 조금 다를 수 있으니, 걱정되면 소속 학교에 한번 확인해 보세요.
+        </div>
+      </div>
+      {/* ② 학부모 동의 (+ 액션 2개) */}
+      <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <button type="button" onClick={() => setOpenGuide(openGuide === 'consent' ? null : 'consent')}
+          className="w-full text-left flex items-center justify-between gap-2">
+          <span className="text-sm font-bold text-gray-800">👨‍👩‍👧 학부모 동의가 궁금하신가요?</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'consent' ? '▲' : 'ⓘ'}</span>
+        </button>
+        <div className={`${openGuide === 'consent' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed space-y-2`}>
+          <p>학부모 동의는 선택이에요. 안 받으셔도 모든 기능을 그대로 쓸 수 있어요. 다만 학생 실명을 쓰시려면 동의가 필요한데, 만 14세 미만은 개인정보보호법 때문이에요. 동의 전까지는 닉네임으로 운영되고, 동의를 받으면 실명으로 바뀌어요. 학급 명렬표(나이스)로 등록하는 것도 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link href={withImpersonation("/teacher/students?mode=register")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
+            <Link href={withImpersonation("/teacher/students/consent")} className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">✍️ 학부모 온라인 동의서 받기</Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const menuGrid = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📚</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">주제 관리</h3>
+          <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">👥</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">학생 관리</h3>
+          <p className="text-xs text-gray-500">학급 명렬표 일괄 등록 · 학부모 동의 관리</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📋</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">제출 현황</h3>
+          <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/submissions")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📝</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">학생 글 보기</h3>
+          <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📊</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">학생 성장 그래프</h3>
+          <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/ranking")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">🏆</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">우리 반 랭킹</h3>
+          <p className="text-xs text-gray-500">평균 점수·제출 수·성장도 순위</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/record")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📝</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">생기부 평어 도우미</h3>
+          <p className="text-xs text-gray-500">학생 글 기반 평어 초안 생성</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/feedback-reports")} className={`lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border ${
+        stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
+      } relative flex items-center gap-3`}>
+        <div className="text-2xl flex-shrink-0">🚨</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">피드백 신고함
+            {stats.reports > 0 && (
+              <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                {stats.reports}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/grammar-backfill")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📝</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">맞춤법 일괄 적용</h3>
+          <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/trash")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">🗑️</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">쓰레기통</h3>
+          <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
+        </div>
+      </Link>
+      <Link href={withImpersonation("/teacher/help")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+        <div className="text-2xl flex-shrink-0">📖</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">도움말 / FAQ</h3>
+          <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
+        </div>
+      </Link>
+    </div>
+  )
+
   return (
     <>
       <Head><title>선생님 화면 - 다온클래스</title></Head>
@@ -426,35 +548,7 @@ export default function TeacherHome() {
             )}
           </div>
 
-          {/* 🆕 step287: 교사 안심 안내 배너 2개 (심의 / 학부모 동의) — 반복 질문 해소. 데스크탑 hover + 모바일 탭 토글 */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            {/* ① 학교운영위 심의 */}
-            <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <button type="button" onClick={() => setOpenGuide(openGuide === 'simui' ? null : 'simui')}
-                className="w-full text-left flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-gray-800">🏛️ 학교운영위원회 심의가 궁금하신가요?</span>
-                <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'simui' ? '▲' : 'ⓘ'}</span>
-              </button>
-              <div className={`${openGuide === 'simui' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed`}>
-                학급에서 선생님 재량으로 쓰는 건 심의 대상이 아니에요. 학교운영위원회 심의는 학교가 이 도구를 정규 교육과정 교재로 공식 채택할 때만 해당돼요. 다만 학교마다 기준이 조금 다를 수 있으니, 걱정되면 소속 학교에 한번 확인해 보세요.
-              </div>
-            </div>
-            {/* ② 학부모 동의 (+ 액션 2개) */}
-            <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <button type="button" onClick={() => setOpenGuide(openGuide === 'consent' ? null : 'consent')}
-                className="w-full text-left flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-gray-800">👨‍👩‍👧 학부모 동의가 궁금하신가요?</span>
-                <span className="text-xs text-gray-400 flex-shrink-0">{openGuide === 'consent' ? '▲' : 'ⓘ'}</span>
-              </button>
-              <div className={`${openGuide === 'consent' ? 'block' : 'hidden'} sm:group-hover:block mt-2 text-xs text-gray-600 leading-relaxed space-y-2`}>
-                <p>학부모 동의는 선택이에요. 안 받으셔도 모든 기능을 그대로 쓸 수 있어요. 다만 학생 실명을 쓰시려면 동의가 필요한데, 만 14세 미만은 개인정보보호법 때문이에요. 동의 전까지는 닉네임으로 운영되고, 동의를 받으면 실명으로 바뀌어요. 학급 명렬표(나이스)로 등록하는 것도 안전해요. 실명은 선생님 화면에만 보이고 외부로 나가지 않아요.</p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Link href={withImpersonation("/teacher/students?mode=register")} className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">📋 학생 등록하러 가기</Link>
-                  <Link href={withImpersonation("/teacher/students/consent")} className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">✍️ 학부모 온라인 동의서 받기</Link>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* 🆕 step335: 심의/동의 배너는 bannersBlock const로 이동 — setupDone에 따라 위치가 달라져 아래에서 렌더 */}
 
           {/* 학급 정보 카드 */}
           {classInfo && (
@@ -542,6 +636,9 @@ export default function TeacherHome() {
               />
             </div>
           )}
+
+          {/* 🆕 step335: 정착=메뉴 먼저, 신규=심의/동의 배너 먼저 (자주 쓰는 것 위로) */}
+          {setupDone ? menuGrid : bannersBlock}
 
           {/* 🆕 step163: 학교 다시 선택 안내 배너 (표준학교코드 없는 기존 교사) */}
           {showSchoolBanner && (
@@ -652,94 +749,8 @@ export default function TeacherHome() {
             )
           })()}
 
-          {/* 메뉴 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📚</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">주제 관리</h3>
-                <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">👥</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">학생 관리</h3>
-                <p className="text-xs text-gray-500">학급 명렬표 일괄 등록 · 학부모 동의 관리</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📋</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">제출 현황</h3>
-                <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/submissions")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📝</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">학생 글 보기</h3>
-                <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📊</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">학생 성장 그래프</h3>
-                <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/ranking")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">🏆</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">우리 반 랭킹</h3>
-                <p className="text-xs text-gray-500">평균 점수·제출 수·성장도 순위</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/record")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📝</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">생기부 평어 도우미</h3>
-                <p className="text-xs text-gray-500">학생 글 기반 평어 초안 생성</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/feedback-reports")} className={`lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border ${
-              stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
-            } relative flex items-center gap-3`}>
-              <div className="text-2xl flex-shrink-0">🚨</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">피드백 신고함
-                  {stats.reports > 0 && (
-                    <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                      {stats.reports}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/grammar-backfill")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📝</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">맞춤법 일괄 적용</h3>
-                <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/trash")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">🗑️</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">쓰레기통</h3>
-                <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
-              </div>
-            </Link>
-            <Link href={withImpersonation("/teacher/help")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
-              <div className="text-2xl flex-shrink-0">📖</div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm">도움말 / FAQ</h3>
-                <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
-              </div>
-            </Link>
-          </div>
+          {/* 🆕 step335: 정착=심의/동의 배너 맨 아래, 신규=메뉴 맨 아래 */}
+          {setupDone ? bannersBlock : menuGrid}
         </main>
 
         {/* 🆕 step291: 우측 세로 툴바 (데스크탑 lg+ 전용) — 아이콘+라벨. 모바일은 위 인라인 패널/메뉴 유지 */}
