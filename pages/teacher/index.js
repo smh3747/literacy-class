@@ -653,69 +653,91 @@ export default function TeacherHome() {
           })()}
 
           {/* 메뉴 */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📚</div>
-              <h3 className="font-bold mb-1">주제 관리</h3>
-              <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <Link href={withImpersonation("/teacher/topics")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📚</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">주제 관리</h3>
+                <p className="text-xs text-gray-500">오늘의 글쓰기 주제 등록</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">👥</div>
-              <h3 className="font-bold mb-1">학생 관리</h3>
-              <p className="text-xs text-gray-500">학급 명렬표 일괄 등록 · 학부모 동의 관리</p>
+            <Link href={withImpersonation("/teacher/students")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">👥</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">학생 관리</h3>
+                <p className="text-xs text-gray-500">학급 명렬표 일괄 등록 · 학부모 동의 관리</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📋</div>
-              <h3 className="font-bold mb-1">제출 현황</h3>
-              <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
+            <Link href={withImpersonation("/teacher/status")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📋</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">제출 현황</h3>
+                <p className="text-xs text-gray-500">오늘 누가 냈는지 한눈에</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/submissions")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📝</div>
-              <h3 className="font-bold mb-1">학생 글 보기</h3>
-              <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
+            <Link href={withImpersonation("/teacher/submissions")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📝</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">학생 글 보기</h3>
+                <p className="text-xs text-gray-500">주제별 학생 글 + 피드백</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📊</div>
-              <h3 className="font-bold mb-1">학생 성장 그래프</h3>
-              <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
+            <Link href={withImpersonation("/teacher/student-growth")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📊</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">학생 성장 그래프</h3>
+                <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/ranking")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">🏆</div>
-              <h3 className="font-bold mb-1">우리 반 랭킹</h3>
-              <p className="text-xs text-gray-500">평균 점수·제출 수·성장도 순위</p>
+            <Link href={withImpersonation("/teacher/ranking")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">🏆</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">우리 반 랭킹</h3>
+                <p className="text-xs text-gray-500">평균 점수·제출 수·성장도 순위</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/record")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📝</div>
-              <h3 className="font-bold mb-1">생기부 평어 도우미</h3>
-              <p className="text-xs text-gray-500">학생 글 기반 평어 초안 생성</p>
+            <Link href={withImpersonation("/teacher/record")} className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📝</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">생기부 평어 도우미</h3>
+                <p className="text-xs text-gray-500">학생 글 기반 평어 초안 생성</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/feedback-reports")} className={`lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border ${
+            <Link href={withImpersonation("/teacher/feedback-reports")} className={`lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border ${
               stats.reports > 0 ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-100'
-            } relative`}>
-              <div className="text-3xl mb-2">🚨</div>
-              <h3 className="font-bold mb-1">피드백 신고함
-                {stats.reports > 0 && (
-                  <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {stats.reports}
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
+            } relative flex items-center gap-3`}>
+              <div className="text-2xl flex-shrink-0">🚨</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">피드백 신고함
+                  {stats.reports > 0 && (
+                    <span className="ml-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                      {stats.reports}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-gray-500">학생이 신고한 AI 피드백</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/grammar-backfill")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📝</div>
-              <h3 className="font-bold mb-1">맞춤법 일괄 적용</h3>
-              <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
+            <Link href={withImpersonation("/teacher/grammar-backfill")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📝</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">맞춤법 일괄 적용</h3>
+                <p className="text-xs text-gray-500">과거 글에 빨간 밑줄 추가</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/trash")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">🗑️</div>
-              <h3 className="font-bold mb-1">쓰레기통</h3>
-              <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
+            <Link href={withImpersonation("/teacher/trash")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">🗑️</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">쓰레기통</h3>
+                <p className="text-xs text-gray-500">삭제한 글 복원 / 영구 삭제</p>
+              </div>
             </Link>
-            <Link href={withImpersonation("/teacher/help")} className="lg:hidden bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
-              <div className="text-3xl mb-2">📖</div>
-              <h3 className="font-bold mb-1">도움말 / FAQ</h3>
-              <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
+            <Link href={withImpersonation("/teacher/help")} className="lg:hidden bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3">
+              <div className="text-2xl flex-shrink-0">📖</div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm">도움말 / FAQ</h3>
+                <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
+              </div>
             </Link>
           </div>
         </main>

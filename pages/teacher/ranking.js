@@ -153,16 +153,16 @@ export default function TeacherRanking() {
         {list.length === 0 ? (
           <p className="text-sm text-gray-500 py-4 text-center">아직 데이터가 부족해요</p>
         ) : (
-          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto overflow-x-hidden pr-1">
             {list.map((item, idx) => {
               const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`
               return (
-                <div key={item.student.id} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-7 text-center ${idx < 3 ? 'text-xl' : 'text-sm font-bold text-gray-500'}`}>{medal}</span>
-                    <span className="font-medium">{displayStudentNameWithNumber(item.student)}</span>
-                  </div>
-                  <span className="font-mono font-bold">{item.value}{unit}</span>
+                <div key={item.student.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 min-w-0">
+                  <span className={`w-7 flex-shrink-0 text-center ${idx < 3 ? 'text-xl' : 'text-sm font-bold text-gray-500'}`}>{medal}</span>
+                  <span className="flex-1 min-w-0 truncate font-medium" title={displayStudentNameWithNumber(item.student)}>
+                    {displayStudentNameWithNumber(item.student)}
+                  </span>
+                  <span className="flex-shrink-0 whitespace-nowrap text-right font-mono font-bold">{item.value}{unit}</span>
                 </div>
               )
             })}
