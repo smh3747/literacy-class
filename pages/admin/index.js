@@ -95,26 +95,28 @@ export default function AdminHome() {
 
     // 학급별 담임 정보를 별도로 조회해서 매핑 (외래키 명시 안 함 - 더 안정적)
     const classes = classesRes.data || []
-    // 🆕 step251/252: PostgREST 기본 1000행 제한을 range 페이지 루프로 우회해 "전량" 수집(읽기 전용 헬퍼).
-    //   build(from,to)가 매번 새 쿼리를 만들어 range로 페이지를 받아 합친다. 두 집계 블록이 공유.
-    const PAGE_SIZE = 1000
-    const fetchAllPaged = async (build) => {
-      let from = 0, all = [], guard = 0
-      while (guard++ < 100) {  // 최대 10만행 가드 (무한 루프 방지)
-        const { data, error } = await build(from, from + PAGE_SIZE - 1)
-        if (error) { console.error('fetchAllPaged 실패(부분 결과 반환):', error); break }  // 🆕 step256: 에러 가시화
-        if (!data || data.length === 0) break
-        all = all.concat(data)
-        if (data.length < PAGE_SIZE) break
-        from += PAGE_SIZE
-      }
-      return all
-    }
-    const chunkArr = (arr, n) => {
-      const out = []
-      for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
-      return out
-    }
+    // 🆕 step333: 학급별 통계는 admin_class_stats() RPC 한 번으로(기존 전량 수집·집계 루프 제거).
+    //   반환: 학급별 student_count, submission_count, first_submission_count, last_activity_at, model_stats(jsonb).
+    const classStatById = {}
+    try {
+      const { data: classStatRows, error: statErr } = await supabase.rpc('admin_class_stats')
+      if (statErr) throw statErr
+      ;(classStatRows || []).forEach(r => {
+        const key = r.class_id ?? r.id      // 키 컬럼명 방어(class_id 우선, 없으면 id)
+        if (key == null) return
+        let ms = r.model_stats
+        if (typeof ms === 'string') { try { ms = JSON.parse(ms) } catch { ms = null } }  // jsonb 문자열이면 파싱
+        classStatById[key] = {
+          student_count: r.student_count || 0,
+          submission_count: r.submission_count || 0,
+          first_submission_count: r.first_submission_count || 0,
+          last_activity_at: r.last_activity_at || null,
+          model_stats: (ms && typeof ms === 'object')
+            ? { models: ms.models || {}, total: ms.total || 0, fallback: ms.fallback || 0 }
+            : { models: {}, total: 0, fallback: 0 },
+        }
+      })
+    } catch (e) { console.warn('admin_class_stats RPC 실패:', e?.message || e) }
     if (classes.length > 0) {
       const teacherIds = [...new Set(classes.map(c => c.teacher_id).filter(Boolean))]
       if (teacherIds.length > 0) {
@@ -129,57 +131,12 @@ export default function AdminHome() {
           }
         })
       }
-      // 학급별 학생 수 + 채점 모델 통계 (헬퍼 fetchAllPaged/chunkArr는 상위 스코프에서 정의)
-      const classIds = classes.map(c => c.id)
-
-      // 학생 전량(id, class_id) — student_count와 model_stats가 이 한 배열을 함께 재사용
-      const studentsWithClass = await fetchAllPaged((from, to) =>
-        supabase.from('profiles').select('id, class_id')
-          .in('class_id', classIds).eq('role', 'student').range(from, to))
-
-      const countMap = {}
-      const studentIdByClass = {}  // { classId: [studentId, ...] }
-      ;(studentsWithClass || []).forEach(s => {
-        countMap[s.class_id] = (countMap[s.class_id] || 0) + 1
-        if (!studentIdByClass[s.class_id]) studentIdByClass[s.class_id] = []
-        studentIdByClass[s.class_id].push(s.id)
+      // 🆕 step333: 학급별 학생 수 + 채점 모델 통계 (admin_class_stats RPC 결과 매핑 — 전 학급)
+      classes.forEach(c => {
+        const st = classStatById[c.id]
+        c.student_count = st?.student_count || 0
+        c.model_stats = st?.model_stats || { models: {}, total: 0, fallback: 0 }
       })
-      classes.forEach(c => { c.student_count = countMap[c.id] || 0 })
-
-      // 🆕 학급별 채점 모델 통계 (와이프 피드백 1번: 다른 학급도 어떤 모델로 채점했는지)
-      // 학급 → 학생 → 제출 → graded_with_model 집계. studentsWithClass 재사용(별도 학생 쿼리 없음).
-      const allStudentIds = (studentsWithClass || []).map(s => s.id)
-      if (allStudentIds.length > 0) {
-        // 제출물도 전량 수집. user_id IN 목록이 너무 길어지지 않도록 1000개씩 끊어서(URL 길이 안전)
-        // 각 묶음마다 range 페이지 루프로 받는다.
-        let subs = []
-        for (const idChunk of chunkArr(allStudentIds, 150)) {  // 🆕 step256: IN 리스트 축소(URL 한도 회피)
-          const part = await fetchAllPaged((from, to) =>
-            supabase.from('submissions')
-              .select('user_id, graded_with_model, is_fallback_graded')
-              .in('user_id', idChunk).range(from, to))
-          subs = subs.concat(part)
-        }
-        // user_id → class_id 역매핑
-        const classByStudent = {}
-        ;(studentsWithClass || []).forEach(s => { classByStudent[s.id] = s.class_id })
-        // 학급별 모델 카운트
-        const modelStatsByClass = {}  // { classId: { 'gemini-3.1-flash-lite': 12, 'gemini-2.5-flash': 2, ... }, fallbackCount }
-        ;(subs || []).forEach(sub => {
-          const cid = classByStudent[sub.user_id]
-          if (!cid) return
-          if (!modelStatsByClass[cid]) modelStatsByClass[cid] = { models: {}, total: 0, fallback: 0 }
-          const m = sub.graded_with_model || '(미기록)'
-          modelStatsByClass[cid].models[m] = (modelStatsByClass[cid].models[m] || 0) + 1
-          modelStatsByClass[cid].total++
-          if (sub.is_fallback_graded) modelStatsByClass[cid].fallback++
-        })
-        classes.forEach(c => {
-          c.model_stats = modelStatsByClass[c.id] || { models: {}, total: 0, fallback: 0 }
-        })
-      } else {
-        classes.forEach(c => { c.model_stats = { models: {}, total: 0, fallback: 0 } })
-      }
     }
 
     // 🆕 의견 작성자 정보 조회 (와이프 피드백 2번)
@@ -213,48 +170,13 @@ export default function AdminHome() {
     const activeClasses = classes.filter(c => !c.deleted_at)
     const trashedClasses = classes.filter(c => c.deleted_at)
 
-    // 🆕 학급별 제출 통계 + 마지막 활동 시각
-    // 🆕 step252: 학생/제출을 range 페이지 루프로 전량 수집(1000행 제한 우회). 상위 fetchAllPaged/chunkArr 재사용.
-    const activeClassIds = activeClasses.map(c => c.id)
-    if (activeClassIds.length > 0) {
-      // 학급에 속한 모든 학생 id (전량)
-      const studentsForActivity = await fetchAllPaged((from, to) =>
-        supabase.from('profiles').select('id, class_id')
-          .in('class_id', activeClassIds).eq('role', 'student').range(from, to))
-      const studentToClass = {}
-      ;(studentsForActivity || []).forEach(s => { studentToClass[s.id] = s.class_id })
-      const allActiveStudentIds = (studentsForActivity || []).map(s => s.id)
-
-      if (allActiveStudentIds.length > 0) {
-        // 제출물 전량 수집 (user_id IN 목록이 길어지지 않도록 1000개씩 끊어 range 루프). attempt 포함.
-        let subStats = []
-        for (const idChunk of chunkArr(allActiveStudentIds, 150)) {  // 🆕 step256: IN 리스트 축소(URL 한도 회피)
-          const part = await fetchAllPaged((from, to) =>
-            supabase.from('submissions')
-              .select('user_id, created_at, attempt')
-              .in('user_id', idChunk).range(from, to))
-          subStats = subStats.concat(part)
-        }
-
-        const classSubCount = {}     // { classId: 전체 제출 수(수정본 포함) }
-        const classFirstCount = {}   // { classId: 첫 글 수(attempt=1) }
-        const classLastActivity = {} // { classId: 최근 제출 시각 }
-        ;(subStats || []).forEach(sub => {
-          const cid = studentToClass[sub.user_id]
-          if (!cid) return
-          classSubCount[cid] = (classSubCount[cid] || 0) + 1
-          if ((sub.attempt || 1) === 1) classFirstCount[cid] = (classFirstCount[cid] || 0) + 1
-          if (!classLastActivity[cid] || sub.created_at > classLastActivity[cid]) {
-            classLastActivity[cid] = sub.created_at
-          }
-        })
-        activeClasses.forEach(c => {
-          c.submission_count = classSubCount[c.id] || 0
-          c.first_submission_count = classFirstCount[c.id] || 0
-          c.last_activity_at = classLastActivity[c.id] || null
-        })
-      }
-    }
+    // 🆕 step333: 학급별 제출 통계 + 마지막 활동 시각 (admin_class_stats RPC 결과 매핑 — 활성 학급)
+    activeClasses.forEach(c => {
+      const st = classStatById[c.id]
+      c.submission_count = st?.submission_count || 0
+      c.first_submission_count = st?.first_submission_count || 0
+      c.last_activity_at = st?.last_activity_at || null
+    })
 
     // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능)
     try {
