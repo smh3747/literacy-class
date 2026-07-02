@@ -529,8 +529,14 @@ export default function TopicsPage() {
         // 새 주제는 독립 유지(resulting_topic_id 재연결 안 함). 기록 실패는 등록 흐름을 막지 않음.
         if (!error && r.data?.id && copiedSource?.logId) {
           try {
+            // 🆕 원저자 로그로 해석(재공유 체인 거슬러 올라감). RPC 실패·null이면 직전 logId 폴백.
+            let originLogId = copiedSource.logId
+            try {
+              const { data: resolved } = await supabase.rpc('resolve_origin_log', { log_id: copiedSource.logId })
+              if (resolved) originLogId = resolved
+            } catch (e) { /* 폴백: 직전 logId 그대로 */ }
             const { error: copyErr } = await supabase.from('topic_copies').insert({
-              source_log_id: copiedSource.logId,
+              source_log_id: originLogId,
               source_index: copiedSource.index,
               copied_by_teacher_id: user.id,
               copied_topic_id: r.data.id,
