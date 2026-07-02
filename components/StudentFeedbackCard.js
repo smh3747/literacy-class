@@ -3,6 +3,7 @@ import { toKST } from '../lib/timeFormat'
 import { splitFeedbackItems } from '../lib/feedbackFormat'
 import { findOriginalRange } from '../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
+import { stampLabel } from '../lib/stamps'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -217,6 +218,15 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
           <p className="text-sm text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep">
             {sub.teacher_comment}
           </p>
+        </div>
+      )}
+
+      {/* 🆕 담임 확인 도장 (코멘트와 별개로 표시) */}
+      {stampLabel(sub.teacher_stamp) && (
+        <div className="text-sm">
+          <span className="inline-flex items-center gap-1 bg-primary-light text-primary-dark font-semibold px-3 py-1.5 rounded-full">
+            선생님 도장: {stampLabel(sub.teacher_stamp)}
+          </span>
         </div>
       )}
 

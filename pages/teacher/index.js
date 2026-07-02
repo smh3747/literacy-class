@@ -679,6 +679,11 @@ export default function TeacherHome() {
               <h3 className="font-bold mb-1">학생 성장 그래프</h3>
               <p className="text-xs text-gray-500">학급/학생별 점수 추이</p>
             </Link>
+            <Link href={withImpersonation("/teacher/ranking")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
+              <div className="text-3xl mb-2">🏆</div>
+              <h3 className="font-bold mb-1">우리 반 랭킹</h3>
+              <p className="text-xs text-gray-500">평균 점수·제출 수·성장도 순위</p>
+            </Link>
             <Link href={withImpersonation("/teacher/record")} className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition border border-gray-100">
               <div className="text-3xl mb-2">📝</div>
               <h3 className="font-bold mb-1">생기부 평어 도우미</h3>

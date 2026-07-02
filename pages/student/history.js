@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
+import { stampLabel } from '../../lib/stamps'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -194,6 +195,15 @@ export default function StudentHistory() {
                     <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep text-sm">
                       {s.teacher_comment}
                     </p>
+                  </div>
+                )}
+
+                {/* 🆕 담임 확인 도장 (코멘트와 별개로 표시) */}
+                {stampLabel(s.teacher_stamp) && (
+                  <div className="text-sm">
+                    <span className="inline-flex items-center gap-1 bg-primary-light text-primary-dark font-semibold px-3 py-1.5 rounded-full">
+                      선생님 도장: {stampLabel(s.teacher_stamp)}
+                    </span>
                   </div>
                 )}
 

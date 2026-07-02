@@ -12,6 +12,7 @@ import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
+import { STAMPS, stampLabel } from '../../lib/stamps'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
@@ -542,6 +543,17 @@ export default function TeacherSubmissions() {
     setTopicStudents(prev => prev.map(g => ({ ...g, items: g.items.map(patch) })))
     setSelectedStudent(prev => (prev ? { ...prev, items: prev.items.map(patch) } : prev))
   }
+  // 🆕 담임 확인 도장 토글 — 코멘트 저장과 동일 경로(클라이언트 update)·가드(isImpersonating). key만 저장.
+  const toggleStamp = async (s, key) => {
+    if (isImpersonating) return
+    const next = (s.teacher_stamp === key) ? null : key   // 같은 도장이면 해제, 다르면 교체
+    try {
+      const { error } = await supabase.from('submissions').update({ teacher_stamp: next }).eq('id', s.id)
+      if (error) throw error
+      await openTopic(selectedTopic, selectedStudent.profile.id)   // 코멘트 onUpdated와 동일 재조회
+    } catch (e) { alert('도장 저장에 실패했어요: ' + (e?.message || '')) }
+  }
+
   // 🆕 step300: 단일 맞춤법 검사 완료 토스트 클릭 → 그 학생 글로 이동(topicStudents는 patchLocalCorrections로 최신 corrections 보유)
   const goToGrammarTarget = (studentId) => {
     const group = topicStudents.find(g => g.profile.id === studentId)
@@ -1185,6 +1197,26 @@ export default function TeacherSubmissions() {
                       disabled={isImpersonating}
                       maskNames={topicStudents.map(g => g.profile.realname).filter(Boolean)}
                     />
+
+                    {/* 🆕 담임 확인 도장 (코멘트와 동일 경로·가드) */}
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      <span className="text-xs text-gray-500 mr-1">도장</span>
+                      {isImpersonating ? (
+                        s.teacher_stamp
+                          ? <span className="text-xs bg-primary-light text-primary-dark px-2 py-1 rounded-full">{stampLabel(s.teacher_stamp) || '없음'}</span>
+                          : <span className="text-xs text-gray-400">없음</span>
+                      ) : (
+                        STAMPS.map(st => {
+                          const active = s.teacher_stamp === st.key
+                          return (
+                            <button key={st.key} type="button" onClick={() => toggleStamp(s, st.key)}
+                              className={`text-xs px-2 py-1 rounded-full border transition ${active ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                              {st.label}
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
 
                     {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
                     <details className="group">
