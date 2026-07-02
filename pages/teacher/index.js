@@ -548,7 +548,8 @@ export default function TeacherHome() {
             )}
           </div>
 
-          {/* 🆕 step335: 심의/동의 배너는 bannersBlock const로 이동 — setupDone에 따라 위치가 달라져 아래에서 렌더 */}
+          {/* 심의/동의 배너 (원래 위치: 학급 카드 위, 항상 표시) */}
+          {bannersBlock}
 
           {/* 학급 정보 카드 */}
           {classInfo && (
@@ -636,9 +637,6 @@ export default function TeacherHome() {
               />
             </div>
           )}
-
-          {/* 🆕 step335: 정착=메뉴 먼저, 신규=심의/동의 배너 먼저 (자주 쓰는 것 위로) */}
-          {setupDone ? menuGrid : bannersBlock}
 
           {/* 🆕 step163: 학교 다시 선택 안내 배너 (표준학교코드 없는 기존 교사) */}
           {showSchoolBanner && (
@@ -749,8 +747,8 @@ export default function TeacherHome() {
             )
           })()}
 
-          {/* 🆕 step335: 정착=심의/동의 배너 맨 아래, 신규=메뉴 맨 아래 */}
-          {setupDone ? bannersBlock : menuGrid}
+          {/* 메뉴 (원래 위치: 페이지 하단, 항상 표시) */}
+          {menuGrid}
         </main>
 
         {/* 🆕 step291: 우측 세로 툴바 (데스크탑 lg+ 전용) — 아이콘+라벨. 모바일은 위 인라인 패널/메뉴 유지 */}
