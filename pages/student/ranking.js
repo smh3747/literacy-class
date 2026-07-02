@@ -28,6 +28,7 @@ export default function StudentRanking() {
   const [period, setPeriod] = useState('week') // week / month / all
   const [loading, setLoading] = useState(true)
   const [myRanks, setMyRanks] = useState({ avgScore: null, totalSubs: null, improvement: null })
+  const [myAvgDetail, setMyAvgDetail] = useState(null)  // 🆕 step320: 내 평균 점수 근거(값·주제 수), avgList 재사용
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { if (user?.class_id) loadRankings(user, period) }, [period])
@@ -61,7 +62,7 @@ export default function StudentRanking() {
       .select('id, nickname, number, is_hidden')
       .eq('class_id', profile.class_id).eq('role', 'student')
     const visible = (students || []).filter(s => !s.is_hidden)
-    if (visible.length === 0) { setRankings({ avgScore: [], totalSubs: [], improvement: [] }); return }
+    if (visible.length === 0) { setRankings({ avgScore: [], totalSubs: [], improvement: [] }); setMyAvgDetail(null); return }
 
     const studentIds = visible.map(s => s.id)
 
@@ -137,6 +138,9 @@ export default function StudentRanking() {
     const mySubsRank = subsList.findIndex(x => x.student.id === profile.id) + 1 || null
     const myImproveRank = improveList.findIndex(x => x.student.id === profile.id) + 1 || null
     setMyRanks({ avgScore: myAvgRank, totalSubs: mySubsRank, improvement: myImproveRank })
+    // 🆕 step320: 내 평균 근거 병기용 — 기존 avgList 재사용(재계산 없음)
+    const myAvgItem = avgList.find(x => x.student.id === profile.id) || null
+    setMyAvgDetail(myAvgItem ? { value: myAvgItem.value, topicCount: myAvgItem.topicCount } : null)
 
     setRankings({
       avgScore: avgList.slice(0, 10),
@@ -169,9 +173,10 @@ export default function StudentRanking() {
   const myNickname = user?.nickname || `${user?.number || ''}번`
 
   // 한 랭킹 카드 렌더링
-  const renderRanking = (title, list, unit, myRank) => (
+  const renderRanking = (title, list, unit, myRank, subtitle = null, myDetail = null) => (
     <div className="bg-white rounded-2xl p-5 shadow-sm">
-      <h3 className="font-bold mb-3">{title}</h3>
+      <h3 className={`font-bold ${subtitle ? 'mb-1' : 'mb-3'}`}>{title}</h3>
+      {subtitle && <p className="text-xs text-gray-500 mb-3 leading-relaxed">{subtitle}</p>}
       {list.length === 0 ? (
         <p className="text-sm text-gray-500 py-4 text-center">아직 데이터가 부족해요</p>
       ) : (
@@ -199,11 +204,16 @@ export default function StudentRanking() {
               )
             })}
           </div>
-          {myRank && myRank > 10 && (
+          {myDetail ? (
+            <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
+              ⭐ 내 순위: <strong className="text-primary">{myRank}등</strong>
+              {' · '}내 평균 {myDetail.value}점 (주제 {myDetail.topicCount}개 기준)
+            </div>
+          ) : (myRank && myRank > 10 && (
             <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
               ⭐ 내 순위: <strong className="text-primary">{myRank}등</strong>
             </div>
-          )}
+          ))}
         </>
       )}
     </div>
@@ -247,7 +257,9 @@ export default function StudentRanking() {
             </div>
           </div>
 
-          {renderRanking('⭐ 평균 점수', rankings.avgScore, '점', myRanks.avgScore)}
+          {renderRanking('⭐ 평균 점수', rankings.avgScore, '점', myRanks.avgScore,
+            '지금까지 쓴 주제들의 최고점을 평균 낸 점수예요. 한 편의 점수와는 달라요.',
+            myAvgDetail)}
           {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개', myRanks.totalSubs)}
           {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑', myRanks.improvement)}
 
