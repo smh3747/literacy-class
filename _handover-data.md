@@ -160,6 +160,28 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ✅ step285~288(맛보기 펼치기·admin 휴지통토글·대시보드 배너·등록 deeplink), 학생 중복제출 정리(91행 hard delete, 1437명 영역), step283 클라 가드, step280~282 맛보기 샘플카드. (상세는 git log)
 - ❌ 맞춤법 누락 자동수집(폐기, 규칙보강으로 대체).
 
+## 맞춤법 파이프라인 완성 작업 (별도 세션 — ai.js·student/index.js 다른 작업 정리 후 착수)
+
+목표: 첫 글↔수정본 검출 들쭉날쭉 제거 + 브라우저 옛 번들 잔재 문제 근본 해결.
+순서 중요: 반드시 A → B 순서로 (A로 옮긴 서버 코드 위에 B를 얹어야 이중작업 없음).
+
+### A. mergeCorrections 서버 이전
+- 현재 mergeCorrections는 클라이언트 5곳에서 실행됨 (student/index.js 532·805, grammar-backfill 147, submissions.js 614, regrade.js 125) — 배포해도 옛 탭은 옛 규칙 사용.
+- pages/api/ai.js에서 corrections를 생성하는 type(grading, rewriteGrading, regrade, grammarOnly, grammarStrict) 응답 반환 직전에 mergeCorrections(result.corrections, essay)를 서버에서 수행하도록 이전.
+- 클라이언트 5곳의 mergeCorrections 호출 제거 (서버가 이미 병합한 결과를 받으므로).
+- 하위호환 주의: 배포 순간 옛 클라이언트(병합을 자기가 함) + 새 서버(이미 병합함)가 겹쳐도 mergeCorrections는 멱등(두 번 돌려도 결과 동일)이라 안전 — 단, 커밋 전에 멱등성 실제 검증 필수.
+
+### B. 수정본 채점에 이전 corrections 승계
+- 목적: "첫 글에서 잡힌 오류가 수정본에서 사라지는" 방향의 들쭉날쭉 제거 (검출 단조증가 보장).
+- student/index.js: callAI('rewriteGrading', ...) payload에 prevCorrections 추가 — 이미 상태에 있는 첫 글 corrections에서 {original, correction}만 추림 (프롬프트를 짧고 명확하게 유지하기 위함).
+- pages/api/ai.js: prevCorrections destructure (선택 필드, 없어도 에러 아님 — 하위호환).
+- lib/prompts.server.js rewriteGradingPrompt: prevCorrections 인자 추가 + "이전 검사에서 아래 표현이 오류로 지적됨. 수정본에 같은 표현이 남아 있으면 반드시 다시 포함, 고쳐졌으면 포함 금지" 블록 + overall '좋아진 점'을 이 목록 근거로 연결. CORRECTIONS_RULES 상수는 불변.
+
+### 공통 안전 규칙
+- 커밋 게이트: 규칙/프롬프트 변경 시 정상 문장 오탐 0 + 기존 검출 유지 검증 통과 후에만 커밋 (이번 세션 step322·324·327 방식).
+- 6975 학급 시연 필수: 오류 포함 첫 글 제출 → 일부만 고쳐 수정본 → 안 고친 오류가 수정본에서도 잡히는지.
+- 학생 페이지 수정은 최소한으로, 제출·저장 로직 불변.
+
 ## 워킹트리 상태
 - HEAD=b34bcbf(step307)까지 전부 커밋·push 완료. origin/main 동기화 확인됨.
 - 이번 세션(step289~307) 커밋 완료. step304 CLAUDE.md·step305 핸드오버·step306 SetupChecklist·step307 admin 공유추적.
