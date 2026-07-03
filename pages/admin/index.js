@@ -29,6 +29,9 @@ export default function AdminHome() {
   const [errType, setErrType] = useState('all')          // 🆕 종류: 'all' | error_type 값
   const [errView, setErrView] = useState('list')         // 🆕 보기: 'list' | 'byClass'
   const [logStudentNumbers, setLogStudentNumbers] = useState({})  // 🆕 에러로그 학생 번호 표시용 {user_id: number} (실명 미조회)
+  const [suspectCount, setSuspectCount] = useState(0)      // 🆕 step359: 의심 교정 미해결 건수 (loadAll에서 count만)
+  const [suspectAlerts, setSuspectAlerts] = useState([])   // 🆕 step359: 의심 교정 목록 (탭 열 때 로드)
+  const [suspectLoaded, setSuspectLoaded] = useState(false)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -288,9 +291,53 @@ export default function AdminHome() {
       // 테이블 미생성(SQL 미실행) 시 무시
       setErrorLogs([])
     }
+
+    // 🔍 step359: 의심 교정(correction_alerts) 미해결 건수 — head:true count만(가벼움), 목록은 탭 열 때 로드
+    try {
+      const { count } = await supabase.from('correction_alerts')
+        .select('id', { count: 'exact', head: true })
+        .eq('resolved', false)
+      setSuspectCount(count || 0)
+    } catch(e) {
+      // 테이블 미생성(SQL 미실행) 시 무시
+      setSuspectCount(0)
+    }
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+
+  // 🔍 step359: 의심 교정 목록 — 탭 열 때 1회만 로드 (첫 로딩 무게 안 늘림)
+  useEffect(() => {
+    if (tab !== 'corrections' || suspectLoaded) return
+    ;(async () => {
+      try {
+        const { data } = await supabase.from('correction_alerts')
+          .select('*')
+          .eq('resolved', false)
+          .order('created_at', { ascending: false })
+          .limit(100)
+        setSuspectAlerts(data || [])
+      } catch(e) {
+        setSuspectAlerts([])
+      }
+      setSuspectLoaded(true)
+    })()
+  }, [tab, suspectLoaded])
+
+  // 🔍 step359: 의심 교정 해결 처리 — 로컬 상태만 갱신(전체 재조회 없이 가볍게)
+  const resolveAlert = async (id) => {
+    const { error } = await supabase.from('correction_alerts').update({ resolved: true }).eq('id', id)
+    if (error) return alert('해결 처리 실패: ' + error.message)
+    setSuspectAlerts(prev => prev.filter(a => a.id !== id))
+    setSuspectCount(c => Math.max(0, c - 1))
+  }
+  const resolveAllAlerts = async () => {
+    if (!confirm(`미해결 의심 교정 ${suspectCount}건을 모두 해결 처리할까요?`)) return
+    const { error } = await supabase.from('correction_alerts').update({ resolved: true }).eq('resolved', false)
+    if (error) return alert('일괄 해결 실패: ' + error.message)
+    setSuspectAlerts([])
+    setSuspectCount(0)
+  }
 
   const toggleTeacherBan = async (teacher) => {
     if (teacher.role === 'admin') return alert('관리자는 차단할 수 없어요')
@@ -917,6 +964,7 @@ export default function AdminHome() {
               { id: 'shared-suggestions', label: `📚 추천 공유${sharedSuggestionLogs.length > 0 ? ` (${sharedSuggestionLogs.length})` : ''}` },
               { id: 'topic-copies', label: `🔗 주제 공유 추적${topicCopies.length > 0 ? ` (${topicCopies.length})` : ''}` },
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
+              { id: 'corrections', label: `🔍 의심 교정${suspectCount > 0 ? ` (${suspectCount})` : ''}` },
               { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -2168,6 +2216,73 @@ export default function AdminHome() {
                       </div>
                       )
                     })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* 🔍 step359: 의심 교정 탭 — pg_cron이 매일 적재하는 correction_alerts(미해결) 확인·해결 */}
+          {tab === 'corrections' && (() => {
+            const suspectBadge = (t) => {
+              const map = {
+                '불가능형태': 'bg-red-100 text-red-700',
+                '문체개입': 'bg-orange-100 text-orange-700',
+                '과도한변형': 'bg-yellow-100 text-yellow-700',
+              }
+              return map[t] || 'bg-gray-100 text-gray-600'
+            }
+            // 해당 학생 글로 이동 — 학생 글 탭의 sub 딥링크 재사용 (한 번의 replace로 tab+sub 동시 반영)
+            const goToSubmission = (submissionId) => {
+              router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', sub: submissionId } }, undefined, { shallow: true })
+              setTabState('submissions')
+            }
+            return (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                  <h2 className="text-lg font-bold">🔍 의심 교정 {suspectCount > 0 && <span className="text-red-500">({suspectCount}건 미해결)</span>}</h2>
+                  {suspectCount > 0 && (
+                    <button onClick={resolveAllAlerts}
+                      className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition">
+                      ✅ 모두 해결
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mb-4">AI 맞춤법 교정 중 의심스러운 건을 매일 자동으로 모아요. 내용을 확인한 뒤 해결 처리하면 목록에서 사라져요.</p>
+
+                {!suspectLoaded ? (
+                  <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                ) : suspectAlerts.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
+                ) : (
+                  <div className="space-y-2">
+                    {suspectAlerts.map(a => (
+                      <div key={a.id} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${suspectBadge(a.suspect_type)}`}>{a.suspect_type || '미분류'}</span>
+                          <span className="text-xs text-gray-500">감지 {toKST(a.created_at)}</span>
+                          {a.submission_created_at && <span className="text-xs text-gray-400">글 작성 {toKST(a.submission_created_at)}</span>}
+                          <span className="ml-auto flex gap-1.5">
+                            {a.submission_id && (
+                              <button onClick={() => goToSubmission(a.submission_id)}
+                                className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition">
+                                📝 글 보기
+                              </button>
+                            )}
+                            <button onClick={() => resolveAlert(a.id)}
+                              className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
+                              ✅ 해결
+                            </button>
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-800">
+                          <span className="line-through text-red-600">{a.original}</span>
+                          <span className="mx-1.5 text-gray-400">→</span>
+                          <span className="font-semibold text-green-700">{a.correction}</span>
+                        </div>
+                        {a.reason && <div className="text-xs text-gray-500 mt-0.5">{a.reason}</div>}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
