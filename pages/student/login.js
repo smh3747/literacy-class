@@ -31,6 +31,8 @@ export default function StudentLogin() {
   const [classHint, setClassHint] = useState(null) // { className, prefix, password, school }
   // 🆕 로그인 모드에서 "아이디 잊어버렸어요?" 토글 (학급 코드로 안내 받기)
   const [showHintLookup, setShowHintLookup] = useState(false)
+  // 🆕 층2: 번호 → 아이디 자동완성 도우미 (배너 안, 번호만 입력)
+  const [numberInput, setNumberInput] = useState('')
 
   useEffect(() => {
     // 저장된 아이디 / 자동 로그인 설정 복원
@@ -78,8 +80,12 @@ export default function StudentLogin() {
           className: data.name,
           school: data.school,
           prefix: data.login_username_prefix,
-          password: data.login_default_password || '123456'
+          password: data.login_default_password || '123456',
+          // 🆕 층1: self_signup_enabled === false = 명렬표 학급(선생님이 미리 계정 생성 → 로그인만)
+          selfSignup: data.self_signup_enabled !== false
         })
+        // 🆕 명렬표 학급이면 가입 모드로 새지 않게 로그인 고정 (막다른 골목 방지)
+        if (data.self_signup_enabled === false) setMode('login')
       } else {
         setClassHint(null)
       }
@@ -95,6 +101,7 @@ export default function StudentLogin() {
       loadClassHint(trimmed)
     } else if (classHint) {
       setClassHint(null)
+      setNumberInput('')
     }
   }, [classCode])
 
@@ -306,15 +313,30 @@ export default function StudentLogin() {
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 로그인
               </button>
-              <button type="button" onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
-                회원가입
-              </button>
+              {/* 🆕 층1: 명렬표 학급(자가가입 OFF)은 회원가입이 막혀 있으므로 탭 자체를 숨겨 막다른 골목 제거 */}
+              {!(classHint && classHint.selfSignup === false) && (
+                <button type="button" onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
+                  회원가입
+                </button>
+              )}
             </div>
 
             {/* 🆕 QR 진입 시 학급 로그인 안내 (선생님이 설정한 경우만 표시) */}
             {classHint && (() => {
               const formatNum = (n) => String(n).padStart(2, '0') // 무조건 2자리
+              const roster = classHint.selfSignup === false        // 🆕 명렬표 학급(로그인만)
+              // 🆕 층2: 번호 → 아이디 자동완성. 숫자만 남기고 1~99면 아래 아이디 칸을 채운다.
+              const onNumberChange = (raw) => {
+                const digits = (raw || '').replace(/[^0-9]/g, '').slice(0, 2)
+                setNumberInput(digits)
+                const n = parseInt(digits, 10)
+                if (n >= 1 && n <= 99) setUsername(classHint.prefix + formatNum(n))
+              }
+              const previewId = (() => {
+                const n = parseInt(numberInput, 10)
+                return (n >= 1 && n <= 99) ? classHint.prefix + formatNum(n) : ''
+              })()
               return (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                   <div className="text-sm font-bold text-blue-900 flex items-center gap-1">
@@ -322,8 +344,12 @@ export default function StudentLogin() {
                   </div>
                   <div className="text-xs text-blue-800 space-y-2">
                     <div>
-                      <div className="font-semibold mb-1">🆔 아이디 만들기</div>
+                      {/* 🆕 층1: 명렬표 학급은 계정이 이미 있으므로 "로그인" 안내(만들기 어감 제거) */}
+                      <div className="font-semibold mb-1">
+                        {roster ? '🆔 네 아이디로 로그인해요' : '🆔 아이디 만들기'}
+                      </div>
                       <div className="pl-1">
+                        {roster ? '네 아이디는 이렇게 생겼어요: ' : ''}
                         <span className="bg-white px-1.5 py-0.5 rounded font-mono">{classHint.prefix}</span>
                         {' + '}
                         <span className="text-blue-700 font-bold">본인 번호 (두 자리)</span>
@@ -339,6 +365,27 @@ export default function StudentLogin() {
                         ⚠️ 1번은 <span className="font-mono">1</span>이 아니라 <span className="font-mono font-bold">01</span>이에요!
                       </div>
                     </div>
+
+                    {/* 🆕 층2: 번호만 넣으면 아이디 자동 완성 → 아래 아이디 칸에 자동 입력 */}
+                    <div className="bg-white rounded p-2 border border-blue-100">
+                      <label className="block text-blue-900 font-semibold mb-1">✏️ 몇 번이에요? 번호만 넣으면 아이디가 완성돼요</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={numberInput}
+                          onChange={e => onNumberChange(e.target.value)}
+                          placeholder="번호"
+                          className="w-16 p-2 border border-blue-200 rounded text-center font-mono text-sm"
+                        />
+                        {previewId && (
+                          <span className="text-blue-900">→ 네 아이디: <span className="font-mono font-bold bg-blue-100 px-1.5 py-0.5 rounded">{previewId}</span></span>
+                        )}
+                      </div>
+                      {previewId && <div className="text-[11px] text-blue-600 mt-1">이제 아래에 비밀번호를 넣고 로그인하면 돼요.</div>}
+                    </div>
+
                     <div>
                       <span className="font-semibold">🔑 비밀번호:</span>{' '}
                       <span className="bg-white px-1.5 py-0.5 rounded font-mono">{classHint.password}</span>
