@@ -1,5 +1,5 @@
-// 🔔 알림 센터 1차(step348) — 교사·관리자 전용 헤더 종+배지+드롭다운 패널.
-// 학생 화면에도 Header가 공용으로 쓰이므로 role 게이팅으로 학생은 렌더 자체를 안 함.
+// 🔔 알림 센터 — 헤더 종+배지+드롭다운 패널. 1차(step348) 교사·관리자, 2차(step358) 학생까지 개방.
+// 로그인 사용자 전원이 수신자. 조회·읽음 처리 모두 recipient_id 기준이라 role 무관하게 동작.
 // 60초 폴링(document.hidden 스킵 + 복귀 시 즉시 갱신), 바깥클릭 닫기, 최근 20건 로드.
 // 원 기능과 무관한 부가 UI — 실패는 조용히 warn만.
 import { useState, useEffect, useRef } from 'react'
@@ -16,7 +16,7 @@ export default function NotificationBell({ user }) {
   const boxRef = useRef(null)
   const fetchingRef = useRef(false)
 
-  const isRecipient = !!user && (user.role === 'teacher' || user.role === 'admin')
+  const isRecipient = !!user && (user.role === 'teacher' || user.role === 'admin' || user.role === 'student')
 
   // 안읽음 수 조회 (마운트 1회 + 60초 폴링 + 탭 복귀 시)
   useEffect(() => {

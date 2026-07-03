@@ -550,6 +550,19 @@ export default function TeacherSubmissions() {
     try {
       const { error } = await supabase.from('submissions').update({ teacher_stamp: next }).eq('id', s.id)
       if (error) throw error
+      // 🔔 step358: 알림 센터 2차 — 도장을 새로 찍거나 교체할 때만 학생에게 알림(해제는 제외).
+      // 비차단: 실패해도 저장 무관. 임퍼소네이션은 위 조기 return으로 이미 차단됨.
+      if (next) {
+        try {
+          await supabase.rpc('create_notification', {
+            p_recipient: s.user_id,
+            p_type: 'stamp',
+            p_title: '선생님이 내 글에 도장을 찍었어요',
+            p_body: stampLabel(next),
+            p_link: '/student/history'
+          })
+        } catch (e) { console.warn('도장 알림 발송 실패:', e?.message) }
+      }
       await openTopic(selectedTopic, selectedStudent.profile.id)   // 코멘트 onUpdated와 동일 재조회
     } catch (e) { alert('도장 저장에 실패했어요: ' + (e?.message || '')) }
   }
@@ -719,6 +732,16 @@ export default function TeacherSubmissions() {
             teacher_comment_read_at: null  // 학생에게 새 알림으로
           }).eq('id', s.id)
         if (error) throw error
+        // 🔔 step358: 알림 센터 2차 — 일괄 코멘트도 학생별 알림(비차단, 실패해도 집계·저장 무관).
+        // 내용 미포함·임퍼소네이션 차단은 개별 코멘트와 동일 원칙(진입부 조기 return).
+        try {
+          await supabase.rpc('create_notification', {
+            p_recipient: s.user_id,
+            p_type: 'teacher_comment',
+            p_title: '선생님이 내 글에 코멘트를 남겼어요',
+            p_link: '/student/history'
+          })
+        } catch (e2) { console.warn('일괄 코멘트 알림 발송 실패:', e2?.message) }
         success++
       } catch(e) { failed++ }
     }
@@ -1579,6 +1602,16 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskN
         teacher_comment_at: new Date().toISOString()
       }).eq('id', submission.id)
       if (error) throw error
+      // 🔔 step358: 알림 센터 2차 — 학생에게 코멘트 도착 알림(비차단, 실패해도 저장 무관).
+      // 코멘트 내용은 p_body에 넣지 않음(알림함 노출 방지, 클릭해서 보게). 임퍼소네이션은 disabled 조기 return으로 차단됨.
+      try {
+        await supabase.rpc('create_notification', {
+          p_recipient: submission.user_id,
+          p_type: 'teacher_comment',
+          p_title: '선생님이 내 글에 코멘트를 남겼어요',
+          p_link: '/student/history'
+        })
+      } catch (e) { console.warn('코멘트 알림 발송 실패:', e?.message) }
       setEditing(false)
       if (onUpdated) await onUpdated()
     } catch (e) {
