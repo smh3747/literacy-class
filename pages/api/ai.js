@@ -15,7 +15,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
-import { mergeCorrections } from '../../lib/koreanRules'
+import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -52,6 +52,28 @@ async function logServerError({ accessToken, type, message }) {
       context: type ? { aiType: type } : null,
     })
   } catch (_) { /* 로깅 실패는 무시 */ }
+}
+
+// 🔍 C-2: 병합에서 폐기된 오교정 시도를 correction_alerts에 기록. 절대 throw하지 않음.
+// suspect_type에 '(차단됨)'을 붙여 관리자 탭에서 "저장된 오교정"과 구분.
+async function logDroppedCorrections(dropped) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) return
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+    const rows = dropped.slice(0, 20).map(d => ({
+      submission_id: null,
+      original: (d.original == null ? '' : String(d.original)).slice(0, 200),
+      correction: (d.correction == null ? '' : String(d.correction)).slice(0, 200),
+      reason: (d.reason == null ? null : String(d.reason).slice(0, 300)),
+      suspect_type: `${d.drop_reason || '미분류'}(차단됨)`,
+      submission_created_at: new Date().toISOString()
+    }))
+    await admin.from('correction_alerts').insert(rows)
+  } catch (e) { console.warn('폐기 교정 기록 실패(무시):', e?.message) }
 }
 
 // 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
@@ -253,8 +275,13 @@ export default async function handler(req, res) {
     //    AI corrections가 없어도 규칙 오류를 추가하므로 항상 배열 산출(빈 배열 입력 유의미).
     if (mergeEssay && result) {
       try {
-        result.corrections = mergeCorrections(
+        const merged = mergeCorrectionsDetailed(
           Array.isArray(result.corrections) ? result.corrections : [], mergeEssay)
+        result.corrections = merged.corrections
+        // 🔍 C-2: 차단된 오교정 시도를 감시 테이블에 기록 (부가 기능 — 실패해도 채점은 계속)
+        if (merged.dropped && merged.dropped.length > 0) {
+          logDroppedCorrections(merged.dropped)  // await 안 함 (fire-and-forget, 응답 지연 0)
+        }
       } catch (e) { console.warn('규칙 병합 실패:', e?.message) }
     }
     return res.status(200).json({ result })
