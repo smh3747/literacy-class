@@ -566,6 +566,13 @@ export default function TeacherHome() {
                   <div className="text-primary-dark">주제 <strong>{stats.topics}</strong>개</div>
                 </div>
               </div>
+              {/* 🆕 step345: 학년 미설정 유도 — 학년 평균 비교(성장 그래프)를 보려면 학년 필요 */}
+              {!classInfo.grade && (
+                <button onClick={() => togglePanel('settings')}
+                  className="mt-3 w-full text-left text-xs text-primary-dark bg-white/60 hover:bg-white rounded-lg px-3 py-2">
+                  🎓 학년을 설정하면 학년 평균 비교를 볼 수 있어요. <span className="underline font-medium">학급 설정에서 입력</span>
+                </button>
+              )}
               <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                 <p className="text-xs text-gray-700">👇 아래 학생 안내 카드에 QR · 로그인 방법이 함께 있어요</p>
                 <div className="flex gap-2">

@@ -19,9 +19,25 @@ export default function StudentGrowth() {
   const [loading, setLoading] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState('all')
   const [sortMode, setSortMode] = useState('growth')  // 'growth'(성장순) | 'number'(번호순)
+  const [gradeAvg, setGradeAvg] = useState(null)  // 🆕 step345: 우리 학년 전체 평균(참조선), RPC 비차단
   const sortedCardsRef = useRef([])  // 🆕 step343: 키보드 넘기기용 최신 정렬 목록
 
   useEffect(() => { check() }, [])
+
+  // 🆕 step345: 학년 맥락 참조선 — grade_avg_stats RPC(비차단). 실패·grade 없음이면 문구 생략(화면 안 막음).
+  useEffect(() => {
+    const grade = classInfo?.grade
+    if (!grade) { setGradeAvg(null); return }
+    let alive = true
+    ;(async () => {
+      try {
+        const { data } = await supabase.rpc('grade_avg_stats')
+        const row = (data || []).find(r => String(r.grade) === String(grade))
+        if (alive) setGradeAvg(row && row.avg_pct != null ? Math.round(row.avg_pct) : null)
+      } catch (e) { if (alive) setGradeAvg(null) }
+    })()
+    return () => { alive = false }
+  }, [classInfo?.grade])
 
   // 🆕 step343: 상세 모달 열림 시 Esc 닫기 / ←→ 이전·다음 학생 (현재 정렬 순서 기준)
   useEffect(() => {
@@ -205,6 +221,8 @@ export default function StudentGrowth() {
 
   const topicList = buildTopicList()
   const cg = classGrowth(topicList)
+  // 🆕 step345: 우리 반 전체 평균(주제별 학급평균의 평균) — 학년 참조선 문구용(기존 값 재사용)
+  const classOverallAvg = topicList.length ? Math.round(mean(topicList.map(t => t.classAvg))) : null
   const classChart = getClassAvgChart()
   const studentChart = selectedStudent !== 'all' ? getStudentChart(selectedStudent) : null
 
@@ -274,6 +292,11 @@ export default function StudentGrowth() {
                       최근 주제 {cg.mRecent}개 평균 {cg.X}점 · 이전 {cg.mPrev}개 평균 {cg.Y}점
                     </p>
                   </>
+                )}
+                {classInfo?.grade && gradeAvg != null && classOverallAvg != null && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    전체 {classInfo.grade}학년 평균은 {gradeAvg}점이에요. 우리 반은 {classOverallAvg}점이에요.
+                  </p>
                 )}
                 <details className="group mt-3">
                   <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 -mx-2 px-2 py-1 rounded-lg hover:bg-gray-50 text-sm text-gray-600">
