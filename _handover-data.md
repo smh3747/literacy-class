@@ -213,6 +213,13 @@ export const GRAMMAR_NOTICE_TEACHER =
 - pages/api/ai.js: prevCorrections destructure (선택 필드, 없어도 에러 아님 — 하위호환).
 - lib/prompts.server.js rewriteGradingPrompt: prevCorrections 인자 추가 + "이전 검사에서 아래 표현이 오류로 지적됨. 수정본에 같은 표현이 남아 있으면 반드시 다시 포함, 고쳐졌으면 포함 금지" 블록 + overall '좋아진 점'을 이 목록 근거로 연결. CORRECTIONS_RULES 상수는 불변.
 
+### C. 맞춤법 품질 모니터 (오교정 자동 감시 — 사람이 챙기지 않아도 되게)
+- 배경: 오교정("않기→안 기" 등)이 6/29부터 쌓였는데 7/2에야 우연히 발견됨. 현재는 수동 SQL 감시 쿼리(주 1회 Run)로 대응 중이나 사람 기억 의존이라 지속 불가.
+- C-1: correction_alerts 테이블 신설(submission_id, original, correction, reason, 의심유형, created_at, resolved). pg_cron으로 일일 스캔 — 의심 패턴: correction이 '안 '+어미(불가능형태), reason에 존댓말/문체(문체개입), original 대비 correction 길이 +15자 초과(과도한변형). 기존 cron-trash-cleanup 패턴 참고.
+- C-2: 서버(pages/api/ai.js)의 fail-safe 필터(isImpossibleCorrection)가 교정을 폐기할 때 같은 테이블에 기록 — AI의 오교정 시도가 자동 수집되어 프롬프트 이상 조기 경보 역할.
+- C-3: 관리자 페이지에 "의심 교정 (N)" 배지/탭 — 미해결(resolved=false) 건수 표시, 목록 확인 후 해결 처리. 기존 "에러 (N)" 탭 패턴 재사용.
+- 효과: 오교정 발견이 "우연"에서 "익일 자동"으로. 운영자가 챙길 루틴 0.
+
 ### 공통 안전 규칙
 - 커밋 게이트: 규칙/프롬프트 변경 시 정상 문장 오탐 0 + 기존 검출 유지 검증 통과 후에만 커밋 (이번 세션 step322·324·327 방식).
 - 6975 학급 시연 필수: 오류 포함 첫 글 제출 → 일부만 고쳐 수정본 → 안 고친 오류가 수정본에서도 잡히는지.
