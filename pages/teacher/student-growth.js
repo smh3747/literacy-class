@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -19,8 +19,23 @@ export default function StudentGrowth() {
   const [loading, setLoading] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState('all')
   const [sortMode, setSortMode] = useState('growth')  // 'growth'(성장순) | 'number'(번호순)
+  const sortedCardsRef = useRef([])  // 🆕 step343: 키보드 넘기기용 최신 정렬 목록
 
   useEffect(() => { check() }, [])
+
+  // 🆕 step343: 상세 모달 열림 시 Esc 닫기 / ←→ 이전·다음 학생 (현재 정렬 순서 기준)
+  useEffect(() => {
+    if (selectedStudent === 'all') return
+    const onKey = (e) => {
+      const cards = sortedCardsRef.current
+      const idx = cards.findIndex(c => c.st.id === selectedStudent)
+      if (e.key === 'Escape') setSelectedStudent('all')
+      else if (e.key === 'ArrowLeft' && idx > 0) setSelectedStudent(cards[idx - 1].st.id)
+      else if (e.key === 'ArrowRight' && idx >= 0 && idx < cards.length - 1) setSelectedStudent(cards[idx + 1].st.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedStudent])
 
   const check = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
@@ -202,13 +217,20 @@ export default function StudentGrowth() {
       : growthRank(b) - growthRank(a)
   )
 
+  sortedCardsRef.current = sortedCards
+
   const selStudent = selectedStudent !== 'all' ? students.find(s => s.id === selectedStudent) : null
   const detailRows = selStudent ? rewriteRows(selStudent.id) : []
   const rewrittenRows = detailRows.filter(r => r.hasRewrite)
   const rewriteAvgGain = rewrittenRows.length ? Math.round(mean(rewrittenRows.map(r => r.improvement))) : 0
+  // 모달 이전/다음(현재 정렬 순서)
+  const selIdx = selStudent ? sortedCards.findIndex(c => c.st.id === selStudent.id) : -1
+  const prevCard = selIdx > 0 ? sortedCards[selIdx - 1] : null
+  const nextCard = (selIdx >= 0 && selIdx < sortedCards.length - 1) ? sortedCards[selIdx + 1] : null
 
   const chartOptions = (title) => ({
     responsive: true,
+    maintainAspectRatio: false,
     plugins: { legend: { display: false }, title: { display: true, text: title } },
     scales: { y: { min: 0, max: 100, ticks: { stepSize: 20 } } }
   })
@@ -253,15 +275,24 @@ export default function StudentGrowth() {
                     </p>
                   </>
                 )}
-                <div className="mt-3">
-                  <Line data={classChart} options={chartOptions('학급 평균 점수 추이 (보조 자료)')} />
-                </div>
+                <details className="group mt-3">
+                  <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 -mx-2 px-2 py-1 rounded-lg hover:bg-gray-50 text-sm text-gray-600">
+                    <span className="text-gray-400 transition-transform group-open:rotate-90">▶</span>
+                    <span>추이 그래프 보기</span>
+                  </summary>
+                  <div className="h-48 mt-2">
+                    <Line data={classChart} options={chartOptions('학급 평균 점수 추이 (보조 자료)')} />
+                  </div>
+                </details>
               </div>
 
               {/* ② 학생별 성장 그리드 */}
               <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <h3 className="font-bold">학생별 성장</h3>
+                  <div>
+                    <h3 className="font-bold">학생별 성장</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">화살표는 최근 변화, 점수는 반 평균 대비 위치예요</p>
+                  </div>
                   <div className="flex gap-1 text-xs">
                     <button onClick={() => setSortMode('growth')}
                       className={`px-3 py-1.5 rounded-lg ${sortMode === 'growth' ? 'bg-primary text-white font-semibold' : 'bg-gray-100 text-gray-600'}`}>성장순</button>
@@ -302,50 +333,60 @@ export default function StudentGrowth() {
                 </div>
               </div>
 
-              {/* ③ 개별 상세 (카드 클릭 시 인라인 확장) */}
+              {/* ③ 개별 상세 — 모달 (카드 클릭 시). 배경 클릭·✖·Esc로 닫기, ◀▶·←→로 이전·다음 */}
               {selStudent && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-bold">{displayStudentNameWithNumber(selStudent)} 성장 상세</h3>
-                    <button onClick={() => setSelectedStudent('all')}
-                      className="text-sm text-gray-500 hover:bg-gray-100 px-3 py-1.5 rounded-lg">✖ 닫기</button>
-                  </div>
-                  {studentChart && studentChart.labels.length > 0 ? (
-                    <Line data={studentChart} options={chartOptions('점수 추이 (100점 환산)')} />
-                  ) : (
-                    <p className="text-sm text-gray-500 py-6 text-center">아직 제출한 글이 없어요</p>
-                  )}
-                  {rewrittenRows.length > 0 && (
-                    <p className="text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg p-2.5">
-                      다시쓰기한 주제에서 평균 +{rewriteAvgGain}점 올렸어요.
-                    </p>
-                  )}
-                  {detailRows.length > 0 && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-xs text-gray-500 border-b border-gray-200">
-                            <th className="text-left py-1.5 pr-2 font-medium">주제</th>
-                            <th className="text-right py-1.5 px-2 font-medium">첫 시도</th>
-                            <th className="text-right py-1.5 px-2 font-medium">최종</th>
-                            <th className="text-right py-1.5 pl-2 font-medium">개선</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detailRows.map((r, i) => (
-                            <tr key={i} className="border-b border-gray-50">
-                              <td className="py-1.5 pr-2 text-gray-700 truncate max-w-[10rem]">{r.label}</td>
-                              <td className="py-1.5 px-2 text-right text-gray-500">{r.hasRewrite ? `${r.firstPct}점` : '1회 제출'}</td>
-                              <td className="py-1.5 px-2 text-right font-semibold text-gray-800">{r.finalPct}점</td>
-                              <td className={`py-1.5 pl-2 text-right font-semibold ${r.improvement > 0 ? 'text-green-700' : r.improvement < 0 ? 'text-amber-700' : 'text-gray-400'}`}>
-                                {r.hasRewrite ? `${r.improvement >= 0 ? '+' : ''}${r.improvement}점` : '·'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+                  onClick={() => setSelectedStudent('all')}>
+                  <div className="bg-white rounded-2xl p-5 w-full max-w-lg max-h-[85vh] overflow-y-auto space-y-3"
+                    onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between gap-1">
+                      <button onClick={() => prevCard && setSelectedStudent(prevCard.st.id)} disabled={!prevCard}
+                        className="text-sm px-2 py-1.5 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent flex-shrink-0">◀ 이전</button>
+                      <h3 className="font-bold text-center flex-1 truncate px-1">{displayStudentNameWithNumber(selStudent)} 성장 상세</h3>
+                      <button onClick={() => nextCard && setSelectedStudent(nextCard.st.id)} disabled={!nextCard}
+                        className="text-sm px-2 py-1.5 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent flex-shrink-0">다음 ▶</button>
+                      <button onClick={() => setSelectedStudent('all')}
+                        className="text-sm text-gray-500 hover:bg-gray-100 px-2 py-1.5 rounded-lg flex-shrink-0">✖</button>
                     </div>
-                  )}
+                    {studentChart && studentChart.labels.length > 0 ? (
+                      <div className="h-44">
+                        <Line data={studentChart} options={chartOptions('점수 추이 (100점 환산)')} />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 py-6 text-center">아직 제출한 글이 없어요</p>
+                    )}
+                    {rewrittenRows.length > 0 && (
+                      <p className="text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg p-2.5">
+                        다시쓰기한 주제에서 평균 +{rewriteAvgGain}점 올렸어요.
+                      </p>
+                    )}
+                    {detailRows.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-500 border-b border-gray-200">
+                              <th className="text-left py-1.5 pr-2 font-medium">주제</th>
+                              <th className="text-right py-1.5 px-2 font-medium">첫 시도</th>
+                              <th className="text-right py-1.5 px-2 font-medium">최종</th>
+                              <th className="text-right py-1.5 pl-2 font-medium">개선</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailRows.map((r, i) => (
+                              <tr key={i} className="border-b border-gray-50">
+                                <td className="py-1.5 pr-2 text-gray-700 truncate max-w-[10rem]">{r.label}</td>
+                                <td className="py-1.5 px-2 text-right text-gray-500">{r.hasRewrite ? `${r.firstPct}점` : '1회 제출'}</td>
+                                <td className="py-1.5 px-2 text-right font-semibold text-gray-800">{r.finalPct}점</td>
+                                <td className={`py-1.5 pl-2 text-right font-semibold ${r.improvement > 0 ? 'text-green-700' : r.improvement < 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                                  {r.hasRewrite ? `${r.improvement >= 0 ? '+' : ''}${r.improvement}점` : '·'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>
