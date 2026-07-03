@@ -346,10 +346,10 @@ export default function StudentLogin() {
                     <div>
                       {/* 🆕 층1: 명렬표 학급은 계정이 이미 있으므로 "로그인" 안내(만들기 어감 제거) */}
                       <div className="font-semibold mb-1">
-                        {roster ? '🆔 네 아이디로 로그인해요' : '🆔 아이디 만들기'}
+                        {roster ? '🆔 내 아이디로 로그인해요' : '🆔 아이디 만들기'}
                       </div>
                       <div className="pl-1">
-                        {roster ? '네 아이디는 이렇게 생겼어요: ' : ''}
+                        {roster ? '아이디는 이렇게 생겼어요: ' : ''}
                         <span className="bg-white px-1.5 py-0.5 rounded font-mono">{classHint.prefix}</span>
                         {' + '}
                         <span className="text-blue-700 font-bold">본인 번호 (두 자리)</span>
@@ -380,7 +380,7 @@ export default function StudentLogin() {
                           className="w-16 p-2 border border-blue-200 rounded text-center font-mono text-sm"
                         />
                         {previewId && (
-                          <span className="text-blue-900">→ 네 아이디: <span className="font-mono font-bold bg-blue-100 px-1.5 py-0.5 rounded">{previewId}</span></span>
+                          <span className="text-blue-900">→ 내 아이디: <span className="font-mono font-bold bg-blue-100 px-1.5 py-0.5 rounded">{previewId}</span></span>
                         )}
                       </div>
                       {previewId && <div className="text-[11px] text-blue-600 mt-1">이제 아래에 비밀번호를 넣고 로그인하면 돼요.</div>}
