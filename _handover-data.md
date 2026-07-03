@@ -206,19 +206,20 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 클라이언트 5곳의 mergeCorrections 호출 제거 (서버가 이미 병합한 결과를 받으므로).
 - 하위호환 주의: 배포 순간 옛 클라이언트(병합을 자기가 함) + 새 서버(이미 병합함)가 겹쳐도 mergeCorrections는 멱등(두 번 돌려도 결과 동일)이라 안전 — 단, 커밋 전에 멱등성 실제 검증 필수.
 
-### B. 수정본 채점에 이전 corrections 승계 (= 이전 피드백 반영 1단계)
+### B. 수정본 채점에 이전 corrections 승계 (= 이전 피드백 반영 1단계) — 📋 미착수
 - 상태: A(서버 이전) 완료로 토대 마련됨. prompts.server.js는 병렬 맞춤법 세션(step351·354·355)이 최근까지 활동 — 그 세션 종료 확인 후 착수.
 - 목적: "첫 글에서 잡힌 오류가 수정본에서 사라지는" 방향의 들쭉날쭉 제거 (검출 단조증가 보장).
 - student/index.js: callAI('rewriteGrading', ...) payload에 prevCorrections 추가 — 이미 상태에 있는 첫 글 corrections에서 {original, correction}만 추림 (프롬프트를 짧고 명확하게 유지하기 위함).
 - pages/api/ai.js: prevCorrections destructure (선택 필드, 없어도 에러 아님 — 하위호환).
 - lib/prompts.server.js rewriteGradingPrompt: prevCorrections 인자 추가 + "이전 검사에서 아래 표현이 오류로 지적됨. 수정본에 같은 표현이 남아 있으면 반드시 다시 포함, 고쳐졌으면 포함 금지" 블록 + overall '좋아진 점'을 이 목록 근거로 연결. CORRECTIONS_RULES 상수는 불변.
 
-### C. 맞춤법 품질 모니터 (오교정 자동 감시 — 사람이 챙기지 않아도 되게)
+### C. 맞춤법 품질 모니터 (오교정 자동 감시 — 사람이 챙기지 않아도 되게) — ✅ 완료
 - 배경: 오교정("않기→안 기" 등)이 6/29부터 쌓였는데 7/2에야 우연히 발견됨. 현재는 수동 SQL 감시 쿼리(주 1회 Run)로 대응 중이나 사람 기억 의존이라 지속 불가.
 - C-1: correction_alerts 테이블 신설(submission_id, original, correction, reason, 의심유형, created_at, resolved). pg_cron으로 일일 스캔 — 의심 패턴: correction이 '안 '+어미(불가능형태), reason에 존댓말/문체(문체개입), original 대비 correction 길이 +15자 초과(과도한변형). 기존 cron-trash-cleanup 패턴 참고.
 - C-2: 서버(pages/api/ai.js)의 fail-safe 필터(isImpossibleCorrection)가 교정을 폐기할 때 같은 테이블에 기록 — AI의 오교정 시도가 자동 수집되어 프롬프트 이상 조기 경보 역할.
 - C-3: 관리자 페이지에 "의심 교정 (N)" 배지/탭 — 미해결(resolved=false) 건수 표시, 목록 확인 후 해결 처리. 기존 "에러 (N)" 탭 패턴 재사용.
 - 효과: 오교정 발견이 "우연"에서 "익일 자동"으로. 운영자가 챙길 루틴 0.
+- → C-1(테이블+cron, 수동 SQL) · C-2(차단 기록, step360+362) · C-3(관리자 탭, step359) 전부 배포됨. correction_alerts의 submission_id는 nullable로 변경됨(차단 기록용).
 
 ### 공통 안전 규칙
 - 커밋 게이트: 규칙/프롬프트 변경 시 정상 문장 오탐 0 + 기존 검출 유지 검증 통과 후에만 커밋 (이번 세션 step322·324·327 방식).
