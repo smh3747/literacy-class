@@ -672,6 +672,18 @@ export default function AdminHome() {
         reply_text: text, replied_at: now, reply_by: user?.id || null
       }).eq('id', f.id)
       if (error) throw error
+      // 🔔 step348: 알림 센터 — 의견 작성자(교사)에게 답장 알림(비차단)
+      try {
+        if (f.user_id) {
+          await supabase.rpc('create_notification', {
+            p_recipient: f.user_id,
+            p_type: 'admin_reply',
+            p_title: '관리자 답장이 도착했어요',
+            p_body: '내 의견에 답장이 왔어요',
+            p_link: '/teacher'
+          })
+        }
+      } catch (e) { console.warn('알림 생성 실패:', e?.message) }
       // 로컬 상태 갱신(목록 즉시 반영)
       setFeedbacks(prev => prev.map(x => x.id === f.id
         ? { ...x, reply_text: text, replied_at: now, reply_by: user?.id || null }

@@ -184,6 +184,18 @@ export default function GrammarBackfill() {
     setProcessing(false)
 
     const successCount = done - errors.length
+    // 🔔 step348: 알림 센터 — 맞춤법 일괄 완료 알림(비차단, 실패해도 원 동작 무관)
+    try {
+      if (user?.id && successCount > 0) {
+        await supabase.rpc('create_notification', {
+          p_recipient: user.id,
+          p_type: 'grammar_done',
+          p_title: '맞춤법 일괄 검사가 끝났어요',
+          p_body: `글 ${successCount}개에 맞춤법을 반영했어요`,
+          p_link: '/teacher/grammar-backfill'
+        })
+      }
+    } catch (e) { console.warn('알림 생성 실패:', e?.message) }
     alert(
       `🎉 작업 완료!\n\n` +
       `✅ 성공: ${successCount}개\n` +

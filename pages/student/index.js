@@ -686,6 +686,19 @@ export default function StudentHome() {
         reported_at: new Date().toISOString()
       }).eq('id', currentSub.id)
       if (error) throw error
+      // 🔔 step348: 알림 센터 — 담임 교사에게 신고 알림(비차단, 실명 금지·번호만)
+      try {
+        const teacherId = user?.classes?.teacher_id
+        if (teacherId) {
+          await supabase.rpc('create_notification', {
+            p_recipient: teacherId,
+            p_type: 'report',
+            p_title: '학생이 AI 피드백을 신고했어요',
+            p_body: `${user?.number ? user.number + '번 ' : ''}학생이 신고했어요`,
+            p_link: '/teacher/feedback-reports'
+          })
+        }
+      } catch (e) { console.warn('알림 생성 실패:', e?.message) }
       setCurrentSub({ ...currentSub, reported: true, report_reason: reason })
       alert('🙏 신고가 접수됐어요!\n선생님께서 확인하시고 도와주실 거예요.')
     } catch(e) {

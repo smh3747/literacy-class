@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import FeedbackModal from './FeedbackModal'
+import NotificationBell from './NotificationBell'
 
 export default function Header({ user, onLogout }) {
   const [showFeedback, setShowFeedback] = useState(false)
@@ -14,6 +15,7 @@ export default function Header({ user, onLogout }) {
             <h1 className="text-base sm:text-lg font-bold text-primary-dark">다온클래스</h1>
           </Link>
           <div className="flex items-center gap-2">
+            <NotificationBell user={user} />
             {user && (
               <>
                 <span className="hidden sm:inline text-sm text-gray-600">{user.realname} ({user.role === 'teacher' ? '선생님' : user.role === 'admin' ? '관리자' : '학생'})</span>
