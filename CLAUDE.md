@@ -81,6 +81,7 @@ Next.js 14 (Pages Router) · React 18 · Tailwind CSS · Supabase (Auth + Postgr
 - **문구·레이아웃 변경 시 로직 불변**: UI 문구·배치·구획만 바꾸는 작업에서는 기존 로직(동의 처리·실명 전환·QR·복사·검사 알고리즘·점수 등)을 절대 건드리지 않는다. 추가·재배치만.
 - **공용 컴포넌트 수정 전 소비자 확인**: 여러 화면이 재사용하는 컴포넌트(ConsentPanel·GrayZonePanel·ConsentDocument 등)를 고치기 전, grep으로 다른 소비자를 확인하고 영향 범위를 점검한다. 한 곳만 보고 고치면 다른 화면이 깨진다.
 - **커밋 후 push까지**: 커밋만 하고 push를 빠뜨리지 않는다. 작업 완료 = 커밋 + push + origin/main 반영 확인까지. (배포는 GitHub push로 트리거되므로 push 안 하면 Vercel에 안 올라감.)
+- **보고 첫 줄에 커밋 해시·push 여부**: 작업 보고 첫 줄에 커밋 해시와 push 여부를 별도 줄로 반드시 명시한다.
 - **큰 작업·민감 영역은 plan mode 먼저**: 원인이 불확실하거나(버그 규명) 학생 PII·동의 데이터·복잡한 신규 기능은 구현 전에 plan mode로 분석·설계→승인→구현 순서로 간다.
 
 ## 문구 작성 원칙

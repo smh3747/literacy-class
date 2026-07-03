@@ -3,12 +3,12 @@
 //   props: { school, className, grade, student, parentName, signature, consentItems, consentedAt, status }
 //   status: 'online' | 'paper' | 'none'(미동의) | undefined(빈 양식)
 // 인쇄 CSS는 이 컴포넌트가 들고 다님 — 어느 페이지에서 써도 A4 한 장 압축 + "이 문서만" 인쇄.
-import { displayStudentName } from '../lib/displayName'
 
 export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status, bulk = false }) {
   const items = Array.isArray(consentItems) ? consentItems : []
   const has = (k) => items.includes(k)
-  const studentName = student ? displayStudentName(student) : ''
+  // 🆕 step344: 동의서는 실명 문서 — 실명 있으면 표시, 없으면(미동의) 빈칸(밑줄에 수기 기입). 닉네임 폴백 금지.
+  const studentName = (student?.realname && String(student.realname).trim()) ? String(student.realname).trim() : ''
   const gradeText = grade ? `${grade}학년` : ''
   const gradeClassNum = [gradeText, className, (student && student.number) ? `${student.number}번` : '']
     .filter(Boolean).join(' ')
