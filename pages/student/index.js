@@ -1012,6 +1012,17 @@ export default function StudentHome() {
             </div>
           </div>
 
+          {/* 🧩 step360: 맞춤법 퀴즈 진입 카드 (링크만, 로직 없음) */}
+          <Link href="/student/quiz" className="block bg-white rounded-2xl p-4 shadow-sm hover:shadow transition">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold text-gray-800">🧩 맞춤법 퀴즈</div>
+                <div className="text-xs text-gray-500 mt-0.5">내가 틀렸던 맞춤법으로 퀴즈를 풀어요</div>
+              </div>
+              <span className="text-gray-400">→</span>
+            </div>
+          </Link>
+
           {/* 🆕 선생님 코멘트 도착 알림 (미확인 코멘트가 있을 때) */}
           {unreadComments.length > 0 && (
             <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-4">
