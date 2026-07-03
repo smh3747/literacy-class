@@ -149,12 +149,11 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ★운영 원칙: 화면 배치 변경은 배치안을 먼저 사용자에게 컨펌받은 뒤 지시문 작성(step335 순서 재배치 → step336 원복 교훈).
 
 **[지금 진행 중 — 새 대화 1순위]**
-- 교사 대시보드 **P3** (신규/정착 상태별 화면 분기): 화면이 사용자 상태(신규/복귀)에 적응 안 함. ※P1(다음 한 가지 행동 좁히기)는 step306으로 완료(SetupChecklist nextStep 강조). P3는 이보다 큼 — "이 교사가 신규냐 정착이냐" 상위 판단이 코드에 없음(grep 확인). 신규=온보딩 강조, 정착=오늘 현황. **신규 전환이 지금 최우선**(신규 많이 받아야 함). P1 효과 보고 P3 착수 판단.
 - A2 — "N명 사용" 배지 + 인기순 정렬 (topic_copies). **[2026-07-01 데이터 확인 완료 → 대기 확정]** 결과: total_copies 11 / distinct_copiers 8 / distinct_sources 11. 원본 주제 11개가 각각 딱 1번씩만 복사됨 = **"여러 명이 쓴 인기 주제"가 0개.** 지금 만들면 "N명"의 N이 다 1이라 초라(역효과). → 인기 주제 생길 때까지 대기. 재확인: select source_log_id, count(*) from topic_copies group by 1 order by 2 desc; 상위 2 이상이면 구현.
 - 출처 추적 확장 (선택): step307로 admin 조회 뷰는 완료. 단 **"공유 가져오기 버튼"으로 온 것만 잡힘**. 강수현 케이스처럼 남의 주제를 눈으로 보고 직접 입력한 복사는 topic_copies에 기록 안 됨. 이걸 잡으려면 (가)가져오기 버튼 유도 or (나)사후 내용매칭 필요. ⚠️(나)는 AI추천으로 우연히 같은 주제 받는 경우와 구분 안 돼 위험(틀린 추적). A2와 묶어서 판단 — 지금은 보류.
 
 **[대형 항목 — 별도 설계 세션 필요]**
-- ★ 범용 알림 센터 (우측 하단 알림 로그, 카톡 알림함/GitHub 알림 스타일). 계속 저장(새로고침해도 남음). 모든 실시간 알림 통합: 맞춤법 검사 완료, 학생 제출(누가 냈는지), 관리자→교사 의견 답장 도착, 그 외 교사가 실시간으로 알아야 할 변화. 각 알림 클릭 시 해당 대상으로 이동. **지시문 던지기 금지 — 반드시 설계 세션부터.** 필요 요소: 새 DB 테이블(notifications, RLS로 교사 자기 알림만), 알림 생성 지점 매핑(제출·의견답장·검사완료 등 여러 곳에 심기), 실시간 방식(Supabase Realtime vs 폴링), 읽음/안읽음 관리, 학생 PII·권한 주의. UI 정리·A2 마무리 후 착수. ※발단: 맞춤법 토스트를 "딴 글 보다 돌아가는" 용도로 쓰다가 "모든 알림 통합" 니즈로 확장됨.
+- ★ 범용 알림 센터. **✅1차 완료(step348): 교사 알림 3종(맞춤법 완료·신고·관리자 답장), 헤더 🔔+60초 폴링, notifications 테이블+RLS+create_notification RPC 배포됨.** 남은 것: 2차=학생 알림 확장, 3차=실시간 채팅(별도 설계 세션, 아동 안전·PII). ※발단: 맞춤법 토스트를 "딴 글 보다 돌아가는" 용도로 쓰다가 "모든 알림 통합" 니즈로 확장됨.
 
 **[수익화 — 의사결정]**
 - → **★수익화 로드맵(§13 상단, 2026-07-03 확정)으로 통합.** 방향 C(레시피 팩)는 로드맵 유료 후보 ②로 흡수. 문집 등 학생·학부모용 가치는 철회(교사 지불동기 약함, 교사 본인이 편해질 때만 지불).
@@ -168,6 +167,10 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 전체 UI 폴리시(기능 안정 후) / A3 교사 평판 표시(개인정보 trade-off).
 
 **[종료 — 다시 만들지 말 것]**
+- ✅ 교사 대시보드 신규/정착 분기 — step316 setupDone 기반 구현됨(step335 순서 재배치→step336 원복 이력).
+- ✅ 그레이존 판단 UI 리파인(step349, 개별 확인 다이얼로그·일괄 제거·0명 안내).
+- ✅ mergeCorrections 서버 이전(step350, ai.js 병합·클라 6곳 제거 — 아래 후속 작업 A 완료).
+- ✅ QR 로그인 개선(step352·353, 명렬표 분기·회원가입 탭 숨김·번호→아이디 자동완성·존댓말).
 - ✅ **동의서 일괄 인쇄(step337)** 감사 증빙 1인 1페이지(동의 완료=valid만). print.js 신설 + ConsentDocument `bulk` prop. 권한=submissions와 동일(getEffectiveProfile+RLS+임퍼소네이션 PII 차단).
 - ✅ **학생 랭킹 3등 압축+내 기록/전체보기(step337)**.
 - ✅ **온라인 동의 화면 B안 재배치(step340·341)** 히어로 안내보내기(①복사→②하이클래스 단계유도) + 안내문·비밀번호 접힘 카드. step341: 복사 후 강조 유지(copiedAnno 자동해제 제거, 저장 시 리셋) + 접힘 어포던스.
@@ -197,13 +200,14 @@ export const GRAMMAR_NOTICE_TEACHER =
 목표: 첫 글↔수정본 검출 들쭉날쭉 제거 + 브라우저 옛 번들 잔재 문제 근본 해결.
 순서 중요: 반드시 A → B 순서로 (A로 옮긴 서버 코드 위에 B를 얹어야 이중작업 없음).
 
-### A. mergeCorrections 서버 이전
+### A. mergeCorrections 서버 이전 — ✅ 완료(step350)
 - 현재 mergeCorrections는 클라이언트 5곳에서 실행됨 (student/index.js 532·805, grammar-backfill 147, submissions.js 614, regrade.js 125) — 배포해도 옛 탭은 옛 규칙 사용.
 - pages/api/ai.js에서 corrections를 생성하는 type(grading, rewriteGrading, regrade, grammarOnly, grammarStrict) 응답 반환 직전에 mergeCorrections(result.corrections, essay)를 서버에서 수행하도록 이전.
 - 클라이언트 5곳의 mergeCorrections 호출 제거 (서버가 이미 병합한 결과를 받으므로).
 - 하위호환 주의: 배포 순간 옛 클라이언트(병합을 자기가 함) + 새 서버(이미 병합함)가 겹쳐도 mergeCorrections는 멱등(두 번 돌려도 결과 동일)이라 안전 — 단, 커밋 전에 멱등성 실제 검증 필수.
 
-### B. 수정본 채점에 이전 corrections 승계
+### B. 수정본 채점에 이전 corrections 승계 (= 이전 피드백 반영 1단계)
+- 상태: A(서버 이전) 완료로 토대 마련됨. prompts.server.js는 병렬 맞춤법 세션(step351·354·355)이 최근까지 활동 — 그 세션 종료 확인 후 착수.
 - 목적: "첫 글에서 잡힌 오류가 수정본에서 사라지는" 방향의 들쭉날쭉 제거 (검출 단조증가 보장).
 - student/index.js: callAI('rewriteGrading', ...) payload에 prevCorrections 추가 — 이미 상태에 있는 첫 글 corrections에서 {original, correction}만 추림 (프롬프트를 짧고 명확하게 유지하기 위함).
 - pages/api/ai.js: prevCorrections destructure (선택 필드, 없어도 에러 아님 — 하위호환).
