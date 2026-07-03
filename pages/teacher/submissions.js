@@ -575,14 +575,13 @@ export default function TeacherSubmissions() {
 
     setGrammarBusy(true)
     setGrammarProg({ done: 0, total: targets.length })
-    const { mergeCorrections } = await import('../../lib/koreanRules')
     let glassed = 0, added = 0, errors = 0
     for (let i = 0; i < targets.length; i++) {
       const sub = targets[i]
       try {
         const result = await callAI('grammarOnly', { essay: sub.essay_text })
-        let corrections = Array.isArray(result.corrections) ? result.corrections : []
-        try { corrections = mergeCorrections(corrections, sub.essay_text) } catch (e) { /* 규칙 보강 실패 무시 */ }
+        // 규칙 병합은 서버(pages/api/ai.js)에서 완료 — result.corrections 그대로 사용
+        const corrections = Array.isArray(result.corrections) ? result.corrections : []
         const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
         if (error) throw error
         if (corrections.length > 0) { glassed++; added += corrections.length }
@@ -611,11 +610,10 @@ export default function TeacherSubmissions() {
     const attemptLabel = (sub.attempt || 1) === 1 ? '첫 글' : `수정본 ${(sub.attempt || 1) - 1}차`
     setGrammarOneId(sub.id)
     try {
-      const { mergeCorrections } = await import('../../lib/koreanRules')
       // 🆕 step299: 정식 검사와 동일 품질을 위해 grammarStrict 사용(정식 채점과 같은 규칙·모델·temperature)
+      //    규칙 병합은 서버(pages/api/ai.js)에서 완료 — result.corrections 그대로 사용
       const result = await callAI('grammarStrict', { essay: sub.essay_text })
-      let corrections = Array.isArray(result.corrections) ? result.corrections : []
-      try { corrections = mergeCorrections(corrections, sub.essay_text) } catch (e) { /* 규칙 보강 실패 무시 */ }
+      const corrections = Array.isArray(result.corrections) ? result.corrections : []
       const { error } = await supabase.from('submissions').update({ corrections }).eq('id', sub.id)
       if (error) throw error
       patchLocalCorrections(sub.id, corrections)

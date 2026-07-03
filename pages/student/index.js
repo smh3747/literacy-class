@@ -552,11 +552,7 @@ export default function StudentHome() {
         .filter(ex => essay.includes(ex.original))  // 학생 글에 정확히 있는 것만
         .slice(0, 3)  // 최대 3개
 
-      // 규칙 기반 보강: AI가 놓치는 패턴들 (.그래서 등 띄어쓰기) 추가로 잡기
-      try {
-        const { mergeCorrections } = await import('../../lib/koreanRules')
-        result.corrections = mergeCorrections(result.corrections, essay)
-      } catch(e) { console.warn('규칙 검사 실패:', e) }
+      // 규칙 기반 보강은 서버(pages/api/ai.js)에서 병합 완료 — result.corrections 그대로 사용
 
       // 🆕 채점에 사용된 모델 정보
       const usedModel = result.__usedModel || 'unknown'
@@ -838,11 +834,7 @@ export default function StudentHome() {
         .filter(ex => rewriteEssay.includes(ex.original))
         .slice(0, 3)
 
-      // 규칙 기반 보강
-      try {
-        const { mergeCorrections } = await import('../../lib/koreanRules')
-        result.corrections = mergeCorrections(result.corrections, rewriteEssay)
-      } catch(e) { console.warn('규칙 검사 실패:', e) }
+      // 규칙 기반 보강은 서버(pages/api/ai.js)에서 병합 완료 — result.corrections 그대로 사용
 
       // 🆕 채점에 사용된 모델 정보
       const rwUsedModel = result.__usedModel || 'unknown'

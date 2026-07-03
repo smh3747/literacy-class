@@ -140,13 +140,8 @@ export default function GrammarBackfill() {
       try {
         // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 키 서버격리 + IP 보호
         const result = await callAI('grammarOnly', { essay: sub.essay_text })
-        let corrections = Array.isArray(result.corrections) ? result.corrections : []
-
-        // 규칙 기반 보강 (AI가 놓친 .그래서 등 띄어쓰기 추가)
-        try {
-          const { mergeCorrections } = await import('../../lib/koreanRules')
-          corrections = mergeCorrections(corrections, sub.essay_text)
-        } catch(e) { console.warn('규칙 검사 실패:', e) }
+        // 규칙 기반 보강은 서버(pages/api/ai.js)에서 병합 완료 — result.corrections 그대로 사용
+        const corrections = Array.isArray(result.corrections) ? result.corrections : []
 
         // DB 업데이트 (기존 corrections 덮어쓰기)
         const { error } = await supabase.from('submissions')

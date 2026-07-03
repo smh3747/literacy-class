@@ -15,6 +15,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
+import { mergeCorrections } from '../../lib/koreanRules'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -123,6 +124,7 @@ export default async function handler(req, res) {
 
   try {
     let prompt, schema, opts
+    let mergeEssay = null   // 🆕 맞춤법 규칙 병합용 원문(corrections 생성 type만 대입 → 응답 직전 서버 병합)
 
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
@@ -139,6 +141,7 @@ export default async function handler(req, res) {
       prompt = gradingPrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
+      mergeEssay = essay
 
     } else if (type === 'rewriteGrading') {
       const { topic, rewriteEssay, rubrics } = payload || {}
@@ -148,6 +151,7 @@ export default async function handler(req, res) {
       prompt = rewriteGradingPrompt({ topic, rewriteEssay, rubrics })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
+      mergeEssay = rewriteEssay
 
     } else if (type === 'regrade') {
       const { topic, essay, rubrics } = payload || {}
@@ -157,6 +161,7 @@ export default async function handler(req, res) {
       prompt = regradePrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
+      mergeEssay = essay
 
     } else if (type === 'rubricHint') {
       const { topic, rubrics } = payload || {}
@@ -218,6 +223,7 @@ export default async function handler(req, res) {
       prompt = grammarOnlyPrompt({ essay })
       schema = SCHEMAS.grammarOnly
       opts = { taskType: 'grammar', maxTokens: 2000 }
+      mergeEssay = essay
 
     } else if (type === 'grammarStrict') {
       // 🆕 맞춤법만 다시 검사(recheckGrammarOne 전용) — 정식 채점과 동일한 규칙·모델·temperature로
@@ -227,6 +233,7 @@ export default async function handler(req, res) {
       prompt = grammarStrictPrompt({ essay })
       schema = SCHEMAS.grammarOnly            // corrections만 (점수 필드 없음)
       opts = { taskType: 'grading', maxTokens: 4000, temperature: 0 }  // 정식과 동일 모델·결정성
+      mergeEssay = essay
 
     } else if (type === 'feedbackSummary') {
       const { feedbacks } = payload || {}
@@ -242,6 +249,14 @@ export default async function handler(req, res) {
     }
 
     const result = await callGeminiStructured(apiKey, prompt, schema, opts)
+    // 🆕 맞춤법 규칙 병합을 서버에서 수행(클라 6곳 이전). corrections 생성 type만.
+    //    AI corrections가 없어도 규칙 오류를 추가하므로 항상 배열 산출(빈 배열 입력 유의미).
+    if (mergeEssay && result) {
+      try {
+        result.corrections = mergeCorrections(
+          Array.isArray(result.corrections) ? result.corrections : [], mergeEssay)
+      } catch (e) { console.warn('규칙 병합 실패:', e?.message) }
+    }
     return res.status(200).json({ result })
 
   } catch (e) {
