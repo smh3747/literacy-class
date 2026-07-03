@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, BarElement } from 'chart.js'
-import { Line, Bar } from 'react-chartjs-2'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
+import { Line } from 'react-chartjs-2'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 export default function StudentGrowth() {
   const router = useRouter()
@@ -18,6 +18,7 @@ export default function StudentGrowth() {
   const [allSubmissions, setAllSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState('all')
+  const [sortMode, setSortMode] = useState('growth')  // 'growth'(성장순) | 'number'(번호순)
 
   useEffect(() => { check() }, [])
 
@@ -107,43 +108,117 @@ export default function StudentGrowth() {
     }
   }
 
-  // 학생별 평균 점수 비교 (막대)
-  const getStudentRankChart = () => {
-    const studentAvgs = students.map(student => {
-      const subs = allSubmissions.filter(s => s.user_id === student.id)
-      const byTopic = {}
-      subs.forEach(s => {
-        const tId = s.topic_id
-        const cur = byTopic[tId]
-        if (!cur || (s.attempt||1) > (cur.attempt||1)) byTopic[tId] = s
-      })
-      const items = Object.values(byTopic)
-      if (items.length === 0) return { name: displayStudentNameWithNumber(student), avg: 0, count: 0 }
-      const avg = items.reduce((sum, s) => sum + (s.total_score / s.max_score) * 100, 0) / items.length
-      return { name: displayStudentNameWithNumber(student), avg: Math.round(avg), count: items.length }
-    }).filter(s => s.count > 0).sort((a,b) => b.avg - a.avg)
+  // 🆕 step342: 공용 주제 리스트(날짜순) — 주제별 학생 최종점수(attempt 최대) + 학급 평균
+  const pctOf = (s) => (s && s.max_score) ? (s.total_score / s.max_score) * 100 : 0
+  const mean = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
 
-    return {
-      labels: studentAvgs.map(s => s.name),
-      datasets: [{
-        label: '학생별 평균 (100점 환산)',
-        data: studentAvgs.map(s => s.avg),
-        backgroundColor: 'rgba(45, 106, 79, 0.6)'
-      }]
-    }
+  const buildTopicList = () => {
+    const byTopic = {}
+    allSubmissions.forEach(s => {
+      const tId = s.topic_id
+      if (!byTopic[tId]) byTopic[tId] = { topicId: tId, date: s.topics?.date || s.created_at?.slice(0, 10), title: s.topic_title || null, best: {} }
+      const cur = byTopic[tId].best[s.user_id]
+      if (!cur || (s.attempt || 1) > (cur.attempt || 1)) byTopic[tId].best[s.user_id] = s
+    })
+    return Object.values(byTopic).map(t => {
+      const finals = {}
+      Object.entries(t.best).forEach(([uid, s]) => { finals[uid] = pctOf(s) })
+      const vals = Object.values(finals)
+      return { topicId: t.topicId, date: t.date, title: t.title, finals, classAvg: mean(vals) }
+    }).sort((a, b) => new Date(a.date) - new Date(b.date))
+  }
+
+  // 학급 성장(절대 점수): 최근 5개 평균 − 이전 5개 평균 (10개 미만이면 반반, 4개 미만이면 보류)
+  const classGrowth = (topicList) => {
+    const avgs = topicList.map(t => t.classAvg)
+    const n = avgs.length
+    if (n < 4) return { insufficient: true }
+    let recent, prev
+    if (n >= 10) { recent = avgs.slice(-5); prev = avgs.slice(-10, -5) }
+    else { const h = Math.floor(n / 2); prev = avgs.slice(0, h); recent = avgs.slice(h) }
+    const X = mean(recent), Y = mean(prev), G = X - Y
+    const status = G >= 3 ? 'up' : G <= -3 ? 'down' : 'flat'
+    return { insufficient: false, G, X: Math.round(X), Y: Math.round(Y), mRecent: recent.length, mPrev: prev.length, status }
+  }
+
+  // 학생 성장(상대 점수 = 최종 − 학급평균): 뒤 절반 평균 − 앞 절반 평균
+  const studentGrowth = (id, topicList) => {
+    const rels = []
+    topicList.forEach(t => { if (t.finals[id] != null) rels.push(t.finals[id] - t.classAvg) })
+    const n = rels.length
+    if (n < 3) return { status: 'insufficient', count: n }
+    let front, back
+    if (n === 3) { front = rels.slice(0, 1); back = rels.slice(1) }
+    else { const h = Math.floor(n / 2); front = rels.slice(0, h); back = rels.slice(h) }
+    const g = mean(back) - mean(front)
+    const status = g >= 3 ? 'up' : g <= -3 ? 'down' : 'flat'
+    return { status, g, avgRel: Math.round(mean(rels)), count: n }
+  }
+
+  // 스파크라인 좌표(절대 최종점수, 날짜순 → 0~100을 SVG로)
+  const sparklinePoints = (id, topicList, w = 88, h = 28) => {
+    const ys = topicList.filter(t => t.finals[id] != null).map(t => t.finals[id])
+    if (ys.length < 2) return null
+    const stepX = w / (ys.length - 1)
+    return ys.map((y, i) => `${(i * stepX).toFixed(1)},${(h - (Math.max(0, Math.min(100, y)) / 100) * h).toFixed(1)}`).join(' ')
+  }
+
+  // 개별 상세 — 주제별 첫 시도→최종→개선폭
+  const rewriteRows = (id) => {
+    const byTopic = {}
+    allSubmissions.filter(s => s.user_id === id).forEach(s => {
+      const tId = s.topic_id
+      if (!byTopic[tId]) byTopic[tId] = { date: s.topics?.date || s.created_at?.slice(0, 10), title: s.topic_title || null, items: [] }
+      byTopic[tId].items.push(s)
+    })
+    return Object.values(byTopic).map(t => {
+      const items = [...t.items].sort((a, b) => (a.attempt || 1) - (b.attempt || 1))
+      const first = items[0], last = items[items.length - 1]
+      const hasRewrite = (last.attempt || 1) > (first.attempt || 1)
+      return {
+        label: t.title || (t.date ? t.date.slice(5) : ''),
+        date: t.date,
+        firstPct: Math.round(pctOf(first)),
+        finalPct: Math.round(pctOf(last)),
+        improvement: hasRewrite ? Math.round(pctOf(last)) - Math.round(pctOf(first)) : null,
+        hasRewrite,
+      }
+    }).sort((a, b) => new Date(a.date) - new Date(b.date))
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
+  const topicList = buildTopicList()
+  const cg = classGrowth(topicList)
   const classChart = getClassAvgChart()
-  const rankChart = getStudentRankChart()
   const studentChart = selectedStudent !== 'all' ? getStudentChart(selectedStudent) : null
+
+  // 학생별 성장 카드 + 정렬(성장순: up>flat>down·insufficient 맨 뒤·같은 그룹 g 내림 / 번호순)
+  const studentCards = students.map(st => ({ st, growth: studentGrowth(st.id, topicList) }))
+  const growthRank = (x) => x.growth.status === 'insufficient' ? -Infinity : x.growth.g
+  const sortedCards = [...studentCards].sort((a, b) =>
+    sortMode === 'number'
+      ? (parseInt(a.st.number) || 999) - (parseInt(b.st.number) || 999)
+      : growthRank(b) - growthRank(a)
+  )
+
+  const selStudent = selectedStudent !== 'all' ? students.find(s => s.id === selectedStudent) : null
+  const detailRows = selStudent ? rewriteRows(selStudent.id) : []
+  const rewrittenRows = detailRows.filter(r => r.hasRewrite)
+  const rewriteAvgGain = rewrittenRows.length ? Math.round(mean(rewrittenRows.map(r => r.improvement))) : 0
 
   const chartOptions = (title) => ({
     responsive: true,
     plugins: { legend: { display: false }, title: { display: true, text: title } },
     scales: { y: { min: 0, max: 100, ticks: { stepSize: 20 } } }
   })
+
+  // 판정별 스타일/문구
+  const STATUS = {
+    up:   { badge: 'bg-green-100 text-green-700',  arrow: '↗', label: '성장 중' },
+    flat: { badge: 'bg-gray-100 text-gray-600',    arrow: '→', label: '유지' },
+    down: { badge: 'bg-amber-100 text-amber-700',  arrow: '↘', label: '요즘 주춤해요' },
+  }
 
   return (
     <>
@@ -162,32 +237,117 @@ export default function StudentGrowth() {
             </div>
           ) : (
             <>
-              {/* 학급 평균 추이 */}
+              {/* ① 결론 카드 — 우리 반 성장 요약 */}
               <div className="bg-white rounded-2xl p-5 shadow-sm">
-                <Line data={classChart} options={chartOptions('학급 평균 점수 추이')} />
-              </div>
-
-              {/* 학생별 평균 비교 */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm">
-                <Bar data={rankChart} options={chartOptions('학생별 평균 점수')} />
-              </div>
-
-              {/* 개별 학생 그래프 */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold">개별 학생 성장 추이</h3>
-                  <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
-                    className="text-sm border border-gray-200 rounded p-2">
-                    <option value="all">학생 선택</option>
-                    {students.map(s => <option key={s.id} value={s.id}>{displayStudentNameWithNumber(s)}</option>)}
-                  </select>
-                </div>
-                {studentChart && studentChart.labels.length > 0 ? (
-                  <Line data={studentChart} options={chartOptions(displayStudentNameWithNumber(students.find(s => s.id === selectedStudent) || {}) + ' 학생')} />
+                {cg.insufficient ? (
+                  <h2 className="text-lg font-bold text-gray-700">아직 주제가 부족해요</h2>
                 ) : (
-                  <p className="text-sm text-gray-500 py-8 text-center">학생을 선택해주세요</p>
+                  <>
+                    <h2 className={`text-xl font-bold ${cg.status === 'up' ? 'text-green-700' : cg.status === 'down' ? 'text-amber-700' : 'text-gray-700'}`}>
+                      {cg.status === 'up' ? `📈 우리 반, 성장하고 있어요 (+${cg.G.toFixed(1)}점)`
+                        : cg.status === 'down' ? '우리 반, 요즘 주춤해요'
+                        : '우리 반, 꾸준해요'}
+                    </h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      최근 주제 {cg.mRecent}개 평균 {cg.X}점 · 이전 {cg.mPrev}개 평균 {cg.Y}점
+                    </p>
+                  </>
                 )}
+                <div className="mt-3">
+                  <Line data={classChart} options={chartOptions('학급 평균 점수 추이 (보조 자료)')} />
+                </div>
               </div>
+
+              {/* ② 학생별 성장 그리드 */}
+              <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="font-bold">학생별 성장</h3>
+                  <div className="flex gap-1 text-xs">
+                    <button onClick={() => setSortMode('growth')}
+                      className={`px-3 py-1.5 rounded-lg ${sortMode === 'growth' ? 'bg-primary text-white font-semibold' : 'bg-gray-100 text-gray-600'}`}>성장순</button>
+                    <button onClick={() => setSortMode('number')}
+                      className={`px-3 py-1.5 rounded-lg ${sortMode === 'number' ? 'bg-primary text-white font-semibold' : 'bg-gray-100 text-gray-600'}`}>번호순</button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {sortedCards.map(({ st, growth }) => {
+                    const insufficient = growth.status === 'insufficient'
+                    const sp = insufficient ? null : sparklinePoints(st.id, topicList)
+                    const stt = STATUS[growth.status]
+                    const isSel = selectedStudent === st.id
+                    return (
+                      <button key={st.id} onClick={() => setSelectedStudent(isSel ? 'all' : st.id)}
+                        className={`text-left rounded-xl border p-3 transition hover:shadow-md ${
+                          isSel ? 'border-primary ring-2 ring-primary/30' : insufficient ? 'border-gray-100 bg-gray-50' : 'border-gray-100 bg-white'
+                        }`}>
+                        <div className="text-sm font-semibold text-gray-800 truncate">{displayStudentNameWithNumber(st)}</div>
+                        {insufficient ? (
+                          <p className="text-xs text-gray-400 mt-2">아직 판단 일러요 (제출 {growth.count}개)</p>
+                        ) : (
+                          <>
+                            <div className="mt-1 flex items-center gap-1 flex-wrap">
+                              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${stt.badge}`}>{stt.arrow} {stt.label}</span>
+                              <span className="text-[11px] text-gray-500">반 평균 대비 {growth.avgRel >= 0 ? '+' : ''}{growth.avgRel}점</span>
+                            </div>
+                            {sp && (
+                              <svg viewBox="0 0 88 28" className="w-full h-7 mt-2" preserveAspectRatio="none">
+                                <polyline points={sp} fill="none" stroke="#2d6a4f" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                              </svg>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* ③ 개별 상세 (카드 클릭 시 인라인 확장) */}
+              {selStudent && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-bold">{displayStudentNameWithNumber(selStudent)} 성장 상세</h3>
+                    <button onClick={() => setSelectedStudent('all')}
+                      className="text-sm text-gray-500 hover:bg-gray-100 px-3 py-1.5 rounded-lg">✖ 닫기</button>
+                  </div>
+                  {studentChart && studentChart.labels.length > 0 ? (
+                    <Line data={studentChart} options={chartOptions('점수 추이 (100점 환산)')} />
+                  ) : (
+                    <p className="text-sm text-gray-500 py-6 text-center">아직 제출한 글이 없어요</p>
+                  )}
+                  {rewrittenRows.length > 0 && (
+                    <p className="text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg p-2.5">
+                      다시쓰기한 주제에서 평균 +{rewriteAvgGain}점 올렸어요.
+                    </p>
+                  )}
+                  {detailRows.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-500 border-b border-gray-200">
+                            <th className="text-left py-1.5 pr-2 font-medium">주제</th>
+                            <th className="text-right py-1.5 px-2 font-medium">첫 시도</th>
+                            <th className="text-right py-1.5 px-2 font-medium">최종</th>
+                            <th className="text-right py-1.5 pl-2 font-medium">개선</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRows.map((r, i) => (
+                            <tr key={i} className="border-b border-gray-50">
+                              <td className="py-1.5 pr-2 text-gray-700 truncate max-w-[10rem]">{r.label}</td>
+                              <td className="py-1.5 px-2 text-right text-gray-500">{r.hasRewrite ? `${r.firstPct}점` : '1회 제출'}</td>
+                              <td className="py-1.5 px-2 text-right font-semibold text-gray-800">{r.finalPct}점</td>
+                              <td className={`py-1.5 pl-2 text-right font-semibold ${r.improvement > 0 ? 'text-green-700' : r.improvement < 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                                {r.hasRewrite ? `${r.improvement >= 0 ? '+' : ''}${r.improvement}점` : '·'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </main>
