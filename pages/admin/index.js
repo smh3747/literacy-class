@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
@@ -2373,14 +2373,38 @@ function AdminSubmissionsInner() {
   useEffect(() => { load() }, [selectedClass, dateFilter, customDate, subStatusFilter])
 
   // 새로고침 시: 글 목록 로드된 뒤 URL의 sub ID로 상세 복원
+  // 🆕 step370: 목록(최근 200건·active 필터)에 없으면 단건 직접 조회 폴백 —
+  //   의심 교정 "글 보기"가 오래된 글·휴지통 글에서 무반응이던 문제 해결. 실패는 안내로 표시(조용한 실패 금지).
+  const subFetchingRef = useRef(false)
   useEffect(() => {
-    if (!router.isReady) return
+    if (!router.isReady || loading) return
     const subId = router.query.sub
-    if (subId && !selectedSubmission && submissions.length > 0) {
-      const found = submissions.find(s => String(s.id) === String(subId))
-      if (found) setSelectedSubmissionState(found)
-    }
-  }, [router.isReady, submissions])
+    if (!subId || selectedSubmission) return
+    const found = submissions.find(s => String(s.id) === String(subId))
+    if (found) { setSelectedSubmissionState(found); return }
+
+    if (subFetchingRef.current) return
+    subFetchingRef.current = true
+    ;(async () => {
+      const { data, error } = await supabase.from('submissions')
+        .select('*, profiles!submissions_user_id_fkey(realname, nickname, username, number, class_id), topics(title, date)')
+        .eq('id', subId)
+        .maybeSingle()
+      subFetchingRef.current = false
+      if (error) {
+        alert('글을 불러오지 못했어요: ' + error.message)
+      } else if (!data || data.deleted_at) {
+        alert('글이 삭제되었어요. 의심 교정이 가리키는 글을 열 수 없어요.')
+      } else {
+        setSelectedSubmissionState(data)
+        return
+      }
+      // 실패 시 URL에서 sub 제거 (재시도 루프 방지)
+      const q = { ...router.query }
+      delete q.sub
+      router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+    })()
+  }, [router.isReady, submissions, loading])
 
   const load = async () => {
     setLoading(true)
