@@ -3,17 +3,15 @@ import { useState, useEffect } from 'react'
 export default function StudentTutorial() {
   const [show, setShow] = useState(false)
   const [step, setStep] = useState(0)
-  const [dontShow, setDontShow] = useState(false)
 
   useEffect(() => {
     const seen = localStorage.getItem('student_tutorial_seen')
     if (!seen) setShow(true)
   }, [])
 
+  // 🆕 step367: 건너뛰기도 항상 기록 — 어떤 방식으로든 한 번 닫으면 다시 안 뜸(최초 1회)
   const close = () => {
-    if (dontShow) {
-      localStorage.setItem('student_tutorial_seen', '1')
-    }
+    localStorage.setItem('student_tutorial_seen', '1')
     setShow(false)
   }
 
@@ -91,12 +89,7 @@ export default function StudentTutorial() {
           )}
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={dontShow} onChange={e => setDontShow(e.target.checked)} className="w-4 h-4" />
-            <span>다시 보지 않기</span>
-          </label>
-          <span className="text-gray-300">|</span>
+        <div className="mt-4 flex items-center justify-center">
           <button onClick={close} className="text-xs text-gray-400 hover:text-gray-600">
             건너뛰기
           </button>
