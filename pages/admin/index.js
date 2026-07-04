@@ -32,6 +32,7 @@ export default function AdminHome() {
   const [suspectCount, setSuspectCount] = useState(0)      // 🆕 step359: 의심 교정 미해결 건수 (loadAll에서 count만)
   const [suspectAlerts, setSuspectAlerts] = useState([])   // 🆕 step359: 의심 교정 목록 (탭 열 때 로드)
   const [suspectLoaded, setSuspectLoaded] = useState(false)
+  const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -307,18 +308,23 @@ export default function AdminHome() {
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
 
   // 🔍 step359: 의심 교정 목록 — 탭 열 때 1회만 로드 (첫 로딩 무게 안 늘림)
+  // 🆕 step369: supabase-js는 실패해도 throw하지 않아 error를 직접 확인해야 함(기존엔 무시되어
+  //   목록이 조용히 "없어요"로 위장됨). order도 DB 컬럼 의존을 없애고 클라이언트에서 정렬.
   useEffect(() => {
     if (tab !== 'corrections' || suspectLoaded) return
     ;(async () => {
-      try {
-        const { data } = await supabase.from('correction_alerts')
-          .select('*')
-          .eq('resolved', false)
-          .order('created_at', { ascending: false })
-          .limit(100)
-        setSuspectAlerts(data || [])
-      } catch(e) {
+      const { data, error } = await supabase.from('correction_alerts')
+        .select('*')
+        .eq('resolved', false)
+        .limit(100)
+      if (error) {
+        setSuspectError(error.message || '알 수 없는 오류')
         setSuspectAlerts([])
+      } else {
+        setSuspectError(null)
+        const rows = [...(data || [])].sort((a, b) =>
+          new Date(b.created_at || b.submission_created_at || 0) - new Date(a.created_at || a.submission_created_at || 0))
+        setSuspectAlerts(rows)
       }
       setSuspectLoaded(true)
     })()
@@ -2252,6 +2258,20 @@ export default function AdminHome() {
 
                 {!suspectLoaded ? (
                   <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                ) : suspectError ? (
+                  /* 🆕 step369: 로드 실패를 숨기지 않고 표시 */
+                  <div className="py-6 text-center">
+                    <div className="inline-block bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                      목록을 불러오지 못했어요.
+                      <div className="text-xs text-red-500 mt-1 break-all">{suspectError}</div>
+                    </div>
+                    <div className="mt-3">
+                      <button onClick={() => { setSuspectError(null); setSuspectLoaded(false) }}
+                        className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition">
+                        🔄 다시 시도
+                      </button>
+                    </div>
+                  </div>
                 ) : suspectAlerts.length === 0 ? (
                   <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
                 ) : (
