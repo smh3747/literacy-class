@@ -202,11 +202,24 @@ export default function StudentHome() {
   // 🆕 step283: 제출 동기 재진입 가드 — state(submitting/rewriting)는 re-render 후에야 반영돼
   //   같은 프레임 연타·await 창 재진입을 못 막음(중복 insert 원인). ref는 즉시 잠겨 확실히 차단.
   const submittingRef = useRef(false)
+  // 🆕 step364: 채점 완료 직후 결과 시작점 착지용
+  //   스크롤 코드가 없어도 브라우저 스크롤 앵커링이 하단 잔존 요소(내 글 기록 링크)를 붙잡아
+  //   결과 맨 끝에 착지하는 문제 → 채점 직후에만 결과 상단으로 스크롤
+  const resultTopRef = useRef(null)        // 결과 시작점 (feedback: 피드백 결과 카드 / done: 완료 배너)
+  const scrollToResultRef = useRef(false)  // 채점 직후에만 발동 (기존 제출물 로드 시에는 스크롤 안 함)
 
   useEffect(() => {
     if (!router.isReady) return
     checkAuth()
   }, [router.isReady])
+
+  // 🆕 step364: 채점 완료 직후에만 결과 시작점으로 스크롤
+  useEffect(() => {
+    if (step !== 'feedback' && step !== 'done') return
+    if (!scrollToResultRef.current) return
+    scrollToResultRef.current = false
+    try { resultTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
+  }, [step])
   
   // 자동 백업 (5초마다)
   useEffect(() => {
@@ -591,6 +604,7 @@ export default function StudentHome() {
 
       setCurrentSub(sub)
       setFeedbackResult(result)
+      scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('feedback')
       
       // 예시 작품 생성 (백그라운드)
@@ -878,6 +892,7 @@ export default function StudentHome() {
       setCurrentSub(newSub) // 수정본 row를 currentSub로 (예시 저장 대상)
       setFeedbackResult(result)
       setExampleText('') // 새 예시 받기 위해 비우기
+      scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('done')
       alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
 
@@ -1296,7 +1311,7 @@ export default function StudentHome() {
               {(step === 'feedback' || step === 'done') && feedbackResult && (
                 <>
                   {step === 'done' && (
-                    <div className="bg-green-50 border border-green-300 rounded-2xl p-4 text-center">
+                    <div ref={resultTopRef} className="bg-green-50 border border-green-300 rounded-2xl p-4 text-center scroll-mt-16">
                       <div className="text-3xl mb-1">🎉</div>
                       <div className="font-bold text-green-900">수정본 제출 완료!</div>
                       <div className="text-sm text-green-800 mt-1">최종 점수: {feedbackResult.total}/{currentSub?.max_score}점</div>
@@ -1304,7 +1319,8 @@ export default function StudentHome() {
                   )}
 
                   {/* 피드백 결과 */}
-                  <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 overflow-hidden">
+                  <div ref={step === 'feedback' ? resultTopRef : null}
+                    className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 overflow-hidden scroll-mt-16">
                     <div className="flex justify-between items-center gap-2">
                       <h3 className="font-bold text-base">📊 피드백 결과</h3>
                       <span className="text-base sm:text-lg font-bold flex-shrink-0">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
