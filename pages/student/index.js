@@ -67,6 +67,21 @@ function checkTimeLock(topic) {
 }
 
 // HTML 이스케이프
+// 🆕 step365: 접힘 카드 summary 공용 한 줄 (step341 어포던스 패턴 재사용 — 회전 화살표·hover·펼치기 힌트)
+function CollapseSummary({ title, badge = null, tone = 'gray' }) {
+  const c = tone === 'purple'
+    ? { arrow: 'text-purple-400', hover: 'hover:bg-purple-100', hint: 'text-purple-400' }
+    : { arrow: 'text-gray-400', hover: 'hover:bg-gray-50', hint: 'text-gray-400' }
+  return (
+    <summary className={`list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 min-w-0 -mx-2 px-2 py-1 rounded-lg ${c.hover}`}>
+      <span className={`${c.arrow} flex-shrink-0 transition-transform group-open:rotate-90`}>▶</span>
+      {title}
+      {badge}
+      <span className={`ml-auto flex-shrink-0 text-xs ${c.hint} group-open:hidden`}>눌러서 펼치기</span>
+    </summary>
+  )
+}
+
 // 피드백 텍스트를 리스트로 시각화 (lib/feedbackFormat의 분리 헬퍼 사용)
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -1326,66 +1341,7 @@ export default function StudentHome() {
                       <span className="text-base sm:text-lg font-bold flex-shrink-0">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
                     </div>
 
-                    {/* 내가 쓴 글 (맞춤법 표시) */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-bold">📝 내가 쓴 글</h4>
-                        {feedbackResult.corrections?.length > 0 && (
-                          <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
-                            맞춤법/띄어쓰기 {feedbackResult.corrections.length}개
-                          </span>
-                        )}
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
-                        dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult.corrections)}} />
-                      {feedbackResult.corrections?.length > 0 && (
-                        <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하거나 클릭하면 올바른 표기를 볼 수 있어요</p>
-                      )}
-                      <p className="text-[11px] text-gray-400 mt-1 leading-snug">{GRAMMAR_NOTICE_STUDENT}</p>
-                    </div>
-
-                    {/* 점수 막대 + 점수 근거 (와이프 피드백: 왜 감점됐는지 학생이 납득해야 함) */}
-                    {Array.isArray(feedbackResult.scores) && (
-                      <div className="space-y-3 overflow-hidden">
-                        {feedbackResult.scores.map((s, i) => {
-                          const r = todayTopic.rubrics[i] || { name: `기준 ${i+1}`, score: 25 }
-                          const pct = Math.round((s / r.score) * 100)
-                          const isFull = s >= r.score
-                          const reason = Array.isArray(feedbackResult.rubric_reasons) ? feedbackResult.rubric_reasons[i] : null
-                          const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
-                          return (
-                            <div key={i} className="min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100">
-                              <div className="flex justify-between gap-2 text-sm mb-1">
-                                <span className="text-gray-800 font-semibold break-keep">
-                                  {r.name}
-                                  {isFull && <span className="ml-1 text-green-600">✓</span>}
-                                </span>
-                                <span className={`font-bold flex-shrink-0 ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
-                                  {s}/{r.score}점
-                                </span>
-                              </div>
-                              {r.hint && <div className="text-xs text-gray-500 mb-1.5 break-keep">📌 {r.hint}</div>}
-                              <div className="bg-gray-200 rounded-full h-2 overflow-hidden mb-2">
-                                <div className={`${barColor} h-full transition-all`} style={{width: pct + '%'}} />
-                              </div>
-                              {/* 🆕 점수 근거 (와이프 피드백: 왜 감점됐는지) */}
-                              {reason ? (
-                                <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200 mt-2">
-                                  <span className="font-semibold text-gray-800">💡 이유: </span>
-                                  {reason}
-                                </p>
-                              ) : !isFull ? (
-                                <p className="text-xs text-amber-700 leading-relaxed bg-amber-50 rounded p-2 border border-amber-200 mt-2">
-                                  ⚠️ 이번에는 점수 근거가 나오지 않았어요. 위의 발전점을 참고해주세요.
-                                </p>
-                              ) : null}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* 의견들 - 시각적으로 분리 */}
+                    {/* ②③④ 의견들 - 시각적으로 분리 (step365: 핵심 먼저 읽도록 상단 이동) */}
                     <div className="space-y-3 pt-3 border-t border-gray-100">
                       {/* 종합 의견 */}
                       <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -1410,36 +1366,114 @@ export default function StudentHome() {
                         </h4>
                         <FeedbackList text={feedbackResult.improve} color="amber" />
                       </div>
-
-                      {/* 🆕 발전점 구체 예시 (와이프 피드백: 어떻게 고치면 좋을지) */}
-                      {Array.isArray(feedbackResult.improve_examples) && feedbackResult.improve_examples.length > 0 && (
-                        <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
-                          <h4 className="text-sm font-bold mb-2 text-purple-900 flex items-center gap-1.5">
-                            <span>✏️</span> 이렇게 바꿔보면 어떨까요?
-                          </h4>
-                          <p className="text-xs text-purple-700 mb-3">아래는 예시예요. 똑같이 쓰지 말고 참고만 하세요!</p>
-                          <div className="space-y-3">
-                            {feedbackResult.improve_examples.map((ex, i) => (
-                              <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
-                                <div className="px-3 py-2 bg-red-50 border-b border-red-100">
-                                  <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
-                                  <p className="text-sm text-gray-800 break-keep">{ex.original}</p>
-                                </div>
-                                <div className="px-3 py-2 bg-green-50 border-b border-green-100">
-                                  <div className="text-[11px] text-green-700 font-semibold mb-0.5">예시</div>
-                                  <p className="text-sm text-gray-900 break-keep leading-relaxed">{ex.suggested}</p>
-                                </div>
-                                {ex.reason && (
-                                  <div className="px-3 py-1.5 bg-purple-50 border-t border-purple-100">
-                                    <p className="text-[11px] text-purple-700 break-keep">💡 {ex.reason}</p>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
+
+                    {/* ⑤ 내가 쓴 글 (맞춤법 표시) — step365: 기본 접힘 */}
+                    <details className="group">
+                      <CollapseSummary
+                        title={<h4 className="text-sm font-bold flex-shrink-0">📝 내 글 보기</h4>}
+                        badge={feedbackResult.corrections?.length > 0 && (
+                          <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full flex-shrink-0">
+                            맞춤법/띄어쓰기 {feedbackResult.corrections.length}개
+                          </span>
+                        )}
+                      />
+                      <div className="mt-2">
+                        <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
+                          dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult.corrections)}} />
+                        {feedbackResult.corrections?.length > 0 && (
+                          <p className="text-xs text-gray-500 mt-2">💡 빨간 밑줄을 탭하거나 클릭하면 올바른 표기를 볼 수 있어요</p>
+                        )}
+                        <p className="text-[11px] text-gray-400 mt-1 leading-snug">{GRAMMAR_NOTICE_STUDENT}</p>
+                      </div>
+                    </details>
+
+                    {/* ⑥ 점수 막대 + 점수 근거 — step365: 한 줄 컴팩트, 이유는 탭하면 펼침 */}
+                    {Array.isArray(feedbackResult.scores) && (
+                      <div className="space-y-2 overflow-hidden">
+                        {feedbackResult.scores.map((s, i) => {
+                          const r = todayTopic.rubrics[i] || { name: `기준 ${i+1}`, score: 25 }
+                          const pct = Math.round((s / r.score) * 100)
+                          const isFull = s >= r.score
+                          const reason = Array.isArray(feedbackResult.rubric_reasons) ? feedbackResult.rubric_reasons[i] : null
+                          const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
+                          // 펼칠 내용(힌트·이유·근거 없음 안내)이 있을 때만 접힘 행
+                          const hasDetail = !!(reason || r.hint || !isFull)
+                          const row = (
+                            <>
+                              <span className={`flex-shrink-0 transition-transform group-open:rotate-90 ${hasDetail ? 'text-gray-400' : 'invisible'}`}>▶</span>
+                              <span className="text-gray-800 text-sm font-semibold break-keep flex-shrink-0">
+                                {r.name}
+                                {isFull && <span className="ml-1 text-green-600">✓</span>}
+                              </span>
+                              <span className="flex-1 min-w-[40px] bg-gray-200 rounded-full h-2 overflow-hidden">
+                                <span className={`${barColor} block h-full transition-all`} style={{width: pct + '%'}} />
+                              </span>
+                              <span className={`text-sm font-bold flex-shrink-0 ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
+                                {s}/{r.score}점
+                              </span>
+                            </>
+                          )
+                          if (!hasDetail) {
+                            return (
+                              <div key={i} className="min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100 flex items-center gap-2">
+                                {row}
+                              </div>
+                            )
+                          }
+                          return (
+                            <details key={i} className="group min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                              <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 min-w-0 -mx-1 px-1 py-0.5 rounded-lg hover:bg-gray-100">
+                                {row}
+                              </summary>
+                              <div className="mt-2 space-y-1.5">
+                                {r.hint && <div className="text-xs text-gray-500 break-keep">📌 {r.hint}</div>}
+                                {/* 🆕 점수 근거 (와이프 피드백: 왜 감점됐는지) */}
+                                {reason ? (
+                                  <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200">
+                                    <span className="font-semibold text-gray-800">💡 이유: </span>
+                                    {reason}
+                                  </p>
+                                ) : !isFull ? (
+                                  <p className="text-xs text-amber-700 leading-relaxed bg-amber-50 rounded p-2 border border-amber-200">
+                                    ⚠️ 이번에는 점수 근거가 나오지 않았어요. 위의 발전점을 참고해주세요.
+                                  </p>
+                                ) : null}
+                              </div>
+                            </details>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ⑦ 발전점 구체 예시 (와이프 피드백: 어떻게 고치면 좋을지) — 현행 유지, 위치만 이동 */}
+                    {Array.isArray(feedbackResult.improve_examples) && feedbackResult.improve_examples.length > 0 && (
+                      <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
+                        <h4 className="text-sm font-bold mb-2 text-purple-900 flex items-center gap-1.5">
+                          <span>✏️</span> 이렇게 바꿔보면 어떨까요?
+                        </h4>
+                        <p className="text-xs text-purple-700 mb-3">아래는 예시예요. 똑같이 쓰지 말고 참고만 하세요!</p>
+                        <div className="space-y-3">
+                          {feedbackResult.improve_examples.map((ex, i) => (
+                            <div key={i} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                              <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                                <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
+                                <p className="text-sm text-gray-800 break-keep">{ex.original}</p>
+                              </div>
+                              <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                                <div className="text-[11px] text-green-700 font-semibold mb-0.5">예시</div>
+                                <p className="text-sm text-gray-900 break-keep leading-relaxed">{ex.suggested}</p>
+                              </div>
+                              {ex.reason && (
+                                <div className="px-3 py-1.5 bg-purple-50 border-t border-purple-100">
+                                  <p className="text-[11px] text-purple-700 break-keep">💡 {ex.reason}</p>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 피드백 신고 버튼 - 카드 하단에 작게 */}
                     <div className="pt-2 border-t border-gray-100 flex justify-end">
@@ -1457,19 +1491,26 @@ export default function StudentHome() {
                     </div>
                   </div>
 
-                  {/* 예시 작품 (피드백/완료 단계 모두 표시) */}
+                  {/* ⑧ 예시 작품 (피드백/완료 단계 모두 표시) — step365: 기본 접힘 */}
                   {(exampleText || exampleLoading) && (step === 'feedback' || step === 'done') && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5">
-                      <h3 className="font-bold text-purple-900 mb-2">
-                        📖 AI 예시 작품
-                        {step === 'done' && <span className="ml-2 text-xs font-normal text-purple-600">(수정본 기준)</span>}
-                      </h3>
-                      {exampleLoading ? (
-                        <p className="text-sm text-purple-700">예시 작품을 만들고 있어요...</p>
-                      ) : (
-                        <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed">{exampleText}</p>
-                      )}
-                    </div>
+                    <details className="group bg-purple-50 border border-purple-200 rounded-2xl p-5">
+                      <CollapseSummary
+                        tone="purple"
+                        title={
+                          <h3 className="font-bold text-purple-900 flex-shrink-0">
+                            📖 AI 예시 작품
+                            {step === 'done' && <span className="ml-2 text-xs font-normal text-purple-600">(수정본 기준)</span>}
+                          </h3>
+                        }
+                      />
+                      <div className="mt-2">
+                        {exampleLoading ? (
+                          <p className="text-sm text-purple-700">예시 작품을 만들고 있어요...</p>
+                        ) : (
+                          <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed">{exampleText}</p>
+                        )}
+                      </div>
+                    </details>
                   )}
 
                   {/* 다시 쓰기 버튼 (feedback 단계에서만) */}
