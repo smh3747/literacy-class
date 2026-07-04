@@ -623,7 +623,9 @@ export default function StudentHome() {
       setStep('feedback')
       
       // 예시 작품 생성 (백그라운드)
-      generateExample(essay, totalMax)
+      // 🆕 step368: subId 명시 전달 — 기존 generateExample은 낡은 클로저의 currentSub(null)를 봐서
+      //   첫 글 example_text가 DB에 저장된 적이 없었음(재방문 시 예시 미표시 원인)
+      generateExampleForSub(essay, totalMax, sub.id)
     } catch(e) {
       console.error('제출 오류:', e)
       const rawMsg = e?.message || ''
@@ -643,7 +645,7 @@ export default function StudentHome() {
     setSubmitting(false); setRetryMessage(null)
   }
 
-  // 예시 작품 생성 (subId 명시 가능 - 수정본 직후 사용)
+  // 예시 작품 생성 (subId 명시 — 첫 글·수정본 공용, step368)
   const generateExampleForSub = async (studentEssay, totalMax, subId) => {
     if (!subId) return
 
@@ -659,28 +661,6 @@ export default function StudentHome() {
       }
     } catch(e) {
       console.error('수정본 예시 생성 실패:', e)
-      // 예시 생성 실패는 학생에게 굳이 알리지 않음 (채점은 이미 성공)
-    }
-    setExampleLoading(false)
-  }
-
-  // 예시 작품 생성 (첫 글용 - currentSub 사용)
-  const generateExample = async (studentEssay, totalMax) => {
-    setExampleLoading(true)
-    try {
-      // 🔒 프롬프트는 서버에서 구성
-      const result = await callAI('exampleEssay', {
-        topicTitle: todayTopic.title, studentEssay,
-      })
-      if (result.example) {
-        setExampleText(result.example)
-        // DB에도 저장
-        if (currentSub?.id) {
-          await supabase.from('submissions').update({ example_text: result.example }).eq('id', currentSub.id)
-        }
-      }
-    } catch(e) {
-      console.error('예시 생성 실패:', e)
       // 예시 생성 실패는 학생에게 굳이 알리지 않음 (채점은 이미 성공)
     }
     setExampleLoading(false)
