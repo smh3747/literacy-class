@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import { getAuthErrorMessage } from '../../lib/authErrors'
+import { isValidEmail, EMAIL_DOMAINS } from '../../lib/email'
 import ConsentForm from '../../components/ConsentForm'
 import SchoolAutocomplete from '../../components/SchoolAutocomplete'
 
@@ -33,7 +34,10 @@ export default function TeacherLogin() {
   const [autoLogin, setAutoLogin] = useState(true)
 
   // 🆕 step381: 신규 가입 실이메일 (비밀번호 재설정 메일 수신용)
-  const [signupEmail, setSignupEmail] = useState('')
+  // 🆕 step384: [아이디] @ [도메인 선택] 조합 방식으로 교체 (오타 감소·검증 강화)
+  const [emailLocal, setEmailLocal] = useState('')
+  const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0])  // 'custom'이면 직접 입력
+  const [emailCustomDomain, setEmailCustomDomain] = useState('')
   // 🆕 step383: 비밀번호 확인 + 필드별 검증 메시지 + 제출 시 DOM 실제값 읽기(자동완성 불일치 면역)
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
@@ -61,7 +65,7 @@ export default function TeacherLogin() {
   // 🆕 step381: 재설정 메일 발송 — 계정 존재 여부와 무관하게 항상 같은 완료 안내(존재 비노출)
   const sendResetEmail = async () => {
     const addr = emailResetAddr.trim()
-    if (!/.+@.+\..+/.test(addr)) return alert('이메일을 정확히 입력해주세요')
+    if (!isValidEmail(addr)) return alert('이메일 형식을 확인해주세요')
     setEmailResetSending(true)
     let origin
     if (process.env.NEXT_PUBLIC_SITE_URL) {
@@ -253,17 +257,42 @@ export default function TeacherLogin() {
         return null
       case 'password': return (val || '').length >= 6 ? null : '비밀번호는 6자 이상으로 입력해주세요'
       case 'passwordConfirm': return val === (all.password ?? password) ? null : '비밀번호가 서로 달라요'
-      case 'signupEmail':
-        if (!/.+@.+\..+/.test(v) || v.toLowerCase().endsWith('@writing.class')) return '이메일 형식을 확인해주세요'
-        return null
+      case 'signupEmail': {
+        // 🆕 step384: 조합 이메일을 앵커드 검증기(isValidEmail)로 — 이전 약한 정규식이 우회 버그 원인
+        const local = (all.emailLocal ?? emailLocal ?? '').trim()
+        if (!local) return '이메일 아이디를 입력해주세요'
+        return isValidEmail(v) ? null : '이메일 형식을 확인해주세요'
+      }
       default: return null
     }
+  }
+
+  // 🆕 step384: [아이디]@[도메인] 조합 (custom이면 직접 입력 도메인)
+  const composeEmail = (local, domainSel, customDomain) => {
+    const l = (local || '').trim()
+    const d = domainSel === 'custom' ? (customDomain || '').trim() : domainSel
+    return l && d ? `${l}@${d}` : ''
+  }
+
+  // 🆕 step384: 이메일 3입력(아이디·도메인 선택·직접 도메인) 공용 재검증
+  const revalidateEmail = (parts = {}, force = false) => {
+    const local = parts.local ?? emailLocal
+    const domainSel = parts.domainSel ?? emailDomain
+    const custom = parts.custom ?? emailCustomDomain
+    const composed = composeEmail(local, domainSel, custom)
+    setFieldErrors(prev => ((force || prev.signupEmail)
+      ? { ...prev, signupEmail: validateSignupField('signupEmail', composed, { emailLocal: local }) }
+      : prev))
   }
 
   // 🆕 step383: 제출 시 DOM의 실제 표시 값을 읽는다(자동완성이 onChange 없이 채운 값도 인정).
   //   "화면엔 채워져 보이는데 state가 비어 제출 불가"였던 회귀(step381 이후)의 원인 클래스 제거.
   const readSignupVals = () => {
     const dom = (k) => fieldRefs.current[k]?.value
+    // 🆕 step384: 이메일은 3입력 조합 — 각각 DOM 실제값 우선
+    const eLocal = dom('emailLocal') ?? emailLocal
+    const eDomainSel = dom('emailDomain') ?? emailDomain
+    const eCustom = dom('emailCustomDomain') ?? emailCustomDomain
     const vals = {
       secretCode: dom('secretCode') ?? secretCode,
       realname: dom('realname') ?? realname,
@@ -272,7 +301,8 @@ export default function TeacherLogin() {
       username: dom('username') ?? username,
       password: dom('password') ?? password,
       passwordConfirm: dom('passwordConfirm') ?? passwordConfirm,
-      signupEmail: dom('signupEmail') ?? signupEmail,
+      emailLocal: eLocal,
+      signupEmail: composeEmail(eLocal, eDomainSel, eCustom),
     }
     // 학교 코드·지역: DOM과 state가 같을 때만 유지, 다르면 직접 입력 취급(기존 의미와 동일)
     vals.schoolCode = (vals.school === school) ? schoolCode : ''
@@ -285,7 +315,9 @@ export default function TeacherLogin() {
     if (vals.username !== username) setUsername(vals.username)
     if (vals.password !== password) setPassword(vals.password)
     if (vals.passwordConfirm !== passwordConfirm) setPasswordConfirm(vals.passwordConfirm)
-    if (vals.signupEmail !== signupEmail) setSignupEmail(vals.signupEmail)
+    if (eLocal !== emailLocal) setEmailLocal(eLocal)
+    if (eDomainSel !== emailDomain) setEmailDomain(eDomainSel)
+    if (eCustom !== emailCustomDomain) setEmailCustomDomain(eCustom)
     return vals
   }
 
@@ -313,7 +345,8 @@ export default function TeacherLogin() {
         const firstBad = order.find(k => errs[k])
         if (firstBad) {
           setError('')
-          const el = fieldRefs.current[firstBad]
+          // 🆕 step384: 이메일 에러는 조합 입력의 첫 칸(아이디)으로 이동
+          const el = fieldRefs.current[firstBad === 'signupEmail' ? 'emailLocal' : firstBad]
           if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus?.() }
           return
         }
@@ -343,7 +376,7 @@ export default function TeacherLogin() {
     setLoading(true)
     setError('')
     const email = `${username.toLowerCase()}@writing.class`
-    const v = vals || { secretCode, realname, school, className, username, password, signupEmail, schoolCode, schoolRegion }
+    const v = vals || { secretCode, realname, school, className, username, password, signupEmail: composeEmail(emailLocal, emailDomain, emailCustomDomain), schoolCode, schoolRegion }
 
     try {
       if (mode === 'login') {
@@ -407,16 +440,18 @@ export default function TeacherLogin() {
         // admin 중복가입 확인은 /api/verify-code(서버)에서 수행 (step148 RLS로 이동)
 
         // 🆕 step381: 실이메일 필수 — 비밀번호를 잊었을 때 재설정 메일을 받는 주소
+        // 🆕 step384: 앵커드 검증기로 교체 (이전 약한 정규식이 kim@school.c·공백·이중@ 등을 통과시킴)
         const realEmail = v.signupEmail.trim().toLowerCase()
-        if (!/.+@.+\..+/.test(realEmail) || realEmail.endsWith('@writing.class')) {
+        if (!isValidEmail(realEmail)) {
           throw new Error('이메일 형식을 확인해주세요. 비밀번호를 잊었을 때 재설정 메일을 받는 주소예요.')
         }
 
         // 🆕 step381: 아이디 중복확인 — 실이메일 전환으로 합성 이메일 충돌에 의한 감지가 사라져 서버 확인 필수
+        // 🆕 step384: 이메일도 함께 보내 서버 방어선에서 형식 재검증 (클라이언트 우회 대비)
         const unameRes = await fetch('/api/teacher-username-check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: v.username.toLowerCase() })
+          body: JSON.stringify({ username: v.username.toLowerCase(), email: realEmail })
         })
         const unameData = await unameRes.json()
         if (!unameRes.ok) throw new Error(unameData.error || '아이디 확인에 실패했어요. 잠시 후 다시 시도해주세요.')
@@ -621,17 +656,34 @@ export default function TeacherLogin() {
                   </div>
                 )}
 
-                {/* 🆕 step381: 신규 가입 실이메일 (재설정 메일 수신용) */}
+                {/* 🆕 step381: 신규 가입 실이메일 — 🆕 step384: [아이디] @ [도메인 선택] 조합 UI */}
                 {mode === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium mb-1">이메일</label>
-                    <input type="email" value={signupEmail}
-                      ref={el => { fieldRefs.current.signupEmail = el }}
-                      onChange={e => { setSignupEmail(e.target.value); changeRevalidate('signupEmail', e.target.value) }}
-                      onBlur={e => blurValidate('signupEmail', e.target.value)}
-                      onKeyDown={handleEnter}
-                      className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: kim@school.kr"
-                      autoComplete="email" />
+                    <div className="flex items-center gap-1.5">
+                      <input type="text" value={emailLocal}
+                        ref={el => { fieldRefs.current.emailLocal = el }}
+                        onChange={e => { setEmailLocal(e.target.value); revalidateEmail({ local: e.target.value }) }}
+                        onBlur={e => revalidateEmail({ local: e.target.value }, true)}
+                        onKeyDown={handleEnter}
+                        className="flex-1 min-w-0 p-3 border border-gray-200 rounded-lg" placeholder="이메일 아이디" />
+                      <span className="text-gray-500 flex-shrink-0">@</span>
+                      <select value={emailDomain}
+                        ref={el => { fieldRefs.current.emailDomain = el }}
+                        onChange={e => { setEmailDomain(e.target.value); revalidateEmail({ domainSel: e.target.value }) }}
+                        className="flex-1 min-w-0 p-3 border border-gray-200 rounded-lg bg-white">
+                        {EMAIL_DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+                        <option value="custom">직접 입력</option>
+                      </select>
+                    </div>
+                    {emailDomain === 'custom' && (
+                      <input type="text" value={emailCustomDomain}
+                        ref={el => { fieldRefs.current.emailCustomDomain = el }}
+                        onChange={e => { setEmailCustomDomain(e.target.value); revalidateEmail({ custom: e.target.value }) }}
+                        onBlur={e => revalidateEmail({ custom: e.target.value }, true)}
+                        onKeyDown={handleEnter}
+                        className="w-full mt-1.5 p-3 border border-gray-200 rounded-lg" placeholder="도메인 직접 입력 (예: school.kr)" />
+                    )}
                     {fieldErrors.signupEmail && <p className="text-xs text-red-600 mt-1">{fieldErrors.signupEmail}</p>}
                     <p className="text-xs text-gray-500 mt-1">
                       💡 비밀번호를 잊었을 때 이 이메일로 재설정 메일이 와요. 자주 확인하는 주소를 적어주세요.

@@ -1,7 +1,10 @@
 // step381: 교사 가입 아이디 중복확인 (서버 전용)
 // 실이메일 가입 전환으로 합성 이메일 충돌에 의한 중복 감지가 사라져, 가입 전 명시 확인이 필요.
 // 학생·교사가 같은 아이디 네임스페이스를 쓰므로 role 무관 profiles.username 전체 대조.
+// step384: 이메일 형식 서버 방어선 추가 — 클라이언트 검증이 우회돼도 signUp 직전 여기서 차단.
+//   (Supabase에 직접 signUp을 쏘는 악의 클라이언트까지는 못 막음. 정상 앱 경로의 최종 방어선.)
 import { createClient } from '@supabase/supabase-js'
+import { isValidEmail } from '../../lib/email'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -13,6 +16,11 @@ export default async function handler(req, res) {
   const uname = String(req.body?.username || '').trim().toLowerCase()
   if (!uname || uname.length < 2 || uname.length > 50 || /[@\s]/.test(uname)) {
     return res.status(400).json({ error: '아이디 형식이 올바르지 않아요' })
+  }
+
+  // step384: 이메일이 오면 형식 검증 (가입 경로는 항상 보냄 — 형식 불통과 시 여기서 중단)
+  if (req.body?.email !== undefined && !isValidEmail(req.body.email)) {
+    return res.status(400).json({ error: '이메일 형식을 확인해주세요' })
   }
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
