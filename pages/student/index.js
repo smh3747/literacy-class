@@ -200,6 +200,7 @@ export default function StudentHome() {
   
   const [rewriteEssay, setRewriteEssay] = useState('')
   const [rewriting, setRewriting] = useState(false)
+  const [rewriteChecks, setRewriteChecks] = useState({})  // 🆕 step378: 고칠 것 체크(인덱스별, 화면 전용 — 저장 안 함)
   
   const [pasteWarning, setPasteWarning] = useState(false)
   const [showPwModal, setShowPwModal] = useState(false)
@@ -668,6 +669,7 @@ export default function StudentHome() {
   // 다시 쓰기 시작
   const startRewrite = () => {
     setRewriteEssay(essay) // 처음 글로 채워둠
+    setRewriteChecks({})   // 🆕 step378: 고칠 것 체크 리셋 (표시용 상태만)
     setStep('rewrite')
   }
 
@@ -1518,16 +1520,49 @@ export default function StudentHome() {
 
               {step === 'rewrite' && (
                 <>
-                  {/* 다음 단계 안내 (와이프 피드백) */}
-                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4">
-                    <h3 className="font-bold text-amber-900 mb-1">✏️ 이제 글을 더 좋게 다듬어 봐요!</h3>
-                    <p className="text-sm text-amber-800 leading-relaxed break-keep">
-                      아래 피드백을 잘 읽고, 특히 <strong className="text-amber-900">🌱 다음엔 이렇게 해봐요</strong>와
-                      {' '}<strong className="text-amber-900">✏️ 이렇게 바꿔보면 어떨까요</strong> 부분을 참고해서 다시 써보세요.
-                      <br />
-                      <span className="text-xs text-amber-700 mt-1 inline-block">💡 똑같이 베끼지 말고, 자기 표현으로 바꿔서 써야 점수가 잘 나와요!</span>
-                    </p>
-                  </div>
+                  {/* 🆕 step378: 고칠 것 체크리스트 — 발전점을 체크박스로 (피드백 안 읽고 기계적으로 다시 쓰는 문제 대응).
+                      체크는 화면 상태만(저장 안 함), 제출을 막지 않음. 발전점 없으면 기존 안내 배너로 폴백. */}
+                  {(() => {
+                    const improveText = feedbackResult?.improve || currentSub?.feedback_improve
+                    const items = splitFeedbackItems(improveText)
+                    if (!items.length) return (
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4">
+                        <h3 className="font-bold text-amber-900 mb-1">✏️ 이제 글을 더 좋게 다듬어 봐요!</h3>
+                        <p className="text-sm text-amber-800 leading-relaxed break-keep">
+                          아래 피드백을 잘 읽고, 특히 <strong className="text-amber-900">🌱 다음엔 이렇게 해봐요</strong>와
+                          {' '}<strong className="text-amber-900">✏️ 이렇게 바꿔보면 어떨까요</strong> 부분을 참고해서 다시 써보세요.
+                          <br />
+                          <span className="text-xs text-amber-700 mt-1 inline-block">💡 똑같이 베끼지 말고, 자기 표현으로 바꿔서 써야 점수가 잘 나와요!</span>
+                        </p>
+                      </div>
+                    )
+                    return (
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4">
+                        <h3 className="font-bold text-amber-900 mb-0.5">🎯 이번에 고칠 것</h3>
+                        <p className="text-xs text-amber-700 mb-2">하나씩 고치면서 체크해 보세요.</p>
+                        <div className="space-y-1.5">
+                          {items.map((item, i) => {
+                            const done = !!rewriteChecks[i]
+                            const m = item.match(/^[^.?!]*[.?!]/)
+                            const first = m ? m[0].trim() : item
+                            const rest = m ? item.slice(m[0].length).trim() : ''
+                            return (
+                              <label key={i} className="flex items-start gap-2 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-amber-100/60 transition">
+                                <input type="checkbox" checked={done}
+                                  onChange={() => setRewriteChecks(prev => ({ ...prev, [i]: !prev[i] }))}
+                                  className="mt-0.5 w-4 h-4 accent-amber-600 flex-shrink-0" />
+                                <span className="min-w-0">
+                                  <span className={`text-sm font-semibold break-keep leading-relaxed transition ${done ? 'line-through text-amber-400' : 'text-amber-900'}`}>{first}</span>
+                                  {rest && <span className={`block text-xs break-keep leading-relaxed transition ${done ? 'line-through text-amber-300' : 'text-amber-700'}`}>{rest}</span>}
+                                </span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                        <p className="text-xs text-amber-700 mt-2">💡 똑같이 베끼지 말고, 자기 표현으로 바꿔서 써야 점수가 잘 나와요!</p>
+                      </div>
+                    )
+                  })()}
 
                   {/* 첫 글 피드백 카드 (전체 폭) — 🆕 기본 접힘: 첫 글 전문이 아래 "처음 쓴 글" 칼럼과 중복이라 상단은 접어둠 */}
                   <details className="group bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
