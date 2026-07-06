@@ -95,6 +95,9 @@ export default async function handler(req, res) {
         // 학급은 그대로 둠 (학생 데이터 보호 — 이미 학급은 별도 휴지통)
         const { error: delErr } = await supabase.from('profiles').delete().eq('id', t.id)
         if (delErr) throw delErr
+        // 🆕 step387: auth 계정도 함께 삭제 — 고아 계정이 같은 이메일 재가입을 막던 반쪽 삭제 수정
+        const { error: authErr } = await supabase.auth.admin.deleteUser(t.id)
+        if (authErr) throw new Error('auth 삭제 실패: ' + authErr.message)
         result.teachersDeleted++
       } catch (e) {
         result.errors.push(`teacher ${t.id} (${t.realname}): ${e.message}`)

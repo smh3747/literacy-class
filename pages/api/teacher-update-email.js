@@ -41,13 +41,27 @@ export default async function handler(req, res) {
     const { error: reauthErr } = await anon.auth.signInWithPassword({ email: currentEmail, password: currentPassword })
     if (reauthErr) return res.status(401).json({ error: '현재 비밀번호가 맞지 않아요' })
 
-    // 3) 이메일 교체 (확인 메일 없이 즉시 — email_confirm: true)
+    // 3) 🆕 step387: 중복 사전 확인 — updateUserById는 중복 시 일반 오류("Error updating user")만
+    //    반환해 메시지로 구분이 불가능. listUsers 전수 대조로 먼저 판별(계정 아이디는 비노출).
+    let page = 1
+    let dupFound = false
+    while (true) {
+      const { data: pageData, error: listErr } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+      if (listErr) break  // 확인 실패 시 아래 update 시도로 진행 (일반 오류로 귀결)
+      if ((pageData?.users || []).some(u => u.id !== uid && (u.email || '').toLowerCase() === newEmail)) {
+        dupFound = true
+        break
+      }
+      if (!pageData?.users || pageData.users.length < 1000) break
+      page++
+    }
+    if (dupFound) {
+      return res.status(400).json({ error: '이 이메일은 이미 다른 계정에 등록돼 있어요. 한 이메일은 한 계정에만 등록할 수 있어요' })
+    }
+
+    // 4) 이메일 교체 (확인 메일 없이 즉시 — email_confirm: true)
     const { error: upErr } = await admin.auth.admin.updateUserById(uid, { email: newEmail, email_confirm: true })
     if (upErr) {
-      const msg = (upErr.message || '').toLowerCase()
-      if (msg.includes('already') || msg.includes('duplicate') || msg.includes('exists')) {
-        return res.status(400).json({ error: '이미 사용 중인 이메일이에요' })
-      }
       console.error('이메일 교체 실패:', upErr.message)
       return res.status(500).json({ error: '이메일 등록에 실패했어요. 잠시 후 다시 시도해주세요.' })
     }

@@ -51,11 +51,14 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
     if (data) setClassNameInput(data.name || '')
   }
 
+  // 🆕 step387: admin은 학급이 없어 학급 이름 검증·표시를 건너뜀 (이메일 등록이 막히던 원인)
+  const hasClass = !!user?.class_id
+
   const submit = async () => {
     setError('')
     if (!realname.trim()) return setError('이름을 입력해주세요')
     if (!school.trim()) return setError('학교명을 입력해주세요')
-    if (!classNameInput.trim()) return setError('학급 이름을 입력해주세요')
+    if (hasClass && !classNameInput.trim()) return setError('학급 이름을 입력해주세요')
 
     // 🆕 step386: 이메일 변경 검증 (변경할 때만)
     if (emailChanged) {
@@ -138,12 +141,15 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
                   💡 목록에서 고르면 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.
                 </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">학급 이름</label>
-                <input type="text" value={classNameInput} onChange={e => setClassNameInput(e.target.value)}
-                  placeholder="예: 5학년 1반"
-                  className="w-full p-3 border border-gray-200 rounded-lg" />
-              </div>
+              {/* 🆕 step387: 학급 없는 admin은 학급 이름 칸 숨김 */}
+              {hasClass && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">학급 이름</label>
+                  <input type="text" value={classNameInput} onChange={e => setClassNameInput(e.target.value)}
+                    placeholder="예: 5학년 1반"
+                    className="w-full p-3 border border-gray-200 rounded-lg" />
+                </div>
+              )}
               {/* 🆕 step386: 계정 복구용 이메일 (본인 세션에서만 표시) */}
               {authEmail !== null && authEmail !== '' && (
                 <div className="border-t border-gray-100 pt-3">

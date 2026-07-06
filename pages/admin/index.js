@@ -730,9 +730,20 @@ export default function AdminHome() {
       if (answer !== null) alert('문구가 일치하지 않아 취소되었어요.')
       return
     }
-    // profile만 삭제 (auth.users는 별도, SET NULL인 FK는 자동 처리)
-    const { error } = await supabase.from('profiles').delete().eq('id', teacher.id)
-    if (error) return alert('실패: ' + error.message)
+    // 🆕 step387: profiles + auth.users를 서버 API로 완전 삭제.
+    //   기존엔 profiles만 지워 auth 계정이 고아로 남았고, 같은 이메일 재가입이 signUp에서 충돌했음.
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch('/api/admin-purge-teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId: teacher.id, accessToken: session?.access_token })
+      })
+      const d = await resp.json()
+      if (!resp.ok) return alert('실패: ' + (d.error || '알 수 없는 오류'))
+    } catch (e) {
+      return alert('실패: ' + (e.message || '네트워크 오류'))
+    }
     alert('영구 삭제 완료')
     await loadAll()
   }
