@@ -3,7 +3,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
@@ -637,7 +636,7 @@ export default function StudentHome() {
         title: '🚨 글 제출에 문제가 생겼어요',
         message: isPrepayment
           ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
-          : getFriendlyErrorMessage(e),
+          : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
         showReload: isAuthExpired
       })
     }
@@ -904,7 +903,7 @@ export default function StudentHome() {
         title: '🚨 수정본 제출에 문제가 생겼어요',
         message: isPrepayment
           ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
-          : getFriendlyErrorMessage(e),
+          : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
         showReload: isAuthExpired
       })
     }
@@ -1321,6 +1320,20 @@ export default function StudentHome() {
                       <span className="text-base sm:text-lg font-bold flex-shrink-0">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
                     </div>
 
+                    {/* 🆕 이번엔 이것 하나만 기억해요 — 발전점 첫 항목 1개 (history.js step374와 동일 카드, 두 화면 문법 통일) */}
+                    {(() => {
+                      const oneThing = splitFeedbackItems(feedbackResult.improve)[0]
+                      if (!oneThing) return null
+                      return (
+                        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+                          <h3 className="text-sm font-bold text-amber-900 mb-1.5 flex items-center gap-1.5">
+                            <span>🌟</span> 이번엔 이것 하나만 기억해요
+                          </h3>
+                          <p className="text-lg text-amber-900 font-semibold break-keep leading-relaxed">{oneThing}</p>
+                        </div>
+                      )
+                    })()}
+
                     {/* ②③④ 의견들 - 시각적으로 분리 (step365: 핵심 먼저 읽도록 상단 이동) */}
                     <div className="space-y-3 pt-3 border-t border-gray-100">
                       {/* 종합 의견 */}
@@ -1516,12 +1529,17 @@ export default function StudentHome() {
                     </p>
                   </div>
 
-                  {/* 첫 글 피드백 카드 (전체 폭) */}
-                  <StudentFeedbackCard
-                    sub={currentSub || { ...feedbackResult, essay_text: essay, total_score: feedbackResult?.total, max_score: todayTopic?.rubrics?.reduce((s,r)=>s+r.score,0) || 100, rubric_reasons: feedbackResult?.rubric_reasons, improve_examples: feedbackResult?.improve_examples, feedback_overall: feedbackResult?.overall, feedback_good: feedbackResult?.good, feedback_improve: feedbackResult?.improve, corrections: feedbackResult?.corrections, scores: feedbackResult?.scores }}
-                    topic={todayTopic}
-                    headerLabel="📋 처음 쓴 글 피드백 (참고용)"
-                  />
+                  {/* 첫 글 피드백 카드 (전체 폭) — 🆕 기본 접힘: 첫 글 전문이 아래 "처음 쓴 글" 칼럼과 중복이라 상단은 접어둠 */}
+                  <details className="group bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                    <CollapseSummary title={<h3 className="font-bold text-sm flex-shrink-0">📋 처음 쓴 글 피드백 다시 보기 (참고용)</h3>} />
+                    <div className="mt-3">
+                      <StudentFeedbackCard
+                        sub={currentSub || { ...feedbackResult, essay_text: essay, total_score: feedbackResult?.total, max_score: todayTopic?.rubrics?.reduce((s,r)=>s+r.score,0) || 100, rubric_reasons: feedbackResult?.rubric_reasons, improve_examples: feedbackResult?.improve_examples, feedback_overall: feedbackResult?.overall, feedback_good: feedbackResult?.good, feedback_improve: feedbackResult?.improve, corrections: feedbackResult?.corrections, scores: feedbackResult?.scores }}
+                        topic={todayTopic}
+                        headerLabel={null}
+                      />
+                    </div>
+                  </details>
 
                   {/* 🆕 좌우 분할: 왼쪽 첫 글, 오른쪽 수정본 입력 (와이프 피드백) */}
                   {/* 데스크탑(lg)에서만 좌우, 모바일·태블릿은 위아래 */}
