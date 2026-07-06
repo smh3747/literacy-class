@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = 5665526 (step387))
+# 핸드오버 데이터 (HEAD = da06538 (step391))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -22,6 +22,10 @@
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화(로컬 산출물, step356에서 추적 제거).
 
 ## 1. 현재 HEAD
+- `da06538` — **step391: 인기 주제 모달·헤더 버튼 제거, '다른 선생님' 탭 상위 3개만 인기 배지. 최종 형태.** 한 주제를 2명 이상 가져갔을 때만(`item.isPopular = i<3 && n>=2`) 🔥 인기 배지. 정렬(인기순)·`copyCounts` 로드는 유지. (`teacher/topics.js` 단일)
+- `73ffe86` — **step390: 인기 주제 배지+인기순 정렬+인기 주제 모달(주제 관리) 도입.** `topic_copy_counts` RPC 로드 + `buildSharedFlat` 헬퍼. ※**병렬 세션의 origin 재작성으로 한 번 유실됐다가 백업 커밋 `8c68a50`에서 topics.js 복원함.** (step391에서 모달·버튼은 제거됨)
+- `88ee9e6` — **step389: 의존명사 '것/거' 앞 띄어쓰기 규칙(맞춤법 세션, `lib/koreanRules.js`).** ⚠️**해시 매핑 주의(revert 사고 방지): `d12cb57`=것/거 원본, `88ee9e6`=것/거 재작성본(현 origin/main 조상). 인기 주제 최종=`da06538`.**
+- `8a76969` — **step388: 핸드오버·CLAUDE.md step387 기준 최신화(문서만).**
 - `5665526` — **step387: 영구 삭제 반쪽 버그 수정(auth 잔존)·admin 이메일 등록·중복 안내.** 교사 영구 삭제 시 profiles만 지우고 Supabase Auth 계정이 남던 반쪽 버그 수정(`pages/api/admin-purge-teacher.js` 신설, auth.admin.deleteUser 호출). admin이 교사 이메일 등록 + 중복 이메일 안내. 변경: `admin-purge-teacher.js`(신설)·`admin/index.js`·`cron-admin-trash-cleanup.js`·`teacher-update-email.js`·`ProfileEditModal.js`.
 - `9dd3a54` — **step386: 기존 교사 계정 복구 3종.** ①이메일 등록(ProfileEditModal) ②아이디 찾기(teacher/login) ③재설정 쌍 검증(username↔email 짝 맞을 때만 재설정 메일). 변경: `ProfileEditModal.js`·`request-password-reset.js`(신설)·`teacher-update-email.js`(신설)·`reset-password.js`·`teacher/index.js`·`teacher/login.js`.
 - `e3d8cf7` — **step385: 주제 수정 목록 진입 + 제출물 있는 주제 제목/루브릭 잠금**(`teacher/topics.js` 단일). 제출물 존재 시 제목·루브릭 편집 잠금(채점 일관성 보호). ※해시 주의: step384=f1a7a71, step385=e3d8cf7 (이전 핸드오버에서 뒤바꿔 기록했던 것 정정).
@@ -109,7 +113,9 @@ export const GRAMMAR_NOTICE_TEACHER =
 > ⚠️ 매 작업 세션 종료 시 이 §13을 갱신할 것(끝낸 항목 '종료'로 이동, 새 할 일 추가).
 
 **[★다음 작업 — 새 대화 1순위]**
-- **인기 주제 랭킹 (topic_copies A2 마무리).** 병목 직격: **교사 첫 주제 등록률 56.5% 미달**. "N명 사용" 배지 + 인기순 정렬. §11 재확인 쿼리 `select source_log_id, count(*) from topic_copies group by 1 order by 2 desc;` 상위 2 이상이면 구현 가치. 재점화 사유=병목이 첫 주제 등록이라, 인기 주제 노출이 등록 유도에 직결.
+- **인기 주제 랭킹 = ✅완료(step390 도입 → step391 정리).** 새 1순위는 미지정 — 아래 **[대기열 소형]** 또는 **[방학 본공사]**에서 골라 지시.
+  - **현재 상태**: `topic_copy_counts` RPC(읽기 전용)로 '다른 선생님' 탭에서 한 주제를 **2명 이상** 가져간 **상위 3개**에만 🔥 인기 배지 + 인기순 정렬. 배지 대상 판정=파생 플래그 `item.isPopular`, 평탄화·정렬=헬퍼 `buildSharedFlat`(둘 다 `pages/teacher/topics.js`). 모달·헤더 버튼은 step391에서 제거(전부 인기로 떠 무의미했음).
+  - **현재 인기 주제 0개**(신명훈 본인 것 1개뿐이라 '다른 선생님' 탭에서 제외됨) → 배지 안 뜨는 게 정상. 데이터 쌓이면 자동 노출. 병목(교사 첫 주제 등록률 56.5% 미달)용 장치라 인기 주제 생기면 등록 유도 효과.
 
 **[★수익화 로드맵 (2026-07-03 확정, 2026-07-06 사전 신청 착수)]**
 - 전제: 고객=교사 B2B. 무료=현행 전부(개인 API 키). 유료 후보(교사 개인 구독): ①키 없이 바로 사용(AI 비용 대납) ②검증 수업·창체 레시피 팩 ③성장 리포트 PDF.
@@ -144,6 +150,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 
 **[종료 — 다시 만들지 말 것 (step308~387 완료 목록)]**
 - ✅ **교사 인증 정비(step381·383~387)**: 실이메일 가입 전환·재설정 페이지 / 가입 폼 제출 버그(DOM 실제값) / 이메일 검증 우회(앵커드) + 도메인 선택 UI / 계정 복구 3종(이메일 등록·아이디 찾기·재설정 쌍 검증) / 영구 삭제 반쪽 버그(auth 잔존) 수정 + admin 이메일 등록. 재설정 메일 실왕복 6단계 검증 완료.
+- ✅ **인기 주제(step390 도입 → step391 정리)**: `topic_copy_counts` RPC로 '다른 선생님' 탭에서 2명 이상 가져간 상위 3개에만 🔥 인기 배지 + 인기순. `item.isPopular`·`buildSharedFlat`(topics.js). 모달·버튼은 정리 시 제거. 현재 해당 주제 0개라 배지 미표시(정상). ※step390은 병렬 세션 origin 재작성으로 유실→`8c68a50` 백업 복원 이력.
 - ✅ **주제 수정 잠금(step385)**: 제출물 있는 주제는 제목·루브릭 편집 잠금(채점 일관성 보호) + 수정 목록 진입.
 - ✅ **수익화 사전 신청(step380·382)**: preorders 테이블 + 교사 카드(가격 없는 2버튼) + 관리자 명단·카운트.
 - ✅ **학생 화면 재설계(step363~377)**: 피드백 결과 재배치(의견 상단·접힘) / 채점 완료 상단 스크롤 / 글 기록 단일 뷰 / 채점 피드백 길이·눈높이 / 다시쓰기 체크리스트 / 온보딩 영구 숨김 / 첫 글 예시 저장 누락 수정.
@@ -160,7 +167,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
 ## 워킹트리 상태
-- **HEAD=5665526(step387)까지 전부 커밋·push 완료. origin/main 동기화 확인됨. 워킹트리 clean.**
-- ⚠️ **병렬 맞춤법 세션 이력**(별도 대화+Code, koreanRules.js·prompts.server.js). 최근 활동=step351·354·355. B 착수 전 그 세션 종료 확인. 커밋 시 `git pull --rebase` 먼저(step 번호 충돌 방지).
+- **HEAD=da06538(step391)까지 전부 커밋·push 완료. origin/main=로컬 동기화 확인됨. 워킹트리 clean.**
+- ⚠️⚠️ **병렬 맞춤법 세션 운영 원칙(중요·갱신):** 맞춤법 세션은 이제 **별도 폴더(`literacy-class-spell`)에서 실행** — 같은 origin(GitHub) 공유하되 워킹디렉토리는 분리됨. 과거 **같은 폴더를 공유했을 때** amend/force-push로 서로 커밋을 덮어써 **커밋 유실 사고 발생(오늘 step390이 유실됐다가 백업 `8c68a50`에서 복원)**. **→ 앞으로 두 세션 모두 `force-push` 절대 금지, 일반 `push`만. 커밋 전 `git pull --rebase` 먼저.**
 - ⚠️ Code가 커밋 후 push 빠뜨리는 경우 있음 — 커밋 지시 시 "push까지" 명시.
 - untracked(미커밋, 급하지 않음): `_report*.md`·`_snapshot/`(로컬 산출물, gitignore 처리됨). `scripts/make-snapshot.js`·`FEATURE-MAP.md`는 저장소 편입 완료(step338·339).
