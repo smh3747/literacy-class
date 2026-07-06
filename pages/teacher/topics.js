@@ -125,6 +125,8 @@ export default function TopicsPage() {
   const [dontAskShare, setDontAskShare] = useState(false) // 이번 세션 한정 "다시 묻지 않기"
   // 편집 모드 (특정 주제 수정 중인지)
   const [editingTopicId, setEditingTopicId] = useState(null)
+  // 🆕 step385: 제출물 있는 주제는 제목·루브릭 잠금 (공정성 — 이미 그 기준으로 채점된 학생이 있음)
+  const [editLocked, setEditLocked] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -412,11 +414,19 @@ export default function TopicsPage() {
 
   // 주제 저장
   // 주제를 편집 폼에 로드
-  const loadTopicForEdit = (t) => {
+  const loadTopicForEdit = async (t) => {
     // 단일 모드로 전환
     setBatchMode(false)
     setBatchPreview(null)
     setEditingTopicId(t.id)
+    // 🆕 step385: 실제 제출(삭제 제외, 숨김 학생 포함) 1건 이상이면 제목·루브릭 잠금.
+    //   목록의 submitted_count는 숨김 학생을 빼고 세므로 여기선 정밀 카운트 1건으로 판정.
+    try {
+      const { count } = await supabase.from('submissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('topic_id', t.id).is('deleted_at', null)
+      setEditLocked((count || 0) > 0)
+    } catch { setEditLocked(true) }  // 판정 실패 시 안전하게 잠금
     setDate(t.date)
     setTitle(t.title || '')
     setDesc(t.description || '')
@@ -439,6 +449,7 @@ export default function TopicsPage() {
   // 편집 모드 취소
   const cancelEdit = () => {
     setEditingTopicId(null)
+    setEditLocked(false)  // 🆕 step385
     setTitle('')
     setDesc('')
     setRubrics(DEFAULT_RUBRICS)
@@ -482,11 +493,18 @@ export default function TopicsPage() {
 
       let error
       if (existing) {
-        const r = await supabase.from('topics').update({
+        // 🆕 step385: 저장 시점에 제출 여부 재확인 (편집 도중 첫 제출이 생겨도 제목·루브릭이 안 덮이게 이중 방어)
+        let locked = editLocked
+        try {
+          const { count } = await supabase.from('submissions')
+            .select('id', { count: 'exact', head: true })
+            .eq('topic_id', existing.id).is('deleted_at', null)
+          locked = (count || 0) > 0
+        } catch { locked = true }
+
+        const payload = {
           date,
-          title: title.trim(),
           description: desc.trim(),
-          rubrics: rubrics,
           lock_enabled: lockEnabled,
           lock_start_time: lockEnabled ? lockStartTime : null,
           lock_end_time: lockEnabled ? lockEndTime : null,
@@ -496,7 +514,13 @@ export default function TopicsPage() {
           require_rewrite_change: requireRewriteChange,
           deadline_date: deadlineEnabled ? (deadlineDate || date) : null,
           deadline_time: deadlineEnabled ? deadlineTime : null
-        }).eq('id', existing.id)
+        }
+        // 제출물 없으면 제목·루브릭도 수정, 있으면 페이로드에서 제외(원본 유지)
+        if (!locked) {
+          payload.title = title.trim()
+          payload.rubrics = rubrics
+        }
+        const r = await supabase.from('topics').update(payload).eq('id', existing.id)
         error = r.error
       } else {
         const r = await supabase.from('topics').insert({
@@ -1436,11 +1460,19 @@ export default function TopicsPage() {
                 </div>
               )}
 
+              {/* 🆕 step385: 제출물 있는 주제 편집 안내 (제목·루브릭 잠금) */}
+              {editingTopicId && editLocked && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-900 break-keep">
+                  이미 제출한 학생이 있어 평가 기준은 바꿀 수 없어요. 설명과 날짜 같은 나머지 항목은 수정할 수 있어요.
+                </div>
+              )}
+
               <div ref={formStartRef}>
                 <label className="block text-sm font-medium mb-1">주제</label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
                   placeholder="예: 가장 기억에 남는 여행"
-                  className="w-full p-3 border border-gray-200 rounded-lg" />
+                  disabled={!!editingTopicId && editLocked}
+                  className={`w-full p-3 border border-gray-200 rounded-lg ${editingTopicId && editLocked ? 'bg-gray-100 text-gray-500' : ''}`} />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">설명 (선택)</label>
@@ -1449,8 +1481,8 @@ export default function TopicsPage() {
                   className="w-full p-3 border border-gray-200 rounded-lg" />
               </div>
 
-              {/* 역방향 AI 버튼: 직접 입력한 주제에 대해 설명+평가기준 자동 생성 */}
-              {title.trim() && (
+              {/* 역방향 AI 버튼: 직접 입력한 주제에 대해 설명+평가기준 자동 생성 — 🆕 step385: 잠금 중엔 숨김(루브릭을 덮어써서 혼란) */}
+              {title.trim() && !(editingTopicId && editLocked) && (
                 <button onClick={generateFromTopic} disabled={generatingRubrics}
                   className="w-full py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium hover:bg-indigo-200 disabled:opacity-50 text-sm">
                   {generatingRubrics
@@ -1466,35 +1498,43 @@ export default function TopicsPage() {
                   sub="거의 다 됐어요 (보통 10~20초) — 잠시만 기다려 주세요" />
               )}
 
-              {/* 루브릭 */}
+              {/* 루브릭 — 🆕 step385: 제출물 있으면 잠금(입력 비활성·추가/삭제 숨김) */}
+              {(() => {
+                const rubricLocked = !!editingTopicId && editLocked
+                return (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium">평가 기준 (총 {totalMax}점)</label>
-                  <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>
+                  {!rubricLocked && <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>}
                 </div>
                 <div className="space-y-3">
                   {rubrics.map((r, i) => (
-                    <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                    <div key={i} className={`border border-gray-200 rounded-lg p-3 space-y-2 ${rubricLocked ? 'bg-gray-50' : ''}`}>
                       <div className="flex gap-2 items-center">
                         <input type="text" value={r.name} onChange={e => updateRubric(i, 'name', e.target.value)}
-                          placeholder="평가 기준 이름"
-                          className="flex-1 min-w-0 p-2 border border-gray-200 rounded text-sm font-medium" />
+                          placeholder="평가 기준 이름" disabled={rubricLocked}
+                          className={`flex-1 min-w-0 p-2 border border-gray-200 rounded text-sm font-medium ${rubricLocked ? 'bg-gray-100 text-gray-500' : ''}`} />
                         <div className="flex items-center bg-white border border-gray-200 rounded flex-shrink-0">
                           <input type="number" value={r.score} onChange={e => updateRubric(i, 'score', e.target.value)}
-                            className="w-12 p-2 text-sm text-right border-0 focus:outline-none" min="1" />
+                            className={`w-12 p-2 text-sm text-right border-0 focus:outline-none ${rubricLocked ? 'bg-gray-100 text-gray-500' : ''}`} min="1"
+                            disabled={rubricLocked} />
                           <span className="text-xs text-gray-500 pr-2">점</span>
                         </div>
-                        <button onClick={() => removeRubric(i)}
-                          className="text-red-500 text-sm w-7 h-9 flex items-center justify-center hover:bg-red-50 rounded flex-shrink-0"
-                          title="이 기준 삭제">✕</button>
+                        {!rubricLocked && (
+                          <button onClick={() => removeRubric(i)}
+                            className="text-red-500 text-sm w-7 h-9 flex items-center justify-center hover:bg-red-50 rounded flex-shrink-0"
+                            title="이 기준 삭제">✕</button>
+                        )}
                       </div>
                       <input type="text" value={r.hint || ''} onChange={e => updateRubric(i, 'hint', e.target.value)}
-                        placeholder="부가 설명 (예: 주인공의 삶, 주인공의 모습 등)"
-                        className="w-full p-2 border border-gray-100 rounded text-xs text-gray-600 bg-gray-50" />
+                        placeholder="부가 설명 (예: 주인공의 삶, 주인공의 모습 등)" disabled={rubricLocked}
+                        className={`w-full p-2 border border-gray-100 rounded text-xs text-gray-600 bg-gray-50 ${rubricLocked ? 'text-gray-400' : ''}`} />
                     </div>
                   ))}
                 </div>
               </div>
+                )
+              })()}
 
               {/* 글자수 + 재수정 횟수 */}
               <div className="border border-gray-200 rounded-lg p-3 space-y-3">
@@ -1829,6 +1869,11 @@ export default function TopicsPage() {
                         >
                           학생글
                         </Link>
+                        {/* 🆕 step385: 목록에서 바로 수정 진입 (펼침 토글과 충돌 방지 stopPropagation) */}
+                        <button onClick={(e) => { e.stopPropagation(); loadTopicForEdit(t) }}
+                          className="text-xs text-gray-600 hover:bg-gray-100 px-2 py-1 rounded">
+                          ✏️ 수정
+                        </button>
                         <button onClick={() => deleteTopic(t.id)}
                           className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded">
                           삭제
