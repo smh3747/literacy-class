@@ -87,6 +87,7 @@ export default function AdminHome() {
   const [suspectAlerts, setSuspectAlerts] = useState([])   // 🆕 step359: 의심 교정 목록 (탭 열 때 로드)
   const [suspectLoaded, setSuspectLoaded] = useState(false)
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
+  const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
@@ -148,7 +149,8 @@ export default function AdminHome() {
       supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC),
       supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200),
       // 🆕 step380: 파운딩 멤버 사전 신청 수 — head:true count 1건(병렬 배치 편승). 테이블 미생성이면 count 없음→0
-      supabase.from('preorders').select('id', { count: 'exact', head: true })
+      // 🆕 step382: interested(관심 있어요)만 카운트
+      supabase.from('preorders').select('id', { count: 'exact', head: true }).eq('response', 'interested')
     ])
 
     if (classesRes.error) {
@@ -389,6 +391,40 @@ export default function AdminHome() {
       setSuspectLoaded(true)
     })()
   }, [tab, suspectLoaded])
+
+  // 🆕 step382: 사전 신청 명단 — 탭 열 때 1회만, 배치 3쿼리(행당 쿼리 없음). SELECT만(UPDATE/DELETE 없음).
+  useEffect(() => {
+    if (tab !== 'preorders' || preorderList.loaded) return
+    ;(async () => {
+      const { data: pos, error } = await supabase.from('preorders')
+        .select('teacher_id, response, created_at')
+      if (error) {
+        setPreorderList({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' })
+        return
+      }
+      const teacherIds = [...new Set((pos || []).map(p => p.teacher_id).filter(Boolean))]
+      const profMap = {}, classMap = {}
+      if (teacherIds.length > 0) {
+        const { data: profs } = await supabase.from('profiles')
+          .select('id, realname, school').in('id', teacherIds)
+        ;(profs || []).forEach(p => { profMap[p.id] = p })
+        const { data: cls } = await supabase.from('classes')
+          .select('name, teacher_id').in('teacher_id', teacherIds).is('deleted_at', null)
+        ;(cls || []).forEach(c => {
+          classMap[c.teacher_id] = classMap[c.teacher_id] ? classMap[c.teacher_id] + ' · ' + c.name : c.name
+        })
+      }
+      const rows = (pos || [])
+        .map(p => ({
+          ...p,
+          realname: profMap[p.teacher_id]?.realname || '(정보 없음)',
+          school: profMap[p.teacher_id]?.school || '',
+          className: classMap[p.teacher_id] || '',
+        }))
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      setPreorderList({ loaded: true, rows, error: null })
+    })()
+  }, [tab, preorderList.loaded])
 
   // 🆕 step371: 의심 교정 행 보강 — submission_id로 본문·작성자를 4개의 .in() 배치로만 조회.
   //   ① 맥락 문장(본문에서 original 위치의 문장) ② 학생 정보(학교·학급·담임·N번 이름).
@@ -1078,6 +1114,7 @@ export default function AdminHome() {
               { id: 'topic-copies', label: `🔗 주제 공유 추적${topicCopies.length > 0 ? ` (${topicCopies.length})` : ''}` },
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
               { id: 'corrections', label: `🔍 의심 교정${suspectCount > 0 ? ` (${suspectCount})` : ''}` },
+              { id: 'preorders', label: '🎟️ 사전 신청' },
               { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -2431,6 +2468,54 @@ export default function AdminHome() {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* 🆕 step382: 사전 신청 명단 탭 — 응답 요약 + 신청자 목록 (SELECT만) */}
+          {tab === 'preorders' && (() => {
+            const interested = preorderList.rows.filter(r => r.response !== 'not_sure')
+            const notSure = preorderList.rows.filter(r => r.response === 'not_sure')
+            return (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-bold mb-1">🎟️ 사전 신청</h2>
+                {!preorderList.loaded ? (
+                  <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                ) : preorderList.error ? (
+                  <div className="py-6 text-center">
+                    <div className="inline-block bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                      명단을 불러오지 못했어요.
+                      <div className="text-xs text-red-500 mt-1 break-all">{preorderList.error}</div>
+                    </div>
+                    <div className="mt-3">
+                      <button onClick={() => setPreorderList({ loaded: false, rows: [], error: null })}
+                        className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition">
+                        🔄 다시 시도
+                      </button>
+                    </div>
+                  </div>
+                ) : preorderList.rows.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-400">아직 신청이 없어요</div>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 mb-4">관심 {interested.length} · 아직 모르겠어요 {notSure.length}</p>
+                    <div className="space-y-2">
+                      {preorderList.rows.map((r, i) => (
+                        <div key={r.teacher_id || i} className="p-3 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-gray-800">{r.realname}</span>
+                          {r.school && <span className="text-xs text-gray-500">{r.school}</span>}
+                          {r.className && <span className="text-xs text-gray-500">{r.className}</span>}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                            r.response === 'not_sure' ? 'bg-gray-100 text-gray-600' : 'bg-teal-50 text-teal-700'
+                          }`}>
+                            {r.response === 'not_sure' ? '아직 모르겠어요' : '관심 있어요'}
+                          </span>
+                          <span className="ml-auto text-xs text-gray-400">{toKST(r.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             )

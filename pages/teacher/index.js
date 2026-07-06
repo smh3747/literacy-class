@@ -34,7 +34,8 @@ export default function TeacherHome() {
   // 🆕 step291: 우측 드로어(데스크탑 lg+)에 패널 1개만 — 'login'|'api'|'settings'|null. 모바일은 인라인이라 무관.
   const [activePanel, setActivePanel] = useState(null)
   // 🆕 step380: 파운딩 멤버 사전 신청 (결제 아님, 관심 등록만). loaded=조회 성공(테이블 미생성이면 false→카드 숨김)
-  const [preorder, setPreorder] = useState({ loaded: false, done: false })
+  // 🆕 step382: response('interested'|'not_sure') 응답 구분 추가
+  const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
   const [preorderHidden, setPreorderHidden] = useState(true)  // 깜빡임 방지 기본 숨김, localStorage로 복원
   const [preorderSaving, setPreorderSaving] = useState(false)
 
@@ -82,28 +83,36 @@ export default function TeacherHome() {
 
   useEffect(() => { checkAuth() }, [])
 
-  // 🆕 step380: 사전 신청 상태 조회 — 테이블 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
+  // 🆕 step380: 사전 신청 상태 조회 — 테이블·컬럼 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
   useEffect(() => {
     if (!user?.id || user.role !== 'teacher') return
     try { setPreorderHidden(!!localStorage.getItem('lc-founding-preorder-dismissed:' + user.id)) } catch { setPreorderHidden(false) }
     ;(async () => {
-      const { data, error } = await supabase.from('preorders').select('id').eq('teacher_id', user.id).maybeSingle()
+      const { data, error } = await supabase.from('preorders').select('id, response').eq('teacher_id', user.id).maybeSingle()
       if (error) return
-      setPreorder({ loaded: true, done: !!data })
+      setPreorder({ loaded: true, done: !!data, response: data?.response || null })
     })()
   }, [user?.id])
 
-  // 🆕 step380: 사전 신청 — 교사당 1회. unique 위반(23505)은 이미 신청으로 간주(다기기·이중 클릭 안전)
-  const submitPreorder = async () => {
+  // 🆕 step380: 사전 신청 — 교사당 1회. 🆕 step382: 응답 구분('interested'|'not_sure') 기록.
+  //   unique 위반(23505)은 이미 응답한 것 — 재조회로 실제 응답을 읽어 표시(다기기에서 다른 버튼 눌렀을 때 정확)
+  const submitPreorder = async (response) => {
     if (preorderSaving || !user?.id) return
     setPreorderSaving(true)
-    const { error } = await supabase.from('preorders').insert({ teacher_id: user.id })
-    setPreorderSaving(false)
-    if (!error || error.code === '23505') {
-      setPreorder({ loaded: true, done: true })
-    } else {
-      alert('신청 처리에 문제가 생겼어요. 잠시 후 다시 시도해주세요.')
+    const { error } = await supabase.from('preorders').insert({ teacher_id: user.id, response })
+    if (!error) {
+      setPreorderSaving(false)
+      setPreorder({ loaded: true, done: true, response })
+      return
     }
+    if (error.code === '23505') {
+      const { data } = await supabase.from('preorders').select('response').eq('teacher_id', user.id).maybeSingle()
+      setPreorderSaving(false)
+      setPreorder({ loaded: true, done: true, response: data?.response || response })
+      return
+    }
+    setPreorderSaving(false)
+    alert('신청 처리에 문제가 생겼어요. 잠시 후 다시 시도해주세요.')
   }
   const dismissPreorder = () => {
     setPreorderHidden(true)
@@ -587,25 +596,36 @@ export default function TeacherHome() {
           {/* 심의/동의 배너 (원래 위치: 학급 카드 위, 항상 표시) */}
           {bannersBlock}
 
-          {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 (결제 아님, 관심 등록만) */}
+          {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 — 🆕 step382: 가격 없는 관심 등록 + 2버튼 응답 */}
           {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
               <button onClick={dismissPreorder} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
               {preorder.done ? (
-                <h3 className="font-bold text-indigo-900 pr-6">✅ 신청 완료! 2학기 시작 전에 안내드릴게요</h3>
+                <h3 className="font-bold text-indigo-900 pr-6">
+                  {preorder.response === 'not_sure'
+                    ? '💬 알려주셔서 고마워요. 더 좋아진 모습으로 다시 안내드릴게요'
+                    : '✅ 등록 완료! 준비되면 가장 먼저 안내드릴게요'}
+                </h3>
               ) : (
                 <>
-                  <h3 className="font-bold text-indigo-900 mb-1 pr-6">2학기, 다온클래스 플러스가 시작돼요</h3>
+                  <h3 className="font-bold text-indigo-900 mb-1 pr-6">2학기, 다온클래스 유료 플랜을 준비하고 있어요</h3>
                   <p className="text-sm text-gray-700 leading-relaxed break-keep mb-3">
-                    지금 사전 신청하시면 파운딩 멤버 혜택을 드려요. 첫해 19,000원, 이후 가격이 올라도 그대로예요.
-                    결제는 2학기에 시작되고, 지금은 신청만 받아요.
+                    다온클래스를 안정적으로 오래 운영하기 위해 2학기부터 유료 플랜을 준비 중이에요.
+                    미리 신청해 주시는 선생님께는 가장 좋은 조건(파운딩 멤버 혜택)으로 먼저 안내드려요.
+                    결제가 아니라 관심 등록이에요.
                   </p>
                   {!isImpersonating && (
-                    <button onClick={submitPreorder} disabled={preorderSaving}
-                      className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
-                      {preorderSaving ? '신청 중...' : '사전 신청하기'}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => submitPreorder('interested')} disabled={preorderSaving}
+                        className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
+                        {preorderSaving ? '처리 중...' : '관심 있어요'}
+                      </button>
+                      <button onClick={() => submitPreorder('not_sure')} disabled={preorderSaving}
+                        className="bg-gray-100 text-gray-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">
+                        아직 잘 모르겠어요
+                      </button>
+                    </div>
                   )}
                 </>
               )}
