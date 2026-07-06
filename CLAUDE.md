@@ -28,7 +28,8 @@ Next.js 14 (Pages Router) · React 18 · Tailwind CSS · Supabase (Auth + Postgr
 
 ### 사용자 역할과 인증
 - 세 역할: **admin**, **teacher**, **student**. 역할은 `profiles.role`에 저장.
-- 학생/교사 모두 Supabase Auth를 쓰되, **이메일은 가짜로 합성**한다. 학생 로그인은 `username@writing.class` 형식 이메일로 `signInWithPassword`를 호출한다 (`pages/student/login.js`). 즉 학생은 아이디·비밀번호로만 로그인하고 실제 이메일은 없다.
+- **학생**은 Supabase Auth 이메일을 **가짜로 합성**한다. 로그인은 `username@writing.class` 형식 이메일로 `signInWithPassword`를 호출(`pages/student/login.js`). 즉 아이디·비밀번호로만 로그인하고 실제 이메일은 없다.
+- **교사**는 step381 이후 **가입 시 실이메일을 받는다**(비밀번호 재설정 메일 수신용). 단 로그인은 여전히 아이디 기준: `pages/teacher/login.js`가 1차로 `username@writing.class` 합성 이메일을 시도하고, 실패하면 서버 폴백(`pages/api/teacher-login-fallback.js`)으로 실이메일을 해석해 재시도한다(이메일은 서버에서만 해석, 비노출). **기존 교사**(step381 이전 가입)는 실이메일이 없어 계정 복구 흐름으로 등록한다: 이메일 등록(`ProfileEditModal`)·아이디 찾기·재설정 쌍 검증(`pages/api/request-password-reset.js`, `pages/reset-password.js`). **원칙: 한 이메일=한 계정**(미래 소셜 로그인과 정합).
 - admin/teacher 가입은 `pages/api/verify-code.js`가 서버 환경변수의 비밀 코드(`ADMIN_SECRET_CODE`/`TEACHER_SECRET_CODE`)를 검증해 통과시킨다.
 - 학급 격리는 `classes.code`(4자리 가입 코드)로 이뤄진다. 학생은 이 코드로만 자기 학급에 가입 가능.
 
@@ -62,7 +63,7 @@ Next.js 14 (Pages Router) · React 18 · Tailwind CSS · Supabase (Auth + Postgr
 - 교사 페이지 간 내부 링크는 `withImpersonation(href)`로 `?as=`를 유지해야 한다.
 
 ### 데이터 모델 (Supabase)
-주요 테이블: `classes`, `profiles`(학생·교사 공통), `topics`(글쓰기 주제 + 평가기준 rubric), `submissions`(학생 글 + AI 피드백). 스키마는 코드가 아니라 **`migrations/` SQL 파일들로 점진 정의**된다.
+주요 테이블: `classes`, `profiles`(학생·교사 공통), `topics`(글쓰기 주제 + 평가기준 rubric), `submissions`(학생 글 + AI 피드백). 파생 테이블: `topic_copies`(공유 주제 가져오기 출처), `notifications`(알림 센터, step348), `correction_alerts`(맞춤법 오교정 자동 감시, step359~362), `preorders`(수익화 사전 신청, step380). 스키마는 코드가 아니라 **`migrations/` SQL 파일들로 점진 정의**된다. 단 일부(notifications·correction_alerts·teacher_stamp·admin_class_stats RPC 등)는 마이그레이션 파일 없이 Supabase SQL Editor에서 직접 적용됐다 — 존재 여부는 각 step 커밋 메시지로 추적한다.
 - 마이그레이션은 `stepNN-*.sql` 형식이며 **수동으로 Supabase SQL Editor에서 실행**한다 (자동 적용 안 됨). 대부분 `ADD COLUMN IF NOT EXISTS`로 멱등하게 작성되어 중복 실행해도 안전.
 - **RLS는 아직 느슨하다** (`step144-rls-temp-defense.sql` 참고): SELECT는 전체 허용, 쓰기 계열만 로그인 필수. 비로그인 가입 흐름(학급코드·닉네임 중복 SELECT) 때문에 SELECT를 막지 못한 상태이며, 학급별 정밀 격리는 향후 작업으로 남아 있다. 보안 관련 변경 시 이 파일을 먼저 읽을 것.
 
