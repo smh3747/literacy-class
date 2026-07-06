@@ -79,6 +79,27 @@ function applyGrammar(essayText, corrections) {
   return result.replace(/\n/g, '<br>')
 }
 
+// 🆕 step? : 접힘 카드 summary 공용 한 줄 (index.js step365 어포던스 재사용 — 회전 화살표·hover·펼치기 힌트)
+function CollapseSummary({ title, badge = null, tone = 'gray' }) {
+  const c = tone === 'purple'
+    ? { arrow: 'text-purple-400', hover: 'hover:bg-purple-100', hint: 'text-purple-400' }
+    : { arrow: 'text-gray-400', hover: 'hover:bg-gray-50', hint: 'text-gray-400' }
+  return (
+    <summary className={`list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 min-w-0 -mx-2 px-2 py-1 rounded-lg ${c.hover}`}>
+      <span className={`${c.arrow} flex-shrink-0 transition-transform group-open:rotate-90`}>▶</span>
+      {title}
+      {badge}
+      <span className={`ml-auto flex-shrink-0 text-xs ${c.hint} group-open:hidden`}>눌러서 펼치기</span>
+    </summary>
+  )
+}
+
+// 🆕 표시 전용: "(-35점)"·"(35점 감점)" 등 감점 표기를 학생 화면에서 숨김. DB 원문은 불변.
+function stripPenalty(str) {
+  if (!str) return str
+  return String(str).replace(/\(\s*-?\d+\s*점(?:\s*감점)?\s*\)/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 export default function StudentHistory() {
   const router = useRouter()
   useGrammarTooltip()
@@ -139,6 +160,11 @@ export default function StudentHistory() {
     const g = grouped[selectedIdx]
     const items = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
     const lastSub = items[items.length - 1]
+    const origSub = items[0]                            // 🆕 원문(첫 글) — ⑥ 비교용
+    const hasRevision = items.length >= 2               // 🆕 수정본 있으면 ⑥ 표시
+    const oneThing = splitFeedbackItems(lastSub?.feedback_improve)[0]  // 🆕 ① 딱 한 가지 발전점
+    const scoreDelta = hasRevision && typeof lastSub?.total_score === 'number' && typeof origSub?.total_score === 'number'
+      ? lastSub.total_score - origSub.total_score : 0
     const maxAttempt = Math.max(...items.map(s => s.attempt || 1))
     const canRewrite = maxAttempt === 1 || (maxAttempt >= 2 && lastSub?.extra_rewrite_allowed)
     
@@ -150,7 +176,7 @@ export default function StudentHistory() {
         `}</style>
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />
-          <main className={`mx-auto px-4 py-6 space-y-4 ${items.length >= 2 ? 'max-w-3xl xl:max-w-[1500px] xl:px-8' : 'max-w-3xl'}`}>
+          <main className="mx-auto px-4 py-6 space-y-4 max-w-3xl">
             <button onClick={() => setSelectedIdx(null)} className="text-sm text-gray-600">← 목록으로</button>
             
             <div className="bg-primary-light rounded-2xl p-4">
@@ -158,131 +184,176 @@ export default function StudentHistory() {
               <h2 className="text-lg font-bold text-primary-dark">{g.title}</h2>
             </div>
 
-            {/* 🆕 첫 글·수정본 좌우 병렬 (데스크탑), 모바일은 위아래 */}
-            <div className={`grid gap-4 items-stretch ${items.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
-            {items.map((s, i) => (
-              <div key={s.id} className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-bold text-sm">
-                    {(s.attempt||1) === 1 ? '📝 첫 번째 글' : (s.attempt||1) === 2 ? '✨ 수정본' : `✨ 수정본 ${s.attempt}`}
-                  </h3>
+            {/* ① 점수 + 🌟 이번엔 이것 하나만 기억해요 (최신본 기준) */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="bg-gradient-to-br from-primary-light to-white border-2 border-primary/20 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-gray-900">
+                  {lastSub?.total_score ?? 0} <span className="text-lg font-semibold text-gray-500">/ {lastSub?.max_score ?? 100}점</span>
                 </div>
-
-                {s.corrections?.length > 0 && (
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full inline-block">
-                    맞춤법/띄어쓰기 {s.corrections.length}개
-                  </span>
+                {scoreDelta > 0 && (
+                  <div className="mt-1 inline-block bg-green-100 text-green-800 text-sm font-semibold px-3 py-1 rounded-full">
+                    🎉 처음 글보다 +{scoreDelta}점 올랐어요!
+                  </div>
                 )}
-                <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed ${
-                  items.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
-                }`}
-                  dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
-                {s.corrections?.length > 0 && (
-                  <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
-                )}
+              </div>
 
-                {/* 🆕 담임 선생님 코멘트 — 글 바로 아래 (가까이) */}
-                {s.teacher_comment && (
+              {oneThing && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+                  <h3 className="text-sm font-bold text-amber-900 mb-1.5 flex items-center gap-1.5">
+                    <span>🌟</span> 이번엔 이것 하나만 기억해요
+                  </h3>
+                  <p className="text-lg text-amber-900 font-semibold break-keep leading-relaxed">{oneThing}</p>
+                </div>
+              )}
+            </div>
+
+            {/* 💛 선생님 코멘트 + 도장 — 항상 표시 (①아래·②위) */}
+            {(lastSub?.teacher_comment || stampLabel(lastSub?.teacher_stamp)) && (
+              <div className="space-y-3">
+                {lastSub?.teacher_comment && (
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4">
                     <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
                       <h4 className="font-bold text-yellow-900 flex items-center gap-1.5">
                         <span>💛</span> 선생님이 직접 남긴 코멘트
                       </h4>
-                      {s.teacher_comment_at && (
+                      {lastSub.teacher_comment_at && (
                         <span className="text-[11px] text-yellow-700">
-                          {new Date(s.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(lastSub.teacher_comment_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
                     </div>
                     <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep text-sm">
-                      {s.teacher_comment}
+                      {lastSub.teacher_comment}
                     </p>
                   </div>
                 )}
-
-                {/* 🆕 담임 확인 도장 (코멘트와 별개로 표시) */}
-                {stampLabel(s.teacher_stamp) && (
+                {stampLabel(lastSub?.teacher_stamp) && (
                   <div className="text-sm">
                     <span className="inline-flex items-center gap-1 bg-primary-light text-primary-dark font-semibold px-3 py-1.5 rounded-full">
-                      선생님 도장: {stampLabel(s.teacher_stamp)}
+                      선생님 도장: {stampLabel(lastSub.teacher_stamp)}
                     </span>
                   </div>
                 )}
+              </div>
+            )}
 
-                {/* 🆕 AI 점수·피드백 — 기본 접힘 (글·코멘트 먼저 보기) */}
-                <details className="group">
-                  <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
-                    <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                    🤖 AI 점수·피드백 보기
-                    <span className="ml-auto font-bold text-gray-900">{s.total_score}/{s.max_score}점</span>
-                  </summary>
-                  <div className="space-y-3 mt-2">{/* details open */}
+            {/* ② 💬 종합 의견 — 펼침 유지 */}
+            {lastSub?.feedback_overall && (
+              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
+                  <span>💬</span> 종합 의견
+                </h4>
+                <p className="text-blue-900 break-keep leading-relaxed text-sm">{lastSub.feedback_overall}</p>
+              </div>
+            )}
 
-                {/* 항목별 점수 + 점수 근거 */}
-                {Array.isArray(s.scores) && Array.isArray(g.rubrics) && g.rubrics.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-bold text-gray-800">📊 항목별 점수와 이유</h4>
-                    {s.scores.map((sc, idx) => {
-                      const r = g.rubrics[idx] || { name: `기준 ${idx+1}`, score: 25 }
-                      const pct = Math.round((sc / r.score) * 100)
-                      const isFull = sc >= r.score
-                      const reason = Array.isArray(s.rubric_reasons) ? s.rubric_reasons[idx] : null
-                      const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
+            {/* ③ ▸ 내 글 보기 — 기본 접힘 */}
+            <details className="group bg-white rounded-2xl p-4 shadow-sm">
+              <CollapseSummary
+                title={<h4 className="font-bold text-sm text-gray-800 flex-shrink-0">📝 내 글 보기</h4>}
+                badge={lastSub?.corrections?.length > 0 && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full flex-shrink-0">
+                    맞춤법/띄어쓰기 {lastSub.corrections.length}개
+                  </span>
+                )}
+              />
+              <div className="mt-3 space-y-2">
+                <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{__html: applyGrammar(lastSub?.essay_text, lastSub?.corrections)}} />
+                {lastSub?.corrections?.length > 0 && (
+                  <p className="text-xs text-gray-500">💡 빨간 밑줄을 탭하면 올바른 표기를 볼 수 있어요</p>
+                )}
+              </div>
+            </details>
+
+            {/* ④ ▸ 항목별 점수 — 기본 접힘, 안쪽은 한 줄 컴팩트(이유 탭 펼침·감점표기 숨김) */}
+            {Array.isArray(lastSub?.scores) && Array.isArray(g.rubrics) && g.rubrics.length > 0 && (
+              <details className="group bg-white rounded-2xl p-4 shadow-sm">
+                <CollapseSummary title={<h4 className="font-bold text-sm text-gray-800 flex-shrink-0">📊 항목별 점수</h4>} />
+                <div className="mt-3 space-y-2 overflow-hidden">
+                  {lastSub.scores.map((sc, idx) => {
+                    const r = g.rubrics[idx] || { name: `기준 ${idx+1}`, score: 25 }
+                    const pct = Math.round((sc / r.score) * 100)
+                    const isFull = sc >= r.score
+                    const reason = Array.isArray(lastSub.rubric_reasons) ? stripPenalty(lastSub.rubric_reasons[idx]) : null
+                    const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'
+                    const hasDetail = !!(reason || r.hint || !isFull)
+                    const row = (
+                      <>
+                        <span className={`flex-shrink-0 transition-transform group-open/row:rotate-90 ${hasDetail ? 'text-gray-400' : 'invisible'}`}>▶</span>
+                        <span className="text-gray-800 text-sm font-semibold break-keep flex-shrink-0">
+                          {r.name}
+                          {isFull && <span className="ml-1 text-green-600">✓</span>}
+                        </span>
+                        <span className="flex-1 min-w-[40px] bg-gray-200 rounded-full h-2 overflow-hidden">
+                          <span className={`${barColor} block h-full transition-all`} style={{width: pct + '%'}} />
+                        </span>
+                        <span className={`text-sm font-bold flex-shrink-0 ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
+                          {sc}/{r.score}점
+                        </span>
+                      </>
+                    )
+                    if (!hasDetail) {
                       return (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100 lg:min-h-[150px]">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-800 font-semibold">
-                              {r.name}
-                              {isFull && <span className="ml-1 text-green-600">✓</span>}
-                            </span>
-                            <span className={`font-bold ${isFull ? 'text-green-700' : 'text-gray-700'}`}>
-                              {sc}/{r.score}점
-                            </span>
-                          </div>
-                          <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div className={`${barColor} h-full transition-all`} style={{width: pct + '%'}} />
-                          </div>
+                        <div key={idx} className="min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100 flex items-center gap-2">
+                          {row}
+                        </div>
+                      )
+                    }
+                    return (
+                      <details key={idx} className="group/row min-w-0 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 min-w-0 -mx-1 px-1 py-0.5 rounded-lg hover:bg-gray-100">
+                          {row}
+                        </summary>
+                        <div className="mt-2 space-y-1.5">
+                          {r.hint && <div className="text-xs text-gray-500 break-keep">📌 {r.hint}</div>}
                           {reason ? (
-                            <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200 mt-2">
+                            <p className="text-xs text-gray-700 leading-relaxed break-keep bg-white rounded p-2 border border-gray-200">
                               <span className="font-semibold text-gray-800">💡 이유: </span>
                               {reason}
                             </p>
+                          ) : !isFull ? (
+                            <p className="text-xs text-amber-700 leading-relaxed bg-amber-50 rounded p-2 border border-amber-200">
+                              ⚠️ 이번에는 점수 근거가 나오지 않았어요. 위의 발전점을 참고해주세요.
+                            </p>
                           ) : null}
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
+                      </details>
+                    )
+                  })}
+                </div>
+              </details>
+            )}
 
-                <div className="space-y-3 text-sm">
-                  <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-                    <h4 className="font-bold mb-1 text-blue-900 flex items-center gap-1.5">
-                      <span>💬</span> 종합 의견
-                    </h4>
-                    <p className="text-blue-900 break-keep leading-relaxed">{s.feedback_overall}</p>
-                  </div>
-                  <div className="bg-green-50 rounded-xl p-3 border border-green-100">
-                    <h4 className="font-bold mb-1 text-green-900 flex items-center gap-1.5">
-                      <span>⭐</span> 잘한 점
-                    </h4>
-                    <FeedbackList text={s.feedback_good} color="green" />
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
-                    <h4 className="font-bold mb-1 text-amber-900 flex items-center gap-1.5">
-                      <span>🌱</span> 발전시킬 점
-                    </h4>
-                    <FeedbackList text={s.feedback_improve} color="amber" />
-                  </div>
-
-                  {/* 🆕 발전점 구체 예시 */}
-                  {Array.isArray(s.improve_examples) && s.improve_examples.length > 0 && (
+            {/* ⑤ ▸ 잘한 점 / 다음엔 이렇게 / 바꿔보기 — 기본 접힘 (내용물 불변) */}
+            {(lastSub?.feedback_good || lastSub?.feedback_improve || (Array.isArray(lastSub?.improve_examples) && lastSub.improve_examples.length > 0)) && (
+              <details className="group bg-white rounded-2xl p-4 shadow-sm">
+                <CollapseSummary title={<h4 className="font-bold text-sm text-gray-800 flex-shrink-0">🌱 자세한 피드백</h4>} />
+                <div className="mt-3 space-y-3 text-sm">
+                  {lastSub?.feedback_good && (
+                    <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+                      <h4 className="font-bold mb-1 text-green-900 flex items-center gap-1.5">
+                        <span>⭐</span> 잘한 점
+                      </h4>
+                      <FeedbackList text={lastSub.feedback_good} color="green" />
+                    </div>
+                  )}
+                  {lastSub?.feedback_improve && (
+                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                      <h4 className="font-bold mb-1 text-amber-900 flex items-center gap-1.5">
+                        <span>🌱</span> 다음엔 이렇게 해봐요
+                      </h4>
+                      <FeedbackList text={lastSub.feedback_improve} color="amber" />
+                    </div>
+                  )}
+                  {Array.isArray(lastSub?.improve_examples) && lastSub.improve_examples.length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-3 border-2 border-purple-200">
                       <h4 className="font-bold mb-2 text-purple-900 flex items-center gap-1.5">
                         <span>✏️</span> 이렇게 바꿔보면 어떨까요?
                       </h4>
                       <p className="text-xs text-purple-700 mb-2">예시예요. 참고만 하세요!</p>
                       <div className="space-y-2">
-                        {s.improve_examples.map((ex, exIdx) => (
+                        {lastSub.improve_examples.map((ex, exIdx) => (
                           <div key={exIdx} className="bg-white rounded-lg border border-purple-200 overflow-hidden">
                             <div className="px-3 py-2 bg-red-50 border-b border-red-100">
                               <div className="text-[11px] text-red-700 font-semibold mb-0.5">현재</div>
@@ -303,19 +374,51 @@ export default function StudentHistory() {
                     </div>
                   )}
                 </div>
+              </details>
+            )}
 
+            {/* ⑥ ▸ 원문·수정본 비교 — 수정본 있을 때만, 기본 접힘 */}
+            {hasRevision && (
+              <details className="group bg-white rounded-2xl p-4 shadow-sm">
+                <CollapseSummary title={<h4 className="font-bold text-sm text-gray-800 flex-shrink-0">📝 원문·수정본 비교</h4>} />
+                <div className="mt-3 grid gap-4 lg:grid-cols-2 items-start">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h5 className="font-bold text-sm text-gray-700">📝 원문</h5>
+                      {origSub?.corrections?.length > 0 && (
+                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">맞춤법 {origSub.corrections.length}개</span>
+                      )}
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
+                      dangerouslySetInnerHTML={{__html: applyGrammar(origSub?.essay_text, origSub?.corrections)}} />
+                    {origSub?.teacher_comment && (
+                      <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                        <div className="text-xs font-bold text-yellow-900 mb-1">💛 선생님 코멘트</div>
+                        <p className="text-yellow-900 whitespace-pre-wrap leading-relaxed break-keep text-sm">{origSub.teacher_comment}</p>
+                      </div>
+                    )}
                   </div>
-                </details>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h5 className="font-bold text-sm text-primary-dark">✨ 수정본</h5>
+                      {lastSub?.corrections?.length > 0 && (
+                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">맞춤법 {lastSub.corrections.length}개</span>
+                      )}
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
+                      dangerouslySetInnerHTML={{__html: applyGrammar(lastSub?.essay_text, lastSub?.corrections)}} />
+                  </div>
+                </div>
+              </details>
+            )}
 
-                {s.example_text && (i === items.length - 1) && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                    <div className="font-bold text-purple-900 text-sm mb-1">📖 AI 예시 작품</div>
-                    <p className="text-sm text-purple-900 whitespace-pre-wrap">{s.example_text}</p>
-                  </div>
-                )}
+            {/* 📖 AI 예시 작품 — 맨 아래 항상 표시 (접힘 아님) */}
+            {lastSub?.example_text && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <div className="font-bold text-purple-900 text-sm mb-1">📖 AI 예시 작품</div>
+                <p className="text-sm text-purple-900 whitespace-pre-wrap">{lastSub.example_text}</p>
               </div>
-            ))}
-            </div>
+            )}
 
             {canRewrite ? (
               <Link
