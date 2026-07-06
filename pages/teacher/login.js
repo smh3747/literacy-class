@@ -32,6 +32,14 @@ export default function TeacherLogin() {
   const [saveUsername, setSaveUsername] = useState(false)
   const [autoLogin, setAutoLogin] = useState(true)
 
+  // 🆕 step381: 신규 가입 실이메일 (비밀번호 재설정 메일 수신용)
+  const [signupEmail, setSignupEmail] = useState('')
+  // 🆕 step381: 이메일 재설정 메일 모달
+  const [showEmailReset, setShowEmailReset] = useState(false)
+  const [emailResetAddr, setEmailResetAddr] = useState('')
+  const [emailResetSending, setEmailResetSending] = useState(false)
+  const [emailResetSent, setEmailResetSent] = useState(false)
+
   // 🆕 비밀번호 초기화 요청 모달
   const [showResetRequest, setShowResetRequest] = useState(false)
   const [resetForm, setResetForm] = useState({ type: 'find_id', username: '', realname: '', school: '', school_code: '', class_code: '', contact: '' })
@@ -44,6 +52,24 @@ export default function TeacherLogin() {
   const closeResetModal = () => {
     setShowResetRequest(false)
     setFindResult(null)
+  }
+
+  // 🆕 step381: 재설정 메일 발송 — 계정 존재 여부와 무관하게 항상 같은 완료 안내(존재 비노출)
+  const sendResetEmail = async () => {
+    const addr = emailResetAddr.trim()
+    if (!/.+@.+\..+/.test(addr)) return alert('이메일을 정확히 입력해주세요')
+    setEmailResetSending(true)
+    let origin
+    if (process.env.NEXT_PUBLIC_SITE_URL) {
+      origin = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
+    } else {
+      origin = window.location.origin
+    }
+    try {
+      await supabase.auth.resetPasswordForEmail(addr, { redirectTo: `${origin}/reset-password` })
+    } catch {}
+    setEmailResetSending(false)
+    setEmailResetSent(true)
   }
 
   // 🆕 step162: 아이디 자동 찾기 (이름+학교 → 마스킹된 아이디 표시)
@@ -250,9 +276,28 @@ export default function TeacherLogin() {
 
     try {
       if (mode === 'login') {
-        const { data: loginData, error: err } = await supabase.auth.signInWithPassword({ email, password })
-        if (err) throw err
-        
+        let { data: loginData, error: err } = await supabase.auth.signInWithPassword({ email, password })
+        // 🆕 step381: 신규 교사는 auth 이메일이 실이메일 — 합성 이메일 실패 시 서버 폴백으로 재시도.
+        //   기존 교사·학생은 1차에서 성공하므로 이 경로를 타지 않는다. 이메일은 서버에서만 해석(비노출).
+        if (err) {
+          try {
+            const fb = await fetch('/api/teacher-login-fallback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: username.toLowerCase(), password })
+            })
+            if (!fb.ok) throw err
+            const tokens = await fb.json()
+            const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+              access_token: tokens.access_token, refresh_token: tokens.refresh_token
+            })
+            if (sessErr || !sessData?.user) throw err
+            loginData = { user: sessData.user }
+          } catch {
+            throw err
+          }
+        }
+
         const { data: profile } = await supabase.from('profiles').select('role, realname, is_banned').eq('id', loginData.user.id).maybeSingle()
         
         if (!profile) {
@@ -290,9 +335,25 @@ export default function TeacherLogin() {
 
         // admin 중복가입 확인은 /api/verify-code(서버)에서 수행 (step148 RLS로 이동)
 
-        const { data, error: err } = await supabase.auth.signUp({ email, password })
+        // 🆕 step381: 실이메일 필수 — 비밀번호를 잊었을 때 재설정 메일을 받는 주소
+        const realEmail = signupEmail.trim().toLowerCase()
+        if (!/.+@.+\..+/.test(realEmail) || realEmail.endsWith('@writing.class')) {
+          throw new Error('이메일을 정확히 입력해주세요. 비밀번호를 잊었을 때 재설정 메일을 받는 주소예요.')
+        }
+
+        // 🆕 step381: 아이디 중복확인 — 실이메일 전환으로 합성 이메일 충돌에 의한 감지가 사라져 서버 확인 필수
+        const unameRes = await fetch('/api/teacher-username-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username.toLowerCase() })
+        })
+        const unameData = await unameRes.json()
+        if (!unameRes.ok) throw new Error(unameData.error || '아이디 확인에 실패했어요. 잠시 후 다시 시도해주세요.')
+        if (unameData.taken) throw new Error('이미 가입된 아이디예요')
+
+        const { data, error: err } = await supabase.auth.signUp({ email: realEmail, password })
         if (err) {
-          if (err.message.includes('already')) throw new Error('이미 가입된 아이디예요')
+          if (err.message.includes('already')) throw new Error('이미 사용 중인 이메일이에요')
           throw err
         }
 
@@ -439,10 +500,24 @@ export default function TeacherLogin() {
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
                   {mode === 'signup' && (
                     <p className="text-xs text-gray-500 mt-1">
-                      💡 잊지 않도록 기억해주세요. 잊으면 운영자가 초기화해드려요.
+                      💡 잊지 않도록 기억해주세요. 잊으면 아래 이메일로 재설정할 수 있어요.
                     </p>
                   )}
                 </div>
+
+                {/* 🆕 step381: 신규 가입 실이메일 (재설정 메일 수신용) */}
+                {mode === 'signup' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">이메일</label>
+                    <input type="email" value={signupEmail} onChange={e => setSignupEmail(e.target.value)}
+                      onKeyDown={handleEnter}
+                      className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: kim@school.kr"
+                      autoComplete="email" />
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 비밀번호를 잊었을 때 이 이메일로 재설정 메일이 와요. 자주 확인하는 주소를 적어주세요.
+                    </p>
+                  </div>
+                )}
 
                 {/* 옵션 체크박스 (로그인 모드일 때만) */}
                 {mode === 'login' && (
@@ -544,12 +619,59 @@ export default function TeacherLogin() {
                   </>
                 )}
               </p>
+              {/* 🆕 step381: 이메일 가입 계정용 셀프 재설정 진입점 */}
+              {mode === 'login' && (
+                <p className="text-xs text-gray-500">
+                  📧 이메일로 가입했다면{' '}
+                  <button type="button"
+                    onClick={() => { setShowEmailReset(true); setEmailResetSent(false); setEmailResetAddr('') }}
+                    className="text-blue-600 font-medium underline hover:text-blue-800">
+                    이메일로 비밀번호 재설정
+                  </button>
+                </p>
+              )}
               <Link href="/api-key-guide" className="text-xs text-gray-500 hover:text-primary inline-block">
                 Gemini API 키 발급 방법 →
               </Link>
             </div>
           </div>
         </main>
+
+        {/* 🆕 step381: 이메일 재설정 메일 보내기 모달 */}
+        {showEmailReset && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+            onClick={() => !emailResetSending && setShowEmailReset(false)}>
+            <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold">📧 이메일로 비밀번호 재설정</h3>
+              {emailResetSent ? (
+                <>
+                  <p className="text-sm text-gray-700 break-keep">
+                    재설정 메일을 보냈어요. 받은편지함을 확인해주세요. 안 보이면 스팸함도 확인해주세요.
+                  </p>
+                  <button onClick={() => setShowEmailReset(false)}
+                    className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm">
+                    확인
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500 break-keep">
+                    가입할 때 등록한 이메일을 입력해주세요. 이메일 없이 가입한 계정은 찾기 요청을 이용해주세요.
+                  </p>
+                  <input type="email" value={emailResetAddr} onChange={e => setEmailResetAddr(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') sendResetEmail() }}
+                    placeholder="가입 이메일"
+                    className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:border-primary focus:outline-none" />
+                  <button onClick={sendResetEmail} disabled={emailResetSending}
+                    className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm disabled:opacity-50">
+                    {emailResetSending ? '보내는 중...' : '재설정 메일 보내기'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 🆕 비밀번호 초기화 요청 모달 */}
         {showResetRequest && (
