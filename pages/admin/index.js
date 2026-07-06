@@ -66,7 +66,7 @@ function buildStudent(a, subMap, profMap, classMap, teacherMap) {
 export default function AdminHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
-  const [stats, setStats] = useState({ teachers: 0, classes: 0, students: 0, submissions: 0, today: 0 })
+  const [stats, setStats] = useState({ teachers: 0, classes: 0, students: 0, submissions: 0, today: 0, preorders: 0 })
   const [teachers, setTeachers] = useState([])
   const [teacherLastLogin, setTeacherLastLogin] = useState({})  // 🆕 step254: { userId: last_sign_in_at } (auth.users 읽기)
   const [lastLoginLoaded, setLastLoginLoaded] = useState(false)  // 🆕 step334: 마지막 로그인 비차단 로딩 완료 여부(로딩 중 placeholder)
@@ -140,13 +140,15 @@ export default function AdminHome() {
     const [ky, km, kd] = kstYmd.split('-').map(Number)
     const todayStartUTC = new Date(Date.UTC(ky, km - 1, kd) - 9 * 3600 * 1000).toISOString()
 
-    const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes] = await Promise.all([
+    const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes, preordersRes] = await Promise.all([
       supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
       supabase.from('submissions').select('id', { count: 'exact', head: true }),
       supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC),
-      supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200)
+      supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200),
+      // 🆕 step380: 파운딩 멤버 사전 신청 수 — head:true count 1건(병렬 배치 편승). 테이블 미생성이면 count 없음→0
+      supabase.from('preorders').select('id', { count: 'exact', head: true })
     ])
 
     if (classesRes.error) {
@@ -278,7 +280,8 @@ export default function AdminHome() {
       classes: activeClasses.length,
       students: studentsRes.count || 0,
       submissions: submissionsRes.count || 0,
-      today: todayRes.count || 0
+      today: todayRes.count || 0,
+      preorders: preordersRes.count || 0  // 🆕 step380: 사전 신청 수
     })
 
     // 🆕 공유 추천 로드 (관리자 추적용 — 누가 뭘 공유했는지)
@@ -1044,13 +1047,14 @@ export default function AdminHome() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             {[
               { label: '선생님', val: stats.teachers, icon: '👨‍🏫', color: 'bg-blue-50 text-blue-900' },
               { label: '학급', val: stats.classes, icon: '🏫', color: 'bg-green-50 text-green-900' },
               { label: '학생', val: stats.students, icon: '🎒', color: 'bg-purple-50 text-purple-900' },
               { label: '누적 글쓰기', val: stats.submissions, icon: '📝', color: 'bg-orange-50 text-orange-900' },
               { label: '오늘', val: stats.today, icon: '✨', color: 'bg-pink-50 text-pink-900' },
+              { label: '사전 신청', val: stats.preorders, icon: '🎟️', color: 'bg-teal-50 text-teal-900' },  // 🆕 step380
               (() => {
                 const cnt24h = errorLogs.filter(e => Date.now() - new Date(e.created_at).getTime() < 24 * 60 * 60 * 1000).length
                 return { label: '24h 에러', val: cnt24h, icon: '🚨', color: cnt24h > 0 ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-900' }

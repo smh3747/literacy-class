@@ -33,6 +33,10 @@ export default function TeacherHome() {
   const settingsRef = useRef(null)                            // 🆕 step290: 학급 설정 스크롤(드로어)
   // 🆕 step291: 우측 드로어(데스크탑 lg+)에 패널 1개만 — 'login'|'api'|'settings'|null. 모바일은 인라인이라 무관.
   const [activePanel, setActivePanel] = useState(null)
+  // 🆕 step380: 파운딩 멤버 사전 신청 (결제 아님, 관심 등록만). loaded=조회 성공(테이블 미생성이면 false→카드 숨김)
+  const [preorder, setPreorder] = useState({ loaded: false, done: false })
+  const [preorderHidden, setPreorderHidden] = useState(true)  // 깜빡임 방지 기본 숨김, localStorage로 복원
+  const [preorderSaving, setPreorderSaving] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
   const togglePanel = (panel) => setActivePanel(prev => (prev === panel ? null : panel))
@@ -77,6 +81,38 @@ export default function TeacherHome() {
   }
 
   useEffect(() => { checkAuth() }, [])
+
+  // 🆕 step380: 사전 신청 상태 조회 — 테이블 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
+  useEffect(() => {
+    if (!user?.id || user.role !== 'teacher') return
+    try { setPreorderHidden(!!localStorage.getItem('lc-founding-preorder-dismissed:' + user.id)) } catch { setPreorderHidden(false) }
+    ;(async () => {
+      const { data, error } = await supabase.from('preorders').select('id').eq('teacher_id', user.id).maybeSingle()
+      if (error) return
+      setPreorder({ loaded: true, done: !!data })
+    })()
+  }, [user?.id])
+
+  // 🆕 step380: 사전 신청 — 교사당 1회. unique 위반(23505)은 이미 신청으로 간주(다기기·이중 클릭 안전)
+  const submitPreorder = async () => {
+    if (preorderSaving || !user?.id) return
+    setPreorderSaving(true)
+    const { error } = await supabase.from('preorders').insert({ teacher_id: user.id })
+    setPreorderSaving(false)
+    if (!error || error.code === '23505') {
+      setPreorder({ loaded: true, done: true })
+    } else {
+      alert('신청 처리에 문제가 생겼어요. 잠시 후 다시 시도해주세요.')
+    }
+  }
+  const dismissPreorder = () => {
+    setPreorderHidden(true)
+    if (user?.id) { try { localStorage.setItem('lc-founding-preorder-dismissed:' + user.id, '1') } catch {} }
+  }
+  const reopenPreorder = () => {
+    setPreorderHidden(false)
+    if (user?.id) { try { localStorage.removeItem('lc-founding-preorder-dismissed:' + user.id) } catch {} }
+  }
 
   // 🆕 옛 전역 체크리스트 키 1회 청소 (step220 이전 잔재 — 계정 섞임 혼란 유발)
   //   ⚠️ 정확히 이 키만 제거. 교사별 키(lc-setup-checklist-hidden:<id>)는 절대 건드리지 않음.
@@ -551,6 +587,31 @@ export default function TeacherHome() {
           {/* 심의/동의 배너 (원래 위치: 학급 카드 위, 항상 표시) */}
           {bannersBlock}
 
+          {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 (결제 아님, 관심 등록만) */}
+          {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (
+            <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
+              <button onClick={dismissPreorder} aria-label="닫기"
+                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+              {preorder.done ? (
+                <h3 className="font-bold text-indigo-900 pr-6">✅ 신청 완료! 2학기 시작 전에 안내드릴게요</h3>
+              ) : (
+                <>
+                  <h3 className="font-bold text-indigo-900 mb-1 pr-6">2학기, 다온클래스 플러스가 시작돼요</h3>
+                  <p className="text-sm text-gray-700 leading-relaxed break-keep mb-3">
+                    지금 사전 신청하시면 파운딩 멤버 혜택을 드려요. 첫해 19,000원, 이후 가격이 올라도 그대로예요.
+                    결제는 2학기에 시작되고, 지금은 신청만 받아요.
+                  </p>
+                  {!isImpersonating && (
+                    <button onClick={submitPreorder} disabled={preorderSaving}
+                      className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
+                      {preorderSaving ? '신청 중...' : '사전 신청하기'}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* 학급 정보 카드 */}
           {classInfo && (
             <div className="bg-primary-light border-2 border-primary rounded-2xl p-5">
@@ -756,6 +817,16 @@ export default function TeacherHome() {
 
           {/* 메뉴 (원래 위치: 페이지 하단, 항상 표시) */}
           {menuGrid}
+
+          {/* 🆕 step380: 사전 신청 카드 재진입 링크 — 닫은 경우에만 하단 한 줄 (과한 노출 없음) */}
+          {user?.role === 'teacher' && preorder.loaded && preorderHidden && (
+            <div className="text-center">
+              <button onClick={reopenPreorder}
+                className="text-xs text-gray-400 hover:text-gray-600 underline transition">
+                파운딩 멤버 사전 신청 안내 다시 보기
+              </button>
+            </div>
+          )}
         </main>
 
         {/* 🆕 step291: 우측 세로 툴바 (데스크탑 lg+ 전용) — 아이콘+라벨. 모바일은 위 인라인 패널/메뉴 유지 */}
