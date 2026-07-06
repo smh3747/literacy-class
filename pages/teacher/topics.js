@@ -127,6 +127,9 @@ export default function TopicsPage() {
   const [editingTopicId, setEditingTopicId] = useState(null)
   // 🆕 step385: 제출물 있는 주제는 제목·루브릭 잠금 (공정성 — 이미 그 기준으로 채점된 학생이 있음)
   const [editLocked, setEditLocked] = useState(false)
+  // 🆕 인기 주제: 공유 주제별 가져간 교사 수 집계(topic_copy_counts RPC, 읽기 전용) + 인기 주제 모달
+  const [copyCounts, setCopyCounts] = useState({})
+  const [showRankingModal, setShowRankingModal] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -948,7 +951,10 @@ export default function TopicsPage() {
         .order('created_at', { ascending: false })
         .limit(100)
 
-      const [ownRes, sharedRes] = await Promise.all([ownPromise, sharedPromise])
+      // 🆕 인기 주제 집계(읽기 전용 RPC). 실패해도 빈 맵 → 배지/정렬만 빠지고 나머지 정상(비차단)
+      const countsPromise = supabase.rpc('topic_copy_counts')
+
+      const [ownRes, sharedRes, countsRes] = await Promise.all([ownPromise, sharedPromise, countsPromise])
       if (ownRes.error) throw ownRes.error
       setSuggestionLogs(ownRes.data || [])
 
@@ -959,6 +965,13 @@ export default function TopicsPage() {
       } else {
         setSharedSuggestionLogs(sharedRes.data || [])
       }
+
+      // 🆕 (source_log_id, source_index)별 가져간 교사 수 → 맵
+      const cmap = {}
+      for (const r of (countsRes?.data || [])) {
+        cmap[`${r.source_log_id}-${r.source_index}`] = Number(r.n_teachers) || 0
+      }
+      setCopyCounts(cmap)
     } catch(e) {
       console.error('로그 로드 실패:', e)
     }
@@ -1074,6 +1087,10 @@ export default function TopicsPage() {
           <div className="flex items-center gap-3">
             <Link href="/teacher" className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">주제 관리</h1>
+            <button onClick={() => setShowRankingModal(true)}
+              className="ml-auto text-sm bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1.5 rounded-lg font-semibold hover:bg-orange-100">
+              🔥 인기 주제
+            </button>
           </div>
 
           {/* 모드 전환 탭 */}
@@ -1336,6 +1353,7 @@ export default function TopicsPage() {
                   sharedLogs={sharedSuggestionLogs}
                   onSelect={applyFromLog}
                   generating={generatingRubrics}
+                  copyCounts={copyCounts}
                 />
               )}
 
@@ -2016,6 +2034,51 @@ export default function TopicsPage() {
           onCancelShare={cancelTopicShare}
           disabled={false}
         />
+
+        {/* 🆕 인기 주제 모달 — 다른 선생님이 많이 가져간 주제를 인기순으로 (번호 없음, 익명) */}
+        {showRankingModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+            onClick={() => setShowRankingModal(false)}>
+            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-5 shadow-xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold">🔥 인기 주제</h3>
+                <button onClick={() => setShowRankingModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">다른 선생님들이 많이 가져간 주제예요. 눌러서 바로 가져올 수 있어요.</p>
+              {(() => {
+                const ranked = buildSharedFlat(sharedSuggestionLogs, copyCounts)
+                if (ranked.length === 0) return (
+                  <p className="text-sm text-gray-500 text-center py-8">아직 공유된 주제가 없어요.</p>
+                )
+                return (
+                  <div className="space-y-2">
+                    {ranked.map(item => (
+                      <button key={item.key} disabled={generatingRubrics}
+                        onClick={() => { applyFromLog(item); setShowRankingModal(false) }}
+                        className="w-full text-left bg-white border border-gray-200 hover:border-orange-300 hover:bg-orange-50 rounded-xl p-3 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-sm font-semibold text-gray-900 line-clamp-1 flex-1">{item.title}</span>
+                          {item.n >= 2 && (
+                            <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded font-semibold flex-shrink-0">🔥 인기</span>
+                          )}
+                        </div>
+                        {item.description && (
+                          <div className="text-xs text-gray-600 line-clamp-2 leading-snug">{item.description}</div>
+                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          {item.category && <span className="text-[10px] text-purple-600">#{item.category}</span>}
+                          <span className="text-[10px] text-gray-400 ml-auto">👤 다른 선생님</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
@@ -2025,7 +2088,41 @@ export default function TopicsPage() {
 // 🆕 인라인 추천 기록 미리보기 (와이프 피드백)
 // AI 추천 영역 바로 옆에 기록을 미리 보여줘서 추천 전에 빠르게 훑어볼 수 있게
 // ============================================
-function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
+// 🆕 공유 주제 평탄화 + 인기순 정렬 (인기 배지·인기 주제 모달 공용)
+// 기존 InlineSuggestionPreview 인라인 로직을 그대로 재현하되, 항목마다 가져간 교사 수 n을 붙이고 n 내림차순 정렬.
+function buildSharedFlat(sharedLogs, copyCounts) {
+  const flat = []
+  for (const log of sharedLogs || []) {
+    const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
+    const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
+    const seen = new Set()
+    const pushItem = (idx, s, usedDate) => {
+      const n = Number(copyCounts?.[`${log.id}-${idx}`] ?? 0) || 0
+      flat.push({
+        key: `s-${log.id}-${idx}`,
+        title: s.title, description: s.description, category: s.category,
+        usedDate, sourceLogId: log.id, sourceIndex: idx, n,
+      })
+      seen.add(idx)
+    }
+    // 등록된 주제 (자동 공유)
+    if (log.resulting_topic_id && log.selected_index !== null && log.selected_index !== undefined) {
+      const picked = sugs[log.selected_index]
+      if (picked && picked.title) pushItem(log.selected_index, picked, log.resulting_topic?.date)
+    }
+    // 개별 공유된 카드
+    for (const idx of sharedIdxs) {
+      if (seen.has(idx)) continue
+      const s = sugs[idx]
+      if (!s || !s.title) continue
+      pushItem(idx, s)
+    }
+  }
+  flat.sort((a, b) => (b.n || 0) - (a.n || 0))
+  return flat
+}
+
+function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, copyCounts }) {
   const [tab, setTab] = useState('mine')
   const [expanded, setExpanded] = useState(false)  // 접힘/펼침
 
@@ -2045,45 +2142,7 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
     })
   }
 
-  const flatShared = []
-  for (const log of sharedLogs || []) {
-    const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
-    const sharedIdxs = Array.isArray(log.shared_indexes) ? log.shared_indexes : []
-    const seen = new Set()
-
-    // 등록된 주제 (자동 공유)
-    if (log.resulting_topic_id && log.selected_index !== null && log.selected_index !== undefined) {
-      const picked = sugs[log.selected_index]
-      if (picked && picked.title) {
-        flatShared.push({
-          key: `s-${log.id}-${log.selected_index}`,
-          title: picked.title,
-          description: picked.description,
-          category: picked.category,
-          usedDate: log.resulting_topic?.date,
-          sourceLogId: log.id,                 // 🆕 가져오기 출처(집계용)
-          sourceIndex: log.selected_index,
-        })
-        seen.add(log.selected_index)
-      }
-    }
-
-    // 개별 공유된 카드
-    for (const idx of sharedIdxs) {
-      if (seen.has(idx)) continue
-      const s = sugs[idx]
-      if (!s || !s.title) continue
-      flatShared.push({
-        key: `s-${log.id}-${idx}`,
-        title: s.title,
-        description: s.description,
-        category: s.category,
-        sourceLogId: log.id,                   // 🆕 가져오기 출처(집계용)
-        sourceIndex: idx,
-      })
-      seen.add(idx)
-    }
-  }
+  const flatShared = buildSharedFlat(sharedLogs, copyCounts)
 
   const list = tab === 'mine' ? flatMine : flatShared
   // 접힘 상태에서는 6개만, 펼치면 다
@@ -2154,6 +2213,9 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating }) {
                       <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded flex-shrink-0">
                         ✓{usedLabel}
                       </span>
+                    )}
+                    {item.n >= 2 && (
+                      <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded flex-shrink-0 font-semibold">🔥 인기</span>
                     )}
                   </div>
                   {item.description && (
