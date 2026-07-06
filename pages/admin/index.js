@@ -9,6 +9,60 @@ import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 
+// 🆕 step371: 본문에서 original이 처음 등장하는 위치를 문장 단위(마침표·물음표·줄바꿈)로 잘라 반환.
+//   경계가 없으면 그 방향만 앞뒤 40자로 clamp. before/match/after로 나눠 하이라이트에 쓴다. 표시 전용.
+function extractContext(body, original) {
+  if (!body || !original) return null
+  const idx = body.indexOf(original)
+  if (idx === -1) return null
+  const isBoundary = (ch) => ch === '.' || ch === '?' || ch === '\n'
+  const end0 = idx + original.length
+  // 앞쪽 경계: idx 이전에서 가장 가까운 경계 다음 글자. 없으면 앞 40자.
+  let start = -1
+  for (let i = idx - 1; i >= 0; i--) { if (isBoundary(body[i])) { start = i + 1; break } }
+  if (start === -1) start = Math.max(0, idx - 40)
+  // 뒤쪽 경계: original 끝 이후 가장 가까운 경계까지 포함. 없으면 뒤 40자.
+  let end = -1
+  for (let i = end0; i < body.length; i++) { if (isBoundary(body[i])) { end = i + 1; break } }
+  if (end === -1) end = Math.min(body.length, end0 + 40)
+  return {
+    before: body.slice(start, idx).replace(/^\s+/, ''),
+    match: body.slice(idx, end0),
+    after: body.slice(end0, end).replace(/\s+$/, ''),
+  }
+}
+
+// 🆕 step371: 알림 1건의 맥락 상태 계산. submission_id 없음(C-2)=skip, 글 없음/삭제=gone,
+//   본문에 original 없음=notfound, 찾음=ok(+before/match/after).
+function buildContext(a, subMap) {
+  if (!a.submission_id) return { kind: 'skip' }
+  const sub = subMap[a.submission_id]
+  if (!sub || sub.deleted_at) return { kind: 'gone' }
+  const ctx = extractContext(sub.essay_text, a.original)
+  if (!ctx) return { kind: 'notfound' }
+  return { kind: 'ok', ...ctx }
+}
+
+// 🆕 step371: 알림 1건의 작성 학생 정보. submission→user→profile→class→담임 순으로 배치맵 조회.
+//   이름은 displayStudentName(미동의=닉네임). 조회불가면 none. pending_names 미조회.
+function buildStudent(a, subMap, profMap, classMap, teacherMap) {
+  const sub = a.submission_id ? subMap[a.submission_id] : null
+  const prof = sub && sub.user_id ? profMap[sub.user_id] : null
+  if (!prof) return { kind: 'none' }
+  const name = displayStudentName(prof)
+  const num = (prof.number != null && String(prof.number).trim() !== '') ? String(prof.number).trim() : ''
+  const numName = num ? `${num}번 ${name}` : name
+  const cls = prof.class_id ? classMap[prof.class_id] : null
+  const teacher = cls && cls.teacher_id ? teacherMap[cls.teacher_id] : null
+  return {
+    kind: 'ok',
+    school: teacher?.school || '',
+    className: cls?.name || '',
+    teacher: teacher?.realname || '',
+    numName,
+  }
+}
+
 export default function AdminHome() {
   const router = useRouter()
   const [user, setUser] = useState(null)
@@ -33,6 +87,7 @@ export default function AdminHome() {
   const [suspectAlerts, setSuspectAlerts] = useState([])   // 🆕 step359: 의심 교정 목록 (탭 열 때 로드)
   const [suspectLoaded, setSuspectLoaded] = useState(false)
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
+  const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -325,10 +380,58 @@ export default function AdminHome() {
         const rows = [...(data || [])].sort((a, b) =>
           new Date(b.created_at || b.submission_created_at || 0) - new Date(a.created_at || a.submission_created_at || 0))
         setSuspectAlerts(rows)
+        // 🆕 step371: 맥락 문장·작성 학생 정보 배치 조회(1회, 행당 쿼리 금지). 실패해도 목록은 그대로.
+        enrichSuspects(rows)
       }
       setSuspectLoaded(true)
     })()
   }, [tab, suspectLoaded])
+
+  // 🆕 step371: 의심 교정 행 보강 — submission_id로 본문·작성자를 4개의 .in() 배치로만 조회.
+  //   ① 맥락 문장(본문에서 original 위치의 문장) ② 학생 정보(학교·학급·담임·N번 이름).
+  //   pending_names 복호화·조회 없음. displayStudentName으로 미동의=닉네임 처리.
+  const enrichSuspects = async (rows) => {
+    try {
+      const subIds = [...new Set(rows.map(a => a.submission_id).filter(Boolean))]
+      const subMap = {}
+      if (subIds.length > 0) {
+        const { data: subs } = await supabase.from('submissions')
+          .select('id, user_id, essay_text, deleted_at').in('id', subIds)
+        ;(subs || []).forEach(s => { subMap[s.id] = s })
+      }
+      const userIds = [...new Set(Object.values(subMap).map(s => s.user_id).filter(Boolean))]
+      const profMap = {}
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase.from('profiles')
+          .select('id, realname, nickname, username, number, class_id').in('id', userIds)
+        ;(profs || []).forEach(p => { profMap[p.id] = p })
+      }
+      const classIds = [...new Set(Object.values(profMap).map(p => p.class_id).filter(Boolean))]
+      const classMap = {}
+      if (classIds.length > 0) {
+        const { data: cls } = await supabase.from('classes')
+          .select('id, name, teacher_id').in('id', classIds)
+        ;(cls || []).forEach(c => { classMap[c.id] = c })
+      }
+      const teacherIds = [...new Set(Object.values(classMap).map(c => c.teacher_id).filter(Boolean))]
+      const teacherMap = {}
+      if (teacherIds.length > 0) {
+        const { data: ts } = await supabase.from('profiles')
+          .select('id, realname, school').in('id', teacherIds)
+        ;(ts || []).forEach(t => { teacherMap[t.id] = t })
+      }
+      const meta = {}
+      rows.forEach(a => {
+        meta[a.id] = {
+          ctx: buildContext(a, subMap),
+          student: buildStudent(a, subMap, profMap, classMap, teacherMap),
+        }
+      })
+      setSuspectMeta(meta)
+    } catch (e) {
+      console.warn('의심 교정 보강 실패(무시):', e?.message)
+    }
+  }
 
   // 🔍 step359: 의심 교정 해결 처리 — 로컬 상태만 갱신(전체 재조회 없이 가볍게)
   const resolveAlert = async (id) => {
@@ -2282,6 +2385,14 @@ export default function AdminHome() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${suspectBadge(a.suspect_type)}`}>{a.suspect_type || '미분류'}</span>
                           <span className="text-xs text-gray-500">감지 {toKST(a.created_at)}</span>
                           {a.submission_created_at && <span className="text-xs text-gray-400">글 작성 {toKST(a.submission_created_at)}</span>}
+                          {/* 🆕 step371: 작성 학생 정보 (학교 · 학급 · 담임 · N번 이름) */}
+                          {(() => {
+                            const s = suspectMeta[a.id]?.student
+                            if (!s) return null
+                            if (s.kind === 'none') return <span className="text-xs text-gray-400">(정보 없음)</span>
+                            const parts = [s.school, s.className, s.teacher && `담임 ${s.teacher}`, s.numName].filter(Boolean)
+                            return <span className="text-xs text-gray-500">{parts.join(' · ')}</span>
+                          })()}
                           <span className="ml-auto flex gap-1.5">
                             {a.submission_id && (
                               <button onClick={() => goToSubmission(a.submission_id)}
@@ -2300,6 +2411,18 @@ export default function AdminHome() {
                           <span className="mx-1.5 text-gray-400">→</span>
                           <span className="font-semibold text-green-700">{a.correction}</span>
                         </div>
+                        {/* 🆕 step371: 원문 속 맥락 문장 (회색 인용, original 하이라이트) */}
+                        {(() => {
+                          const c = suspectMeta[a.id]?.ctx
+                          if (!c || c.kind === 'skip') return null
+                          if (c.kind === 'gone') return <div className="mt-1 text-xs text-gray-400 italic">(글 없음)</div>
+                          if (c.kind === 'notfound') return <div className="mt-1 text-xs text-gray-400 italic">(원문에서 위치를 찾지 못했어요)</div>
+                          return (
+                            <div className="mt-1 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">
+                              {c.before}<mark className="bg-yellow-200 text-gray-900 rounded px-0.5">{c.match}</mark>{c.after}
+                            </div>
+                          )
+                        })()}
                         {a.reason && <div className="text-xs text-gray-500 mt-0.5">{a.reason}</div>}
                       </div>
                     ))}
