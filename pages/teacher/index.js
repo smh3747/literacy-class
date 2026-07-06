@@ -33,6 +33,9 @@ export default function TeacherHome() {
   const settingsRef = useRef(null)                            // 🆕 step290: 학급 설정 스크롤(드로어)
   // 🆕 step291: 우측 드로어(데스크탑 lg+)에 패널 1개만 — 'login'|'api'|'settings'|null. 모바일은 인라인이라 무관.
   const [activePanel, setActivePanel] = useState(null)
+  // 🆕 step386: 복구용 이메일 미등록 배너 (합성 이메일 교사에게만, 닫기 유지)
+  const [recoveryEmailMissing, setRecoveryEmailMissing] = useState(false)
+  const [recoveryBannerHidden, setRecoveryBannerHidden] = useState(true)
   // 🆕 step380: 파운딩 멤버 사전 신청 (결제 아님, 관심 등록만). loaded=조회 성공(테이블 미생성이면 false→카드 숨김)
   // 🆕 step382: response('interested'|'not_sure') 응답 구분 추가
   const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
@@ -82,6 +85,22 @@ export default function TeacherHome() {
   }
 
   useEffect(() => { checkAuth() }, [])
+
+  // 🆕 step386: 복구용 이메일 등록 여부 — 본인 세션(비임퍼소네이션)에서만, 합성 이메일이면 배너
+  useEffect(() => {
+    if (!user?.id || user.role !== 'teacher' || isImpersonating) return
+    try { setRecoveryBannerHidden(!!localStorage.getItem('lc-recovery-email-banner-dismissed:' + user.id)) } catch { setRecoveryBannerHidden(false) }
+    ;(async () => {
+      const { data: { user: au } } = await supabase.auth.getUser()
+      if (!au || au.id !== user.id) return
+      setRecoveryEmailMissing((au.email || '').endsWith('@writing.class'))
+    })()
+  }, [user?.id, isImpersonating, showProfileModal])  // 모달 닫힘 후 재평가(등록 완료 시 배너 소멸)
+
+  const dismissRecoveryBanner = () => {
+    setRecoveryBannerHidden(true)
+    if (user?.id) { try { localStorage.setItem('lc-recovery-email-banner-dismissed:' + user.id, '1') } catch {} }
+  }
 
   // 🆕 step380: 사전 신청 상태 조회 — 테이블·컬럼 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
   useEffect(() => {
@@ -595,6 +614,21 @@ export default function TeacherHome() {
 
           {/* 심의/동의 배너 (원래 위치: 학급 카드 위, 항상 표시) */}
           {bannersBlock}
+
+          {/* 🆕 step386: 복구용 이메일 등록 배너 (합성 이메일 교사에게만, 등록 기능은 내 정보 수정에) */}
+          {user?.role === 'teacher' && !isImpersonating && recoveryEmailMissing && !recoveryBannerHidden && (
+            <div className="relative bg-blue-50 border border-blue-200 rounded-2xl p-4">
+              <button onClick={dismissRecoveryBanner} aria-label="닫기"
+                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+              <p className="text-sm text-blue-900 break-keep pr-6 mb-2">
+                비밀번호를 잊었을 때를 대비해 이메일을 등록해 주세요. 등록해 두면 이메일로 바로 재설정할 수 있어요.
+              </p>
+              <button onClick={() => setShowProfileModal(true)}
+                className="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-700 transition">
+                내 정보 수정 열기
+              </button>
+            </div>
+          )}
 
           {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 — 🆕 step382: 가격 없는 관심 등록 + 2버튼 응답 */}
           {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (

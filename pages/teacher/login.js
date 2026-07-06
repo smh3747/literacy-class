@@ -42,9 +42,11 @@ export default function TeacherLogin() {
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const fieldRefs = useRef({})
-  // 🆕 step381: 이메일 재설정 메일 모달
+  // 🆕 step381: 이메일 재설정 메일 모달 — 🆕 step386: 모드 2개(reset=아이디+이메일 쌍 검증 / findid=이메일만)
   const [showEmailReset, setShowEmailReset] = useState(false)
+  const [emailModalMode, setEmailModalMode] = useState('reset')  // 'reset' | 'findid'
   const [emailResetAddr, setEmailResetAddr] = useState('')
+  const [emailResetUname, setEmailResetUname] = useState('')     // reset 모드 전용
   const [emailResetSending, setEmailResetSending] = useState(false)
   const [emailResetSent, setEmailResetSent] = useState(false)
 
@@ -63,21 +65,39 @@ export default function TeacherLogin() {
   }
 
   // 🆕 step381: 재설정 메일 발송 — 계정 존재 여부와 무관하게 항상 같은 완료 안내(존재 비노출)
+  // 🆕 step386: reset 모드는 아이디+이메일 쌍 검증(서버), findid 모드는 이메일만(링크 열면 아이디 표시)
   const sendResetEmail = async () => {
     const addr = emailResetAddr.trim()
     if (!isValidEmail(addr)) return alert('이메일 형식을 확인해주세요')
+    if (emailModalMode === 'reset' && !emailResetUname.trim()) return alert('아이디를 입력해주세요')
     setEmailResetSending(true)
-    let origin
-    if (process.env.NEXT_PUBLIC_SITE_URL) {
-      origin = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
-    } else {
-      origin = window.location.origin
-    }
     try {
-      await supabase.auth.resetPasswordForEmail(addr, { redirectTo: `${origin}/reset-password` })
+      if (emailModalMode === 'reset') {
+        await fetch('/api/request-password-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: emailResetUname.trim().toLowerCase(), email: addr })
+        })
+      } else {
+        let origin
+        if (process.env.NEXT_PUBLIC_SITE_URL) {
+          origin = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
+        } else {
+          origin = window.location.origin
+        }
+        await supabase.auth.resetPasswordForEmail(addr, { redirectTo: `${origin}/reset-password` })
+      }
     } catch {}
     setEmailResetSending(false)
     setEmailResetSent(true)
+  }
+
+  const openEmailModal = (mode) => {
+    setEmailModalMode(mode)
+    setShowEmailReset(true)
+    setEmailResetSent(false)
+    setEmailResetAddr('')
+    setEmailResetUname('')
   }
 
   // 🆕 step162: 아이디 자동 찾기 (이름+학교 → 마스킹된 아이디 표시)
@@ -791,14 +811,20 @@ export default function TeacherLogin() {
                   </>
                 )}
               </p>
-              {/* 🆕 step381: 이메일 가입 계정용 셀프 재설정 진입점 */}
+              {/* 🆕 step381: 이메일 가입·등록 계정용 셀프 복구 진입점 — 🆕 step386: 아이디 찾기 추가 */}
               {mode === 'login' && (
                 <p className="text-xs text-gray-500">
-                  📧 이메일로 가입했다면{' '}
+                  📧 이메일을 등록했다면{' '}
                   <button type="button"
-                    onClick={() => { setShowEmailReset(true); setEmailResetSent(false); setEmailResetAddr('') }}
+                    onClick={() => openEmailModal('reset')}
                     className="text-blue-600 font-medium underline hover:text-blue-800">
-                    이메일로 비밀번호 재설정
+                    비밀번호 재설정
+                  </button>
+                  {' '}·{' '}
+                  <button type="button"
+                    onClick={() => openEmailModal('findid')}
+                    className="text-blue-600 font-medium underline hover:text-blue-800">
+                    아이디 찾기
                   </button>
                 </p>
               )}
@@ -809,17 +835,21 @@ export default function TeacherLogin() {
           </div>
         </main>
 
-        {/* 🆕 step381: 이메일 재설정 메일 보내기 모달 */}
+        {/* 🆕 step381: 이메일 복구 모달 — 🆕 step386: reset(아이디+이메일)/findid(이메일만) 2모드 */}
         {showEmailReset && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
             onClick={() => !emailResetSending && setShowEmailReset(false)}>
             <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 shadow-2xl"
               onClick={e => e.stopPropagation()}>
-              <h3 className="font-bold">📧 이메일로 비밀번호 재설정</h3>
+              <h3 className="font-bold">
+                {emailModalMode === 'reset' ? '📧 이메일로 비밀번호 재설정' : '📧 이메일로 아이디 찾기'}
+              </h3>
               {emailResetSent ? (
                 <>
                   <p className="text-sm text-gray-700 break-keep">
-                    재설정 메일을 보냈어요. 받은편지함을 확인해주세요. 안 보이면 스팸함도 확인해주세요.
+                    {emailModalMode === 'reset'
+                      ? '등록된 정보가 맞으면 안내 메일이 발송돼요. 받은편지함을 확인해주세요. 안 보이면 스팸함도 확인해주세요.'
+                      : '등록된 이메일이면 안내 메일이 발송돼요. 메일의 링크를 열면 아이디를 확인할 수 있어요. 스팸함도 확인해주세요.'}
                   </p>
                   <button onClick={() => setShowEmailReset(false)}
                     className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm">
@@ -829,15 +859,22 @@ export default function TeacherLogin() {
               ) : (
                 <>
                   <p className="text-xs text-gray-500 break-keep">
-                    가입할 때 등록한 이메일을 입력해주세요. 이메일 없이 가입한 계정은 찾기 요청을 이용해주세요.
+                    {emailModalMode === 'reset'
+                      ? '아이디와 등록한 이메일을 입력해주세요. 둘 다 맞아야 재설정 메일이 발송돼요. 이메일이 없는 계정은 찾기 요청을 이용해주세요.'
+                      : '등록한 이메일을 입력해주세요. 메일의 링크를 열면 아이디를 알려드려요. 이메일이 없는 계정은 찾기 요청을 이용해주세요.'}
                   </p>
+                  {emailModalMode === 'reset' && (
+                    <input type="text" value={emailResetUname} onChange={e => setEmailResetUname(e.target.value)}
+                      placeholder="아이디" autoComplete="username"
+                      className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:border-primary focus:outline-none" />
+                  )}
                   <input type="email" value={emailResetAddr} onChange={e => setEmailResetAddr(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') sendResetEmail() }}
-                    placeholder="가입 이메일"
+                    placeholder="등록한 이메일"
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:border-primary focus:outline-none" />
                   <button onClick={sendResetEmail} disabled={emailResetSending}
                     className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm disabled:opacity-50">
-                    {emailResetSending ? '보내는 중...' : '재설정 메일 보내기'}
+                    {emailResetSending ? '보내는 중...' : '안내 메일 보내기'}
                   </button>
                 </>
               )}

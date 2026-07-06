@@ -12,11 +12,12 @@ export default function ResetPassword() {
   const [pw2, setPw2] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [myUsername, setMyUsername] = useState('')  // 🆕 step386: 아이디 찾기 겸용(recovery 세션에서 자기조회)
 
   // 진입 검사: recovery 토큰 처리를 기다렸다가 세션이 생기면 폼, 3초 내 없으면 무효 링크 안내
   useEffect(() => {
     let settled = false
-    const ready = () => { if (!settled) { settled = true; setPhase('ready') } }
+    const ready = () => { if (!settled) { settled = true; setPhase('ready'); loadUsername() } }
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY' || session) ready()
@@ -26,11 +27,27 @@ export default function ResetPassword() {
       if (settled) return
       const { data: { session } } = await supabase.auth.getSession()
       settled = true
-      setPhase(session ? 'ready' : 'invalid')
+      if (session) { setPhase('ready'); loadUsername() } else { setPhase('invalid') }
     }, 3000)
 
     return () => { sub.subscription.unsubscribe(); clearTimeout(timer) }
   }, [])
+
+  // 🆕 step386: 본인 아이디 표시 (RLS prof_select: id=auth.uid() 자기조회, signOut 전에만 가능)
+  const loadUsername = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id) return
+      const { data } = await supabase.from('profiles').select('username').eq('id', session.user.id).maybeSingle()
+      if (data?.username) setMyUsername(data.username)
+    } catch {}
+  }
+
+  // 🆕 step386: 아이디만 확인하고 나가기 (recovery 세션 정리 후 로그인으로)
+  const exitToLogin = async () => {
+    try { await supabase.auth.signOut() } catch {}
+    window.location.href = '/teacher/login'
+  }
 
   const submit = async () => {
     setError('')
@@ -73,6 +90,18 @@ export default function ResetPassword() {
 
           {phase === 'ready' && (
             <div className="space-y-3">
+              {/* 🆕 step386: 아이디 표시 (아이디 찾기 겸용) */}
+              {myUsername && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                  <p className="text-sm text-blue-900 break-keep">
+                    회원님의 아이디는 <strong className="font-bold">{myUsername}</strong>이에요.
+                  </p>
+                  <button onClick={exitToLogin}
+                    className="mt-2 text-xs text-blue-700 underline hover:text-blue-900">
+                    아이디 확인만 하고 로그인하러 가기
+                  </button>
+                </div>
+              )}
               <p className="text-sm text-gray-600 break-keep">새 비밀번호를 정해주세요. 6자 이상이면 돼요.</p>
               <input type="password" value={pw} onChange={e => setPw(e.target.value)}
                 placeholder="새 비밀번호" autoComplete="new-password"

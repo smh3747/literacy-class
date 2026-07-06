@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import SchoolAutocomplete from './SchoolAutocomplete'
+import { isValidEmail } from '../lib/email'
 
 export default function ProfileEditModal({ user, onClose, onUpdate }) {
   const [realname, setRealname] = useState('')
@@ -11,6 +12,10 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  // 🆕 step386: 계정 복구용 이메일 (auth 이메일). 임퍼소네이션(auth uid ≠ 프로필 id)이면 섹션 숨김.
+  const [authEmail, setAuthEmail] = useState(null)   // null=미조회, ''=섹션 숨김
+  const [emailInput, setEmailInput] = useState('')
+  const [currentPw, setCurrentPw] = useState('')
 
   useEffect(() => {
     if (user) {
@@ -20,7 +25,25 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
       setSchoolRegion(user.school_region || '')
     }
     loadClassName()
+    loadAuthEmail()
   }, [user])
+
+  // 🆕 step386: 본인 세션일 때만 auth 이메일 로드 (관리자 엿보기 중엔 관리자 이메일 노출·변경 방지)
+  const loadAuthEmail = async () => {
+    try {
+      const { data: { user: au } } = await supabase.auth.getUser()
+      if (!au || au.id !== user?.id) { setAuthEmail(''); return }
+      const mail = au.email || ''
+      const isSynthetic = mail.endsWith('@writing.class')
+      setAuthEmail(isSynthetic ? 'none' : mail)
+      setEmailInput(isSynthetic ? '' : mail)
+    } catch { setAuthEmail('') }
+  }
+
+  // 이메일 변경 여부 (등록 안 됐으면 입력이 있을 때, 등록됐으면 값이 달라졌을 때)
+  const emailChanged = authEmail === 'none'
+    ? emailInput.trim() !== ''
+    : (authEmail && emailInput.trim().toLowerCase() !== authEmail.toLowerCase())
 
   const loadClassName = async () => {
     if (!user?.class_id) return
@@ -34,8 +57,26 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
     if (!school.trim()) return setError('학교명을 입력해주세요')
     if (!classNameInput.trim()) return setError('학급 이름을 입력해주세요')
 
+    // 🆕 step386: 이메일 변경 검증 (변경할 때만)
+    if (emailChanged) {
+      if (!isValidEmail(emailInput)) return setError('이메일 형식을 확인해주세요')
+      if (!currentPw) return setError('이메일을 바꾸려면 현재 비밀번호를 입력해주세요')
+    }
+
     setLoading(true)
     try {
+      // 🆕 step386: 이메일 변경분 먼저 (서버에서 현재 비밀번호 재인증 후 즉시 교체)
+      if (emailChanged) {
+        const { data: { session } } = await supabase.auth.getSession()
+        const resp = await fetch('/api/teacher-update-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailInput.trim(), currentPassword: currentPw, accessToken: session?.access_token })
+        })
+        const d = await resp.json()
+        if (!resp.ok) throw new Error(d.error || '이메일 등록에 실패했어요')
+      }
+
       // profiles 업데이트
       const { error: pErr } = await supabase.from('profiles').update({
         realname: realname.trim(),
@@ -103,6 +144,26 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
                   placeholder="예: 5학년 1반"
                   className="w-full p-3 border border-gray-200 rounded-lg" />
               </div>
+              {/* 🆕 step386: 계정 복구용 이메일 (본인 세션에서만 표시) */}
+              {authEmail !== null && authEmail !== '' && (
+                <div className="border-t border-gray-100 pt-3">
+                  <label className="block text-sm font-medium mb-1">계정 복구용 이메일</label>
+                  {authEmail === 'none' && (
+                    <p className="text-xs text-amber-700 mb-1.5">아직 등록되지 않았어요. 등록해 두면 비밀번호를 잊었을 때 이메일로 재설정할 수 있어요.</p>
+                  )}
+                  <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)}
+                    placeholder="예: kim@naver.com"
+                    className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="email" />
+                  {emailChanged && (
+                    <div className="mt-2">
+                      <label className="block text-xs text-gray-600 mb-1">본인 확인을 위해 현재 비밀번호를 입력해주세요</label>
+                      <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)}
+                        placeholder="현재 비밀번호"
+                        className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="current-password" />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
                 💡 아이디는 변경할 수 없어요 (보안상)
               </div>
