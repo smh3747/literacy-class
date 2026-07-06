@@ -1,6 +1,6 @@
 import Head from 'next/head'
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import { getAuthErrorMessage } from '../../lib/authErrors'
@@ -34,6 +34,10 @@ export default function TeacherLogin() {
 
   // 🆕 step381: 신규 가입 실이메일 (비밀번호 재설정 메일 수신용)
   const [signupEmail, setSignupEmail] = useState('')
+  // 🆕 step383: 비밀번호 확인 + 필드별 검증 메시지 + 제출 시 DOM 실제값 읽기(자동완성 불일치 면역)
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
+  const fieldRefs = useRef({})
   // 🆕 step381: 이메일 재설정 메일 모달
   const [showEmailReset, setShowEmailReset] = useState(false)
   const [emailResetAddr, setEmailResetAddr] = useState('')
@@ -235,6 +239,64 @@ export default function TeacherLogin() {
     }
   }
 
+  // 🆕 step383: 필드별 검증기 — 뭉뚱그린 단일 문구 대신 어떤 칸이 왜 문제인지 개별 안내
+  const validateSignupField = (key, val, all = {}) => {
+    const v = (val || '').trim()
+    switch (key) {
+      case 'secretCode': return v ? null : '가입 코드를 입력해주세요'
+      case 'realname': return v ? null : '이름을 입력해주세요'
+      case 'school': return v ? null : '학교명을 입력해주세요'
+      case 'className': return v ? null : '학급 이름을 입력해주세요'
+      case 'username':
+        if (!v) return '아이디를 입력해주세요'
+        if (!/^[a-zA-Z0-9._-]+$/.test(v)) return '아이디는 영문과 숫자로 입력해주세요'
+        return null
+      case 'password': return (val || '').length >= 6 ? null : '비밀번호는 6자 이상으로 입력해주세요'
+      case 'passwordConfirm': return val === (all.password ?? password) ? null : '비밀번호가 서로 달라요'
+      case 'signupEmail':
+        if (!/.+@.+\..+/.test(v) || v.toLowerCase().endsWith('@writing.class')) return '이메일 형식을 확인해주세요'
+        return null
+      default: return null
+    }
+  }
+
+  // 🆕 step383: 제출 시 DOM의 실제 표시 값을 읽는다(자동완성이 onChange 없이 채운 값도 인정).
+  //   "화면엔 채워져 보이는데 state가 비어 제출 불가"였던 회귀(step381 이후)의 원인 클래스 제거.
+  const readSignupVals = () => {
+    const dom = (k) => fieldRefs.current[k]?.value
+    const vals = {
+      secretCode: dom('secretCode') ?? secretCode,
+      realname: dom('realname') ?? realname,
+      school: dom('school') ?? school,
+      className: dom('className') ?? className,
+      username: dom('username') ?? username,
+      password: dom('password') ?? password,
+      passwordConfirm: dom('passwordConfirm') ?? passwordConfirm,
+      signupEmail: dom('signupEmail') ?? signupEmail,
+    }
+    // 학교 코드·지역: DOM과 state가 같을 때만 유지, 다르면 직접 입력 취급(기존 의미와 동일)
+    vals.schoolCode = (vals.school === school) ? schoolCode : ''
+    vals.schoolRegion = (vals.school === school) ? schoolRegion : ''
+    // state 동기화 (화면 표시·이후 로직 일관성)
+    if (vals.secretCode !== secretCode) setSecretCode(vals.secretCode)
+    if (vals.realname !== realname) setRealname(vals.realname)
+    if (vals.school !== school) { setSchool(vals.school); setSchoolCode(''); setSchoolRegion('') }
+    if (vals.className !== className) setClassName(vals.className)
+    if (vals.username !== username) setUsername(vals.username)
+    if (vals.password !== password) setPassword(vals.password)
+    if (vals.passwordConfirm !== passwordConfirm) setPasswordConfirm(vals.passwordConfirm)
+    if (vals.signupEmail !== signupEmail) setSignupEmail(vals.signupEmail)
+    return vals
+  }
+
+  // 🆕 step383: blur 시 개별 검증, 에러 있던 칸은 입력 즉시 재검증(고치면 바로 사라짐)
+  const blurValidate = (key, val) => {
+    setFieldErrors(prev => ({ ...prev, [key]: validateSignupField(key, val) }))
+  }
+  const changeRevalidate = (key, val) => {
+    setFieldErrors(prev => (prev[key] ? { ...prev, [key]: validateSignupField(key, val) } : prev))
+  }
+
   // form onSubmit: 엔터키든 버튼이든 다 여기로
   // setTimeout 0ms: 마지막 onChange의 setState가 반영된 뒤 실행되도록 보장
   const handleFormSubmit = (e) => {
@@ -242,19 +304,25 @@ export default function TeacherLogin() {
     if (loading) return
     setTimeout(() => {
       if (mode === 'signup') {
-        if (!username || !password || !realname || !className || !secretCode || !school) {
-          setError('모든 항목을 입력해주세요')
-          return
-        }
-        if (password.length < 6) {
-          setError('비밀번호는 6자 이상이어야 해요')
+        // 🆕 step383: DOM 실제값 기준 전체 검증 → 첫 문제 필드로 스크롤·포커스
+        const vals = readSignupVals()
+        const order = ['secretCode', 'realname', 'school', 'className', 'username', 'password', 'passwordConfirm', 'signupEmail']
+        const errs = {}
+        order.forEach(k => { const m = validateSignupField(k, vals[k], vals); if (m) errs[k] = m })
+        setFieldErrors(errs)
+        const firstBad = order.find(k => errs[k])
+        if (firstBad) {
+          setError('')
+          const el = fieldRefs.current[firstBad]
+          if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus?.() }
           return
         }
         if (!agreeTerms || !agreePrivacy) {
           setError('이용약관과 개인정보처리방침에 동의해주세요')
           return
         }
-        handleSubmit()
+        setError('')
+        handleSubmit(vals)
       } else {
         handleSubmit()
       }
@@ -269,10 +337,13 @@ export default function TeacherLogin() {
     handleFormSubmit(e)
   }
 
-  const handleSubmit = async () => {
+  // 🆕 step383: 가입은 handleFormSubmit이 DOM에서 읽은 vals를 받아 사용(자동완성 불일치 면역).
+  //   로그인 경로는 인자 없이 기존 state 그대로(무변경).
+  const handleSubmit = async (vals) => {
     setLoading(true)
     setError('')
     const email = `${username.toLowerCase()}@writing.class`
+    const v = vals || { secretCode, realname, school, className, username, password, signupEmail, schoolCode, schoolRegion }
 
     try {
       if (mode === 'login') {
@@ -326,7 +397,7 @@ export default function TeacherLogin() {
         const codeRes = await fetch('/api/verify-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: secretCode, role: signupRole })
+          body: JSON.stringify({ code: v.secretCode, role: signupRole })
         })
         if (!codeRes.ok) {
           const data = await codeRes.json()
@@ -336,22 +407,22 @@ export default function TeacherLogin() {
         // admin 중복가입 확인은 /api/verify-code(서버)에서 수행 (step148 RLS로 이동)
 
         // 🆕 step381: 실이메일 필수 — 비밀번호를 잊었을 때 재설정 메일을 받는 주소
-        const realEmail = signupEmail.trim().toLowerCase()
+        const realEmail = v.signupEmail.trim().toLowerCase()
         if (!/.+@.+\..+/.test(realEmail) || realEmail.endsWith('@writing.class')) {
-          throw new Error('이메일을 정확히 입력해주세요. 비밀번호를 잊었을 때 재설정 메일을 받는 주소예요.')
+          throw new Error('이메일 형식을 확인해주세요. 비밀번호를 잊었을 때 재설정 메일을 받는 주소예요.')
         }
 
         // 🆕 step381: 아이디 중복확인 — 실이메일 전환으로 합성 이메일 충돌에 의한 감지가 사라져 서버 확인 필수
         const unameRes = await fetch('/api/teacher-username-check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username.toLowerCase() })
+          body: JSON.stringify({ username: v.username.toLowerCase() })
         })
         const unameData = await unameRes.json()
         if (!unameRes.ok) throw new Error(unameData.error || '아이디 확인에 실패했어요. 잠시 후 다시 시도해주세요.')
         if (unameData.taken) throw new Error('이미 가입된 아이디예요')
 
-        const { data, error: err } = await supabase.auth.signUp({ email: realEmail, password })
+        const { data, error: err } = await supabase.auth.signUp({ email: realEmail, password: v.password })
         if (err) {
           if (err.message.includes('already')) throw new Error('이미 사용 중인 이메일이에요')
           throw err
@@ -372,13 +443,13 @@ export default function TeacherLogin() {
         }
 
         const { data: newClass, error: classErr } = await supabase.from('classes')
-          .insert({ name: className.trim(), code: newCode, teacher_id: data.user.id, school: school.trim(), school_code: schoolCode || null })
+          .insert({ name: v.className.trim(), code: newCode, teacher_id: data.user.id, school: v.school.trim(), school_code: v.schoolCode || null })
           .select().single()
         if (classErr) throw new Error('학급 생성 실패: ' + classErr.message)
 
         await supabase.from('profiles').insert({
-          id: data.user.id, username: username.toLowerCase(), realname: realname.trim(), school: school.trim(),
-          school_code: schoolCode || null, school_region: schoolRegion || null, role: signupRole, class_id: newClass.id
+          id: data.user.id, username: v.username.toLowerCase(), realname: v.realname.trim(), school: v.school.trim(),
+          school_code: v.schoolCode || null, school_region: v.schoolRegion || null, role: signupRole, class_id: newClass.id
         })
 
         persistOptions()
@@ -411,11 +482,11 @@ export default function TeacherLogin() {
             </div>
 
             <div className="flex gap-2 mb-6 bg-gray-100 rounded-xl p-1">
-              <button type="button" onClick={() => { setMode('login'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('login'); setError(''); setFieldErrors({}); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 로그인
               </button>
-              <button type="button" onClick={() => { setMode('signup'); setError(''); setStep('form'); }}
+              <button type="button" onClick={() => { setMode('signup'); setError(''); setFieldErrors({}); setStep('form'); }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium ${mode === 'signup' ? 'bg-white shadow-sm' : 'text-gray-600'}`}>
                 회원가입
               </button>
@@ -443,38 +514,52 @@ export default function TeacherLogin() {
                       <label className="block text-sm font-medium mb-1">
                         {signupRole === 'admin' ? '관리자 코드' : '교사 가입 코드'}
                       </label>
-                      <input type="password" value={secretCode} onChange={e => setSecretCode(e.target.value)}
-                        onKeyDown={handleEnter}
+                      <input type="password" value={secretCode}
+                        ref={el => { fieldRefs.current.secretCode = el }}
+                        onChange={e => { setSecretCode(e.target.value); changeRevalidate('secretCode', e.target.value) }}
+                        onBlur={e => blurValidate('secretCode', e.target.value)}
+                        onKeyDown={handleEnter} autoComplete="one-time-code"
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="가입 코드" />
+                      {fieldErrors.secretCode && <p className="text-xs text-red-600 mt-1">{fieldErrors.secretCode}</p>}
                       <p className="text-xs text-gray-500 mt-1">
                         💡 앱을 소개해준 분(운영자)에게 받은 코드예요. 모르면 운영자에게 문의하세요.
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">이름</label>
-                      <input type="text" value={realname} onChange={e => setRealname(e.target.value)}
+                      <input type="text" value={realname}
+                        ref={el => { fieldRefs.current.realname = el }}
+                        onChange={e => { setRealname(e.target.value); changeRevalidate('realname', e.target.value) }}
+                        onBlur={e => blurValidate('realname', e.target.value)}
                         onKeyDown={handleEnter}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="실명 (예: 김선생)" />
+                      {fieldErrors.realname && <p className="text-xs text-red-600 mt-1">{fieldErrors.realname}</p>}
                     </div>
-                    <div>
+                    <div ref={el => { fieldRefs.current.school = el }}>
                       <label className="block text-sm font-medium mb-1">학교명</label>
                       <SchoolAutocomplete
                         value={school}
                         onChange={({ school: s, school_code, school_region }) => {
                           setSchool(s); setSchoolCode(school_code || ''); setSchoolRegion(school_region || '')
+                          changeRevalidate('school', s)
                         }}
                         onEnter={handleEnter}
                         placeholder="학교명 입력 후 목록에서 선택"
                       />
+                      {fieldErrors.school && <p className="text-xs text-red-600 mt-1">{fieldErrors.school}</p>}
                       <p className="text-xs text-gray-500 mt-1">
                         💡 학교명을 입력하면 목록이 떠요. 목록에서 고르면 나중에 아이디·비밀번호 찾기가 정확해져요. 안 나오면 직접 입력해도 돼요.
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">학급 이름</label>
-                      <input type="text" value={className} onChange={e => setClassName(e.target.value)}
+                      <input type="text" value={className}
+                        ref={el => { fieldRefs.current.className = el }}
+                        onChange={e => { setClassName(e.target.value); changeRevalidate('className', e.target.value) }}
+                        onBlur={e => blurValidate('className', e.target.value)}
                         onKeyDown={handleEnter}
                         className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: 5학년 1반" />
+                      {fieldErrors.className && <p className="text-xs text-red-600 mt-1">{fieldErrors.className}</p>}
                       <p className="text-xs text-gray-500 mt-1">
                         💡 가입하면 이 학급이 자동으로 만들어져요. 나중에 학급을 더 추가할 수도 있어요.
                       </p>
@@ -483,9 +568,13 @@ export default function TeacherLogin() {
                 )}
                 <div>
                   <label className="block text-sm font-medium mb-1">아이디</label>
-                  <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                  <input type="text" value={username}
+                    ref={el => { fieldRefs.current.username = el }}
+                    onChange={e => { setUsername(e.target.value); if (mode === 'signup') changeRevalidate('username', e.target.value) }}
+                    onBlur={e => { if (mode === 'signup') blurValidate('username', e.target.value) }}
                     onKeyDown={handleEnter}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder="영문 아이디 (예: kim2024)" autoComplete="username" />
+                  {mode === 'signup' && fieldErrors.username && <p className="text-xs text-red-600 mt-1">{fieldErrors.username}</p>}
                   {mode === 'signup' && (
                     <p className="text-xs text-gray-500 mt-1">
                       💡 영문·숫자로 짧고 기억하기 쉽게. 로그인할 때 매번 쓰는 아이디예요.
@@ -494,10 +583,23 @@ export default function TeacherLogin() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
-                  <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  <input type="password" value={password}
+                    ref={el => { fieldRefs.current.password = el }}
+                    onChange={e => {
+                      setPassword(e.target.value)
+                      if (mode === 'signup') {
+                        changeRevalidate('password', e.target.value)
+                        // 비밀번호가 바뀌면 확인 칸 불일치도 즉시 재판정
+                        setFieldErrors(prev => (prev.passwordConfirm
+                          ? { ...prev, passwordConfirm: validateSignupField('passwordConfirm', passwordConfirm, { password: e.target.value }) }
+                          : prev))
+                      }
+                    }}
+                    onBlur={e => { if (mode === 'signup') blurValidate('password', e.target.value) }}
                     onKeyDown={handleEnter}
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+                  {mode === 'signup' && fieldErrors.password && <p className="text-xs text-red-600 mt-1">{fieldErrors.password}</p>}
                   {mode === 'signup' && (
                     <p className="text-xs text-gray-500 mt-1">
                       💡 잊지 않도록 기억해주세요. 잊으면 아래 이메일로 재설정할 수 있어요.
@@ -505,14 +607,32 @@ export default function TeacherLogin() {
                   )}
                 </div>
 
+                {/* 🆕 step383: 비밀번호 확인 (가입 모드) — 불일치 시 제출 차단 */}
+                {mode === 'signup' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">비밀번호 확인</label>
+                    <input type="password" value={passwordConfirm}
+                      ref={el => { fieldRefs.current.passwordConfirm = el }}
+                      onChange={e => { setPasswordConfirm(e.target.value); changeRevalidate('passwordConfirm', e.target.value) }}
+                      onBlur={e => blurValidate('passwordConfirm', e.target.value)}
+                      onKeyDown={handleEnter} autoComplete="new-password"
+                      className="w-full p-3 border border-gray-200 rounded-lg" placeholder="같은 비밀번호를 한 번 더" />
+                    {fieldErrors.passwordConfirm && <p className="text-xs text-red-600 mt-1">{fieldErrors.passwordConfirm}</p>}
+                  </div>
+                )}
+
                 {/* 🆕 step381: 신규 가입 실이메일 (재설정 메일 수신용) */}
                 {mode === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium mb-1">이메일</label>
-                    <input type="email" value={signupEmail} onChange={e => setSignupEmail(e.target.value)}
+                    <input type="email" value={signupEmail}
+                      ref={el => { fieldRefs.current.signupEmail = el }}
+                      onChange={e => { setSignupEmail(e.target.value); changeRevalidate('signupEmail', e.target.value) }}
+                      onBlur={e => blurValidate('signupEmail', e.target.value)}
                       onKeyDown={handleEnter}
                       className="w-full p-3 border border-gray-200 rounded-lg" placeholder="예: kim@school.kr"
                       autoComplete="email" />
+                    {fieldErrors.signupEmail && <p className="text-xs text-red-600 mt-1">{fieldErrors.signupEmail}</p>}
                     <p className="text-xs text-gray-500 mt-1">
                       💡 비밀번호를 잊었을 때 이 이메일로 재설정 메일이 와요. 자주 확인하는 주소를 적어주세요.
                     </p>
