@@ -20,6 +20,7 @@ export default function SuggestionLogPanel({
   onToggleShare,  // 🆕 (logId, isShared) => void - 본인 로그 공유 토글
   onCancelShare,  // 🆕 step279 (resultingTopicId) => void - 등록 주제 공유 취소
   disabled,
+  copyCounts,     // 🆕 인기 배지·정렬용 (source_log_id-source_index → 교사수)
 }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -98,6 +99,7 @@ export default function SuggestionLogPanel({
           usedDate: log.resulting_topic?.date,
           sourceLogId: log.id,                 // 🆕 가져오기 출처(집계용)
           sourceIndex: log.selected_index,
+          n: Number(copyCounts?.[`${log.id}-${log.selected_index}`] ?? 0) || 0,
         })
         seen.add(log.selected_index)
       }
@@ -116,10 +118,15 @@ export default function SuggestionLogPanel({
         createdAt: log.created_at,
         sourceLogId: log.id,                   // 🆕 가져오기 출처(집계용)
         sourceIndex: idx,
+        n: Number(copyCounts?.[`${log.id}-${idx}`] ?? 0) || 0,
       })
       seen.add(idx)
     }
   }
+
+  // 🆕 인기순 정렬 + 상위 3개(2명 이상)만 인기 배지 (왼쪽 탭과 동일 규칙)
+  flatShared.sort((a, b) => (b.n || 0) - (a.n || 0))
+  flatShared.forEach((item, i) => { item.isPopular = i < 3 && (item.n || 0) >= 2 })
 
   const currentList = tab === 'mine' ? flatMine : flatShared
   const totalCount = flatMine.length + flatShared.length
@@ -242,16 +249,21 @@ export default function SuggestionLogPanel({
                         className="w-full text-left p-2.5 hover:bg-purple-50 disabled:opacity-50 disabled:cursor-not-allowed">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="text-xs text-gray-400">{dateLabel} 추천</div>
-                          {usedLabel && (
-                            <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
-                              ✓ {usedLabel} 사용
-                            </span>
-                          )}
-                          {!usedLabel && item.wasSelected && (
-                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                              👆 선택만
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {item.isPopular && (
+                              <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold">🔥 인기</span>
+                            )}
+                            {usedLabel && (
+                              <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
+                                ✓ {usedLabel} 사용
+                              </span>
+                            )}
+                            {!usedLabel && item.wasSelected && (
+                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                                👆 선택만
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="text-sm font-semibold text-gray-900 leading-tight">
                           {item.title}

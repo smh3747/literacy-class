@@ -2028,6 +2028,7 @@ export default function TopicsPage() {
           onToggleShare={toggleShareSuggestion}
           onCancelShare={cancelTopicShare}
           disabled={false}
+          copyCounts={copyCounts}
         />
       </div>
     </>
