@@ -54,9 +54,22 @@ async function logServerError({ accessToken, type, message }) {
   } catch (_) { /* 로깅 실패는 무시 */ }
 }
 
+// 🔍 원문에서 original 주변을 발췌 — 차단 맥락("어느 글에서")용. 못 찾으면 앞 100자.
+function buildEssayExcerpt(essayText, original) {
+  if (!essayText) return null
+  const e = String(essayText)
+  const o = original == null ? '' : String(original)
+  const idx = o ? e.indexOf(o) : -1
+  const seg = idx === -1
+    ? e.slice(0, 100)
+    : e.slice(Math.max(0, idx - 40), Math.min(e.length, idx + o.length + 40))
+  return seg.slice(0, 300)
+}
+
 // 🔍 C-2: 병합에서 폐기된 오교정 시도를 correction_alerts에 기록. 절대 throw하지 않음.
 // suspect_type에 '(차단됨)'을 붙여 관리자 탭에서 "저장된 오교정"과 구분.
-async function logDroppedCorrections(dropped) {
+// 🆕 채점 시점 맥락 저장: blocked_user_id(요청자)·blocked_essay_excerpt(원문 발췌).
+async function logDroppedCorrections(dropped, { userId, essayText } = {}) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -70,7 +83,9 @@ async function logDroppedCorrections(dropped) {
       correction: (d.correction == null ? '' : String(d.correction)).slice(0, 200),
       reason: (d.reason == null ? null : String(d.reason).slice(0, 300)),
       suspect_type: `${d.drop_reason || '미분류'}(차단됨)`,
-      submission_created_at: new Date().toISOString()
+      submission_created_at: new Date().toISOString(),
+      blocked_user_id: userId || null,
+      blocked_essay_excerpt: buildEssayExcerpt(essayText, d.original)
     }))
     await admin.from('correction_alerts').insert(rows)
   } catch (e) { console.warn('폐기 교정 기록 실패(무시):', e?.message) }
@@ -121,7 +136,7 @@ async function resolveApiKey({ accessToken, classId: classIdParam }) {
   if (!apiKey) {
     return { error: { status: 400, message: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' } }
   }
-  return { apiKey }
+  return { apiKey, userId: userData.user.id }
 }
 
 export default async function handler(req, res) {
@@ -143,6 +158,7 @@ export default async function handler(req, res) {
     return res.status(keyResult.error.status).json({ error: keyResult.error.message })
   }
   const apiKey = keyResult.apiKey
+  const userId = keyResult.userId || null   // 🆕 요청자 id — C-2 차단 기록 맥락용
 
   try {
     let prompt, schema, opts
@@ -280,7 +296,7 @@ export default async function handler(req, res) {
         result.corrections = merged.corrections
         // 🔍 C-2: 차단된 오교정 시도를 감시 테이블에 기록 (부가 기능 — 실패해도 채점은 계속)
         if (merged.dropped && merged.dropped.length > 0) {
-          logDroppedCorrections(merged.dropped)  // await 안 함 (fire-and-forget, 응답 지연 0)
+          logDroppedCorrections(merged.dropped, { userId, essayText: mergeEssay })  // await 안 함 (fire-and-forget, 응답 지연 0)
         }
       } catch (e) { console.warn('규칙 병합 실패:', e?.message) }
     }
