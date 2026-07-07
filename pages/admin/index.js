@@ -32,10 +32,19 @@ function extractContext(body, original) {
   }
 }
 
-// 🆕 step371: 알림 1건의 맥락 상태 계산. submission_id 없음(C-2)=skip, 글 없음/삭제=gone,
-//   본문에 original 없음=notfound, 찾음=ok(+before/match/after).
+// 🆕 step371: 알림 1건의 맥락 상태 계산. 글 없음/삭제=gone, 본문에 original 없음=notfound, 찾음=ok(+before/match/after).
+//   🆕 step398 후속: submission_id 없어도 차단 기록(C-2)이 저장해둔 blocked_essay_excerpt가 있으면 맥락으로 표시.
+//   발췌 안에서 original을 찾으면 ok(하이라이트), 못 찾으면 excerpt(발췌 원문 그대로). 둘 다 없으면 skip.
 function buildContext(a, subMap) {
-  if (!a.submission_id) return { kind: 'skip' }
+  if (!a.submission_id) {
+    const ex = a.blocked_essay_excerpt
+    if (!ex) return { kind: 'skip' }
+    const o = a.original == null ? '' : String(a.original)
+    const t = String(ex)
+    const i = o ? t.indexOf(o) : -1
+    if (i === -1) return { kind: 'excerpt', text: t }
+    return { kind: 'ok', before: t.slice(0, i), match: t.slice(i, i + o.length), after: t.slice(i + o.length) }
+  }
   const sub = subMap[a.submission_id]
   if (!sub || sub.deleted_at) return { kind: 'gone' }
   const ctx = extractContext(sub.essay_text, a.original)
@@ -44,10 +53,12 @@ function buildContext(a, subMap) {
 }
 
 // 🆕 step371: 알림 1건의 작성 학생 정보. submission→user→profile→class→담임 순으로 배치맵 조회.
+//   🆕 step398 후속: submission 경로로 못 찾고 차단 기록의 blocked_user_id가 있으면 그걸로 폴백 조회.
 //   이름은 displayStudentName(미동의=닉네임). 조회불가면 none. pending_names 미조회.
 function buildStudent(a, subMap, profMap, classMap, teacherMap) {
   const sub = a.submission_id ? subMap[a.submission_id] : null
-  const prof = sub && sub.user_id ? profMap[sub.user_id] : null
+  let prof = sub && sub.user_id ? profMap[sub.user_id] : null
+  if (!prof && a.blocked_user_id) prof = profMap[a.blocked_user_id] || null
   if (!prof) return { kind: 'none' }
   const name = displayStudentName(prof)
   const num = (prof.number != null && String(prof.number).trim() !== '') ? String(prof.number).trim() : ''
@@ -438,7 +449,14 @@ export default function AdminHome() {
           .select('id, user_id, essay_text, deleted_at').in('id', subIds)
         ;(subs || []).forEach(s => { subMap[s.id] = s })
       }
-      const userIds = [...new Set(Object.values(subMap).map(s => s.user_id).filter(Boolean))]
+      // 🆕 step398 후속: submission 작성자 + 차단 기록 blocked_user_id(제출물 없는 행)를 한 배치로 조회
+      const blockedUserIds = rows
+        .filter(a => !a.submission_id && a.blocked_user_id)
+        .map(a => a.blocked_user_id)
+      const userIds = [...new Set([
+        ...Object.values(subMap).map(s => s.user_id).filter(Boolean),
+        ...blockedUserIds,
+      ].filter(Boolean))]
       const profMap = {}
       if (userIds.length > 0) {
         const { data: profs } = await supabase.from('profiles')
@@ -2469,6 +2487,10 @@ export default function AdminHome() {
                           if (!c || c.kind === 'skip') return null
                           if (c.kind === 'gone') return <div className="mt-1 text-xs text-gray-400 italic">(글 없음)</div>
                           if (c.kind === 'notfound') return <div className="mt-1 text-xs text-gray-400 italic">(원문에서 위치를 찾지 못했어요)</div>
+                          // 🆕 step398 후속: 차단 기록 발췌(original 위치 못 찾음) — 하이라이트 없이 원문 그대로
+                          if (c.kind === 'excerpt') return (
+                            <div className="mt-1 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">{c.text}</div>
+                          )
                           return (
                             <div className="mt-1 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">
                               {c.before}<mark className="bg-yellow-200 text-gray-900 rounded px-0.5">{c.match}</mark>{c.after}
