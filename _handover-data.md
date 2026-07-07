@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = be59ae0 (step395))
+# 핸드오버 데이터 (HEAD = 43cb273 (step403))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -22,6 +22,15 @@
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화(로컬 산출물, step356에서 추적 제거).
 
 ## 1. 현재 HEAD
+> ⚠️ **문체 오교정 방어 변천 요약(step393~403)**: 프롬프트 규칙 11(예방)과 koreanRules `isStyleChange`(fail-safe 차단+기록)의 왕복이 있었다. **현재 상태 = 규칙 11은 step403판(4원인 차단), isStyleChange 필터는 활성(step401 복원)**. 아래 개별 항목은 이력이므로 최신 결론만 볼 거면 이 줄과 §7·§13을 보라.
+- `43cb273` — **step403: 문체 오교정 4원인 차단 — 규칙 11 재교체(`lib/prompts.server.js` 단일).** 의심 교정 8건 분석 4원인 차단: ①일관된 글 다수결 판정(문체 교정 금지) ②표현 다듬기 금지 ③마침표 없는 문장중간을 문장끝으로 단정 금지 ④내용 단어 교체 금지. 규칙 1~10 불변, 세 프롬프트 공유.
+- `f4367b2` — **step402: 교사 아침 브리핑 종 알림(병렬 세션).** briefing AI type·홈 lazy 생성·주제당 1회 캐시. `lib/briefingPrompt.server.js`(신설)·`migrations/step402-morning-briefing.sql`·`pages/api/ai.js`·`pages/teacher/index.js`. (방학 본공사 '교사 아침 브리핑' 1차 착수)
+- `1c8c857` — **step401: 문체개입 필터(isStyleChange) 복원(`lib/koreanRules.js` 단일).** step400에서 제거했으나, 이 필터가 문체 오교정을 (1)학생에 안 나가게 막고 (2)dropped에 '문체개입'으로 실어 correction_alerts 분석 재료로 남기므로 되살림. **현재 활성.**
+- `d86ab1e` — **step400: 문체개입 필터(isStyleChange) 제거(`lib/koreanRules.js`).** 규칙 11(step397)이 "섞였을 때만"으로 바뀌자 문장 하나만 보는 필터가 정당한 통일 지적까지 버려 제거했음. **→ step401에서 복원됨(현재는 있음).**
+- `9123bd9` — **step399: 관리자 의심 교정 탭에 차단 기록 학생·맥락 표시(`pages/admin/index.js` 단일).** `blocked_user_id`→profiles 배치 조인으로 학생 정보, `blocked_essay_excerpt`를 맥락에 표시. displayStudentName(미동의=닉네임). '글 보기'는 submission_id 있을 때만.
+- `1ded9e2` — **step398: C-2 차단 기록에 학생·글 맥락 저장(`pages/api/ai.js` 단일).** `logDroppedCorrections`가 요청자 user_id + 원문 발췌를 correction_alerts에 저장. ⚠️**correction_alerts에 `blocked_user_id uuid`·`blocked_essay_excerpt text` 2컬럼 Supabase 수동 추가**(마이그레이션 파일 없음).
+- `11cc58b` — **step397: 문체 지적 정책 "전면 금지"→"섞였을 때만 통일"(규칙 11).** → step403에서 재교체됨(이력).
+- `813d0b9` — **step396: 핸드오버 step395 기준 최신화(문서만).**
 - `be59ae0` — **step395: 문체개입 오교정 억제 — CORRECTIONS_RULES 규칙 11 강화(`lib/prompts.server.js` 단일).** 규칙 11을 더 단호·구체적으로 교체(❌ 예시 + "correction의 original과 correction은 종결어미(말투)가 서로 같아야"). 상수 하나라 세 프롬프트(grading·grammarStrict·grammarOnly) 자동 반영. 규칙 1~10 불변. step393 필터(fail-safe)와 이중 차단.
 - `731b701` — **step394: 오른쪽 추천 패널에도 인기순 정렬+🔥 인기 배지(다른 선생님 탭).** 병렬 세션 작업. `components/SuggestionLogPanel.js`·`pages/teacher/topics.js`.
 - `f1dfd94` — **step393: 문체개입(반말→존댓말) 오교정 fail-safe 필터(`lib/koreanRules.js` 단일).** `isStyleChange` 신설 + mergeCorrectionsDetailed 필터 체인 연결(drop_reason `문체개입`). 반말 종결(-다 등) 원문을 존댓말(-습니다/-어요)로 바꾸는 교정을 확정 폐기. 어미 형태 안 바뀌면(됬다→됐다) 안 걸림, 원문이 이미 존댓말이면 제외. "안 기" fail-safe와 동일 전략.
@@ -45,19 +54,19 @@
   - **성장 그래프** 3단 재설계 + 학년 맥락 보정(step342~346).
   - **학생 화면** 재설계(step363~377): 피드백 결과 재배치·채점 완료 스크롤·다시쓰기 체크리스트·맞춤법 퀴즈 1차(step361).
 
-## 2. lib/koreanRules.js — 함수 역할 + 줄 위치 (step393 기준 재확인)
+## 2. lib/koreanRules.js — 함수 역할 + 줄 위치 (step403 기준 재확인)
 | 함수 | 줄 | 역할(1줄) |
 |---|---|---|
 | `findRuleBasedErrors(text)` | `:10` | 정규식으로 AI가 놓친 맞춤법/띄어쓰기 보강 생성(문장부호 뒤 띄어쓰기, 할수있다, 안/않, 되/돼, ㄹ께요, 번째, 입니다/습니다, 조사 '의', 되다/시키다/하다 접미사, 였다·이였다, COMMON_TYPOS 등). |
 | `isAndaVerbCorrection(o,c)` | `:429` | '안다' 활용형(안아·안고·안으며) 화이트리스트 — 안/않 차단망 과차단 방지(step378). |
 | `isInvalidAnhToAn(o,c)` | `:450` | "맞는 '않'을 '안'으로 바꾸는" 오교정 판정(내부 가드). |
 | `isImpossibleCorrection(c)` | `:489` | 불가능 형태 교정 fail-safe 필터('안 '+어미 등, step327). |
-| `isStyleChange(o,c)` | `:499` | **문체개입 fail-safe 필터(step393 신설).** 반말 종결(-다/-어/-지 등) 원문을 존댓말(-습니다/-어요 등)로 바꾸는 교정을 폐기. 어미 형태 안 바뀌면·원문이 이미 존댓말이면 제외. mergeCorrectionsDetailed 최종 체인에서 drop_reason `문체개입`. |
-| `dropAnhFalsePositives(corr)` | `:516` | mergeCorrections 안 타는 경로용 — 안/않 오교정 + 불가능형태 필터. (※문체개입 필터는 여기 미포함, 본체 체인 전용.) |
-| `findOriginalRange(essay, original)` | `:527` | original을 본문에서 찾되 공백 무시 매칭→실제 구간 인덱스 환산. `{start,end,exact,ambiguous}` 또는 `null`. |
-| `snapOriginalToEssay(c, essay)` | `:560` | AI correction의 original을 공백무시로 **유일하게** 찾힐 때만 본문 실제 문자열로 스냅. |
-| `mergeCorrectionsDetailed(aiCorr, essay)` | `:576` | **본체(step360 신설).** 병합 + **폐기된 항목까지 `{corrections, dropped}`로 반환**. dropped는 correction_alerts 기록(작업 C-2, step362)에 쓰임. drop_reason: 안않오교정·불가능형태·문체개입(step393). |
-| `mergeCorrections(aiCorr, essay)` | `:641` | 얇은 래퍼 — `mergeCorrectionsDetailed(...).corrections`만 반환(동작 불변). |
+| `isStyleChange(o,c)` | `:500` | **문체개입 fail-safe 필터(step393 신설→400 제거→401 복원, 현재 활성).** 반말 종결(-다/-어/-지 등) 원문을 존댓말(-습니다/-어요 등)로 바꾸는 교정을 폐기. 어미 형태 안 바뀌면·원문이 이미 존댓말이면 제외. mergeCorrectionsDetailed 최종 체인에서 drop_reason `문체개입`. |
+| `dropAnhFalsePositives(corr)` | `:514` | mergeCorrections 안 타는 경로용 — 안/않 오교정 + 불가능형태 필터. (※문체개입 필터는 여기 미포함, 본체 체인 전용.) |
+| `findOriginalRange(essay, original)` | `:525` | original을 본문에서 찾되 공백 무시 매칭→실제 구간 인덱스 환산. `{start,end,exact,ambiguous}` 또는 `null`. |
+| `snapOriginalToEssay(c, essay)` | `:558` | AI correction의 original을 공백무시로 **유일하게** 찾힐 때만 본문 실제 문자열로 스냅. |
+| `mergeCorrectionsDetailed(aiCorr, essay)` | `:574` | **본체(step360 신설).** 병합 + **폐기된 항목까지 `{corrections, dropped}`로 반환**. dropped는 correction_alerts 기록(작업 C-2, step362)에 쓰임. drop_reason: 안않오교정·불가능형태·문체개입(step393·401). |
+| `mergeCorrections(aiCorr, essay)` | `:639` | 얇은 래퍼 — `mergeCorrectionsDetailed(...).corrections`만 반환(동작 불변). |
 
 - **무의미 교정 필터(step273)** + **불가능형태 필터(step327)** + **문체개입 필터(step393)**는 mergeCorrectionsDetailed 안에 통합.
 
@@ -79,11 +88,12 @@ export const GRAMMAR_NOTICE_TEACHER =
 ## 5. migrations — 최신 파일(스텝번호 기준)
 | 파일 | 한 줄 설명 |
 |---|---|
+| `step402-morning-briefing.sql` | 교사 아침 브리핑 저장(step402, 병렬 세션 신설). |
 | `step382-preorders-response.sql` (+`-rollback`) | 사전 신청 응답 구분 `response text`('interested'/'not_sure', default interested). RLS 불변. |
 | `step380-preorders.sql` (+`-rollback`) | 파운딩 멤버 사전 신청 `preorders`(teacher_id unique·created_at) + RLS(po_select 본인/admin, po_insert 본인 teacher). update/delete 정책 없음=차단. |
 | `step272-topic-copies.sql` | 공유 주제 가져오기 출처 기록(topic_copies + RLS + topic_copy_counts() RPC). |
 - **⚠️ DB 객체는 Supabase SQL Editor에서 수동 실행**(자동 적용 아님). 대부분 `IF NOT EXISTS`로 멱등.
-- **마이그레이션 파일 없이 Supabase 수동 적용된 것**: 알림 센터(`notifications` 테이블·RLS·`create_notification` RPC, step348) / 오교정 감시(`correction_alerts` 테이블·pg_cron 일일 스캔, step359~362, submission_id nullable) / 담임 확인 도장(`teacher_stamp`, step323) / 관리자 통계 RPC(`admin_class_stats`, step333). → 스키마는 코드 커밋이 아니라 각 step 커밋 메시지 + 실제 Supabase에 존재.
+- **마이그레이션 파일 없이 Supabase 수동 적용된 것**: 알림 센터(`notifications` 테이블·RLS·`create_notification` RPC, step348) / 오교정 감시(`correction_alerts` 테이블·pg_cron 일일 스캔, step359~362, submission_id nullable; **step398에서 `blocked_user_id uuid`·`blocked_essay_excerpt text` 2컬럼 수동 추가**) / 담임 확인 도장(`teacher_stamp`, step323) / 관리자 통계 RPC(`admin_class_stats`, step333). → 스키마는 코드 커밋이 아니라 각 step 커밋 메시지 + 실제 Supabase에 존재.
 
 ## 6. topic_copies (step272, step326 원저자 로그 연결)
 - **컬럼**: `id` · `source_log_id`(→topic_suggestion_logs) · `source_index`(int) · `copied_by_teacher_id`(→profiles) · `copied_topic_id`(→topics, nullable) · `copied_at`. **UNIQUE(source_log_id, source_index, copied_by_teacher_id)**.
@@ -96,7 +106,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 라우팅: `pages/api/ai.js` `grammarOnly` → `taskType 'grammar'`.
 - **grammarStrict**(step299 신설): 정식 채점과 동일 품질(taskType 'grading'·temp 0·같은 모델). CORRECTIONS_RULES 단일 소스에서 프롬프트 추출.
 - **현재 사용처**: 전체일괄(`runGrammarBatch`·grammar-backfill)은 grammarOnly, 단일 재검사(recheckGrammarOne)는 grammarStrict. step331에서 grammarOnly도 CORRECTIONS_RULES로 통일.
-- **CORRECTIONS_RULES 규칙 11(step395 강화):** 문체개입(반말→존댓말) 오교정 억제. "correction의 original·correction은 종결어미(말투)가 서로 같아야" 명시 + ❌ 예시. 상수 단일 소스라 세 프롬프트에 자동 반영. 이 규칙은 프롬프트=예방, `koreanRules` `isStyleChange`(step393)=fail-safe 차단으로 이중 방어.
+- **CORRECTIONS_RULES 규칙 11(현재 step403판):** 문체 오교정 4원인 차단 — ①일관된 글은 문장 끝맺음 다수결로 판정해 문체 교정 금지 ②표현 다듬기(있어서→있기 때문에 등) 금지 ③마침표 없는 문장중간을 문장끝으로 단정 금지 ④내용 단어 교체(사건 해결이다→사건들입니다) 금지. **변천: step395 강화 → step397 "섞였을 때만 통일" → step403 4원인 차단.** 상수 단일 소스라 세 프롬프트 자동 반영. 프롬프트=예방, `koreanRules` `isStyleChange`(step401 복원, 활성)=fail-safe 차단+correction_alerts 기록으로 이중 방어.
 
 ## 8~9. 재평가 배너 / 학생 안내 (변경 없음, git log step273·274 참조)
 - 교사 `submissions.js`: 맞춤법 배지 뒤 amber 배너 + "🔄 다시 평가하기"(regradeOne). 학생: `GRAMMAR_NOTICE_STUDENT`.
@@ -139,7 +149,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 
 **[방학 본공사 — 대형/별도 설계 세션]**
 - **시사·뉴스 기반 주제** (저작권 주의: 원문 불가, AI가 초등용 재구성). 무료 바구니.
-- **교사 아침 브리핑** — "오늘 학생들에게 해줄 말". ★구독 간판 후보(플러스 바구니).
+- **교사 아침 브리핑** — "오늘 학생들에게 해줄 말". ★구독 간판 후보(플러스 바구니). **1차 착수됨(step402): 종 알림·주제당 1회 캐시.** 남은 것: 내용 고도화·구독 연계.
 - **커뮤니티 설계 세션** — 교사 커뮤니티/공유 확장.
 - **결제 PG + 메일 인프라** — 국내 PG 구독 연동, 트랜잭션 메일.
 - **소셜 로그인** — 구글 → 카카오 → 네이버 순. §12-1(한 이메일=한 계정)과 정합.
@@ -154,8 +164,10 @@ export const GRAMMAR_NOTICE_TEACHER =
 - 맞춤법 전체일괄(runGrammarBatch, 3곳) vs 단일검사 공존 — grammar-backfill 페이지 정리 여부 추후 판단.
 - 회색지대 발견성 배지·admin 집계뷰 / 전체 UI 폴리시 / A3 교사 평판 표시(개인정보 trade-off).
 
-**[종료 — 다시 만들지 말 것 (step308~395 완료 목록)]**
-- ✅ **문체개입 오교정 이중 차단(step393·395)**: 반말→존댓말로 문체를 바꾸는 오교정(생각한다→생각합니다 등)을 ①프롬프트 규칙 11 강화(step395, 예방)와 ②`koreanRules` `isStyleChange` fail-safe 필터(step393, 확정 폐기·drop_reason 문체개입)로 이중 차단. correction_alerts 7/6분 재발에 대응. 배포 후 발생 빈도 모니터링 대상.
+**[종료 — 다시 만들지 말 것 (step308~403 완료 목록)]**
+- ✅ **문체 오교정 방어(step393·395·397·400·401·403, 왕복 있었음)**: 프롬프트 규칙 11(예방)과 `koreanRules` `isStyleChange` fail-safe 필터(확정 폐기+correction_alerts 기록)의 이중 방어. **최종 상태 = 규칙 11 step403판(4원인 차단), 필터 활성(step401 복원).** 규칙 11 변천 395강화→397"섞였을때만"→403 4원인. 필터 393신설→400제거→401복원. ⚠️ 다시 손대기 전 §7·§1 경고줄 먼저 읽을 것(같은 자리 반복 수정 이력).
+- ✅ **C-2 차단 기록 맥락화(step398·399)**: correction_alerts에 `blocked_user_id`·`blocked_essay_excerpt` 저장(ai.js, 컬럼 Supabase 수동 추가) + 관리자 의심 교정 탭에서 학생 정보(배치 조인)·발췌 표시(admin/index.js). displayStudentName(미동의=닉네임), '글 보기'는 submission_id 있을 때만. ※배포 이전 차단 기록은 두 컬럼 null이라 여전히 '정보 없음'.
+- ✅ **교사 아침 브리핑 1차(step402, 병렬 세션)**: briefing AI type·홈 lazy 생성·주제당 1회 캐시(briefingPrompt.server.js·teacher/index.js·api/ai.js). 방학 본공사 '아침 브리핑'의 착수분 — 확장 여지는 백로그 유지.
 - ✅ **오른쪽 추천 패널 인기 배지(step394, 병렬 세션)**: '다른 선생님' 탭 오른쪽 추천 패널에도 인기순 정렬+🔥 배지(SuggestionLogPanel.js·topics.js).
 - ✅ **교사 인증 정비(step381·383~387)**: 실이메일 가입 전환·재설정 페이지 / 가입 폼 제출 버그(DOM 실제값) / 이메일 검증 우회(앵커드) + 도메인 선택 UI / 계정 복구 3종(이메일 등록·아이디 찾기·재설정 쌍 검증) / 영구 삭제 반쪽 버그(auth 잔존) 수정 + admin 이메일 등록. 재설정 메일 실왕복 6단계 검증 완료.
 - ✅ **인기 주제(step390 도입 → step391 정리)**: `topic_copy_counts` RPC로 '다른 선생님' 탭에서 2명 이상 가져간 상위 3개에만 🔥 인기 배지 + 인기순. `item.isPopular`·`buildSharedFlat`(topics.js). 모달·버튼은 정리 시 제거. 현재 해당 주제 0개라 배지 미표시(정상). ※step390은 병렬 세션 origin 재작성으로 유실→`8c68a50` 백업 복원 이력.
@@ -175,7 +187,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
 ## 워킹트리 상태
-- **HEAD=be59ae0(step395)까지 전부 커밋·push 완료. origin/main=로컬 동기화 확인됨. 워킹트리 clean.**
+- **HEAD=43cb273(step403)까지 전부 커밋·push 완료. origin/main=로컬 동기화 확인됨. 워킹트리 clean.**
 - ⚠️⚠️ **병렬 맞춤법 세션 운영 원칙(중요·갱신):** 맞춤법 세션은 이제 **별도 폴더(`literacy-class-spell`)에서 실행** — 같은 origin(GitHub) 공유하되 워킹디렉토리는 분리됨. 과거 **같은 폴더를 공유했을 때** amend/force-push로 서로 커밋을 덮어써 **커밋 유실 사고 발생(오늘 step390이 유실됐다가 백업 `8c68a50`에서 복원)**. **→ 앞으로 두 세션 모두 `force-push` 절대 금지, 일반 `push`만. 커밋 전 `git pull --rebase` 먼저.**
 - ⚠️ Code가 커밋 후 push 빠뜨리는 경우 있음 — 커밋 지시 시 "push까지" 명시.
 - untracked(미커밋, 급하지 않음): `_report*.md`·`_snapshot/`(로컬 산출물, gitignore 처리됨). `scripts/make-snapshot.js`·`FEATURE-MAP.md`는 저장소 편입 완료(step338·339).
