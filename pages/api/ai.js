@@ -16,6 +16,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
+import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -281,6 +282,12 @@ export default async function handler(req, res) {
       prompt = feedbackSummaryPrompt({ feedbacks })
       schema = SCHEMAS.feedbackSummary
       opts = { taskType: 'quality', maxTokens: 4000 }
+
+    } else if (type === 'briefing') {
+      // 🆕 교사 아침 브리핑 — 반 직전 주제 채점 요약 → {weakness, tip}. 프롬프트·스키마는 별도 파일.
+      prompt = briefingPrompt(payload || {})
+      schema = briefingSchema
+      opts = { taskType: 'quality', maxTokens: 800, temperature: 0.4 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })

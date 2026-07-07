@@ -15,6 +15,7 @@ import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
+import { callAI } from '../../lib/aiClient'
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -180,6 +181,100 @@ export default function TeacherHome() {
     } catch (e) { /* 무시 */ }
   }
 
+  // 🆕 교사 아침 브리핑 — 홈 열 때 lazy 생성. 우리 반 직전(임계값 이상 채점완료) 주제의
+  //   공통 부족점 1개 + 지도 멘트를 AI로 만들어 종 알림으로. 주제당 1회(source_topic_id 캐시)로 비용 방어.
+  //   호출부에서 !imp && hasApiKey 가드. 모든 실패는 무시(홈 로딩 안 깨지게), await 안 함.
+  const BRIEFING_PCT = 0.7  // visible 학생 중 이 비율 이상 채점완료돼야 대상 주제
+  const maybeGenerateBriefing = async (profile) => {
+    try {
+      const classId = profile?.classes?.id
+      if (!classId) return
+
+      // 캐시 상태(중복방지 마커)
+      const { data: cls } = await supabase.from('classes')
+        .select('morning_briefing_source_topic_id').eq('id', classId).maybeSingle()
+      const cachedSourceId = cls?.morning_briefing_source_topic_id || null
+
+      // visible 학생
+      const { data: studs } = await supabase.from('profiles')
+        .select('id, is_hidden').eq('class_id', classId).eq('role', 'student')
+      const studentIds = (studs || []).filter(s => !s.is_hidden).map(s => s.id)
+      if (studentIds.length < 2) return
+
+      // 교사 주제 (최신순)
+      const { data: topics } = await supabase.from('topics')
+        .select('id, date, title, rubrics').eq('teacher_id', profile.id)
+        .order('date', { ascending: false }).limit(50)
+      if (!topics || topics.length === 0) return
+      const topicIds = topics.map(t => t.id)
+
+      // 채점완료 제출 (total_score 존재)
+      const { data: subs } = await supabase.from('submissions')
+        .select('topic_id, user_id, scores, feedback_improve, corrections, total_score')
+        .in('topic_id', topicIds).in('user_id', studentIds)
+        .is('deleted_at', null).not('total_score', 'is', null)
+      if (!subs || subs.length === 0) return
+
+      const byTopic = {}
+      subs.forEach(s => { (byTopic[s.topic_id] = byTopic[s.topic_id] || []).push(s) })
+
+      // 대상 주제: 고유 채점완료 제출자 ≥ 임계값인 가장 최근 주제
+      const need = Math.max(2, Math.floor(studentIds.length * BRIEFING_PCT))
+      let sourceTopic = null, sourceSubs = null
+      for (const t of topics) {
+        const list = byTopic[t.id]
+        if (!list) continue
+        const uniq = new Set(list.map(x => x.user_id)).size
+        if (uniq >= need) { sourceTopic = t; sourceSubs = list; break }
+      }
+      if (!sourceTopic) return
+      if (sourceTopic.id === cachedSourceId) return  // 이미 처리한 주제
+
+      // 학생별 요약 (가장 낮은 기준·개선점·맞춤법 수)
+      const rubrics = Array.isArray(sourceTopic.rubrics) ? sourceTopic.rubrics : []
+      const students = sourceSubs.map(s => {
+        const scores = Array.isArray(s.scores) ? s.scores : []
+        let lowIdx = -1, lowRatio = 2
+        scores.forEach((sc, i) => {
+          const max = rubrics[i]?.score || 0
+          const ratio = max > 0 ? sc / max : 1
+          if (ratio < lowRatio) { lowRatio = ratio; lowIdx = i }
+        })
+        return {
+          lowRubric: lowIdx >= 0 ? (rubrics[lowIdx]?.name || `기준 ${lowIdx + 1}`) : '',
+          lowScore: lowIdx >= 0 ? `${scores[lowIdx]}/${rubrics[lowIdx]?.score ?? '?'}` : '',
+          improve: (s.feedback_improve || '').slice(0, 200),
+          correctionCount: Array.isArray(s.corrections) ? s.corrections.length : 0,
+        }
+      })
+
+      const gradeText = profile.classes?.grade ? `초등 ${profile.classes.grade}학년` : '초등학생'
+      const result = await callAI('briefing', { gradeText, topicTitle: sourceTopic.title, students })
+      const weakness = (result?.weakness || '').trim()
+      const tip = (result?.tip || '').trim()
+      if (!tip) return  // AI 실패 시 저장·알림 안 함
+
+      // 캐시 저장 (본인 학급 update, RLS 허용)
+      await supabase.from('classes').update({
+        morning_briefing_text: tip,
+        morning_briefing_source_topic_id: sourceTopic.id,
+      }).eq('id', classId)
+
+      // 종 알림 (비차단)
+      try {
+        await supabase.rpc('create_notification', {
+          p_recipient: profile.id,
+          p_type: 'briefing',
+          p_title: weakness ? `오늘 지도 포인트: ${weakness}` : '이번 주제 결과가 나왔어요',
+          p_body: tip,
+          p_link: '/teacher/topics',
+        })
+      } catch (e) { console.warn('브리핑 알림 실패(무시):', e?.message) }
+    } catch (e) {
+      console.warn('브리핑 생성 실패(무시):', e?.message)
+    }
+  }
+
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp } = await getEffectiveProfile(
@@ -272,6 +367,8 @@ export default function TeacherHome() {
           const { data: keyCheck } = await supabase.from('class_secrets')
             .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
           setHasApiKey(!!keyCheck)
+          // 🆕 교사 아침 브리핑: 본인 세션(비임퍼소네이션)+키 있을 때만 lazy 생성(비차단, await 안 함)
+          if (!imp && !!keyCheck) maybeGenerateBriefing(profile)
         } catch(e) {
           setHasApiKey(false)
         }
