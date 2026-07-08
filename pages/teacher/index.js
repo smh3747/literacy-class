@@ -833,11 +833,15 @@ export default function TeacherHome() {
 
               {nextStepCard === 'no_class_run' && (
                 <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">⏱️ 첫 수업, 10분이면 충분해요</h3>
-                  <p className="text-sm text-gray-600 mt-1">학생 로그인 안내 카드가 준비되어 있어요. 화면에 띄우거나 인쇄해서 나눠 주면 바로 시작할 수 있어요.</p>
+                  <h3 className="font-bold text-indigo-900 pr-6">🕐 언제 쓰면 좋을지 고민되시죠?</h3>
+                  <div className="text-sm text-gray-600 mt-2 space-y-1">
+                    <p>🌅 아침 활동: 주 1~2회, 등교 후 10분 글쓰기 루틴으로</p>
+                    <p>📖 수업 시간: 국어·도덕 글쓰기 활동을 공책 대신 여기서</p>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">검사는 AI가 먼저 해두니, 선생님은 확인만 하시면 돼요.</p>
                   <button onClick={() => { recordOnboarding('no_class_run', 'clicked'); scrollToLoginHint() }}
                     className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
-                    📄 학생 안내 카드 보러 가기
+                    📄 학생 로그인 안내 보기
                   </button>
                 </div>
               )}
