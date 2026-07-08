@@ -7,6 +7,17 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { toKST } from '../lib/timeFormat'
 
+// 알림 종류별 아이콘(이모지)·색 원. Tabler 웹폰트 미사용이라 이모지로 구분.
+const TYPE_META = {
+  briefing:        { emoji: '📊', bg: 'bg-blue-100' },
+  report:          { emoji: '⚠️', bg: 'bg-red-100' },
+  admin_reply:     { emoji: '💬', bg: 'bg-gray-100' },
+  stamp:           { emoji: '⭐', bg: 'bg-amber-100' },
+  teacher_comment: { emoji: '📝', bg: 'bg-green-100' },
+  grammar_done:    { emoji: '✅', bg: 'bg-green-100' },
+}
+const DEFAULT_META = { emoji: '🔔', bg: 'bg-gray-100' }
+
 export default function NotificationBell({ user }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -32,6 +43,7 @@ export default function NotificationBell({ user }) {
           .select('id', { count: 'exact', head: true })
           .eq('recipient_id', user.id)
           .is('read_at', null)
+          .is('dismissed_at', null)
         if (!error && alive) setUnread(count || 0)
       } catch (e) {
         console.warn('알림 개수 조회 실패:', e?.message)
@@ -75,6 +87,7 @@ export default function NotificationBell({ user }) {
         .from('notifications')
         .select('id, type, title, body, link, read_at, created_at')
         .eq('recipient_id', user.id)
+        .is('dismissed_at', null)
         .order('created_at', { ascending: false })
         .limit(20)
       if (!error) setItems(data || [])
@@ -119,6 +132,20 @@ export default function NotificationBell({ user }) {
     }
   }
 
+  // 개별 지우기 (소프트 삭제): 항목 클릭(이동)과 분리, 실패해도 UI 안 깨지게 비차단
+  const dismiss = async (e, n) => {
+    e.stopPropagation()
+    const wasUnread = !n.read_at
+    setItems((prev) => prev.filter((x) => x.id !== n.id))
+    if (wasUnread) setUnread((u) => Math.max(0, u - 1))
+    try {
+      await supabase.from('notifications')
+        .update({ dismissed_at: new Date().toISOString() }).eq('id', n.id)
+    } catch (err) {
+      console.warn('알림 지우기 실패:', err?.message)
+    }
+  }
+
   return (
     <div className="relative" ref={boxRef}>
       <button
@@ -151,19 +178,37 @@ export default function NotificationBell({ user }) {
             ) : items.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">새 소식이 없어요</div>
             ) : (
-              items.map((n) => (
-                <button
-                  key={n.id}
-                  onClick={() => onItemClick(n)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition ${n.read_at ? '' : 'bg-blue-50/40'}`}
-                >
-                  <div className={`text-sm ${n.read_at ? 'text-gray-700' : 'font-bold text-gray-900'}`}>
-                    {n.title}
+              items.map((n) => {
+                const meta = TYPE_META[n.type] || DEFAULT_META
+                return (
+                  <div key={n.id} className="relative border-b border-gray-100 last:border-0">
+                    <button
+                      onClick={() => onItemClick(n)}
+                      className={`w-full text-left flex gap-3 px-4 py-3.5 pr-9 hover:bg-gray-50 transition ${n.read_at ? '' : 'bg-blue-50'}`}
+                    >
+                      <span className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base ${meta.bg}`}>
+                        {meta.emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-sm ${n.read_at ? 'text-gray-600' : 'font-bold text-gray-900'}`}>
+                          {n.title}
+                        </div>
+                        {n.body && (
+                          <div className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{n.body}</div>
+                        )}
+                        <div className="text-[11px] text-gray-400 mt-1.5">{toKST(n.created_at)}</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => dismiss(e, n)}
+                      aria-label="알림 지우기"
+                      className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full text-gray-300 hover:text-gray-600 hover:bg-gray-200 transition"
+                    >
+                      ✕
+                    </button>
                   </div>
-                  {n.body && <div className="text-xs text-gray-500 mt-0.5">{n.body}</div>}
-                  <div className="text-[11px] text-gray-400 mt-1">{toKST(n.created_at)}</div>
-                </button>
-              ))
+                )
+              })
             )}
           </div>
         </div>
