@@ -1482,19 +1482,21 @@ export default function AdminHome() {
                               <td className="p-2 font-medium whitespace-nowrap align-middle">{t.realname}</td>
                               <td className="p-2 text-gray-600 whitespace-nowrap align-middle">{t.school || '-'}</td>
                               <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap align-middle">{t.username}</td>
-                              <td className="p-2 text-gray-600 whitespace-nowrap align-middle">
-                                {myClasses.length === 0 ? (
-                                  <span className="text-xs whitespace-nowrap inline-flex items-center gap-1.5">
-                                    <span className="text-gray-400">운영 학급 없음</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${sm.badge}`}>{stageLabel}</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-xs whitespace-nowrap inline-flex items-center gap-1.5">
-                                    🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${sm.badge}`}>{stageLabel}</span>
-                                    {diag && <span className="text-[11px] text-gray-400">{diag}</span>}
-                                  </span>
-                                )}
+                              <td className="p-2 text-gray-600 align-middle">
+                                {/* 2단 배치: 1줄 학급 정보 / 2줄 단계 배지+진단 — 셀 폭 과점유 방지(행 밀도 복구) */}
+                                <div className="text-xs">
+                                  {myClasses.length === 0 ? (
+                                    <span className="text-gray-400 whitespace-nowrap">운영 학급 없음</span>
+                                  ) : (
+                                    <span className="whitespace-nowrap">
+                                      🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
+                                    </span>
+                                  )}
+                                  <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] whitespace-nowrap ${sm.badge}`}>{stageLabel}</span>
+                                    {diag && <span className="text-[11px] text-gray-400 whitespace-nowrap">{diag}</span>}
+                                  </div>
+                                </div>
                               </td>
                               <td className="p-2 align-middle">
                                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${t.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -1515,7 +1517,8 @@ export default function AdminHome() {
                                 )}
                               </td>
                               <td className="p-2 text-center align-middle" onClick={e => e.stopPropagation()}>
-                                <div className="flex flex-wrap gap-1 justify-center">
+                                {/* 작업 버튼 가로 1줄 고정(flex-nowrap) — 세로 쌓임 방지, 좁으면 테이블 가로 스크롤 */}
+                                <div className="flex flex-nowrap gap-1 justify-center">
                                   {/* 🆕 비밀번호 초기화 (비번 잊은 선생님 구제) */}
                                   {!t.is_banned && (
                                     <button onClick={() => resetTeacherPassword(t)}

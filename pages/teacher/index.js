@@ -46,6 +46,7 @@ export default function TeacherHome() {
   const [nextStepCard, setNextStepCard] = useState(null)      // 'review'|'no_students'|'no_topics'|'no_class_run'|null
   const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
   const [reviewComment, setReviewComment] = useState('')      // review 카드: 한 줄 의견(선택)
+  const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
   const togglePanel = (panel) => setActivePanel(prev => (prev === panel ? null : panel))
@@ -331,8 +332,9 @@ export default function TeacherHome() {
   }, [nextStepCard])
 
   // 다음 걸음 카드 응답 기록 — 한 번의 insert(RLS가 update 차단이라 저장은 1회로 끝). 실패해도 카드만 숨김.
-  const recordOnboarding = async (cardType, response, comment) => {
-    setNextStepCard(null)
+  //   keepOpen: review good 경로처럼 카드를 유지한 채 기록만 할 때 true(닫기는 호출부 책임).
+  const recordOnboarding = async (cardType, response, comment, keepOpen = false) => {
+    if (!keepOpen) setNextStepCard(null)
     try {
       assertWritable()
       await supabase.from('onboarding_responses').insert({
@@ -779,33 +781,75 @@ export default function TeacherHome() {
             )}
           </div>
 
-          {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달) */}
+          {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달)
+              good 응답 후엔 같은 자리에서 사전 신청 이어묻기(reviewFollowup) — 만족 직후가 최적 타이밍 */}
           {!isImpersonating && nextStepCard === 'review' && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
-              <button onClick={() => recordOnboarding('review', 'dismissed')} aria-label="닫기"
-                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
-              <h3 className="font-bold text-indigo-900 pr-6">💬 다온클래스, 써보니 어떠세요?</h3>
-              <p className="text-sm text-gray-600 mt-1">벌써 여러 번 수업하셨어요. 선생님 의견이 큰 힘이 돼요.</p>
-              <div className="flex gap-2 mt-3 flex-wrap">
-                {[['good', '😀 좋아요'], ['soso', '🙂 보통이에요'], ['bad', '😐 아쉬워요']].map(([v, label]) => (
-                  <button key={v} onClick={() => setReviewPick(v)}
-                    className={`text-sm px-3.5 py-2 rounded-xl border-2 transition ${reviewPick === v
-                      ? 'border-indigo-400 bg-indigo-50 font-semibold'
-                      : 'border-gray-200 hover:bg-gray-50'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {reviewPick && (
-                <div className="flex gap-2 mt-3">
-                  <input type="text" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
-                    placeholder="한 줄 의견 (선택)" maxLength={200}
-                    className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2" />
-                  <button onClick={() => recordOnboarding('review', reviewPick, reviewComment.trim())}
-                    className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition shrink-0">
-                    보내기
-                  </button>
-                </div>
+              {reviewFollowup === 'thanks' ? (
+                <p className="text-sm font-semibold text-indigo-900">🙏 감사해요! 준비되면 가장 먼저 안내드릴게요.</p>
+              ) : reviewFollowup === 'ask' ? (
+                <>
+                  {/* 후속만 건너뛰는 ✕ — review 기록은 이미 저장돼 재노출 없음, preorders 기록 없음 */}
+                  <button onClick={() => setNextStepCard(null)} aria-label="닫기"
+                    className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+                  <h3 className="font-bold text-indigo-900 pr-6">좋게 봐주셔서 감사해요! 🎟 정식 출시 전 사전 신청도 관심 있으세요?</h3>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {[['interested', '관심 있어요'], ['not_sure', '아직 잘 모르겠어요']].map(([v, label]) => (
+                      <button key={v} disabled={preorderSaving}
+                        onClick={async () => {
+                          await submitPreorder(v)
+                          setReviewFollowup('thanks')
+                          setTimeout(() => setNextStepCard(null), 2500)
+                        }}
+                        className={`text-sm px-3.5 py-2 rounded-xl font-semibold transition disabled:opacity-50 ${v === 'interested'
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => recordOnboarding('review', 'dismissed')} aria-label="닫기"
+                    className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+                  <h3 className="font-bold text-indigo-900 pr-6">💬 다온클래스, 써보니 어떠세요?</h3>
+                  <p className="text-sm text-gray-600 mt-1">벌써 여러 번 수업하셨어요. 선생님 의견이 큰 힘이 돼요.</p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {[['good', '😀 좋아요'], ['soso', '🙂 보통이에요'], ['bad', '😐 아쉬워요']].map(([v, label]) => (
+                      <button key={v} onClick={() => setReviewPick(v)}
+                        className={`text-sm px-3.5 py-2 rounded-xl border-2 transition ${reviewPick === v
+                          ? 'border-indigo-400 bg-indigo-50 font-semibold'
+                          : 'border-gray-200 hover:bg-gray-50'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {reviewPick && (
+                    <div className="flex gap-2 mt-3">
+                      <input type="text" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+                        placeholder="한 줄 의견 (선택)" maxLength={200}
+                        className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2" />
+                      <button onClick={() => {
+                          const comment = reviewComment.trim()
+                          if (reviewPick === 'good') {
+                            recordOnboarding('review', 'good', comment, true)   // 카드 유지한 채 기록
+                            if (preorder.loaded && preorder.done) {             // 이미 사전신청 응답함 → 감사만
+                              setReviewFollowup('thanks')
+                              setTimeout(() => setNextStepCard(null), 2500)
+                            } else {
+                              setReviewFollowup('ask')                          // 사전신청 이어묻기
+                            }
+                          } else {
+                            recordOnboarding('review', reviewPick, comment)     // soso/bad: 후속 없이 닫힘
+                          }
+                        }}
+                        className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition shrink-0">
+                        보내기
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
