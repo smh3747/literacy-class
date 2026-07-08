@@ -254,12 +254,13 @@ export default function TeacherHome() {
       const line = (student_line || '').trim()
       if (!line) return  // AI 실패 시 저장·알림 안 함
 
-      // 2층 문구: 교사용 문맥 + 학생에게 그대로 읽어줄 한 문장
+      // 2층 문구: 교사용 문맥 + 학생에게 그대로 읽어줄 한 문장(\n으로 분리 저장 → 종 알림에서 박스 렌더)
       const w = (weakness || '').trim()
       const title = '📊 학생 글 분석 결과가 나왔어요'
-      const body = w
-        ? `지난 글에서는 '${w}' 부분이 조금 아쉬웠어요. 오늘은 학생들에게 이 문장으로 지도해 주세요: "${line}"`
-        : `학생 글 분석이 끝났어요. 오늘은 학생들에게 이 문장으로 지도해 주세요: "${line}"`
+      const intro = w
+        ? `지난 글에서는 '${w}' 부분이 조금 아쉬웠어요. 오늘은 학생들에게 이 문장으로 지도해 주세요.`
+        : `학생 글 분석이 끝났어요. 오늘은 학생들에게 이 문장으로 지도해 주세요.`
+      const body = `${intro}\n"${line}"`
 
       // 캐시 저장 (본인 학급 update, RLS 허용)
       await supabase.from('classes').update({

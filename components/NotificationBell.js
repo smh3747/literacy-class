@@ -165,11 +165,13 @@ export default function NotificationBell({ user }) {
         <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-2xl shadow-lg border border-gray-200 z-40 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <span className="text-sm font-bold text-gray-800">🔔 알림</span>
-            {unread > 0 && (
-              <button onClick={markAllRead} className="text-xs text-primary hover:underline">
-                모두 읽음
-              </button>
-            )}
+            <button
+              onClick={markAllRead}
+              disabled={unread === 0}
+              className="text-xs text-primary hover:underline disabled:text-gray-300 disabled:no-underline disabled:cursor-default"
+            >
+              모두 읽음
+            </button>
           </div>
 
           <div className="max-h-96 overflow-y-auto">
@@ -193,8 +195,18 @@ export default function NotificationBell({ user }) {
                         <div className={`text-sm ${n.read_at ? 'text-gray-600' : 'font-bold text-gray-900'}`}>
                           {n.title}
                         </div>
-                        {n.body && (
-                          <div className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{n.body}</div>
+                        {n.type === 'briefing' && n.body && n.body.includes('\n') ? (() => {
+                          const i = n.body.indexOf('\n')
+                          const intro = n.body.slice(0, i)
+                          const quote = n.body.slice(i + 1)
+                          return (
+                            <>
+                              {intro && <div className="text-xs text-gray-500 mt-1 leading-relaxed">{intro}</div>}
+                              {quote && <div className="mt-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs text-gray-800 leading-relaxed">{quote}</div>}
+                            </>
+                          )
+                        })() : (
+                          n.body && <div className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{n.body}</div>
                         )}
                         <div className="text-[11px] text-gray-400 mt-1.5">{toKST(n.created_at)}</div>
                       </div>
