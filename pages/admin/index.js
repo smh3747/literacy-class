@@ -40,6 +40,14 @@ const diagnoseTeacher = (stage, { classCount, totalStudents, loginDays, lastLogi
   return null
 }
 
+// 🆕 다음 걸음 카드(교사 온보딩 설문) 응답 한글 라벨 — 사전 신청 탭 하단 섹션 표시용
+const OB_CARD_LABELS = { review: '후기', no_students: '학생 등록', no_topics: '주제 시작', no_class_run: '첫 수업' }
+const OB_RESP_LABELS = {
+  good: '😀 좋아요', soso: '🙂 보통이에요', bad: '😐 아쉬워요',
+  roster_hassle: '명렬표 번거로움', consent_burden: '동의 부담', just_looking: '둘러보는 중',
+  clicked: '버튼 클릭', dismissed: '닫음 ✕',
+}
+
 // 🆕 step371: 본문에서 original이 처음 등장하는 위치를 문장 단위(마침표·물음표·줄바꿈)로 잘라 반환.
 //   경계가 없으면 그 방향만 앞뒤 40자로 clamp. before/match/after로 나눠 하이라이트에 쓴다. 표시 전용.
 function extractContext(body, original) {
@@ -130,6 +138,7 @@ export default function AdminHome() {
   const [suspectLoaded, setSuspectLoaded] = useState(false)
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
   const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
+  const [onboardingRows, setOnboardingRows] = useState(null)  // 🆕 다음 걸음 카드 응답 (사전 신청 탭에서 함께 로드, null=미로드)
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [suspectFilter, setSuspectFilter] = useState('전체') // 🆕 유형 필터 칩 — 클라이언트 표시 필터만(쿼리 불변)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
@@ -437,17 +446,20 @@ export default function AdminHome() {
     })()
   }, [tab, suspectLoaded])
 
-  // 🆕 step382: 사전 신청 명단 — 탭 열 때 1회만, 배치 3쿼리(행당 쿼리 없음). SELECT만(UPDATE/DELETE 없음).
+  // 🆕 step382: 사전 신청 명단 — 탭 열 때 1회만, 배치 쿼리(행당 쿼리 없음). SELECT만(UPDATE/DELETE 없음).
+  // 🆕 다음 걸음 카드 응답(onboarding_responses)도 같은 탭에서 함께 로드 — profiles 배치 조인 공유.
   useEffect(() => {
     if (tab !== 'preorders' || preorderList.loaded) return
     ;(async () => {
-      const { data: pos, error } = await supabase.from('preorders')
-        .select('teacher_id, response, created_at')
-      if (error) {
-        setPreorderList({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' })
-        return
-      }
-      const teacherIds = [...new Set((pos || []).map(p => p.teacher_id).filter(Boolean))]
+      const [{ data: pos, error }, obRes] = await Promise.all([
+        supabase.from('preorders').select('teacher_id, response, created_at'),
+        supabase.from('onboarding_responses').select('teacher_id, card_type, response, comment, created_at'),
+      ])
+      const obs = obRes?.error ? [] : (obRes?.data || [])   // 테이블 미생성 등이면 빈 목록
+      const teacherIds = [...new Set([
+        ...(pos || []).map(p => p.teacher_id),
+        ...obs.map(o => o.teacher_id),
+      ].filter(Boolean))]
       const profMap = {}, classMap = {}
       if (teacherIds.length > 0) {
         const { data: profs } = await supabase.from('profiles')
@@ -458,6 +470,18 @@ export default function AdminHome() {
         ;(cls || []).forEach(c => {
           classMap[c.teacher_id] = classMap[c.teacher_id] ? classMap[c.teacher_id] + ' · ' + c.name : c.name
         })
+      }
+      // 온보딩 응답은 사전 신청 실패와 무관하게 표시
+      setOnboardingRows(obs
+        .map(o => ({
+          ...o,
+          realname: profMap[o.teacher_id]?.realname || '(정보 없음)',
+          school: profMap[o.teacher_id]?.school || '',
+        }))
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)))
+      if (error) {
+        setPreorderList({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' })
+        return
       }
       const rows = (pos || [])
         .map(p => ({
@@ -2697,6 +2721,40 @@ export default function AdminHome() {
                     </div>
                   </>
                 )}
+
+                {/* 🆕 다음 걸음 카드(교사 온보딩 설문) 응답 — 사전 신청과 함께 로드된 섹션 */}
+                <div className="mt-8 pt-5 border-t border-gray-100">
+                  <h2 className="text-lg font-bold mb-1">🧭 다음 걸음 응답</h2>
+                  {onboardingRows === null ? (
+                    <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
+                  ) : onboardingRows.length === 0 ? (
+                    <div className="py-6 text-center text-sm text-gray-400">아직 응답이 없어요</div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {['review', 'no_students', 'no_topics', 'no_class_run']
+                          .map(k => `${OB_CARD_LABELS[k]} ${onboardingRows.filter(o => o.card_type === k).length}`)
+                          .join(' · ')}
+                      </p>
+                      <div className="space-y-2">
+                        {onboardingRows.map((o, i) => (
+                          <div key={`${o.teacher_id}-${o.card_type}` || i} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-gray-800">{o.realname}</span>
+                              {o.school && <span className="text-xs text-gray-500">{o.school}</span>}
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700">
+                                {OB_CARD_LABELS[o.card_type] || o.card_type}
+                              </span>
+                              <span className="text-xs text-gray-700">{OB_RESP_LABELS[o.response] || o.response}</span>
+                              <span className="ml-auto text-xs text-gray-400">{toKST(o.created_at)}</span>
+                            </div>
+                            {o.comment && <div className="text-xs text-gray-600 mt-1.5 pl-2 border-l-2 border-indigo-100">{o.comment}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )
           })()}

@@ -13,7 +13,7 @@ import SetupChecklist from '../../components/SetupChecklist'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
-import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
+import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 
@@ -42,6 +42,10 @@ export default function TeacherHome() {
   const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
   const [preorderHidden, setPreorderHidden] = useState(true)  // 깜빡임 방지 기본 숨김, localStorage로 복원
   const [preorderSaving, setPreorderSaving] = useState(false)
+  // 🆕 다음 걸음 카드 — 막힌 지점별 온보딩 설문·안내 (card_type별 평생 1회, 브리핑과 별개 state)
+  const [nextStepCard, setNextStepCard] = useState(null)      // 'review'|'no_students'|'no_topics'|'no_class_run'|null
+  const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
+  const [reviewComment, setReviewComment] = useState('')      // review 카드: 한 줄 의견(선택)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
   const togglePanel = (panel) => setActivePanel(prev => (prev === panel ? null : panel))
@@ -283,6 +287,54 @@ export default function TeacherHome() {
     }
   }
 
+  // 🆕 다음 걸음 카드 판정 — 교사의 막힌 지점(학생 0명·주제 0개·수업 0회·후기 대상)에 맞는 카드 1장.
+  //   card_type별 평생 1회(onboarding_responses에 행 있으면 재노출 안 함). 비차단, 실패는 조용히.
+  //   쿼리: 응답 이력 1회 + (주제 있을 때만) 주제 id·제출 소량 2회.
+  const maybeShowNextStepCard = async (profile, { students, topics }) => {
+    try {
+      const { data: resp, error } = await supabase.from('onboarding_responses')
+        .select('card_type').eq('teacher_id', profile.id)
+      if (error) return  // 테이블 미생성 등 — 카드 자체를 포기
+      const answered = new Set((resp || []).map(r => r.card_type))
+      if (answered.size >= 4) return
+
+      let type = null
+      if (topics === 0) {
+        // 주제 0개면 review/no_class_run 불가능 — 추가 쿼리 없이 판정
+        type = students === 0 ? 'no_students' : 'no_topics'
+      } else {
+        const { data: tps } = await supabase.from('topics')
+          .select('id').eq('teacher_id', profile.id).limit(100)
+        const ids = (tps || []).map(t => t.id)
+        if (ids.length === 0) return
+        const { data: subs } = await supabase.from('submissions')
+          .select('topic_id, total_score').in('topic_id', ids)
+          .is('deleted_at', null).limit(1000)
+        const gradedTopics = new Set((subs || []).filter(x => x.total_score != null).map(x => x.topic_id))
+        if (gradedTopics.size >= 3) type = 'review'                    // 채점완료 주제 3개 이상 → 후기
+        else if (students === 0) type = 'no_students'
+        else if ((subs || []).length === 0) type = 'no_class_run'
+        // 그 외(수업 1~2회)는 카드 없음
+      }
+      if (type && !answered.has(type)) setNextStepCard(type)
+    } catch (e) {
+      console.warn('다음 걸음 카드 판정 실패(무시):', e?.message)
+    }
+  }
+
+  // 다음 걸음 카드 응답 기록 — 한 번의 insert(RLS가 update 차단이라 저장은 1회로 끝). 실패해도 카드만 숨김.
+  const recordOnboarding = async (cardType, response, comment) => {
+    setNextStepCard(null)
+    try {
+      assertWritable()
+      await supabase.from('onboarding_responses').insert({
+        teacher_id: user?.id, card_type: cardType, response, comment: comment || null,
+      })
+    } catch (e) {
+      console.warn('온보딩 응답 저장 실패(무시):', e?.message)
+    }
+  }
+
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp } = await getEffectiveProfile(
@@ -323,6 +375,8 @@ export default function TeacherHome() {
           .or('is_hidden.is.null,is_hidden.eq.false').limit(5)
       ])
       setStudentSamples(samples?.data || [])
+      // 🆕 다음 걸음 카드 — 본인 세션(비임퍼소네이션)에서만, 비차단(await 안 함). API키 불필요.
+      if (!imp) maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
       // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
@@ -716,6 +770,79 @@ export default function TeacherHome() {
               </Link>
             )}
           </div>
+
+          {/* 🆕 다음 걸음 카드 — 막힌 지점별 설문·안내, card_type별 평생 1회 (인라인 카드, 모달 아님) */}
+          {user?.role === 'teacher' && !isImpersonating && nextStepCard && (
+            <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
+              <button onClick={() => recordOnboarding(nextStepCard, 'dismissed')} aria-label="닫기"
+                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+
+              {nextStepCard === 'review' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">💬 다온클래스, 써보니 어떠세요?</h3>
+                  <p className="text-sm text-gray-600 mt-1">벌써 여러 번 수업하셨어요. 선생님 의견이 큰 힘이 돼요.</p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {[['good', '😀 좋아요'], ['soso', '🙂 보통이에요'], ['bad', '😐 아쉬워요']].map(([v, label]) => (
+                      <button key={v} onClick={() => setReviewPick(v)}
+                        className={`text-sm px-3.5 py-2 rounded-xl border-2 transition ${reviewPick === v
+                          ? 'border-indigo-400 bg-indigo-50 font-semibold'
+                          : 'border-gray-200 hover:bg-gray-50'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {reviewPick && (
+                    <div className="flex gap-2 mt-3">
+                      <input type="text" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+                        placeholder="한 줄 의견 (선택)" maxLength={200}
+                        className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2" />
+                      <button onClick={() => recordOnboarding('review', reviewPick, reviewComment.trim())}
+                        className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition shrink-0">
+                        보내기
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {nextStepCard === 'no_students' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">🙋 학생 등록에서 멈추셨네요. 뭐가 걸리세요?</h3>
+                  <p className="text-sm text-gray-600 mt-1">알려주시면 그 부분부터 쉽게 만들게요.</p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {[['roster_hassle', '명렬표 입력이 번거로워요'], ['consent_burden', '학부모 동의가 부담돼요'], ['just_looking', '아직 둘러보는 중이에요']].map(([v, label]) => (
+                      <button key={v} onClick={() => recordOnboarding('no_students', v)}
+                        className="text-sm px-3.5 py-2 rounded-xl border-2 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {nextStepCard === 'no_topics' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">✏️ 무슨 주제로 시작할지 고민되시죠?</h3>
+                  <p className="text-sm text-gray-600 mt-1">다른 선생님들이 검증한 추천 주제로 1분 만에 등록할 수 있어요.</p>
+                  <button onClick={() => { recordOnboarding('no_topics', 'clicked'); router.push('/teacher/topics') }}
+                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
+                    ✨ 추천 주제로 바로 시작하기
+                  </button>
+                </div>
+              )}
+
+              {nextStepCard === 'no_class_run' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">⏱️ 첫 수업, 10분이면 충분해요</h3>
+                  <p className="text-sm text-gray-600 mt-1">학생 로그인 안내 카드가 준비되어 있어요. 화면에 띄우거나 인쇄해서 나눠 주면 바로 시작할 수 있어요.</p>
+                  <button onClick={() => { recordOnboarding('no_class_run', 'clicked'); scrollToLoginHint() }}
+                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
+                    📄 학생 안내 카드 보러 가기
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 심의/동의 배너 (원래 위치: 학급 카드 위, 항상 표시) */}
           {bannersBlock}
