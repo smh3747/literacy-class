@@ -81,6 +81,7 @@ Next.js 14 (Pages Router) · React 18 · Tailwind CSS · Supabase (Auth + Postgr
 - 커밋 메시지는 `stepNNN: 설명` 형식의 한국어를 따른다 (예: `step145: 학생 글 보기 ReferenceError 수정`).
 - **문구·레이아웃 변경 시 로직 불변**: UI 문구·배치·구획만 바꾸는 작업에서는 기존 로직(동의 처리·실명 전환·QR·복사·검사 알고리즘·점수 등)을 절대 건드리지 않는다. 추가·재배치만.
 - **공용 컴포넌트 수정 전 소비자 확인**: 여러 화면이 재사용하는 컴포넌트(ConsentPanel·GrayZonePanel·ConsentDocument 등)를 고치기 전, grep으로 다른 소비자를 확인하고 영향 범위를 점검한다. 한 곳만 보고 고치면 다른 화면이 깨진다.
+- **`lib/koreanRules.js` 수정 시: 커밋 전 `node scripts/gate-korean-rules.js` 전체 PASS 필수.** (맞춤법 규칙 회귀 게이트. 규칙을 의도적으로 바꿔 케이스가 바뀌면 그 스크립트의 기대값도 같은 커밋에서 갱신.)
 - **커밋 후 push까지**: 커밋만 하고 push를 빠뜨리지 않는다. 작업 완료 = 커밋 + push + origin/main 반영 확인까지. (배포는 GitHub push로 트리거되므로 push 안 하면 Vercel에 안 올라감.)
 - **force-push 절대 금지(병렬 세션 공존)**: 맞춤법 세션 등 별도 Code가 같은 origin(GitHub)을 공유한다. `git push --force`/`--force-with-lease`는 상대 세션 커밋을 유실시킨다(실제 사고: step390이 밀렸다가 백업에서 복원). 항상 일반 `push`만, 커밋 전 `git pull --rebase` 먼저. 워킹디렉토리는 폴더로 분리해 운영한다.
 - **작업 보고는 아래 "보고 규칙 (v2)" 섹션을 따른다.**
