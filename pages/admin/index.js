@@ -100,6 +100,7 @@ export default function AdminHome() {
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
   const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
+  const [suspectFilter, setSuspectFilter] = useState('전체') // 🆕 유형 필터 칩 — 클라이언트 표시 필터만(쿼리 불변)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -503,6 +504,13 @@ export default function AdminHome() {
     if (error) return alert('일괄 해결 실패: ' + error.message)
     setSuspectAlerts([])
     setSuspectCount(0)
+  }
+  // 🆕 같은 교정(유형+원문+교정) 묶음 카드의 일괄 해결 — 그룹 전체 id를 한 번의 .in()으로
+  const resolveGroup = async (ids) => {
+    const { error } = await supabase.from('correction_alerts').update({ resolved: true }).in('id', ids)
+    if (error) return alert('해결 처리 실패: ' + error.message)
+    setSuspectAlerts(prev => prev.filter(a => !ids.includes(a.id)))
+    setSuspectCount(c => Math.max(0, c - ids.length))
   }
 
   const toggleTeacherBan = async (teacher) => {
@@ -2405,12 +2413,28 @@ export default function AdminHome() {
           {tab === 'corrections' && (() => {
             const suspectBadge = (t) => {
               const map = {
+                '안않오교정': 'bg-purple-100 text-purple-700',
                 '불가능형태': 'bg-red-100 text-red-700',
                 '문체개입': 'bg-orange-100 text-orange-700',
                 '과도한변형': 'bg-yellow-100 text-yellow-700',
               }
-              return map[t] || 'bg-gray-100 text-gray-600'
+              // '(차단됨)' 접미 변형도 같은 색 — prefix 매칭
+              const key = Object.keys(map).find(k => (t || '').startsWith(k))
+              return key ? map[key] : 'bg-gray-100 text-gray-600'
             }
+            // 🆕 중복 묶기: 유형+원문+교정이 같은 행을 한 카드로(대표=최신 행, 목록이 최신순이라 첫 행)
+            const groups = []
+            const gmap = {}
+            suspectAlerts.forEach(a => {
+              const key = `${a.suspect_type || ''}|${a.original || ''}|${a.correction || ''}`
+              if (gmap[key]) gmap[key].ids.push(a.id)
+              else { gmap[key] = { rep: a, ids: [a.id] }; groups.push(gmap[key]) }
+            })
+            // 🆕 유형 필터 칩 — prefix 매칭('(차단됨)' 무관), 클라이언트 필터만
+            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형']
+            const filtered = suspectFilter === '전체'
+              ? groups
+              : groups.filter(g => (g.rep.suspect_type || '').startsWith(suspectFilter))
             // 해당 학생 글로 이동 — 학생 글 탭의 sub 딥링크 재사용 (한 번의 replace로 tab+sub 동시 반영)
             const goToSubmission = (submissionId) => {
               router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', sub: submissionId } }, undefined, { shallow: true })
@@ -2448,59 +2472,86 @@ export default function AdminHome() {
                 ) : suspectAlerts.length === 0 ? (
                   <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
                 ) : (
-                  <div className="space-y-2">
-                    {suspectAlerts.map(a => (
-                      <div key={a.id} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${suspectBadge(a.suspect_type)}`}>{a.suspect_type || '미분류'}</span>
-                          <span className="text-xs text-gray-500">감지 {toKST(a.created_at)}</span>
-                          {a.submission_created_at && <span className="text-xs text-gray-400">글 작성 {toKST(a.submission_created_at)}</span>}
-                          {/* 🆕 step371: 작성 학생 정보 (학교 · 학급 · 담임 · N번 이름) */}
-                          {(() => {
-                            const s = suspectMeta[a.id]?.student
-                            if (!s) return null
-                            if (s.kind === 'none') return <span className="text-xs text-gray-400">(정보 없음)</span>
-                            const parts = [s.school, s.className, s.teacher && `담임 ${s.teacher}`, s.numName].filter(Boolean)
-                            return <span className="text-xs text-gray-500">{parts.join(' · ')}</span>
-                          })()}
-                          <span className="ml-auto flex gap-1.5">
-                            {a.submission_id && (
-                              <button onClick={() => goToSubmission(a.submission_id)}
-                                className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition">
-                                📝 글 보기
-                              </button>
-                            )}
-                            <button onClick={() => resolveAlert(a.id)}
-                              className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
-                              ✅ 해결
-                            </button>
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-800">
-                          <span className="line-through text-red-600">{a.original}</span>
-                          <span className="mx-1.5 text-gray-400">→</span>
-                          <span className="font-semibold text-green-700">{a.correction}</span>
-                        </div>
-                        {/* 🆕 step371: 원문 속 맥락 문장 (회색 인용, original 하이라이트) */}
-                        {(() => {
-                          const c = suspectMeta[a.id]?.ctx
-                          if (!c || c.kind === 'skip') return null
-                          if (c.kind === 'gone') return <div className="mt-1 text-xs text-gray-400 italic">(글 없음)</div>
-                          if (c.kind === 'notfound') return <div className="mt-1 text-xs text-gray-400 italic">(원문에서 위치를 찾지 못했어요)</div>
-                          // 🆕 step398 후속: 차단 기록 발췌(original 위치 못 찾음) — 하이라이트 없이 원문 그대로
-                          if (c.kind === 'excerpt') return (
-                            <div className="mt-1 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">{c.text}</div>
-                          )
-                          return (
-                            <div className="mt-1 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">
-                              {c.before}<mark className="bg-yellow-200 text-gray-900 rounded px-0.5">{c.match}</mark>{c.after}
+                  <>
+                    {/* 🆕 유형 필터 칩 — 클라이언트 표시 필터만 */}
+                    <div className="flex gap-1.5 flex-wrap mb-3">
+                      {FILTER_CHIPS.map(f => (
+                        <button key={f} onClick={() => setSuspectFilter(f)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition ${suspectFilter === f
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'}`}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                    {filtered.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-gray-400">이 유형의 의심 교정이 없어요</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filtered.map(g => { const a = g.rep; return (
+                          <div key={a.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
+                            {/* 1행: 배지·중복수·시각 + 해결 버튼(우측) */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${suspectBadge(a.suspect_type)}`}>{a.suspect_type || '미분류'}</span>
+                              {g.ids.length > 1 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-gray-200 text-gray-600">×{g.ids.length}</span>
+                              )}
+                              <span className="text-xs text-gray-400">감지 {toKST(a.created_at)}</span>
+                              {a.submission_created_at && <span className="text-xs text-gray-400">글 작성 {toKST(a.submission_created_at)}</span>}
+                              <span className="ml-auto">
+                                <button onClick={() => g.ids.length > 1 ? resolveGroup(g.ids) : resolveAlert(g.ids[0])}
+                                  className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
+                                  ✅ 해결{g.ids.length > 1 ? ` ${g.ids.length}건` : ''}
+                                </button>
+                              </span>
                             </div>
-                          )
-                        })()}
-                        {a.reason && <div className="text-xs text-gray-500 mt-0.5">{a.reason}</div>}
+                            {/* 2행(주인공): 교정 내용 크게 */}
+                            <div className="text-base sm:text-lg text-gray-900 mt-2">
+                              <span className="line-through text-red-600">{a.original}</span>
+                              <span className="mx-2 text-gray-400">→</span>
+                              <span className="font-bold text-green-700">{a.correction}</span>
+                            </div>
+                            {/* 3행: 원문 속 맥락 문장 (step371 로직 그대로, 위치만 아래로) */}
+                            {(() => {
+                              const c = suspectMeta[a.id]?.ctx
+                              if (!c || c.kind === 'skip') return null
+                              if (c.kind === 'gone') return <div className="mt-2 text-xs text-gray-400 italic">(글 없음)</div>
+                              if (c.kind === 'notfound') return <div className="mt-2 text-xs text-gray-400 italic">(원문에서 위치를 찾지 못했어요)</div>
+                              // 🆕 step398 후속: 차단 기록 발췌(original 위치 못 찾음) — 하이라이트 없이 원문 그대로
+                              if (c.kind === 'excerpt') return (
+                                <div className="mt-2 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">{c.text}</div>
+                              )
+                              return (
+                                <div className="mt-2 pl-2 border-l-2 border-gray-200 text-xs text-gray-500 whitespace-pre-wrap">
+                                  {c.before}<mark className="bg-yellow-200 text-gray-900 rounded px-0.5">{c.match}</mark>{c.after}
+                                </div>
+                              )
+                            })()}
+                            {/* 4행: 판단 이유 */}
+                            {a.reason && <div className="text-xs text-gray-500 mt-1.5">💬 {a.reason}</div>}
+                            {/* 5행: 작성 학생 정보(step371) + 글 보기(submission_id 있을 때만, 기존 조건 그대로) */}
+                            {(suspectMeta[a.id]?.student || a.submission_id) && (
+                              <div className="flex items-center gap-2 flex-wrap mt-2">
+                                {(() => {
+                                  const s = suspectMeta[a.id]?.student
+                                  if (!s) return null
+                                  if (s.kind === 'none') return <span className="text-xs text-gray-400">🏫 (정보 없음)</span>
+                                  const parts = [s.school, s.className, s.teacher && `담임 ${s.teacher}`, s.numName].filter(Boolean)
+                                  return <span className="text-xs text-gray-500">🏫 {parts.join(' · ')}</span>
+                                })()}
+                                {a.submission_id && (
+                                  <button onClick={() => goToSubmission(a.submission_id)}
+                                    className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition">
+                                    📝 글 보기
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )})}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             )
