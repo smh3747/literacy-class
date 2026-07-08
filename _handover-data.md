@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = c329053 (step409))
+# 핸드오버 데이터 (HEAD = 38f8207 (step421))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -155,7 +155,8 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **의심 교정 '글 보기' 버튼 일부 미표시** [맞춤법 세션 소관] — 관리자 의심 교정 탭에서 일부 항목에만 글 보기 버튼. 맞춤법 세션에서 조건·최근 step 회귀 확인.
 - **막힌 3종 모달 재노출 정책 검토** — 현재 평생 1회. ✕ 닫은 교사(예: no_class_run)가 다시 막혀도 재안내 불가. 응답 데이터 쌓인 뒤 "N일 후 1회 재노출" 등 검토.
 - **온보딩 응답 기반 후속 처방** — no_students 3버튼 분포 보고 우선순위(명렬표 간소화 vs 동의 안내) 결정.
-- **corrections 비문자열 원본 추적** [맞춤법 세션 소관] — 뽀로로반 22번 submissions.corrections에 객체/비문자열 필드가 저장된 경로(AI 파싱 or 규칙 병합) 확인. 표시 방어는 step420 완료.
+- **corrections 비문자열 원본 추적** [맞춤법 세션 소관] — 뽀로로반 22번 submissions.corrections에 객체/비문자열 필드가 저장된 경로(AI 파싱 or 규칙 병합) 확인. 표시 방어는 step420 완료. **착수 계획: 해당 제출물 corrections 원본 덤프 확보 → 비문자열 필드 모양으로 AI 파싱(parseAIJson 잘린 JSON 복구) vs 규칙 병합(koreanRules) 경로 판별 → 재발 방어를 gate-korean-rules.js 케이스로 추가.**
+- **게이트 스위트 prompts.server.js 케이스 확장** [맞춤법 세션 소관] — step411 게이트는 koreanRules만 커버. 채점 프롬프트 3종의 핵심 지시(문장수 제한·가감표기 금지·규칙 11 등) 포함 여부 스모크를 확장(같은 스크립트 or 별도 파일).
 
 **[방학 본공사 — 대형/별도 설계 세션]**
 - **시사·뉴스 기반 주제** (저작권 주의: 원문 불가, AI가 초등용 재구성). 무료 바구니.
@@ -177,6 +178,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 **[종료 — 다시 만들지 말 것 (step308~418 완료 목록)]**
 > ⚠️ step407·409·410은 두 세션 번호 중복. 알림/브리핑 세션 커밋: 407=c511e7d · 409=fe5b189 · 410=1361426. (맞춤법 세션: 407=1bdfc74 · 409=c329053 · 410=27fbda5)
 - ✅ **핸드오버 갱신(step419)** + **학생 퀴즈 크래시 수정(step420)**: /student/quiz corrections 비문자열 필드 .trim() 크래시 → pickStr 헬퍼 방어(표시만, koreanRules 미접근). 실사용자(뽀로로반 22번) 발생 건.
+- ✅ **koreanRules 회귀 게이트 스위트(step411, 맞춤법 세션)**: `scripts/gate-korean-rules.js` 34케이스(DETECT 18·오탐방지 10·MERGE 5·하위호환 1). **lib/koreanRules.js 수정 시 커밋 전 `node scripts/gate-korean-rules.js` 전체 PASS 필수**(CLAUDE.md에 절차 명시). 규칙을 의도적으로 바꾸면 게이트 기대값도 같은 커밋에서 갱신.
 - ✅ **교사 활동 대시보드(step414)**: 관리자 선생님 탭에 활동 4단계 분류(🟢활성/🟡식어감/🔴이탈위험/⚪미정착, 상수 ACTIVE_DAYS=7·COOLING_DAYS=14 — 방학엔 조정) + 요약 카드 4장 클릭 필터 + 정렬 셀렉트 + 단계 통합 배지·진단 문구. DB 무변경(파생 계산). step418에서 행 밀도 복구(2단 배치+버튼 가로 1줄).
 - ✅ **미정착 원인 지도(SQL 분석, 2026-07-08)**: 교사 249명 중 수업 도달 83(활성 42). 벽 3개 — 학생 등록 92 / 주제 등록 36 / 첫 수업 실행 32. **API 키 가설 기각**(실행 벽 74명 중 68명이 키 보유). 늦은 가입 탓 아님(미정착 중 6/20 이후 가입 16명뿐).
 - ✅ **다음 걸음 카드(step415~418)**: 교사 상태별 온보딩 설문·안내. review(수업 3회+, 인라인 배너, 😀🙂😐+한줄) / no_students(모달, 3버튼) / no_topics(모달, 추천 주제 버튼) / no_class_run(모달, 활용 레시피: 아침 활동·교과 연계). 평생 1회(onboarding_responses, unique(teacher_id,card_type)), ✕·오버레이·ESC=dismissed. admin도 노출(관리자 배지로 구분). review good → 사전신청 이어묻기(step418, submitPreorder 재사용, soso/bad엔 지갑 질문 금지).
@@ -212,7 +214,7 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
 ## 워킹트리 상태
-- **HEAD=c329053(step409)까지 전부 커밋·push 완료. origin/main=로컬 동기화 확인됨. 워킹트리 clean.**
-- ⚠️⚠️ **병렬 맞춤법 세션 운영 원칙(중요·갱신):** 맞춤법 세션은 이제 **별도 폴더(`literacy-class-spell`)에서 실행** — 같은 origin(GitHub) 공유하되 워킹디렉토리는 분리됨. 과거 **같은 폴더를 공유했을 때** amend/force-push로 서로 커밋을 덮어써 **커밋 유실 사고 발생(오늘 step390이 유실됐다가 백업 `8c68a50`에서 복원)**. **→ 앞으로 두 세션 모두 `force-push` 절대 금지, 일반 `push`만. 커밋 전 `git pull --rebase` 먼저.**
+- **HEAD=38f8207(step421)까지 전부 커밋·push 완료. origin/main=로컬 동기화 확인됨. 워킹트리 clean. (맞춤법 세션 2026-07-09 마감 시점 확인)**
+- ⚠️⚠️ **병렬 맞춤법 세션 운영 원칙(중요·갱신):** 맞춤법 세션은 이제 **별도 폴더(`literacy-class-spell`)에서 실행** — 같은 origin(GitHub) 공유하되 워킹디렉토리는 분리됨. 과거 **같은 폴더를 공유했을 때** amend/force-push로 서로 커밋을 덮어써 **커밋 유실 사고 발생(2026-07-06 step390이 유실됐다가 백업 `8c68a50`에서 복원)**. **→ 앞으로 두 세션 모두 `force-push` 절대 금지, 일반 `push`만. 커밋 전 `git pull --rebase` 먼저.**
 - ⚠️ Code가 커밋 후 push 빠뜨리는 경우 있음 — 커밋 지시 시 "push까지" 명시.
 - untracked(미커밋, 급하지 않음): `_report*.md`·`_snapshot/`(로컬 산출물, gitignore 처리됨). `scripts/make-snapshot.js`·`FEATURE-MAP.md`는 저장소 편입 완료(step338·339).
