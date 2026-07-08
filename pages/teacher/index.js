@@ -250,13 +250,20 @@ export default function TeacherHome() {
 
       const gradeText = profile.classes?.grade ? `초등 ${profile.classes.grade}학년` : '초등학생'
       const result = await callAI('briefing', { gradeText, topicTitle: sourceTopic.title, students })
-      const weakness = (result?.weakness || '').trim()
-      const tip = (result?.tip || '').trim()
-      if (!tip) return  // AI 실패 시 저장·알림 안 함
+      const { weakness, student_line } = result || {}
+      const line = (student_line || '').trim()
+      if (!line) return  // AI 실패 시 저장·알림 안 함
+
+      // 2층 문구: 교사용 문맥 + 학생에게 그대로 읽어줄 한 문장
+      const w = (weakness || '').trim()
+      const title = '📊 학생 글 분석 결과가 나왔어요'
+      const body = w
+        ? `지난 글에서는 '${w}' 부분이 조금 아쉬웠어요. 오늘은 학생들에게 이 문장으로 지도해 주세요: "${line}"`
+        : `학생 글 분석이 끝났어요. 오늘은 학생들에게 이 문장으로 지도해 주세요: "${line}"`
 
       // 캐시 저장 (본인 학급 update, RLS 허용)
       await supabase.from('classes').update({
-        morning_briefing_text: tip,
+        morning_briefing_text: body,
         morning_briefing_source_topic_id: sourceTopic.id,
       }).eq('id', classId)
 
@@ -265,8 +272,8 @@ export default function TeacherHome() {
         await supabase.rpc('create_notification', {
           p_recipient: profile.id,
           p_type: 'briefing',
-          p_title: weakness ? `오늘 지도 포인트: ${weakness}` : '이번 주제 결과가 나왔어요',
-          p_body: tip,
+          p_title: title,
+          p_body: body,
           p_link: '/teacher/topics',
         })
       } catch (e) { console.warn('브리핑 알림 실패(무시):', e?.message) }

@@ -284,7 +284,7 @@ export default async function handler(req, res) {
       opts = { taskType: 'quality', maxTokens: 4000 }
 
     } else if (type === 'briefing') {
-      // 🆕 교사 아침 브리핑 — 반 직전 주제 채점 요약 → {weakness, tip}. 프롬프트·스키마는 별도 파일.
+      // 🆕 교사 아침 브리핑 — 반 직전 주제 채점 요약 → {weakness, student_line}. 프롬프트·스키마는 별도 파일.
       prompt = briefingPrompt(payload || {})
       schema = briefingSchema
       opts = { taskType: 'quality', maxTokens: 800, temperature: 0.4 }
