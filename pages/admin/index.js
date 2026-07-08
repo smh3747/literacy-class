@@ -9,6 +9,37 @@ import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 
+// 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
+const ACTIVE_DAYS = 7
+const COOLING_DAYS = 14
+const STAGE_META = {
+  active:  { emoji: '🟢', label: '활성',     desc: `최근 ${ACTIVE_DAYS}일 수업 사용`,                     badge: 'bg-green-100 text-green-700', ring: 'ring-green-400' },
+  cooling: { emoji: '🟡', label: '식어감',   desc: `${ACTIVE_DAYS + 1}~${COOLING_DAYS}일 전 마지막 수업`, badge: 'bg-amber-100 text-amber-700', ring: 'ring-amber-400' },
+  at_risk: { emoji: '🔴', label: '이탈 위험', desc: `${COOLING_DAYS}일 넘게 수업 없음`,                   badge: 'bg-red-100 text-red-700',     ring: 'ring-red-400' },
+  dormant: { emoji: '⚪', label: '미정착',   desc: '학생 0명 또는 글 0건',                                badge: 'bg-gray-100 text-gray-600',   ring: 'ring-gray-400' },
+}
+// 교사 활동 단계: 마지막 글 활동(모든 학급 중 최근) 기준
+const classifyTeacher = ({ totalStudents, totalSubs, lastActivity }) => {
+  if (totalStudents === 0 || totalSubs === 0 || !lastActivity) return 'dormant'
+  const d = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
+  if (d <= ACTIVE_DAYS) return 'active'
+  if (d <= COOLING_DAYS) return 'cooling'
+  return 'at_risk'
+}
+// 진단 문구: 단계 × 로그인 신호 교차. 로그인 미로딩 시 교차 진단 생략(placeholder 정책 유지)
+const diagnoseTeacher = (stage, { classCount, totalStudents, loginDays, lastLoginLoaded }) => {
+  if (stage === 'at_risk') {
+    if (!lastLoginLoaded) return null
+    return (loginDays != null && loginDays <= 7) ? '로그인만 하고 수업 안 씀' : '발길 끊김'
+  }
+  if (stage === 'dormant') {
+    if (classCount === 0) return null                  // 학급 자체가 없으면(관리자 계정 등) 진단 생략
+    if (totalStudents === 0) return '학급만 만들고 멈춤'
+    return '학생 등록 후 수업 안 함'                    // 학생 있고 글 0건
+  }
+  return null
+}
+
 // 🆕 step371: 본문에서 original이 처음 등장하는 위치를 문장 단위(마침표·물음표·줄바꿈)로 잘라 반환.
 //   경계가 없으면 그 방향만 앞뒤 40자로 clamp. before/match/after로 나눠 하이라이트에 쓴다. 표시 전용.
 function extractContext(body, original) {
@@ -108,6 +139,8 @@ export default function AdminHome() {
   const [classActivityFilter, setClassActivityFilter] = useState('all')  // 🆕 활동 상태: 'all' | 'active' | 'inactive' (보유값 기준)
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [teacherSearch, setTeacherSearch] = useState('')  // 🆕 step249: 선생님 검색(이름·아이디·학교) — 클라 필터
+  const [teacherStageFilter, setTeacherStageFilter] = useState(null)  // 🆕 활동 단계 카드 필터 (null=전체)
+  const [teacherSort, setTeacherSort] = useState('recent')            // 🆕 recent|oldest_activity|students|subs
   const [classSearch, setClassSearch] = useState('')      // 🆕 step250: 학급 검색(학급명·담임·학교·코드) — 클라 필터
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [replyDraft, setReplyDraft] = useState({})      // 🆕 피드백 답변 입력 { [id]: text }
@@ -1174,6 +1207,40 @@ export default function AdminHome() {
             ).filter(matchTeacher)
             const bannedCount = teachers.filter(t => t.is_banned).length
 
+            // 🆕 교사별 파생값을 map 앞으로 끌어올림 — 카드 집계·단계 필터·정렬에 공용 (계산식은 기존 그대로)
+            const enriched = visibleTeachers.map(t => {
+              const myClasses = classes.filter(c => c.teacher_id === t.id)
+              const totalStudents = myClasses.reduce((sum, c) => sum + (c.student_count || 0), 0)
+              const totalSubs = myClasses.reduce((sum, c) => sum + (c.submission_count || 0), 0)
+              const totalFirst = myClasses.reduce((sum, c) => sum + (c.first_submission_count || 0), 0)
+              const lastActivity = myClasses.reduce((max, c) => {
+                if (!c.last_activity_at) return max
+                return !max || c.last_activity_at > max ? c.last_activity_at : max
+              }, null)
+              const stage = classifyTeacher({ totalStudents, totalSubs, lastActivity })
+              const lastLogin = teacherLastLogin[t.id]
+              const loginDays = lastLogin ? Math.floor((Date.now() - new Date(lastLogin).getTime()) / 86400000) : null
+              const diag = diagnoseTeacher(stage, { classCount: myClasses.length, totalStudents, loginDays, lastLoginLoaded })
+              return { t, myClasses, totalStudents, totalSubs, totalFirst, lastActivity, stage, diag }
+            })
+            const stageCounts = { active: 0, cooling: 0, at_risk: 0, dormant: 0 }
+            enriched.forEach(x => { stageCounts[x.stage]++ })
+            // 정렬 — 'recent'는 로드 순서(created_at desc) 그대로(기존 기본 정렬 회귀 없음)
+            const sorted = teacherSort === 'recent' ? enriched : [...enriched].sort((a, b) => {
+              if (teacherSort === 'students') return b.totalStudents - a.totalStudents
+              if (teacherSort === 'subs') return b.totalSubs - a.totalSubs
+              // oldest_activity: 활동 전무(null)=가장 오래된 것으로 맨 앞
+              const av = a.lastActivity ? new Date(a.lastActivity).getTime() : 0
+              const bv = b.lastActivity ? new Date(b.lastActivity).getTime() : 0
+              return av - bv
+            })
+            const listed = teacherStageFilter ? sorted.filter(x => x.stage === teacherStageFilter) : sorted
+            // 카드 클릭 토글: 선택 시 '오래된 순' 자동 전환, 해제 시 기본 정렬 복귀
+            const toggleStageFilter = (key) => {
+              if (teacherStageFilter === key) { setTeacherStageFilter(null); setTeacherSort('recent') }
+              else { setTeacherStageFilter(key); setTeacherSort('oldest_activity') }
+            }
+
             return (
             <div className="space-y-4">
             {/* 🆕 비밀번호 초기화 요청 알림 */}
@@ -1295,6 +1362,14 @@ export default function AdminHome() {
                   <input type="text" value={teacherSearch} onChange={e => setTeacherSearch(e.target.value)}
                     placeholder="🔍 이름·아이디·학교"
                     className="text-sm border border-gray-200 rounded p-2 w-[180px]" />
+                  {/* 🆕 정렬 셀렉트 */}
+                  <select value={teacherSort} onChange={e => setTeacherSort(e.target.value)}
+                    className="text-sm border border-gray-200 rounded p-2">
+                    <option value="recent">가입 최신순</option>
+                    <option value="oldest_activity">마지막 활동 오래된 순</option>
+                    <option value="students">학생 많은 순</option>
+                    <option value="subs">글 많은 순</option>
+                  </select>
                   {bannedCount > 0 && (
                     <button onClick={() => setShowBannedTeachers(!showBannedTeachers)}
                       className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">
@@ -1303,10 +1378,39 @@ export default function AdminHome() {
                   )}
                 </div>
               </div>
+
+              {/* 🆕 활동 단계 요약 카드 4장 — 클릭=해당 단계만 필터(재클릭 해제) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                {['active', 'cooling', 'at_risk', 'dormant'].map(key => {
+                  const m = STAGE_META[key]
+                  const on = teacherStageFilter === key
+                  return (
+                    <button key={key} onClick={() => toggleStageFilter(key)}
+                      className={`text-left rounded-xl p-3 border transition ${m.badge} ${on ? `ring-2 ring-offset-1 ${m.ring} border-transparent` : 'border-transparent hover:opacity-80'}`}>
+                      <div className="text-xs font-semibold">{m.emoji} {m.label}</div>
+                      <div className="text-xl font-bold mt-0.5">{stageCounts[key]}명</div>
+                      <div className="text-[11px] opacity-70 mt-0.5">{m.desc}</div>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* 🆕 활성 필터 칩 */}
+              {teacherStageFilter && (
+                <div className="mb-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs bg-gray-800 text-white rounded-full pl-3 pr-1.5 py-1">
+                    지금 보는 중: {STAGE_META[teacherStageFilter].emoji} {STAGE_META[teacherStageFilter].label} {listed.length}명
+                    <button onClick={() => toggleStageFilter(teacherStageFilter)}
+                      className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-gray-600" aria-label="필터 해제">✕</button>
+                  </span>
+                </div>
+              )}
+
               {visibleTeachers.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
                   {tq ? '검색 결과가 없어요' : teachers.length === 0 ? '가입한 선생님이 없어요' : '정상 계정이 없어요. "차단 포함 보기"를 눌러주세요.'}
                 </p>
+              ) : listed.length === 0 ? (
+                <p className="text-sm text-gray-500 py-8 text-center">이 단계의 선생님이 없어요</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1324,28 +1428,16 @@ export default function AdminHome() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleTeachers.map(t => {
-                        // 🆕 이 선생님이 담임으로 운영하는 학급들
-                        const myClasses = classes.filter(c => c.teacher_id === t.id)
-                        const totalStudents = myClasses.reduce((sum, c) => sum + (c.student_count || 0), 0)
-                        const totalSubs = myClasses.reduce((sum, c) => sum + (c.submission_count || 0), 0)
-                        const totalFirst = myClasses.reduce((sum, c) => sum + (c.first_submission_count || 0), 0)
-                        const lastActivity = myClasses.reduce((max, c) => {
-                          if (!c.last_activity_at) return max
-                          return !max || c.last_activity_at > max ? c.last_activity_at : max
-                        }, null)
+                      {listed.map(({ t, myClasses, totalStudents, totalSubs, totalFirst, lastActivity, stage, diag }) => {
+                        // 🆕 파생값(myClasses·합계·lastActivity·stage·diag)은 위 enriched에서 계산됨
                         const isExpanded = expandedTeacherId === t.id
 
-                        // 활동 라벨(마지막 글 활동 기준) — step253: 문구 명확화 / step263: 뱃지 색상
-                        let activityLabel = '활동 기록 없음'
-                        let activityBadge = 'bg-gray-100 text-gray-400'
+                        // 🆕 단계 통합 배지 — 기존 '마지막 활동 N일 전' 배지를 대체(단계+일수 통합, 정보 유실 없음)
+                        const sm = STAGE_META[stage]
+                        let stageLabel = `${sm.emoji} ${sm.label}`
                         if (lastActivity) {
                           const diffDays = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
-                          if (diffDays === 0) { activityLabel = '오늘 활동'; activityBadge = 'bg-green-100 text-green-700' }
-                          else if (diffDays === 1) { activityLabel = '어제 활동'; activityBadge = 'bg-green-100 text-green-700' }
-                          else if (diffDays <= 7) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-blue-100 text-blue-700' }
-                          else if (diffDays <= 30) { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-gray-100 text-gray-600' }
-                          else { activityLabel = `마지막 활동 ${diffDays}일 전`; activityBadge = 'bg-amber-100 text-amber-700' }
+                          stageLabel += diffDays === 0 ? ' · 오늘' : diffDays === 1 ? ' · 어제' : ` · ${diffDays}일 전`
                         }
 
                         // 🆕 step254: 마지막 로그인(글 활동과 별개 신호 — auth.users.last_sign_in_at)
@@ -1367,11 +1459,15 @@ export default function AdminHome() {
                               <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap align-middle">{t.username}</td>
                               <td className="p-2 text-gray-600 whitespace-nowrap align-middle">
                                 {myClasses.length === 0 ? (
-                                  <span className="text-xs text-gray-400">운영 학급 없음</span>
+                                  <span className="text-xs whitespace-nowrap inline-flex items-center gap-1.5">
+                                    <span className="text-gray-400">운영 학급 없음</span>
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${sm.badge}`}>{stageLabel}</span>
+                                  </span>
                                 ) : (
                                   <span className="text-xs whitespace-nowrap inline-flex items-center gap-1.5">
                                     🏫 <strong>{myClasses.length}개</strong> · 👥 {totalStudents}명 · 📝 {totalSubs}건<span className="text-gray-400"> (첫글 {totalFirst}개)</span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${activityBadge}`}>{activityLabel}</span>
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${sm.badge}`}>{stageLabel}</span>
+                                    {diag && <span className="text-[11px] text-gray-400">{diag}</span>}
                                   </span>
                                 )}
                               </td>
