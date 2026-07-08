@@ -322,6 +322,14 @@ export default function TeacherHome() {
     }
   }
 
+  // 🆕 다음 걸음 모달(막힌 3종) ESC 닫기 — ✕·오버레이 클릭과 동일하게 dismissed 기록
+  useEffect(() => {
+    if (!nextStepCard || nextStepCard === 'review') return
+    const onKey = (e) => { if (e.key === 'Escape') recordOnboarding(nextStepCard, 'dismissed') }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [nextStepCard])
+
   // 다음 걸음 카드 응답 기록 — 한 번의 insert(RLS가 update 차단이라 저장은 1회로 끝). 실패해도 카드만 숨김.
   const recordOnboarding = async (cardType, response, comment) => {
     setNextStepCard(null)
@@ -771,77 +779,31 @@ export default function TeacherHome() {
             )}
           </div>
 
-          {/* 🆕 다음 걸음 카드 — 막힌 지점별 설문·안내, card_type별 평생 1회 (인라인 카드, 모달 아님) */}
-          {user?.role === 'teacher' && !isImpersonating && nextStepCard && (
+          {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달) */}
+          {!isImpersonating && nextStepCard === 'review' && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
-              <button onClick={() => recordOnboarding(nextStepCard, 'dismissed')} aria-label="닫기"
+              <button onClick={() => recordOnboarding('review', 'dismissed')} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
-
-              {nextStepCard === 'review' && (
-                <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">💬 다온클래스, 써보니 어떠세요?</h3>
-                  <p className="text-sm text-gray-600 mt-1">벌써 여러 번 수업하셨어요. 선생님 의견이 큰 힘이 돼요.</p>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {[['good', '😀 좋아요'], ['soso', '🙂 보통이에요'], ['bad', '😐 아쉬워요']].map(([v, label]) => (
-                      <button key={v} onClick={() => setReviewPick(v)}
-                        className={`text-sm px-3.5 py-2 rounded-xl border-2 transition ${reviewPick === v
-                          ? 'border-indigo-400 bg-indigo-50 font-semibold'
-                          : 'border-gray-200 hover:bg-gray-50'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {reviewPick && (
-                    <div className="flex gap-2 mt-3">
-                      <input type="text" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
-                        placeholder="한 줄 의견 (선택)" maxLength={200}
-                        className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2" />
-                      <button onClick={() => recordOnboarding('review', reviewPick, reviewComment.trim())}
-                        className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition shrink-0">
-                        보내기
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {nextStepCard === 'no_students' && (
-                <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">🙋 학생 등록에서 멈추셨네요. 뭐가 걸리세요?</h3>
-                  <p className="text-sm text-gray-600 mt-1">알려주시면 그 부분부터 쉽게 만들게요.</p>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {[['roster_hassle', '명렬표 입력이 번거로워요'], ['consent_burden', '학부모 동의가 부담돼요'], ['just_looking', '아직 둘러보는 중이에요']].map(([v, label]) => (
-                      <button key={v} onClick={() => recordOnboarding('no_students', v)}
-                        className="text-sm px-3.5 py-2 rounded-xl border-2 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition">
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {nextStepCard === 'no_topics' && (
-                <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">✏️ 무슨 주제로 시작할지 고민되시죠?</h3>
-                  <p className="text-sm text-gray-600 mt-1">다른 선생님들이 검증한 추천 주제로 1분 만에 등록할 수 있어요.</p>
-                  <button onClick={() => { recordOnboarding('no_topics', 'clicked'); router.push('/teacher/topics') }}
-                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
-                    ✨ 추천 주제로 바로 시작하기
+              <h3 className="font-bold text-indigo-900 pr-6">💬 다온클래스, 써보니 어떠세요?</h3>
+              <p className="text-sm text-gray-600 mt-1">벌써 여러 번 수업하셨어요. 선생님 의견이 큰 힘이 돼요.</p>
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {[['good', '😀 좋아요'], ['soso', '🙂 보통이에요'], ['bad', '😐 아쉬워요']].map(([v, label]) => (
+                  <button key={v} onClick={() => setReviewPick(v)}
+                    className={`text-sm px-3.5 py-2 rounded-xl border-2 transition ${reviewPick === v
+                      ? 'border-indigo-400 bg-indigo-50 font-semibold'
+                      : 'border-gray-200 hover:bg-gray-50'}`}>
+                    {label}
                   </button>
-                </div>
-              )}
-
-              {nextStepCard === 'no_class_run' && (
-                <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">🕐 언제 쓰면 좋을지 고민되시죠?</h3>
-                  <div className="text-sm text-gray-600 mt-2 space-y-1">
-                    <p>🌅 아침 활동: 주 1~2회, 등교 후 10분 글쓰기 루틴으로</p>
-                    <p>📖 수업 시간: 국어·도덕 글쓰기 활동을 공책 대신 여기서</p>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">검사는 AI가 먼저 해두니, 선생님은 확인만 하시면 돼요.</p>
-                  <button onClick={() => { recordOnboarding('no_class_run', 'clicked'); scrollToLoginHint() }}
-                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
-                    📄 학생 로그인 안내 보기
+                ))}
+              </div>
+              {reviewPick && (
+                <div className="flex gap-2 mt-3">
+                  <input type="text" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+                    placeholder="한 줄 의견 (선택)" maxLength={200}
+                    className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2" />
+                  <button onClick={() => recordOnboarding('review', reviewPick, reviewComment.trim())}
+                    className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition shrink-0">
+                    보내기
                   </button>
                 </div>
               )}
@@ -1173,6 +1135,59 @@ export default function TeacherHome() {
           />
         )}
         {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
+
+        {/* 🆕 다음 걸음 모달 — 막힌 분기 3종(no_students·no_topics·no_class_run). '도움'이라 모달 정당(수업 0회라 방해할 작업 없음).
+            ✕·오버레이 클릭·ESC 모두 dismissed 기록(평생 1회). review는 위 인라인 배너. 패턴=PasswordChangeModal */}
+        {!isImpersonating && nextStepCard && nextStepCard !== 'review' && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+            onClick={() => recordOnboarding(nextStepCard, 'dismissed')}>
+            <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+              <button onClick={() => recordOnboarding(nextStepCard, 'dismissed')} aria-label="닫기"
+                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+
+              {nextStepCard === 'no_students' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">🙋 학생 등록에서 멈추셨네요. 뭐가 걸리세요?</h3>
+                  <p className="text-sm text-gray-600 mt-1">알려주시면 그 부분부터 쉽게 만들게요.</p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {[['roster_hassle', '명렬표 입력이 번거로워요'], ['consent_burden', '학부모 동의가 부담돼요'], ['just_looking', '아직 둘러보는 중이에요']].map(([v, label]) => (
+                      <button key={v} onClick={() => recordOnboarding('no_students', v)}
+                        className="text-sm px-3.5 py-2 rounded-xl border-2 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {nextStepCard === 'no_topics' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">✏️ 무슨 주제로 시작할지 고민되시죠?</h3>
+                  <p className="text-sm text-gray-600 mt-1">다른 선생님들이 검증한 추천 주제로 1분 만에 등록할 수 있어요.</p>
+                  <button onClick={() => { recordOnboarding('no_topics', 'clicked'); router.push('/teacher/topics') }}
+                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
+                    ✨ 추천 주제로 바로 시작하기
+                  </button>
+                </div>
+              )}
+
+              {nextStepCard === 'no_class_run' && (
+                <div>
+                  <h3 className="font-bold text-indigo-900 pr-6">🕐 언제 쓰면 좋을지 고민되시죠?</h3>
+                  <div className="text-sm text-gray-600 mt-2 space-y-1">
+                    <p>🌅 아침 활동: 주 1~2회, 등교 후 10분 글쓰기 루틴으로</p>
+                    <p>📖 수업 시간: 국어·도덕 글쓰기 활동을 공책 대신 여기서</p>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">검사는 AI가 먼저 해두니, 선생님은 확인만 하시면 돼요.</p>
+                  <button onClick={() => { recordOnboarding('no_class_run', 'clicked'); scrollToLoginHint() }}
+                    className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
+                    📄 학생 로그인 안내 보기
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

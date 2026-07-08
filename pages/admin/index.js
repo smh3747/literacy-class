@@ -463,7 +463,7 @@ export default function AdminHome() {
       const profMap = {}, classMap = {}
       if (teacherIds.length > 0) {
         const { data: profs } = await supabase.from('profiles')
-          .select('id, realname, school').in('id', teacherIds)
+          .select('id, realname, school, role').in('id', teacherIds)
         ;(profs || []).forEach(p => { profMap[p.id] = p })
         const { data: cls } = await supabase.from('classes')
           .select('name, teacher_id').in('teacher_id', teacherIds).is('deleted_at', null)
@@ -477,6 +477,7 @@ export default function AdminHome() {
           ...o,
           realname: profMap[o.teacher_id]?.realname || '(정보 없음)',
           school: profMap[o.teacher_id]?.school || '',
+          role: profMap[o.teacher_id]?.role || '',   // 🆕 admin 응답 구분 배지용
         }))
         .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)))
       if (error) {
@@ -2741,6 +2742,9 @@ export default function AdminHome() {
                           <div key={`${o.teacher_id}-${o.card_type}` || i} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-semibold text-gray-800">{o.realname}</span>
+                              {o.role === 'admin' && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-purple-100 text-purple-700">관리자</span>
+                              )}
                               {o.school && <span className="text-xs text-gray-500">{o.school}</span>}
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700">
                                 {OB_CARD_LABELS[o.card_type] || o.card_type}
