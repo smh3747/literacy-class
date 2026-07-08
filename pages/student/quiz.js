@@ -10,6 +10,13 @@ import Header from '../../components/Header'
 
 const QUIZ_SIZE = 5
 
+// 문자열이 아닌 실데이터(객체·배열·숫자 등) 방어 — 첫 번째 유효한 문자열만 채택.
+// corrections 필드가 비문자열인 실사례로 .trim() 크래시가 났음(js_error, 표시 방어만).
+const pickStr = (...vals) => {
+  for (const v of vals) { if (typeof v === 'string' && v.trim()) return v.trim() }
+  return ''
+}
+
 // 배열 셔플 (Fisher-Yates)
 const shuffle = (arr) => {
   const a = [...arr]
@@ -57,9 +64,9 @@ export default function StudentQuiz() {
     const seen = new Set()
     ;(data || []).forEach(row => {
       (Array.isArray(row.corrections) ? row.corrections : []).forEach(c => {
-        const original = (c.original || c.error || c.wrong || '').trim()
-        const correction = (c.correction || c.fixed || c.suggestion || '').trim()
-        const reason = (c.reason || c.type || c.category || '').trim()
+        const original = pickStr(c.original, c.error, c.wrong)
+        const correction = pickStr(c.correction, c.fixed, c.suggestion)
+        const reason = pickStr(c.reason, c.type, c.category)
         if (!original || !correction || original === correction) return  // 문제 성립 불가
         const key = original + '→' + correction
         if (seen.has(key)) return  // 같은 쌍 중복 제거
