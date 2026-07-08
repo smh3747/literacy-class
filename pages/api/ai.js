@@ -55,16 +55,16 @@ async function logServerError({ accessToken, type, message }) {
   } catch (_) { /* 로깅 실패는 무시 */ }
 }
 
-// 🔍 원문에서 original 주변을 발췌 — 차단 맥락("어느 글에서")용. 못 찾으면 앞 100자.
+// 🔍 원문에서 original 주변을 발췌 — 차단 맥락("어느 글에서")용. 못 찾으면 앞 200자.
 function buildEssayExcerpt(essayText, original) {
   if (!essayText) return null
   const e = String(essayText)
   const o = original == null ? '' : String(original)
   const idx = o ? e.indexOf(o) : -1
   const seg = idx === -1
-    ? e.slice(0, 100)
-    : e.slice(Math.max(0, idx - 40), Math.min(e.length, idx + o.length + 40))
-  return seg.slice(0, 300)
+    ? e.slice(0, 200)
+    : e.slice(Math.max(0, idx - 100), Math.min(e.length, idx + o.length + 100))
+  return seg.slice(0, 500)
 }
 
 // 🔍 C-2: 병합에서 폐기된 오교정 시도를 correction_alerts에 기록. 절대 throw하지 않음.
