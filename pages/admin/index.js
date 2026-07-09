@@ -1951,6 +1951,15 @@ export default function AdminHome() {
                                   🔍 엿보기
                                 </a>
                               )}
+                              {/* 🆕 step431: 학생 글 탭으로 — 이 학급 필터 자동 적용(tab+class 딥링크, 의심 교정 sub 딥링크 패턴) */}
+                              <button onClick={() => {
+                                  router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', class: c.id } }, undefined, { shallow: true })
+                                  setTabState('submissions')
+                                }}
+                                className="text-xs px-3 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                title="이 학급의 학생 글만 모아 보기">
+                                📝 글 보기
+                              </button>
                               <button onClick={() => toggleClassActive(c)}
                                 className={`text-xs px-3 py-1 rounded ${c.is_active === false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
                                 {c.is_active === false ? '활성화' : '비활성화'}
@@ -3180,6 +3189,14 @@ function AdminSubmissionsInner() {
 
   useEffect(() => { load() }, [selectedClass, dateFilter, customDate, subStatusFilter])
 
+  // 🆕 step431: URL ?class= 복원 — 학급 탭 "글 보기" 딥링크(tab=submissions&class=id).
+  //   deps에 selectedClass 없음 → 드롭다운 수동 변경을 되돌리지 않음.
+  useEffect(() => {
+    if (!router.isReady) return
+    const c = router.query.class
+    if (c && String(c) !== selectedClass) setSelectedClass(String(c))
+  }, [router.isReady, router.query.class])
+
   // 새로고침 시: 글 목록 로드된 뒤 URL의 sub ID로 상세 복원
   // 🆕 step370: 목록(최근 200건·active 필터)에 없으면 단건 직접 조회 폴백 —
   //   의심 교정 "글 보기"가 오래된 글·휴지통 글에서 무반응이던 문제 해결. 실패는 안내로 표시(조용한 실패 금지).
@@ -3247,7 +3264,7 @@ function AdminSubmissionsInner() {
     let query = supabase.from('submissions')
       .select('*, profiles!submissions_user_id_fkey(realname, nickname, username, number, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(selectedClass === 'all' ? 200 : 2000)  // 🆕 step431: 학급 지정 시 그 학급 전체 커버(상한 완화)
 
     if (selectedClass !== 'all') {
       const { data: classStudents } = await supabase.from('profiles')
@@ -3459,8 +3476,15 @@ function AdminSubmissionsInner() {
               className={`text-sm border border-gray-200 rounded p-2 w-[220px] ${groupBy === 'class' ? 'opacity-40 cursor-not-allowed' : ''}`}>
               <option value="all">모든 학급</option>
               {/* 🆕 학교별 그룹 + 담임명으로 같은 반 이름 구분 */}
+              {/* 🆕 step431: 검색어로 드롭다운 목록도 축소(학급명·담임·학교) — 선택된 학급은 항상 포함(value 유지) */}
               {Object.entries(
-                classList.reduce((acc, c) => {
+                classList.filter(c => {
+                  const q = search.trim().toLowerCase()
+                  if (!q || String(c.id) === String(selectedClass)) return true
+                  return (c.name || '').toLowerCase().includes(q)
+                    || (c.teacher_name || '').toLowerCase().includes(q)
+                    || (c.school || '').toLowerCase().includes(q)
+                }).reduce((acc, c) => {
                   const school = c.school || '학교 미설정'
                   if (!acc[school]) acc[school] = []
                   acc[school].push(c)
