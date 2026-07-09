@@ -33,6 +33,10 @@ const DETECT = [
   { name: '안/않(않된)',       text: '그러면 않된다',      original: '않된',      correction: '안 된' },
   { name: '할수있다',         text: '나도 할수있다',      original: '할수있',    correction: '할 수 있' },
   { name: '첫번째',           text: '첫번째 도전',        original: '첫번째',    correction: '첫 번째' },
+  { name: "의존명사 건(있는건)", text: '들어가 있는건 또',   original: '있는건',    correction: '있는 건' },   // step425
+  { name: "의존명사 건(하는건)", text: '하는건 어렵다',      original: '하는건',    correction: '하는 건' },   // step425
+  { name: '사리지다(집니다)',   text: '상자는 사리집니다',   original: '사리집니다', correction: '사라집니다' }, // step425
+  { name: '사리지다(졌다)',     text: '갑자기 사리졌다',    original: '사리졌다',   correction: '사라졌다' },   // step425
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -47,6 +51,11 @@ const NO_FALSE_POSITIVE = [
   { name: '안아주고(안다 활용)', text: '엄마가 안아주고 웃었다' },
   { name: '별것(합성어)',       text: '별것 아니다' },
   { name: "'않고'(정상 활용)",  text: '먹지 않고 잤다' },
+  { name: '물건(명사)',         text: '물건을 샀다' },           // step425
+  { name: '사건(명사)',         text: '사건이 일어났다' },        // step425
+  { name: '조건(명사)',         text: '조건이 맞다' },           // step425
+  { name: '라면 사리(명사)',    text: '라면 사리를 추가했다' },   // step425
+  { name: '사리 분별(명사)',    text: '사리 분별을 잘한다' },     // step425
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
