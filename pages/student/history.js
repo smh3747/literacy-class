@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
+import { pickStr } from '../../lib/pickStr'
 import { stampLabel } from '../../lib/stamps'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
@@ -45,9 +46,9 @@ function applyGrammar(essayText, corrections) {
   if (!corrections?.length) return escapeHtml(essayText).replace(/\n/g,'<br>')
   const matches = []
   corrections.forEach(c => {
-    const orig = c.original || c.error || c.wrong || ''
-    const corr = c.correction || c.fixed || ''
-    const reason = c.reason || c.type || ''
+    const orig = pickStr(c.original, c.error, c.wrong)   // step427: 비문자열 방어(깨진 항목 조용히 제외)
+    const corr = pickStr(c.correction, c.fixed)
+    const reason = pickStr(c.reason, c.type)
     if (!orig) return
     let from = 0
     let placed = false

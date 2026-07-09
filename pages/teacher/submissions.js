@@ -8,6 +8,7 @@ import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
 import { findOriginalRange } from '../../lib/koreanRules'
 import { GRAMMAR_NOTICE_TEACHER } from '../../lib/notices'
+import { pickStr } from '../../lib/pickStr'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
@@ -49,9 +50,9 @@ function applyGrammar(essayText, corrections) {
   if (!corrections?.length) return escapeHtml(essayText).replace(/\n/g,'<br>')
   const matches = []
   corrections.forEach(c => {
-    const orig = c.original || c.error || c.wrong || ''
-    const corr = c.correction || c.fixed || ''
-    const reason = c.reason || c.type || ''
+    const orig = pickStr(c.original, c.error, c.wrong)   // step427: 비문자열 방어(깨진 항목 조용히 제외)
+    const corr = pickStr(c.correction, c.fixed)
+    const reason = pickStr(c.reason, c.type)
     if (!orig) return
     let from = 0
     let placed = false

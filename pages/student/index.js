@@ -14,6 +14,7 @@ import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
+import { pickStr } from '../../lib/pickStr'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -132,9 +133,9 @@ function applyGrammarHighlights(essayText, corrections) {
 
   const matches = []
   corrections.forEach(c => {
-    const original = c.original || c.error || c.wrong || ''
-    const correction = c.correction || c.fixed || c.suggestion || ''
-    const reason = c.reason || c.type || c.category || ''
+    const original = pickStr(c.original, c.error, c.wrong)      // step427: 비문자열 방어(깨진 항목 조용히 제외)
+    const correction = pickStr(c.correction, c.fixed, c.suggestion)
+    const reason = pickStr(c.reason, c.type, c.category)
     if (!original) return
 
     let from = 0

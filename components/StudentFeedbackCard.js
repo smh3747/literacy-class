@@ -4,6 +4,7 @@ import { splitFeedbackItems } from '../lib/feedbackFormat'
 import { findOriginalRange } from '../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
 import { stampLabel } from '../lib/stamps'
+import { pickStr } from '../lib/pickStr'
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
@@ -23,9 +24,10 @@ export function filterValidCorrections(essayText, corrections) {
   const valid = []
 
   for (const c of corrections) {
-    const original = c.original || c.error || c.wrong || ''
-    const correction = c.correction || c.fixed || c.suggestion || ''
-    const reason = (c.reason || c.type || c.category || '').toLowerCase()
+    // step427: 비문자열 실데이터 방어(pickStr) — 깨진 항목은 아래 !original에서 조용히 제외
+    const original = pickStr(c.original, c.error, c.wrong)
+    const correction = pickStr(c.correction, c.fixed, c.suggestion)
+    const reason = pickStr(c.reason, c.type, c.category).toLowerCase()
 
     if (!original) continue
     if (reason.includes('마침표') || reason.includes('문장 끝') || reason.includes('온점') || reason.includes('찍어')) {
@@ -82,9 +84,9 @@ export function applyGrammarHighlights(essayText, corrections) {
 
   const matches = []
   filtered.forEach(c => {
-    const original = c.original || c.error || c.wrong || ''
-    const correction = c.correction || c.fixed || c.suggestion || ''
-    const reason = c.reason || c.type || c.category || ''
+    const original = pickStr(c.original, c.error, c.wrong)      // step427: 비문자열 방어
+    const correction = pickStr(c.correction, c.fixed, c.suggestion)
+    const reason = pickStr(c.reason, c.type, c.category)
     if (!original) return
 
     let from = 0
@@ -376,14 +378,20 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
             🔍 맞춤법·띄어쓰기 ({corrections.length}개)
           </h4>
           <ul className="text-sm space-y-2">
-            {corrections.map((c, i) => (
-              <li key={i} className="text-red-900 bg-white rounded p-2 border border-red-100">
-                <span className="line-through text-red-600">{c.original}</span>
-                {c.correction && <span className="mx-1.5 text-gray-400">→</span>}
-                {c.correction && <span className="text-green-700 font-bold">{c.correction}</span>}
-                {c.reason && <div className="text-xs text-gray-600 mt-1">💡 {c.reason}</div>}
-              </li>
-            ))}
+            {corrections.map((c, i) => {
+              // step427: 객체를 JSX로 직접 렌더하면 React가 죽음 — pickStr 파생값만 렌더
+              const original = pickStr(c.original, c.error, c.wrong)
+              const correction = pickStr(c.correction, c.fixed, c.suggestion)
+              const reason = pickStr(c.reason, c.type, c.category)
+              return (
+                <li key={i} className="text-red-900 bg-white rounded p-2 border border-red-100">
+                  <span className="line-through text-red-600">{original}</span>
+                  {correction && <span className="mx-1.5 text-gray-400">→</span>}
+                  {correction && <span className="text-green-700 font-bold">{correction}</span>}
+                  {reason && <div className="text-xs text-gray-600 mt-1">💡 {reason}</div>}
+                </li>
+              )
+            })}
           </ul>
           <p className="text-[11px] text-red-700/70 mt-2 leading-snug">{GRAMMAR_NOTICE_STUDENT}</p>
         </div>
