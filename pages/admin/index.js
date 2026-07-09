@@ -164,6 +164,8 @@ export default function AdminHome() {
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
   const [msgReply, setMsgReply] = useState('')
   const [msgSending, setMsgSending] = useState(false)
+  const [msgEditingId, setMsgEditingId] = useState(null)  // 🆕 step432: 인라인 수정 중인 쪽지 id
+  const [msgEditDraft, setMsgEditDraft] = useState('')
   const [msgFilter, setMsgFilter] = useState('replied')  // replied(기본) | all | unresolved | unread — step428: 일괄 발송 250스레드 중 답장 온 것부터
   const [msgMasked, setMsgMasked] = useState(false)      // 캡쳐용 마스킹 모드(렌더만)
   const [bulkOpen, setBulkOpen] = useState(false)        // 일괄 쪽지 모달
@@ -534,7 +536,7 @@ export default function AdminHome() {
       try {
         const [msgsRes, stsRes] = await Promise.all([
           supabase.from('messages')
-            .select('id, teacher_id, sender_id, body, read_at, created_at')
+            .select('id, teacher_id, sender_id, body, read_at, created_at, edited_at, deleted_at')
             .order('created_at', { ascending: true }).limit(1000),
           supabase.from('message_thread_status').select('teacher_id, resolved_at'),
         ])
@@ -577,7 +579,7 @@ export default function AdminHome() {
     try {
       const { data: ins, error } = await supabase.from('messages')
         .insert({ teacher_id: msgSelected, sender_id: user.id, body })
-        .select('id, teacher_id, sender_id, body, read_at, created_at').maybeSingle()
+        .select('id, teacher_id, sender_id, body, read_at, created_at, edited_at, deleted_at').maybeSingle()
       if (error) throw error
       setMsgData(prev => ({ ...prev, msgs: [...prev.msgs, ins] }))
       setMsgReply('')
@@ -594,6 +596,36 @@ export default function AdminHome() {
       alert('답장을 보내지 못했어요: ' + (e?.message || ''))
     }
     setMsgSending(false)
+  }
+
+  // 🆕 step432: 쪽지 수정·삭제 — sender 본인만(서버 재검증). 성공 시 로컬 반영.
+  const callMessageEdit = async (messageId, action, body) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await fetch('/api/message-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: session?.access_token, messageId, action, body }),
+    })
+    const j = await r.json()
+    if (!r.ok) throw new Error(j.error || '처리 실패')
+    return j
+  }
+  const saveMsgEdit = async (m) => {
+    const body = msgEditDraft.trim()
+    if (!body) return
+    try {
+      const j = await callMessageEdit(m.id, 'edit', body)
+      setMsgData(prev => ({ ...prev, msgs: prev.msgs.map(x => x.id === m.id ? { ...x, body, edited_at: j.edited_at } : x) }))
+      setMsgEditingId(null)
+    } catch (e) { alert('수정하지 못했어요: ' + e.message) }
+  }
+  const deleteMsg = async (m) => {
+    if (!confirm('이 쪽지를 삭제할까요? 상대방 화면에서도 지워져요.')) return
+    try {
+      const j = await callMessageEdit(m.id, 'delete')
+      setMsgData(prev => ({ ...prev, msgs: prev.msgs.map(x => x.id === m.id ? { ...x, deleted_at: j.deleted_at } : x) }))
+      if (msgEditingId === m.id) setMsgEditingId(null)
+    } catch (e) { alert('삭제하지 못했어요: ' + e.message) }
   }
 
   // 🆕 step422: 처리됨 토글 — message_thread_status upsert(관리자 전용 RLS)
@@ -3044,7 +3076,9 @@ export default function AdminHome() {
                               처리됨
                             </label>
                           </div>
-                          <div className="text-xs text-gray-500 truncate mt-0.5">{t.last.body}</div>
+                          <div className={`text-xs truncate mt-0.5 ${t.last.deleted_at ? 'text-gray-400 italic' : 'text-gray-500'}`}>
+                            {t.last.deleted_at ? '삭제된 쪽지예요' : t.last.body}
+                          </div>
                           <div className="text-[10px] text-gray-400 mt-0.5">{toKST(t.last.created_at)}</div>
                         </div>
                       ))}
@@ -3060,12 +3094,46 @@ export default function AdminHome() {
                           <div className="border border-gray-100 rounded-xl p-3 max-h-[45vh] overflow-y-auto space-y-2 bg-gray-50/50">
                             {sel.list.map(m => {
                               const fromTeacher = m.sender_id === m.teacher_id
+                              // 🆕 step432: 삭제된 쪽지 — 본문 대신 안내(버튼 없음)
+                              if (m.deleted_at) {
+                                return (
+                                  <div key={m.id} className={`flex ${fromTeacher ? 'justify-start' : 'justify-end'}`}>
+                                    <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm italic text-gray-400 bg-gray-100 ${fromTeacher ? 'rounded-bl-sm' : 'rounded-br-sm'}`}>
+                                      삭제된 쪽지예요
+                                      <div className="text-[10px] mt-0.5 not-italic text-gray-300">{toKST(m.created_at)}</div>
+                                    </div>
+                                  </div>
+                                )
+                              }
                               return (
-                                <div key={m.id} className={`flex ${fromTeacher ? 'justify-start' : 'justify-end'}`}>
+                                <div key={m.id} className={`group flex ${fromTeacher ? 'justify-start' : 'justify-end'} items-end gap-1`}>
+                                  {/* 🆕 step432: 내(관리자)가 보낸 쪽지에만 ✏️🗑 — 데스크탑 hover, 모바일 항상 */}
+                                  {!fromTeacher && msgEditingId !== m.id && (
+                                    <span className="flex gap-0.5 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition order-first">
+                                      <button onClick={() => { setMsgEditingId(m.id); setMsgEditDraft(m.body) }} aria-label="쪽지 수정"
+                                        className="text-xs p-1 rounded hover:bg-gray-200">✏️</button>
+                                      <button onClick={() => deleteMsg(m)} aria-label="쪽지 삭제"
+                                        className="text-xs p-1 rounded hover:bg-gray-200">🗑</button>
+                                    </span>
+                                  )}
                                   <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words ${fromTeacher
                                     ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
                                     : 'bg-indigo-600 text-white rounded-br-sm'}`}>
-                                    {m.body}
+                                    {msgEditingId === m.id ? (
+                                      <div className="w-56 max-w-full">
+                                        <textarea value={msgEditDraft} onChange={e => setMsgEditDraft(e.target.value)} rows={3} maxLength={2000}
+                                          className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-1.5 resize-none" />
+                                        <div className="flex gap-1.5 mt-1 justify-end">
+                                          <button onClick={() => setMsgEditingId(null)} className="text-[11px] px-2 py-1 rounded bg-white/20 hover:bg-white/30">취소</button>
+                                          <button onClick={() => saveMsgEdit(m)} className="text-[11px] px-2 py-1 rounded bg-white text-indigo-700 font-semibold hover:bg-indigo-50">저장</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {m.body}
+                                        {m.edited_at && <span className={`text-[10px] ml-1 ${fromTeacher ? 'text-gray-400' : 'text-indigo-200'}`}>(수정됨)</span>}
+                                      </>
+                                    )}
                                     <div className={`text-[10px] mt-0.5 ${fromTeacher ? 'text-gray-400' : 'text-indigo-200'}`}>{toKST(m.created_at)}</div>
                                   </div>
                                 </div>

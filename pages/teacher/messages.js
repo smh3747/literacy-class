@@ -19,6 +19,8 @@ export default function TeacherMessages() {
   const [items, setItems] = useState([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [editingId, setEditingId] = useState(null)   // 🆕 step432: 인라인 수정 중인 쪽지 id
+  const [editDraft, setEditDraft] = useState('')
   const bottomRef = useRef(null)
 
   useEffect(() => { checkAuth() }, [])
@@ -39,7 +41,7 @@ export default function TeacherMessages() {
   const loadThread = async (profile, imp) => {
     try {
       const { data } = await supabase.from('messages')
-        .select('id, sender_id, body, read_at, created_at')
+        .select('id, sender_id, body, read_at, created_at, edited_at, deleted_at')
         .eq('teacher_id', profile.id)
         .order('created_at', { ascending: true })
         .limit(500)
@@ -75,7 +77,7 @@ export default function TeacherMessages() {
       assertWritable()
       const { data: inserted, error } = await supabase.from('messages')
         .insert({ teacher_id: user.id, sender_id: user.id, body })
-        .select('id, sender_id, body, read_at, created_at')
+        .select('id, sender_id, body, read_at, created_at, edited_at, deleted_at')
         .maybeSingle()
       if (error) throw error
       setItems(prev => [...prev, inserted || { id: Math.random(), sender_id: user.id, body, created_at: new Date().toISOString() }])
@@ -98,6 +100,38 @@ export default function TeacherMessages() {
       console.warn('쪽지 발송 실패:', e?.message)
     }
     setSending(false)
+  }
+
+  // 🆕 step432: 쪽지 수정·삭제 — sender 본인만(서버에서 재검증). 성공 시 로컬 반영.
+  const callMessageEdit = async (messageId, action, body) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await fetch('/api/message-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: session?.access_token, messageId, action, body }),
+    })
+    const j = await r.json()
+    if (!r.ok) throw new Error(j.error || '처리 실패')
+    return j
+  }
+
+  const saveEdit = async (m) => {
+    const body = editDraft.trim()
+    if (!body) return
+    try {
+      const j = await callMessageEdit(m.id, 'edit', body)
+      setItems(prev => prev.map(x => x.id === m.id ? { ...x, body, edited_at: j.edited_at } : x))
+      setEditingId(null)
+    } catch (e) { alert('수정하지 못했어요: ' + e.message) }
+  }
+
+  const deleteMessage = async (m) => {
+    if (!confirm('이 쪽지를 삭제할까요? 상대방 화면에서도 지워져요.')) return
+    try {
+      const j = await callMessageEdit(m.id, 'delete')
+      setItems(prev => prev.map(x => x.id === m.id ? { ...x, deleted_at: j.deleted_at } : x))
+      if (editingId === m.id) setEditingId(null)
+    } catch (e) { alert('삭제하지 못했어요: ' + e.message) }
   }
 
   const logout = async () => {
@@ -126,13 +160,47 @@ export default function TeacherMessages() {
           ) : (
             items.map(m => {
               const mine = m.sender_id === user?.id
+              // 🆕 step432: 삭제된 쪽지 — 양쪽 모두 본문 대신 안내(버튼·수정 표시 없음)
+              if (m.deleted_at) {
+                return (
+                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm italic text-gray-400 ${mine ? 'bg-gray-50 rounded-br-sm' : 'bg-gray-50 rounded-bl-sm'}`}>
+                      삭제된 쪽지예요
+                      <div className="text-[10px] mt-1 not-italic text-gray-300">{toKST(m.created_at)}</div>
+                    </div>
+                  </div>
+                )
+              }
               return (
-                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div key={m.id} className={`group flex ${mine ? 'justify-end' : 'justify-start'} items-end gap-1`}>
+                  {/* 🆕 step432: 내가 보낸 쪽지에만 ✏️🗑 (데스크탑 hover 시, 모바일 항상). 임퍼소네이션 숨김 */}
+                  {mine && !isImpersonating && editingId !== m.id && (
+                    <span className="flex gap-0.5 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                      <button onClick={() => { setEditingId(m.id); setEditDraft(m.body) }} aria-label="쪽지 수정"
+                        className="text-xs p-1 rounded hover:bg-gray-100">✏️</button>
+                      <button onClick={() => deleteMessage(m)} aria-label="쪽지 삭제"
+                        className="text-xs p-1 rounded hover:bg-gray-100">🗑</button>
+                    </span>
+                  )}
                   <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${mine
                     ? 'bg-indigo-600 text-white rounded-br-sm'
                     : 'bg-gray-100 text-gray-800 rounded-bl-sm'}`}>
                     {!mine && <div className="text-[11px] font-semibold text-gray-500 mb-0.5">관리자</div>}
-                    {m.body}
+                    {editingId === m.id ? (
+                      <div className="w-56 max-w-full">
+                        <textarea value={editDraft} onChange={e => setEditDraft(e.target.value)} rows={3} maxLength={2000}
+                          className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-1.5 resize-none" />
+                        <div className="flex gap-1.5 mt-1 justify-end">
+                          <button onClick={() => setEditingId(null)} className="text-[11px] px-2 py-1 rounded bg-white/20 hover:bg-white/30">취소</button>
+                          <button onClick={() => saveEdit(m)} className="text-[11px] px-2 py-1 rounded bg-white text-indigo-700 font-semibold hover:bg-indigo-50">저장</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {m.body}
+                        {m.edited_at && <span className={`text-[10px] ml-1 ${mine ? 'text-indigo-200' : 'text-gray-400'}`}>(수정됨)</span>}
+                      </>
+                    )}
                     <div className={`text-[10px] mt-1 ${mine ? 'text-indigo-200' : 'text-gray-400'}`}>{toKST(m.created_at)}</div>
                   </div>
                 </div>
