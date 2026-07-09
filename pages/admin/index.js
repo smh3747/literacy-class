@@ -536,7 +536,7 @@ export default function AdminHome() {
       try {
         const [msgsRes, stsRes] = await Promise.all([
           supabase.from('messages')
-            .select('id, teacher_id, sender_id, body, read_at, created_at, edited_at, deleted_at')
+            .select('id, teacher_id, sender_id, body, read_at, created_at, edited_at, deleted_at, is_bulk')
             .order('created_at', { ascending: true }).limit(1000),
           supabase.from('message_thread_status').select('teacher_id, resolved_at'),
         ])
@@ -546,7 +546,7 @@ export default function AdminHome() {
         const tids = [...new Set(msgs.map(m => m.teacher_id))]
         const profs = {}
         if (tids.length > 0) {
-          const { data: ps } = await supabase.from('profiles').select('id, realname, school').in('id', tids)
+          const { data: ps } = await supabase.from('profiles').select('id, realname, school, role').in('id', tids)  // step434: role은 '대화 중' 관리자 본인 제외용
           ;(ps || []).forEach(p => { profs[p.id] = p })
         }
         setMsgData({ loaded: true, msgs, status, profs })
@@ -3009,9 +3009,14 @@ export default function AdminHome() {
               last: list[list.length - 1],
               unread: list.filter(m => m.sender_id === tid && !m.read_at).length,  // 교사발 안읽음
               resolved: !!msgData.status[tid],
+              // 🆕 step434: '대화 중' 판정 — 교사발 메시지가 1개라도 있으면(마지막이 누구든).
+              //   is_bulk는 관리자발이라 이 판정과 무관.
+              hasTeacherMsg: list.some(m => m.sender_id === m.teacher_id),
             })).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
             const shown = threads.filter(t =>
-              msgFilter === 'replied' ? t.last.sender_id === t.last.teacher_id :  // 🆕 step428: 마지막 메시지가 교사발
+              // 🆕 step434: '답장 옴'(마지막=교사발) → '대화 중'(교사발 존재)으로 재정의.
+              //   관리자 본인 스레드(teacher_id의 role=admin)는 제외.
+              msgFilter === 'replied' ? (t.hasTeacherMsg && msgData.profs[t.tid]?.role !== 'admin') :
               msgFilter === 'unresolved' ? !t.resolved :
               msgFilter === 'unread' ? t.unread > 0 : true)
             const sel = msgSelected ? threads.find(t => t.tid === msgSelected) : null
@@ -3039,9 +3044,9 @@ export default function AdminHome() {
                 </div>
                 <p className="text-xs text-gray-500 mb-3">교사가 보낸 문의를 확인하고 답장하세요. 처리 끝난 스레드는 체크로 표시해요.</p>
 
-                {/* 필터 칩 — step428: '답장 옴'(마지막 메시지가 교사발) 추가·기본 선택 */}
+                {/* 필터 칩 — step434: '대화 중'(교사발 존재, 관리자 본인 제외)·기본 선택 */}
                 <div className="flex gap-1.5 flex-wrap mb-3">
-                  {[['replied', '답장 옴'], ['all', '전체'], ['unresolved', '미처리'], ['unread', '안읽음']].map(([v, label]) => (
+                  {[['replied', '대화 중'], ['all', '전체'], ['unresolved', '미처리'], ['unread', '안읽음']].map(([v, label]) => (
                     <button key={v} onClick={() => setMsgFilter(v)}
                       className={`text-xs px-2.5 py-1 rounded-full border transition ${msgFilter === v
                         ? 'bg-gray-800 text-white border-gray-800'
@@ -3077,7 +3082,7 @@ export default function AdminHome() {
                             </label>
                           </div>
                           <div className={`text-xs truncate mt-0.5 ${t.last.deleted_at ? 'text-gray-400 italic' : 'text-gray-500'}`}>
-                            {t.last.deleted_at ? '삭제된 쪽지예요' : t.last.body}
+                            {t.last.deleted_at ? '삭제된 쪽지예요' : (t.last.is_bulk ? `📢 (일괄 안내) ${t.last.body}` : t.last.body)}
                           </div>
                           <div className="text-[10px] text-gray-400 mt-0.5">{toKST(t.last.created_at)}</div>
                         </div>
@@ -3118,7 +3123,12 @@ export default function AdminHome() {
                                   )}
                                   <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words ${fromTeacher
                                     ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
-                                    : 'bg-indigo-600 text-white rounded-br-sm'}`}>
+                                    : m.is_bulk
+                                      ? 'bg-gray-200 text-gray-600 rounded-br-sm'  // 🆕 step434: 일괄 쪽지 톤 다운
+                                      : 'bg-indigo-600 text-white rounded-br-sm'}`}>
+                                    {!fromTeacher && m.is_bulk && (
+                                      <div className="text-[10px] font-semibold text-gray-500 mb-0.5">📢 일괄 안내</div>
+                                    )}
                                     {msgEditingId === m.id ? (
                                       <div className="w-56 max-w-full">
                                         <textarea value={msgEditDraft} onChange={e => setMsgEditDraft(e.target.value)} rows={3} maxLength={2000}
@@ -3131,10 +3141,14 @@ export default function AdminHome() {
                                     ) : (
                                       <>
                                         {m.body}
-                                        {m.edited_at && <span className={`text-[10px] ml-1 ${fromTeacher ? 'text-gray-400' : 'text-indigo-200'}`}>(수정됨)</span>}
+                                        {m.edited_at && <span className={`text-[10px] ml-1 ${fromTeacher || m.is_bulk ? 'text-gray-400' : 'text-indigo-200'}`}>(수정됨)</span>}
                                       </>
                                     )}
-                                    <div className={`text-[10px] mt-0.5 ${fromTeacher ? 'text-gray-400' : 'text-indigo-200'}`}>{toKST(m.created_at)}</div>
+                                    <div className={`text-[10px] mt-0.5 ${fromTeacher || m.is_bulk ? 'text-gray-400' : 'text-indigo-200'}`}>
+                                      {toKST(m.created_at)}
+                                      {/* 🆕 step434: 비대칭 읽음 표시 — 관리자발만, 관리자 화면에서만 보임 */}
+                                      {!fromTeacher && m.read_at && <span className="ml-1">· 읽음</span>}
+                                    </div>
                                   </div>
                                 </div>
                               )

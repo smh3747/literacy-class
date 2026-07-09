@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     let sent = 0, failed = 0
 
     // 교사별 치환본 일괄 insert — 부분 실패는 카운트로 보고
-    const msgRows = validIds.map(id => ({ teacher_id: id, sender_id: senderId, body: fillName(trimmed, nameById[id]) }))
+    const msgRows = validIds.map(id => ({ teacher_id: id, sender_id: senderId, body: fillName(trimmed, nameById[id]), is_bulk: true }))  // step434: 일괄 구분 플래그
     const { error: msgErr } = await admin.from('messages').insert(msgRows)
     if (msgErr) {
       // 일괄 실패 시 개별 재시도(치환본 유지)
