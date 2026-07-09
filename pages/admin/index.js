@@ -48,6 +48,25 @@ const OB_RESP_LABELS = {
   clicked: '버튼 클릭', dismissed: '닫음 ✕',
 }
 
+// 🆕 step422: 캡쳐용 마스킹 라벨 — "경기 ○○초 신○○ 선생님" (렌더만, 저장 안 함)
+//   학교는 시·도 접두 매칭 시 "지역 ○○초", 추출 불확실하면 "○○초등학교".
+const REGION_PREFIXES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주']
+const maskTeacherLabel = (realname, school) => {
+  const nm = (realname || '').trim()
+  const maskedName = nm ? nm[0] + '○○' : '○○○'
+  const sc = (school || '').trim()
+  const region = REGION_PREFIXES.find(r => sc.startsWith(r))
+  const schoolLabel = region ? `${region} ○○초` : '○○초등학교'
+  return `${schoolLabel} ${maskedName} 선생님`
+}
+
+// 🆕 step422: 일괄 쪽지 {이름} 치환 미리보기 — 서버(api/admin-messages-bulk)와 동일 로직 유지
+const fillName = (body, realname) => {
+  const name = (typeof realname === 'string' && realname.trim()) ? realname.trim() : ''
+  if (name) return body.replace(/\{이름\}/g, name)
+  return body.replace(/\{이름\}\s*/g, '')
+}
+
 // 🆕 step371: 본문에서 original이 처음 등장하는 위치를 문장 단위(마침표·물음표·줄바꿈)로 잘라 반환.
 //   경계가 없으면 그 방향만 앞뒤 40자로 clamp. before/match/after로 나눠 하이라이트에 쓴다. 표시 전용.
 function extractContext(body, original) {
@@ -139,6 +158,17 @@ export default function AdminHome() {
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
   const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
   const [onboardingRows, setOnboardingRows] = useState(null)  // 🆕 다음 걸음 카드 응답 (사전 신청 탭에서 함께 로드, null=미로드)
+  // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
+  const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
+  const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
+  const [msgReply, setMsgReply] = useState('')
+  const [msgSending, setMsgSending] = useState(false)
+  const [msgFilter, setMsgFilter] = useState('all')      // all | unresolved | unread
+  const [msgMasked, setMsgMasked] = useState(false)      // 캡쳐용 마스킹 모드(렌더만)
+  const [bulkOpen, setBulkOpen] = useState(false)        // 일괄 쪽지 모달
+  const [bulkStages, setBulkStages] = useState({ active: false, cooling: false, at_risk: false, dormant: false })
+  const [bulkBody, setBulkBody] = useState('')
+  const [bulkSending, setBulkSending] = useState(false)
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [suspectFilter, setSuspectFilter] = useState('전체') // 🆕 유형 필터 칩 — 클라이언트 표시 필터만(쿼리 불변)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
@@ -495,6 +525,129 @@ export default function AdminHome() {
       setPreorderList({ loaded: true, rows, error: null })
     })()
   }, [tab, preorderList.loaded])
+
+  // 🆕 step422: 쪽지 탭 로드 — 탭 열 때 1회(messages+처리상태+교사 배치 조인 3쿼리)
+  useEffect(() => {
+    if (tab !== 'messages' || msgData.loaded) return
+    ;(async () => {
+      try {
+        const [msgsRes, stsRes] = await Promise.all([
+          supabase.from('messages')
+            .select('id, teacher_id, sender_id, body, read_at, created_at')
+            .order('created_at', { ascending: true }).limit(1000),
+          supabase.from('message_thread_status').select('teacher_id, resolved_at'),
+        ])
+        const msgs = msgsRes.data || []
+        const status = {}
+        ;(stsRes.data || []).forEach(s => { status[s.teacher_id] = s.resolved_at })
+        const tids = [...new Set(msgs.map(m => m.teacher_id))]
+        const profs = {}
+        if (tids.length > 0) {
+          const { data: ps } = await supabase.from('profiles').select('id, realname, school').in('id', tids)
+          ;(ps || []).forEach(p => { profs[p.id] = p })
+        }
+        setMsgData({ loaded: true, msgs, status, profs })
+      } catch (e) {
+        console.warn('쪽지 로드 실패:', e?.message)
+        setMsgData({ loaded: true, msgs: [], status: {}, profs: {} })
+      }
+    })()
+  }, [tab, msgData.loaded])
+
+  // 🆕 step422: 스레드 열람 — 교사발 안읽음 read_at 갱신(+로컬 배지 반영)
+  const openThread = async (tid) => {
+    setMsgSelected(tid)
+    const unreadIds = msgData.msgs
+      .filter(m => m.teacher_id === tid && m.sender_id === tid && !m.read_at)
+      .map(m => m.id)
+    if (unreadIds.length === 0) return
+    const now = new Date().toISOString()
+    setMsgData(prev => ({ ...prev, msgs: prev.msgs.map(m => unreadIds.includes(m.id) ? { ...m, read_at: now } : m) }))
+    try {
+      await supabase.from('messages').update({ read_at: now }).in('id', unreadIds)
+    } catch (e) { console.warn('쪽지 읽음 처리 실패(무시):', e?.message) }
+  }
+
+  // 🆕 step422: 답장 — insert 후 해당 교사에게 종 알림(type 'message', 비차단)
+  const sendReply = async () => {
+    const body = msgReply.trim()
+    if (!body || msgSending || !msgSelected) return
+    setMsgSending(true)
+    try {
+      const { data: ins, error } = await supabase.from('messages')
+        .insert({ teacher_id: msgSelected, sender_id: user.id, body })
+        .select('id, teacher_id, sender_id, body, read_at, created_at').maybeSingle()
+      if (error) throw error
+      setMsgData(prev => ({ ...prev, msgs: [...prev.msgs, ins] }))
+      setMsgReply('')
+      try {
+        await supabase.rpc('create_notification', {
+          p_recipient: msgSelected,
+          p_type: 'message',
+          p_title: '관리자 답장이 도착했어요',
+          p_body: body.slice(0, 100),
+          p_link: '/teacher/messages',
+        })
+      } catch (e) { console.warn('답장 알림 실패(무시):', e?.message) }
+    } catch (e) {
+      alert('답장을 보내지 못했어요: ' + (e?.message || ''))
+    }
+    setMsgSending(false)
+  }
+
+  // 🆕 step422: 처리됨 토글 — message_thread_status upsert(관리자 전용 RLS)
+  const toggleResolved = async (tid) => {
+    const resolved_at = msgData.status[tid] ? null : new Date().toISOString()
+    setMsgData(prev => ({ ...prev, status: { ...prev.status, [tid]: resolved_at } }))
+    try {
+      await supabase.from('message_thread_status')
+        .upsert({ teacher_id: tid, resolved_at, updated_at: new Date().toISOString() })
+    } catch (e) { console.warn('처리 상태 저장 실패(무시):', e?.message) }
+  }
+
+  // 🆕 step422: 일괄 쪽지 대상 — step414 classifyTeacher 재사용(차단 제외, admin 포함=본인 테스트 가능)
+  const bulkTargets = () => {
+    const picked = Object.entries(bulkStages).filter(([, v]) => v).map(([k]) => k)
+    if (picked.length === 0) return []
+    return teachers.filter(t => !t.is_banned).filter(t => {
+      const myClasses = classes.filter(c => c.teacher_id === t.id)
+      const totalStudents = myClasses.reduce((s, c) => s + (c.student_count || 0), 0)
+      const totalSubs = myClasses.reduce((s, c) => s + (c.submission_count || 0), 0)
+      const lastActivity = myClasses.reduce((max, c) => {
+        if (!c.last_activity_at) return max
+        return !max || c.last_activity_at > max ? c.last_activity_at : max
+      }, null)
+      return picked.includes(classifyTeacher({ totalStudents, totalSubs, lastActivity }))
+    })
+  }
+
+  // 🆕 step422: 일괄 발송 — 반드시 N명 confirm 후 API 호출({이름} 치환은 서버에서)
+  const sendBulk = async () => {
+    const targets = bulkTargets()
+    const body = bulkBody.trim()
+    if (!body) return alert('내용을 입력해주세요')
+    if (targets.length === 0) return alert('대상이 없어요. 단계를 선택해주세요.')
+    if (!confirm(`${targets.length}명에게 발송합니다. 계속할까요?`)) return
+    setBulkSending(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch('/api/admin-messages-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session?.access_token, teacherIds: targets.map(t => t.id), body }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error || '발송 실패')
+      alert(`발송 완료: 성공 ${j.sent}건 · 실패 ${j.failed}건`)
+      setBulkOpen(false)
+      setBulkBody('')
+      setBulkStages({ active: false, cooling: false, at_risk: false, dormant: false })
+      setMsgData(prev => ({ ...prev, loaded: false }))  // 목록 리로드
+    } catch (e) {
+      alert('일괄 발송 실패: ' + (e?.message || ''))
+    }
+    setBulkSending(false)
+  }
 
   // 🆕 step371: 의심 교정 행 보강 — submission_id로 본문·작성자를 4개의 .in() 배치로만 조회.
   //   ① 맥락 문장(본문에서 original 위치의 문장) ② 학생 정보(학교·학급·담임·N번 이름).
@@ -1209,6 +1362,7 @@ export default function AdminHome() {
               { id: 'topic-copies', label: `🔗 주제 공유 추적${topicCopies.length > 0 ? ` (${topicCopies.length})` : ''}` },
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
               { id: 'corrections', label: `🔍 의심 교정${suspectCount > 0 ? ` (${suspectCount})` : ''}` },
+              { id: 'messages', label: '✉️ 쪽지' },
               { id: 'preorders', label: '🎟️ 사전 신청' },
               { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
@@ -2762,6 +2916,165 @@ export default function AdminHome() {
                     </>
                   )}
                 </div>
+              </div>
+            )
+          })()}
+
+          {/* 🆕 step422: 쪽지 탭 — 교사↔관리자 스레드(좌 목록/우 대화), 처리됨·마스킹·일괄 쪽지 */}
+          {tab === 'messages' && (() => {
+            // 스레드 구성: teacher_id 그룹, 마지막 쪽지 시각 내림차순
+            const byTid = {}
+            msgData.msgs.forEach(m => { (byTid[m.teacher_id] = byTid[m.teacher_id] || []).push(m) })
+            const threads = Object.entries(byTid).map(([tid, list]) => ({
+              tid,
+              list,
+              last: list[list.length - 1],
+              unread: list.filter(m => m.sender_id === tid && !m.read_at).length,  // 교사발 안읽음
+              resolved: !!msgData.status[tid],
+            })).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
+            const shown = threads.filter(t =>
+              msgFilter === 'unresolved' ? !t.resolved :
+              msgFilter === 'unread' ? t.unread > 0 : true)
+            const sel = msgSelected ? threads.find(t => t.tid === msgSelected) : null
+            // 표기: 마스킹 모드면 "경기 ○○초 신○○ 선생님" (렌더만)
+            const labelOf = (tid) => {
+              const p = msgData.profs[tid] || {}
+              return msgMasked ? maskTeacherLabel(p.realname, p.school)
+                : `${p.realname || '(정보 없음)'}${p.school ? ' · ' + p.school : ''}`
+            }
+            const bulkPreviewTarget = bulkTargets()[0]
+            return (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                  <h2 className="text-lg font-bold">✉️ 쪽지</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" checked={msgMasked} onChange={e => setMsgMasked(e.target.checked)} />
+                      마스킹 모드(캡쳐용)
+                    </label>
+                    <button onClick={() => setBulkOpen(true)}
+                      className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition">
+                      📢 일괄 쪽지
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">교사가 보낸 문의를 확인하고 답장하세요. 처리 끝난 스레드는 체크로 표시해요.</p>
+
+                {/* 필터 칩 */}
+                <div className="flex gap-1.5 flex-wrap mb-3">
+                  {[['all', '전체'], ['unresolved', '미처리'], ['unread', '안읽음']].map(([v, label]) => (
+                    <button key={v} onClick={() => setMsgFilter(v)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition ${msgFilter === v
+                        ? 'bg-gray-800 text-white border-gray-800'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {!msgData.loaded ? (
+                  <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                ) : threads.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-400">아직 쪽지가 없어요</div>
+                ) : (
+                  <div className="grid md:grid-cols-[minmax(220px,1fr)_2fr] gap-4">
+                    {/* 좌: 스레드 목록 */}
+                    <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+                      {shown.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400">이 조건의 스레드가 없어요</div>
+                      ) : shown.map(t => (
+                        <div key={t.tid}
+                          className={`p-2.5 rounded-xl border cursor-pointer transition ${t.resolved ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200'} ${msgSelected === t.tid ? 'ring-2 ring-indigo-300' : 'hover:bg-gray-50'}`}
+                          onClick={() => openThread(t.tid)}>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-gray-800 truncate">{labelOf(t.tid)}</span>
+                            {t.unread > 0 && (
+                              <span className="shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">{t.unread}</span>
+                            )}
+                            <label className="ml-auto shrink-0 text-[10px] text-gray-500 flex items-center gap-0.5 cursor-pointer"
+                              onClick={e => e.stopPropagation()}>
+                              <input type="checkbox" checked={t.resolved} onChange={() => toggleResolved(t.tid)} />
+                              처리됨
+                            </label>
+                          </div>
+                          <div className="text-xs text-gray-500 truncate mt-0.5">{t.last.body}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">{toKST(t.last.created_at)}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 우: 선택 스레드 대화 + 답장 */}
+                    <div>
+                      {!sel ? (
+                        <div className="py-16 text-center text-sm text-gray-400">왼쪽에서 스레드를 선택하세요</div>
+                      ) : (
+                        <>
+                          <div className="text-sm font-semibold text-gray-800 mb-2">{labelOf(sel.tid)}</div>
+                          <div className="border border-gray-100 rounded-xl p-3 max-h-[45vh] overflow-y-auto space-y-2 bg-gray-50/50">
+                            {sel.list.map(m => {
+                              const fromTeacher = m.sender_id === m.teacher_id
+                              return (
+                                <div key={m.id} className={`flex ${fromTeacher ? 'justify-start' : 'justify-end'}`}>
+                                  <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words ${fromTeacher
+                                    ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                                    : 'bg-indigo-600 text-white rounded-br-sm'}`}>
+                                    {m.body}
+                                    <div className={`text-[10px] mt-0.5 ${fromTeacher ? 'text-gray-400' : 'text-indigo-200'}`}>{toKST(m.created_at)}</div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <textarea value={msgReply} onChange={e => setMsgReply(e.target.value)}
+                              placeholder="답장을 적어주세요" rows={2} maxLength={2000}
+                              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none" />
+                            <button onClick={sendReply} disabled={msgSending || !msgReply.trim()}
+                              className="shrink-0 self-end text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-40">
+                              {msgSending ? '보내는 중...' : '답장'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 일괄 쪽지 모달 — 발송 전 반드시 N명 confirm. ⚠️ 테스트는 관리자 본인 1명으로만 */}
+                {bulkOpen && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setBulkOpen(false)}>
+                    <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setBulkOpen(false)} aria-label="닫기"
+                        className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
+                      <h3 className="font-bold text-gray-900 pr-6">📢 일괄 쪽지</h3>
+                      <p className="text-xs text-gray-500 mt-1">대상 단계를 고르고 내용을 적어주세요. {'{이름}'}을 쓰면 각 선생님 성함으로 바뀌어요.</p>
+                      <div className="flex gap-2 flex-wrap mt-3">
+                        {['active', 'cooling', 'at_risk', 'dormant'].map(k => (
+                          <label key={k} className={`text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${bulkStages[k] ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200'}`}>
+                            <input type="checkbox" className="hidden" checked={bulkStages[k]}
+                              onChange={e => setBulkStages(prev => ({ ...prev, [k]: e.target.checked }))} />
+                            {STAGE_META[k].emoji} {STAGE_META[k].label}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-2">현재 대상: <strong>{bulkTargets().length}명</strong> (차단 제외)</div>
+                      <textarea value={bulkBody} onChange={e => setBulkBody(e.target.value)}
+                        placeholder={'{이름} 선생님, 안녕하세요. ...'} rows={5} maxLength={2000}
+                        className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 mt-2 resize-none" />
+                      {/* 발송 전 미리보기 — 첫 번째 대상 기준 치환 결과 */}
+                      {bulkBody.trim() && bulkPreviewTarget && (
+                        <div className="mt-2 text-xs bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                          <div className="text-gray-400 mb-1">미리보기 ({bulkPreviewTarget.realname || '(이름 없음)'} 기준):</div>
+                          <div className="text-gray-700 whitespace-pre-wrap">{fillName(bulkBody.trim(), bulkPreviewTarget.realname)}</div>
+                        </div>
+                      )}
+                      <button onClick={sendBulk} disabled={bulkSending || !bulkBody.trim() || bulkTargets().length === 0}
+                        className="mt-3 w-full text-sm bg-indigo-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition disabled:opacity-40">
+                        {bulkSending ? '발송 중...' : `발송하기 (${bulkTargets().length}명)`}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()}
