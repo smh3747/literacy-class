@@ -134,6 +134,22 @@ export default function TeacherSubmissions() {
   // 🆕 step436: 교사 점수 조정(병기형) — AI 점수(total_score)는 불변, teacher_score만 별도 기록
   const [editingScoreId, setEditingScoreId] = useState(null)
   const [scoreDraft, setScoreDraft] = useState('')
+  const scorePopoverRef = useRef(null)  // 🆕 step437: 팝오버 바깥 클릭 판정용
+
+  // 🆕 step437: 점수 조정 팝오버 닫기 — 바깥 클릭·ESC (기존 모달/드롭다운 패턴)
+  useEffect(() => {
+    if (!editingScoreId) return
+    const onKey = (e) => { if (e.key === 'Escape') setEditingScoreId(null) }
+    const onDown = (e) => {
+      if (scorePopoverRef.current && !scorePopoverRef.current.contains(e.target)) setEditingScoreId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [editingScoreId])
 
   // router.isReady 전엔 router.query가 비어 있어 URL 복원(?topic=&student=)이 안 됨
   useEffect(() => { if (router.isReady) checkAuth() }, [router.isReady])
@@ -1274,6 +1290,8 @@ export default function TeacherSubmissions() {
                     </div>
 
                     {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
+                    {/* 🆕 step437: relative 래퍼 — 점수 조정 팝오버를 details 밖에 절대배치(접힘 상태에서도 보이게) */}
+                    <div className="relative">
                     <details className="group">
                       <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
                         <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
@@ -1302,20 +1320,6 @@ export default function TeacherSubmissions() {
                           )}
                         </span>
                       </summary>
-                      {/* 🆕 step436: 인라인 점수 조정 입력(0~100 정수) — 저장 시 teacher_score만 기록 */}
-                      {editingScoreId === s.id && (
-                        <div className="flex items-center gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                          <span className="text-xs text-gray-600">조정 점수(0~100):</span>
-                          <input type="number" min={0} max={100} step={1} value={scoreDraft}
-                            onChange={e => setScoreDraft(e.target.value)}
-                            className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1" />
-                          <button onClick={() => saveTeacherScore(s)}
-                            className="text-xs bg-primary text-white font-semibold px-3 py-1.5 rounded-lg">저장</button>
-                          <button onClick={() => setEditingScoreId(null)}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">취소</button>
-                          <span className="text-[11px] text-gray-400 ml-auto">AI 점수는 그대로 남고 함께 표시돼요</span>
-                        </div>
-                      )}
                       <div className="space-y-3 mt-2">
 
                     {Array.isArray(s.scores) && (
@@ -1402,6 +1406,27 @@ export default function TeacherSubmissions() {
 
                       </div>
                     </details>
+                    {/* 🆕 step437: 점수 조정 팝오버 — details 밖 절대배치라 접힘/펼침 무관하게 ✏️ 즉시 표시.
+                        바깥 클릭·ESC 닫기(아래 useEffect). 저장·검증·재조회 로직은 step436 그대로 */}
+                    {editingScoreId === s.id && (
+                      <div ref={scorePopoverRef}
+                        className="absolute right-0 top-10 z-20 w-72 bg-white border border-gray-200 rounded-xl shadow-lg p-3"
+                        onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 shrink-0">조정 점수(0~100):</span>
+                          <input type="number" min={0} max={100} step={1} value={scoreDraft} autoFocus
+                            onChange={e => setScoreDraft(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveTeacherScore(s) }}
+                            className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1" />
+                          <button onClick={() => saveTeacherScore(s)}
+                            className="text-xs bg-primary text-white font-semibold px-3 py-1.5 rounded-lg">저장</button>
+                          <button onClick={() => setEditingScoreId(null)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">취소</button>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1.5">AI 점수는 그대로 남고 함께 표시돼요</p>
+                      </div>
+                    )}
+                    </div>
 
                     {/* 이 글이 학생에게 제공한 AI 예시 작품 */}
                     {s.example_text && (
