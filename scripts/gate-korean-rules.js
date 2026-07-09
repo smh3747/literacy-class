@@ -56,6 +56,10 @@ const NO_FALSE_POSITIVE = [
   { name: '조건(명사)',         text: '조건이 맞다' },           // step425
   { name: '라면 사리(명사)',    text: '라면 사리를 추가했다' },   // step425
   { name: '사리 분별(명사)',    text: '사리 분별을 잘한다' },     // step425
+  { name: "'지 않나요'(보조용언)",   text: '선수들이 없어지지 않나요?' }, // step435
+  { name: "'그만두지 않나요'",       text: '운동을 그만두지 않나요?' },   // step435
+  { name: "'먹지 않나 싶다'",        text: '먹지 않나 싶다' },            // step435
+  { name: "'하지않나요'(붙여쓴 것)", text: '하지않나요' },                // step435
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
