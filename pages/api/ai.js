@@ -305,7 +305,21 @@ export default async function handler(req, res) {
         if (merged.dropped && merged.dropped.length > 0) {
           logDroppedCorrections(merged.dropped, { userId, essayText: mergeEssay })  // await 안 함 (fire-and-forget, 응답 지연 0)
         }
-      } catch (e) { console.warn('규칙 병합 실패:', e?.message) }
+      } catch (e) {
+        console.warn('규칙 병합 실패:', e?.message)
+        // 🆕 step429: 병합 실패 폴백 — AI 원본 corrections가 무정규화로 응답·저장되는 마지막 구멍 차단.
+        //    기준은 mergeCorrectionsDetailed 입구 정규화(step426)와 동일: String 강제 + original 빈 항목 제거.
+        result.corrections = (Array.isArray(result.corrections) ? result.corrections : [])
+          .map(c => {
+            if (!c || typeof c !== 'object') return null
+            const original = c.original == null ? '' : String(c.original)
+            const correction = c.correction == null ? '' : String(c.correction)
+            const reason = c.reason == null ? '' : String(c.reason)
+            if (!original.trim()) return null
+            return { ...c, original, correction, reason }
+          })
+          .filter(Boolean)
+      }
     }
     return res.status(200).json({ result })
 
