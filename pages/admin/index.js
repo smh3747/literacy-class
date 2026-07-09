@@ -26,6 +26,10 @@ const classifyTeacher = ({ totalStudents, totalSubs, lastActivity }) => {
   if (d <= COOLING_DAYS) return 'cooling'
   return 'at_risk'
 }
+// 🆕 step435: 접속 중 판정 — last_seen_at이 5분 이내(MessageBell 하트비트 주기와 동일 기준)
+const ONLINE_MINUTES = 5
+const isOnline = (lastSeenAt) => !!lastSeenAt && (Date.now() - new Date(lastSeenAt).getTime()) < ONLINE_MINUTES * 60 * 1000
+
 // 진단 문구: 단계 × 로그인 신호 교차. 로그인 미로딩 시 교차 진단 생략(placeholder 정책 유지)
 const diagnoseTeacher = (stage, { classCount, totalStudents, loginDays, lastLoginLoaded }) => {
   if (stage === 'at_risk') {
@@ -1568,6 +1572,10 @@ export default function AdminHome() {
                   {!showBannedTeachers && bannedCount > 0 && (
                     <span className="text-xs text-gray-500"> + 차단 {bannedCount}명 숨김</span>
                   )})
+                  {/* 🆕 step435: 지금 접속 중(전체 교사 기준, 검색·필터 무관) */}
+                  <span className="ml-2 text-xs font-normal text-blue-600">
+                    🟦 지금 접속 중 {teachers.filter(x => isOnline(x.last_seen_at)).length}명
+                  </span>
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* 🆕 step249: 선생님 검색 (이름·아이디·학교) */}
@@ -1666,7 +1674,13 @@ export default function AdminHome() {
                               className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${t.is_banned ? 'bg-red-50' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
                               onClick={() => setExpandedTeacherId(isExpanded ? null : t.id)}>
                               <td className="p-2 text-gray-400 select-none align-middle">{isExpanded ? '▼' : '▶'}</td>
-                              <td className="p-2 font-medium whitespace-nowrap align-middle">{t.realname}</td>
+                              <td className="p-2 font-medium whitespace-nowrap align-middle">
+                                {t.realname}
+                                {/* 🆕 step435: 5분 이내 하트비트면 접속 중 */}
+                                {isOnline(t.last_seen_at) && (
+                                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">🟦 접속 중</span>
+                                )}
+                              </td>
                               <td className="p-2 text-gray-600 whitespace-nowrap align-middle">{t.school || '-'}</td>
                               <td className="p-2 text-gray-600 font-mono text-xs whitespace-nowrap align-middle">{t.username}</td>
                               <td className="p-2 text-gray-600 align-middle">

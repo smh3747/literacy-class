@@ -6,6 +6,9 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { isImpersonatingNow } from '../lib/impersonation'
 
+// step435: 접속 하트비트 마지막 기록 시각 — 모듈 변수(페이지 이동해도 유지, 새로고침 리셋은 무해)
+let lastHeartbeatAt = 0
+
 export default function MessageBell({ user }) {
   const router = useRouter()
   const [unread, setUnread] = useState(0)
@@ -22,6 +25,14 @@ export default function MessageBell({ user }) {
     const loadUnread = async () => {
       if (fetchingRef.current) return
       fetchingRef.current = true
+      // step435: 접속 하트비트 — 5분에 1회만 본인 행 last_seen_at 갱신(비차단, 실패 warn만).
+      //   이 effect는 teacher/admin + 비임퍼소네이션에서만 돌므로(hidden 가드) 조건이 자동 충족.
+      if (Date.now() - lastHeartbeatAt > 5 * 60 * 1000) {
+        lastHeartbeatAt = Date.now()
+        supabase.from('profiles').update({ last_seen_at: new Date().toISOString() })
+          .eq('id', user.id)   // ⚠️ 본인 행 한정
+          .then(({ error }) => { if (error) console.warn('접속 기록 실패(무시):', error.message) })
+      }
       try {
         if (role === 'teacher') {
           // 교사: 내 스레드의 관리자발 안읽음
