@@ -1412,18 +1412,23 @@ export default function TeacherSubmissions() {
                       <div ref={scorePopoverRef}
                         className="absolute right-0 top-10 z-20 w-72 bg-white border border-gray-200 rounded-xl shadow-lg p-3"
                         onClick={e => e.stopPropagation()}>
+                        {/* step438: 2줄 구성 — 1줄 라벨+입력 / 2줄 안내(좌)+취소·저장(우) */}
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-600 shrink-0">조정 점수(0~100):</span>
                           <input type="number" min={0} max={100} step={1} value={scoreDraft} autoFocus
                             onChange={e => setScoreDraft(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') saveTeacherScore(s) }}
                             className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1" />
-                          <button onClick={() => saveTeacherScore(s)}
-                            className="text-xs bg-primary text-white font-semibold px-3 py-1.5 rounded-lg">저장</button>
-                          <button onClick={() => setEditingScoreId(null)}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">취소</button>
                         </div>
-                        <p className="text-[11px] text-gray-400 mt-1.5">AI 점수는 그대로 남고 함께 표시돼요</p>
+                        <div className="flex items-center justify-between gap-2 mt-2.5">
+                          <p className="text-[11px] text-gray-400 leading-snug">AI 점수는 그대로 남고 함께 표시돼요</p>
+                          <div className="flex gap-1.5 shrink-0">
+                            <button onClick={() => setEditingScoreId(null)}
+                              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">취소</button>
+                            <button onClick={() => saveTeacherScore(s)}
+                              className="text-xs bg-primary text-white font-semibold px-3 py-1.5 rounded-lg">저장</button>
+                          </div>
+                        </div>
                       </div>
                     )}
                     </div>
