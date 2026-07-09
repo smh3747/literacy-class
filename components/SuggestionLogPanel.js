@@ -21,6 +21,7 @@ export default function SuggestionLogPanel({
   onCancelShare,  // 🆕 step279 (resultingTopicId) => void - 등록 주제 공유 취소
   disabled,
   copyCounts,     // 🆕 인기 배지·정렬용 (source_log_id-source_index → 교사수)
+  myCopiedSet,    // 🆕 step426: 내가 이미 가져간 공유 주제 Set('log_id-index') — '가져옴' 배지용
 }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -100,6 +101,7 @@ export default function SuggestionLogPanel({
           sourceLogId: log.id,                 // 🆕 가져오기 출처(집계용)
           sourceIndex: log.selected_index,
           n: Number(copyCounts?.[`${log.id}-${log.selected_index}`] ?? 0) || 0,
+          copiedByMe: !!myCopiedSet?.has(`${log.id}-${log.selected_index}`),  // 🆕 step426
         })
         seen.add(log.selected_index)
       }
@@ -119,6 +121,7 @@ export default function SuggestionLogPanel({
         sourceLogId: log.id,                   // 🆕 가져오기 출처(집계용)
         sourceIndex: idx,
         n: Number(copyCounts?.[`${log.id}-${idx}`] ?? 0) || 0,
+        copiedByMe: !!myCopiedSet?.has(`${log.id}-${idx}`),  // 🆕 step426
       })
       seen.add(idx)
     }
@@ -252,6 +255,9 @@ export default function SuggestionLogPanel({
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {item.isPopular && (
                               <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold">🔥 인기</span>
+                            )}
+                            {item.copiedByMe && (
+                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">✔ 가져옴</span>
                             )}
                             {usedLabel && (
                               <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">

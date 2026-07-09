@@ -129,6 +129,8 @@ export default function TopicsPage() {
   const [editLocked, setEditLocked] = useState(false)
   // 🆕 인기 주제: 공유 주제별 가져간 교사 수 집계(topic_copy_counts RPC, 읽기 전용) — '다른 선생님' 탭 인기순·배지용
   const [copyCounts, setCopyCounts] = useState({})
+  // 🆕 step426: 내가 이미 가져간 공유 주제(topic_copies 본인 기록) — '가져옴' 완료 배지용 표시 전용
+  const [myCopiedSet, setMyCopiedSet] = useState(new Set())
 
   useEffect(() => { checkAuth() }, [])
 
@@ -952,8 +954,11 @@ export default function TopicsPage() {
 
       // 🆕 인기 주제 집계(읽기 전용 RPC). 실패해도 빈 맵 → 배지/정렬만 빠지고 나머지 정상(비차단)
       const countsPromise = supabase.rpc('topic_copy_counts')
+      // 🆕 step426: 내가 가져간 기록 — '가져옴' 배지용(실패해도 빈 Set, 비차단)
+      const minePromise = supabase.from('topic_copies')
+        .select('source_log_id, source_index').eq('copied_by_teacher_id', uid)
 
-      const [ownRes, sharedRes, countsRes] = await Promise.all([ownPromise, sharedPromise, countsPromise])
+      const [ownRes, sharedRes, countsRes, mineRes] = await Promise.all([ownPromise, sharedPromise, countsPromise, minePromise])
       if (ownRes.error) throw ownRes.error
       setSuggestionLogs(ownRes.data || [])
 
@@ -971,6 +976,8 @@ export default function TopicsPage() {
         cmap[`${r.source_log_id}-${r.source_index}`] = Number(r.n_teachers) || 0
       }
       setCopyCounts(cmap)
+      // 🆕 step426: 내 가져오기 기록 → Set(인기 배지와 같은 키 공간)
+      setMyCopiedSet(new Set((mineRes?.data || []).map(r => `${r.source_log_id}-${r.source_index}`)))
     } catch(e) {
       console.error('로그 로드 실패:', e)
     }
@@ -1349,6 +1356,7 @@ export default function TopicsPage() {
                   onSelect={applyFromLog}
                   generating={generatingRubrics}
                   copyCounts={copyCounts}
+                  myCopiedSet={myCopiedSet}
                 />
               )}
 
@@ -2029,6 +2037,7 @@ export default function TopicsPage() {
           onCancelShare={cancelTopicShare}
           disabled={false}
           copyCounts={copyCounts}
+          myCopiedSet={myCopiedSet}
         />
       </div>
     </>
@@ -2041,7 +2050,7 @@ export default function TopicsPage() {
 // ============================================
 // 🆕 공유 주제 평탄화 + 인기순 정렬 (인기 배지·인기 주제 모달 공용)
 // 기존 InlineSuggestionPreview 인라인 로직을 그대로 재현하되, 항목마다 가져간 교사 수 n을 붙이고 n 내림차순 정렬.
-function buildSharedFlat(sharedLogs, copyCounts) {
+function buildSharedFlat(sharedLogs, copyCounts, myCopiedSet) {
   const flat = []
   for (const log of sharedLogs || []) {
     const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
@@ -2053,6 +2062,7 @@ function buildSharedFlat(sharedLogs, copyCounts) {
         key: `s-${log.id}-${idx}`,
         title: s.title, description: s.description, category: s.category,
         usedDate, sourceLogId: log.id, sourceIndex: idx, n,
+        copiedByMe: !!myCopiedSet?.has(`${log.id}-${idx}`),  // 🆕 step426: 내가 이미 가져간 주제
       })
       seen.add(idx)
     }
@@ -2075,7 +2085,7 @@ function buildSharedFlat(sharedLogs, copyCounts) {
   return flat
 }
 
-function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, copyCounts }) {
+function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, copyCounts, myCopiedSet }) {
   const [tab, setTab] = useState('mine')
   const [expanded, setExpanded] = useState(false)  // 접힘/펼침
 
@@ -2095,7 +2105,7 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
     })
   }
 
-  const flatShared = buildSharedFlat(sharedLogs, copyCounts)
+  const flatShared = buildSharedFlat(sharedLogs, copyCounts, myCopiedSet)
 
   const list = tab === 'mine' ? flatMine : flatShared
   // 접힘 상태에서는 6개만, 펼치면 다
@@ -2169,6 +2179,9 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
                     )}
                     {item.isPopular && (
                       <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded flex-shrink-0 font-semibold">🔥 인기</span>
+                    )}
+                    {item.copiedByMe && (
+                      <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded flex-shrink-0">✔ 가져옴</span>
                     )}
                   </div>
                   {item.description && (
