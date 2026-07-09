@@ -164,7 +164,7 @@ export default function AdminHome() {
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
   const [msgReply, setMsgReply] = useState('')
   const [msgSending, setMsgSending] = useState(false)
-  const [msgFilter, setMsgFilter] = useState('all')      // all | unresolved | unread
+  const [msgFilter, setMsgFilter] = useState('replied')  // replied(기본) | all | unresolved | unread — step428: 일괄 발송 250스레드 중 답장 온 것부터
   const [msgMasked, setMsgMasked] = useState(false)      // 캡쳐용 마스킹 모드(렌더만)
   const [bulkOpen, setBulkOpen] = useState(false)        // 일괄 쪽지 모달
   const [bulkStages, setBulkStages] = useState({ active: false, cooling: false, at_risk: false, dormant: false })
@@ -2970,6 +2970,7 @@ export default function AdminHome() {
               resolved: !!msgData.status[tid],
             })).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
             const shown = threads.filter(t =>
+              msgFilter === 'replied' ? t.last.sender_id === t.last.teacher_id :  // 🆕 step428: 마지막 메시지가 교사발
               msgFilter === 'unresolved' ? !t.resolved :
               msgFilter === 'unread' ? t.unread > 0 : true)
             const sel = msgSelected ? threads.find(t => t.tid === msgSelected) : null
@@ -2997,9 +2998,9 @@ export default function AdminHome() {
                 </div>
                 <p className="text-xs text-gray-500 mb-3">교사가 보낸 문의를 확인하고 답장하세요. 처리 끝난 스레드는 체크로 표시해요.</p>
 
-                {/* 필터 칩 */}
+                {/* 필터 칩 — step428: '답장 옴'(마지막 메시지가 교사발) 추가·기본 선택 */}
                 <div className="flex gap-1.5 flex-wrap mb-3">
-                  {[['all', '전체'], ['unresolved', '미처리'], ['unread', '안읽음']].map(([v, label]) => (
+                  {[['replied', '답장 옴'], ['all', '전체'], ['unresolved', '미처리'], ['unread', '안읽음']].map(([v, label]) => (
                     <button key={v} onClick={() => setMsgFilter(v)}
                       className={`text-xs px-2.5 py-1 rounded-full border transition ${msgFilter === v
                         ? 'bg-gray-800 text-white border-gray-800'
