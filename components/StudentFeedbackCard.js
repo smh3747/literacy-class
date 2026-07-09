@@ -171,10 +171,19 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
       )}
 
       {/* 점수 (색 강화 + 점수 향상 배지) */}
+      {/* 🆕 step436: 선생님 조정 점수(teacher_score) 있으면 대표로, AI 점수는 작게 병기(병기형 — AI 점수 불변) */}
       <div className={`bg-gradient-to-br ${scoreColor} border-2 rounded-xl p-4 text-center`}>
         <div className="text-3xl font-bold text-gray-900">
-          {sub.total_score ?? 0} <span className="text-lg font-normal text-gray-600">/ {totalMax}점</span>
+          {sub.teacher_score ?? sub.total_score ?? 0} <span className="text-lg font-normal text-gray-600">/ {totalMax}점</span>
         </div>
+        {sub.teacher_score != null && (
+          <div className="mt-1.5">
+            <span className="inline-flex items-center gap-1 bg-white text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-blue-200">
+              ✔ 선생님이 확인한 점수
+            </span>
+            <div className="text-[11px] text-gray-400 mt-1">AI 채점 {sub.total_score ?? 0}점</div>
+          </div>
+        )}
         {scoreImproved && (
           <div className="mt-2 inline-flex items-center gap-1 bg-white text-green-700 px-3 py-1 rounded-full text-sm font-semibold border border-green-200">
             🎉 처음 글보다 +{scoreDelta}점 올랐어요!
@@ -238,7 +247,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
           <span className="inline-block transition-transform group-open:rotate-90 motion-safe:animate-bounce group-open:animate-none">▶</span>
           🤖 AI 점수·피드백 보기
           <span className="group-open:hidden text-xs font-normal text-amber-600">👆 눌러서 펼쳐보세요</span>
-          <span className="ml-auto font-bold text-gray-900">{sub.total_score ?? 0}/{totalMax}점</span>
+          <span className="ml-auto font-bold text-gray-900">{sub.teacher_score ?? sub.total_score ?? 0}/{totalMax}점</span>
         </summary>
         <div className="space-y-4 mt-3">
 

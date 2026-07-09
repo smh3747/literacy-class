@@ -188,9 +188,18 @@ export default function StudentHistory() {
             {/* ① 점수 + 🌟 이번엔 이것 하나만 기억해요 (최신본 기준) */}
             <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
               <div className="bg-gradient-to-br from-primary-light to-white border-2 border-primary/20 rounded-xl p-4 text-center">
+                {/* 🆕 step436: 선생님 조정 점수 있으면 대표로, AI 점수는 작게 병기(병기형) */}
                 <div className="text-3xl font-bold text-gray-900">
-                  {lastSub?.total_score ?? 0} <span className="text-lg font-semibold text-gray-500">/ {lastSub?.max_score ?? 100}점</span>
+                  {lastSub?.teacher_score ?? lastSub?.total_score ?? 0} <span className="text-lg font-semibold text-gray-500">/ {lastSub?.max_score ?? 100}점</span>
                 </div>
+                {lastSub?.teacher_score != null && (
+                  <div className="mt-1.5">
+                    <span className="inline-flex items-center gap-1 bg-white text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-blue-200">
+                      ✔ 선생님이 확인한 점수
+                    </span>
+                    <div className="text-[11px] text-gray-400 mt-1">AI 채점 {lastSub?.total_score ?? 0}점</div>
+                  </div>
+                )}
                 {scoreDelta > 0 && (
                   <div className="mt-1 inline-block bg-green-100 text-green-800 text-sm font-semibold px-3 py-1 rounded-full">
                     🎉 처음 글보다 +{scoreDelta}점 올랐어요!

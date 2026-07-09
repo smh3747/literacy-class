@@ -131,6 +131,9 @@ export default function TeacherSubmissions() {
   const [expandedEssays, setExpandedEssays] = useState({})  // 🆕 전체 최종본 뷰: 학생별 본문 더보기 토글
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
+  // 🆕 step436: 교사 점수 조정(병기형) — AI 점수(total_score)는 불변, teacher_score만 별도 기록
+  const [editingScoreId, setEditingScoreId] = useState(null)
+  const [scoreDraft, setScoreDraft] = useState('')
 
   // router.isReady 전엔 router.query가 비어 있어 URL 복원(?topic=&student=)이 안 됨
   useEffect(() => { if (router.isReady) checkAuth() }, [router.isReady])
@@ -566,6 +569,36 @@ export default function TeacherSubmissions() {
       }
       await openTopic(selectedTopic, selectedStudent.profile.id)   // 코멘트 onUpdated와 동일 재조회
     } catch (e) { alert('도장 저장에 실패했어요: ' + (e?.message || '')) }
+  }
+
+  // 🆕 step436: 교사 점수 조정 저장 — 도장과 동일 경로(클라 update, RLS sub_update)·가드(isImpersonating).
+  //   AI 점수(total_score)는 절대 건드리지 않음. 0~100 정수만 허용.
+  const saveTeacherScore = async (s) => {
+    if (isImpersonating) return
+    const v = Number(scoreDraft)
+    if (!Number.isInteger(v) || v < 0 || v > 100) {
+      alert('0에서 100 사이의 정수만 입력할 수 있어요.')
+      return
+    }
+    try {
+      const { error } = await supabase.from('submissions')
+        .update({ teacher_score: v, teacher_score_at: new Date().toISOString() })
+        .eq('id', s.id)
+      if (error) throw error
+      setEditingScoreId(null)
+      await openTopic(selectedTopic, selectedStudent.profile.id)   // 도장과 동일 재조회
+    } catch (e) { alert('점수 저장에 실패했어요: ' + (e?.message || '')) }
+  }
+  const revertTeacherScore = async (s) => {
+    if (isImpersonating) return
+    if (!confirm('조정 점수를 되돌릴까요? AI 채점 점수만 표시돼요.')) return
+    try {
+      const { error } = await supabase.from('submissions')
+        .update({ teacher_score: null, teacher_score_at: null })
+        .eq('id', s.id)
+      if (error) throw error
+      await openTopic(selectedTopic, selectedStudent.profile.id)
+    } catch (e) { alert('되돌리기에 실패했어요: ' + (e?.message || '')) }
   }
 
   // 🆕 step300: 단일 맞춤법 검사 완료 토스트 클릭 → 그 학생 글로 이동(topicStudents는 patchLocalCorrections로 최신 corrections 보유)
@@ -1245,8 +1278,44 @@ export default function TeacherSubmissions() {
                       <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-1 py-2 px-2 bg-gray-50 rounded-lg select-none list-none">
                         <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
                         🤖 AI 점수·피드백 보기
-                        <span className="ml-auto font-bold text-gray-900">{s.total_score}/{s.max_score}점</span>
+                        {/* 🆕 step436: 조정 점수(teacher_score) 있으면 대표로, AI 점수는 작게 병기. AI 점수 컬럼은 불변 */}
+                        <span className="ml-auto flex items-center gap-1.5">
+                          {s.teacher_score != null ? (
+                            <>
+                              <span className="font-bold text-gray-900">{s.teacher_score}/{s.max_score}점</span>
+                              <span className="text-xs font-normal text-gray-400">AI 채점 {s.total_score}점</span>
+                            </>
+                          ) : (
+                            <span className="font-bold text-gray-900">{s.total_score}/{s.max_score}점</span>
+                          )}
+                          {!isImpersonating && s.total_score != null && (
+                            <>
+                              <button aria-label="점수 조정"
+                                onClick={e => { e.preventDefault(); e.stopPropagation(); setEditingScoreId(s.id); setScoreDraft(String(s.teacher_score ?? s.total_score ?? '')) }}
+                                className="text-xs p-1 rounded hover:bg-gray-200">✏️</button>
+                              {s.teacher_score != null && (
+                                <button aria-label="조정 점수 되돌리기"
+                                  onClick={e => { e.preventDefault(); e.stopPropagation(); revertTeacherScore(s) }}
+                                  className="text-xs p-1 rounded hover:bg-gray-200">↺</button>
+                              )}
+                            </>
+                          )}
+                        </span>
                       </summary>
+                      {/* 🆕 step436: 인라인 점수 조정 입력(0~100 정수) — 저장 시 teacher_score만 기록 */}
+                      {editingScoreId === s.id && (
+                        <div className="flex items-center gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                          <span className="text-xs text-gray-600">조정 점수(0~100):</span>
+                          <input type="number" min={0} max={100} step={1} value={scoreDraft}
+                            onChange={e => setScoreDraft(e.target.value)}
+                            className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1" />
+                          <button onClick={() => saveTeacherScore(s)}
+                            className="text-xs bg-primary text-white font-semibold px-3 py-1.5 rounded-lg">저장</button>
+                          <button onClick={() => setEditingScoreId(null)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">취소</button>
+                          <span className="text-[11px] text-gray-400 ml-auto">AI 점수는 그대로 남고 함께 표시돼요</span>
+                        </div>
+                      )}
                       <div className="space-y-3 mt-2">
 
                     {Array.isArray(s.scores) && (
