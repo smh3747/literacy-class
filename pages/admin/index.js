@@ -158,6 +158,7 @@ export default function AdminHome() {
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
   const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
   const [onboardingRows, setOnboardingRows] = useState(null)  // 🆕 다음 걸음 카드 응답 (사전 신청 탭에서 함께 로드, null=미로드)
+  const [reviewShowReal, setReviewShowReal] = useState(false) // 🆕 step423: 홍보용 리뷰 실명 병기 토글(기본 off, 렌더만)
   // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
   const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
@@ -2915,6 +2916,42 @@ export default function AdminHome() {
                       </div>
                     </>
                   )}
+                </div>
+
+                {/* 🆕 step423: 홍보용 리뷰 캡쳐 목록 — review+good+소감 있는 응답만, 마스킹 표기(렌더만) */}
+                <div className="mt-8 pt-5 border-t border-gray-100">
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                    <h2 className="text-lg font-bold">📸 홍보용 리뷰</h2>
+                    <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" checked={reviewShowReal} onChange={e => setReviewShowReal(e.target.checked)} />
+                      실명 병기(내부 확인용)
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-4">😀 좋아요 + 한 줄 소감이 있는 응답만 모아요. 마스킹된 카드 그대로 캡쳐해 쓰세요.</p>
+                  {(() => {
+                    const reviews = (onboardingRows || []).filter(o => o.card_type === 'review' && o.response === 'good' && (o.comment || '').trim())
+                    if (onboardingRows === null) return <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
+                    if (reviews.length === 0) return <div className="py-6 text-center text-sm text-gray-400">아직 캡쳐할 리뷰가 없어요</div>
+                    return (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {reviews.map((o, i) => {
+                          const d = o.created_at ? new Date(o.created_at) : null
+                          const ym = d ? `${d.getFullYear()}.${d.getMonth() + 1}` : ''
+                          return (
+                            <div key={`${o.teacher_id}-rv` || i} className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">
+                              <div className="text-base text-gray-900 leading-relaxed break-keep">“{o.comment.trim()}”</div>
+                              <div className="text-xs text-gray-500 mt-3">
+                                {maskTeacherLabel(o.realname, o.school)}{ym && ` · ${ym}`}
+                                {reviewShowReal && (
+                                  <span className="ml-2 text-[11px] text-gray-400">({o.realname}{o.school ? ' · ' + o.school : ''})</span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )

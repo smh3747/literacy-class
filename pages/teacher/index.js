@@ -849,6 +849,9 @@ export default function TeacherHome() {
                       </button>
                     </div>
                   )}
+                  {reviewPick && (
+                    <p className="text-[11px] text-gray-400 mt-1.5">남겨주신 소감은 학교·성함을 가린 익명으로 서비스 소개에 인용될 수 있어요</p>
+                  )}
                 </>
               )}
             </div>
