@@ -105,6 +105,51 @@ const MERGE = [
     rec('MERGE', c.name, pass, detail)
   }
 
+  // MERGE(정규화): AI corrections의 비문자열 필드가 병합을 깨거나 살아남지 않는지 (step426)
+  // 배경: AI가 correction·reason에 undefined/null/숫자를 주면 그대로 저장돼 학생 퀴즈 .trim() 크래시.
+  //       original이 숫자면 snap 내부 .replace에서 merge 자체가 TypeError로 터지던 경로도 있었음.
+  {
+    // (1) correction이 undefined → 문자열 ''로 정규화되어 에러 없이 유지
+    try {
+      const { corrections } = mergeCorrectionsDetailed([{ original: '되요', correction: undefined }], '그러면 되요 라고 했다')
+      const item = corrections.find(x => x.original === '되요')
+      const pass = !!item && item.correction === '' && typeof item.correction === 'string' && typeof item.reason === 'string'
+      rec('MERGE', 'correction undefined → 빈 문자열 정규화', pass, pass ? "correction=''(string)" : `실제=${JSON.stringify(item)}`)
+    } catch (e) {
+      rec('MERGE', 'correction undefined → 빈 문자열 정규화', false, `예외: ${e.message}`)
+    }
+    // (2) original이 숫자 → TypeError 없이 merge 완료 + '123'으로 문자열화
+    try {
+      const { corrections } = mergeCorrectionsDetailed([{ original: 123, correction: '테스트' }], '오늘 날씨가 좋다')
+      const item = corrections.find(x => x.original === '123')
+      const pass = !!item && typeof item.original === 'string'
+      rec('MERGE', "original 숫자 → '123' 문자열화(에러 없음)", pass, pass ? "original='123'(string)" : `실제=${JSON.stringify(corrections)}`)
+    } catch (e) {
+      rec('MERGE', "original 숫자 → '123' 문자열화(에러 없음)", false, `예외: ${e.message}`)
+    }
+    // (3) reason이 null → 문자열 ''
+    try {
+      const { corrections } = mergeCorrectionsDetailed([{ original: '되요', correction: '돼요', reason: null }], '그러면 되요 라고 했다')
+      const item = corrections.find(x => x.original === '되요')
+      const pass = !!item && item.reason === '' && typeof item.reason === 'string'
+      rec('MERGE', 'reason null → 빈 문자열 정규화', pass, pass ? "reason=''(string)" : `실제=${JSON.stringify(item)}`)
+    } catch (e) {
+      rec('MERGE', 'reason null → 빈 문자열 정규화', false, `예외: ${e.message}`)
+    }
+    // (4) 전수 검사: AI(비문자열 혼입) + 규칙 기반 병합 결과 전 항목이 세 필드 모두 string
+    try {
+      const { corrections } = mergeCorrectionsDetailed(
+        [{ original: '되요', correction: undefined }, { original: 123, correction: '테스트', reason: null }],
+        '어느날 되요 그리고 123 이야기'
+      )
+      const bad = corrections.filter(x => typeof x.original !== 'string' || typeof x.correction !== 'string' || typeof x.reason !== 'string')
+      const pass = corrections.length > 0 && bad.length === 0
+      rec('MERGE', '결과 전 항목 typeof string 전수 검사', pass, pass ? `${corrections.length}건 전부 string` : `비문자열 항목=${JSON.stringify(bad)}`)
+    } catch (e) {
+      rec('MERGE', '결과 전 항목 typeof string 전수 검사', false, `예외: ${e.message}`)
+    }
+  }
+
   // 하위호환: mergeCorrections(래퍼) === mergeCorrectionsDetailed().corrections
   {
     const essay = '아빠 의 몸은 따뜻했다. 어느날 아침 할수있다고 믿었다.'
