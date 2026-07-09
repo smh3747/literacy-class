@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import PasswordInput from './PasswordInput'
 
 export default function PasswordChangeModal({ onClose, onSuccess }) {
   const [currentPw, setCurrentPw] = useState('')
@@ -72,19 +73,26 @@ export default function PasswordChangeModal({ onClose, onSuccess }) {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1">현재 비밀번호</label>
-                <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)}
+                <PasswordInput value={currentPw} onChange={e => setCurrentPw(e.target.value)}
                   className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="current-password" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">새 비밀번호</label>
-                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
+                <PasswordInput value={newPw} onChange={e => setNewPw(e.target.value)}
                   placeholder="6자 이상"
                   className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="new-password" />
+                {/* step430: 실시간 길이 표시(기존 submit 6자 검증의 표시판 — 검증 대체 아님) */}
+                {newPw && (newPw.length >= 6
+                  ? <p className="text-xs text-green-600 mt-1">✓ 6자 이상</p>
+                  : <p className="text-xs text-gray-400 mt-1">6자 이상 입력해주세요</p>)}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">새 비밀번호 확인</label>
-                <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+                <PasswordInput value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
                   className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="new-password" />
+                {confirmPw && (confirmPw === newPw
+                  ? <p className="text-xs text-green-600 mt-1">✓ 새 비밀번호와 일치해요</p>
+                  : <p className="text-xs text-red-600 mt-1">새 비밀번호가 일치하지 않아요</p>)}
               </div>
               {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-wrap">{error}</div>}
               <div className="flex gap-2 pt-2">

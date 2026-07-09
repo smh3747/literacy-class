@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import SchoolAutocomplete from './SchoolAutocomplete'
+import PasswordInput from './PasswordInput'
 import { isValidEmail } from '../lib/email'
 
 export default function ProfileEditModal({ user, onClose, onUpdate }) {
@@ -163,7 +164,7 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
                   {emailChanged && (
                     <div className="mt-2">
                       <label className="block text-xs text-gray-600 mb-1">본인 확인을 위해 현재 비밀번호를 입력해주세요</label>
-                      <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)}
+                      <PasswordInput value={currentPw} onChange={e => setCurrentPw(e.target.value)}
                         placeholder="현재 비밀번호"
                         className="w-full p-3 border border-gray-200 rounded-lg" autoComplete="current-password" />
                     </div>

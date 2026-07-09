@@ -5,6 +5,7 @@ import Head from 'next/head'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import PasswordInput from '../components/PasswordInput'
 
 export default function ResetPassword() {
   const [phase, setPhase] = useState('checking')  // checking | ready | done | invalid
@@ -103,13 +104,20 @@ export default function ResetPassword() {
                 </div>
               )}
               <p className="text-sm text-gray-600 break-keep">새 비밀번호를 정해주세요. 6자 이상이면 돼요.</p>
-              <input type="password" value={pw} onChange={e => setPw(e.target.value)}
+              <PasswordInput value={pw} onChange={e => setPw(e.target.value)}
                 placeholder="새 비밀번호" autoComplete="new-password"
                 className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-primary focus:outline-none" />
-              <input type="password" value={pw2} onChange={e => setPw2(e.target.value)}
+              {/* step430: 실시간 길이 표시(기존 submit 6자 검증의 표시판) */}
+              {pw && (pw.length >= 6
+                ? <p className="text-xs text-green-600">✓ 6자 이상</p>
+                : <p className="text-xs text-gray-400">6자 이상 입력해주세요</p>)}
+              <PasswordInput value={pw2} onChange={e => setPw2(e.target.value)}
                 placeholder="새 비밀번호 확인" autoComplete="new-password"
                 onKeyDown={e => { if (e.key === 'Enter') submit() }}
                 className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-primary focus:outline-none" />
+              {pw2 && (pw2 === pw
+                ? <p className="text-xs text-green-600">✓ 새 비밀번호와 일치해요</p>
+                : <p className="text-xs text-red-600">새 비밀번호가 일치하지 않아요</p>)}
               {error && <p className="text-xs text-red-600 break-keep">{error}</p>}
               <button onClick={submit} disabled={saving}
                 className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm disabled:opacity-50">

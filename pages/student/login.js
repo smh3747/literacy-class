@@ -5,6 +5,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import { getAuthErrorMessage } from '../../lib/authErrors'
 import ConsentForm from '../../components/ConsentForm'
+import PasswordInput from '../../components/PasswordInput'
 
 // 로컬 스토리지 키
 const SAVED_USERNAME_KEY = 'lc-saved-username'
@@ -451,8 +452,7 @@ export default function StudentLogin() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}

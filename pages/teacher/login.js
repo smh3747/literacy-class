@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { getAuthErrorMessage } from '../../lib/authErrors'
 import { isValidEmail, EMAIL_DOMAINS } from '../../lib/email'
 import ConsentForm from '../../components/ConsentForm'
+import PasswordInput from '../../components/PasswordInput'
 import SchoolAutocomplete from '../../components/SchoolAutocomplete'
 
 // 로컬 스토리지 키
@@ -638,7 +639,7 @@ export default function TeacherLogin() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">비밀번호</label>
-                  <input type="password" value={password}
+                  <PasswordInput value={password}
                     ref={el => { fieldRefs.current.password = el }}
                     onChange={e => {
                       setPassword(e.target.value)
@@ -655,6 +656,10 @@ export default function TeacherLogin() {
                     className="w-full p-3 border border-gray-200 rounded-lg" placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
                   {mode === 'signup' && fieldErrors.password && <p className="text-xs text-red-600 mt-1">{fieldErrors.password}</p>}
+                  {/* step430: 충족 시 초록 ✓ (기존 step383 fieldErrors 체계는 그대로, 표시 보강만) */}
+                  {mode === 'signup' && !fieldErrors.password && password.length >= 6 && (
+                    <p className="text-xs text-green-600 mt-1">✓ 6자 이상</p>
+                  )}
                   {mode === 'signup' && (
                     <p className="text-xs text-gray-500 mt-1">
                       💡 잊지 않도록 기억해주세요. 잊으면 아래 이메일로 재설정할 수 있어요.
@@ -666,13 +671,16 @@ export default function TeacherLogin() {
                 {mode === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium mb-1">비밀번호 확인</label>
-                    <input type="password" value={passwordConfirm}
+                    <PasswordInput value={passwordConfirm}
                       ref={el => { fieldRefs.current.passwordConfirm = el }}
                       onChange={e => { setPasswordConfirm(e.target.value); changeRevalidate('passwordConfirm', e.target.value) }}
                       onBlur={e => blurValidate('passwordConfirm', e.target.value)}
                       onKeyDown={handleEnter} autoComplete="new-password"
                       className="w-full p-3 border border-gray-200 rounded-lg" placeholder="같은 비밀번호를 한 번 더" />
                     {fieldErrors.passwordConfirm && <p className="text-xs text-red-600 mt-1">{fieldErrors.passwordConfirm}</p>}
+                    {passwordConfirm && !fieldErrors.passwordConfirm && password === passwordConfirm && (
+                      <p className="text-xs text-green-600 mt-1">✓ 새 비밀번호와 일치해요</p>
+                    )}
                   </div>
                 )}
 
