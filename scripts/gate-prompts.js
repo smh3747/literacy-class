@@ -68,6 +68,25 @@ const { pathToFileURL } = require('url')
       missing.length === 0 ? '12개 모두 존재' : `누락 번호=${missing.join(',')}`)
   }
 
+  // ── RULES12: 오교정 금지 목록(NO_CORRECT_LIST)이 재평가·수정본 채점에도 포함 (step448) ──
+  // CORRECTIONS_RULES 3종은 위 RULES 그룹이 검사하므로, 인라인 규칙을 쓰는 두 프롬프트만 여기서.
+  {
+    const R12_PHRASES = [
+      { name: '규칙 12(조사 떼기 금지)',     text: '조사는 항상 붙여 씁니다' },
+      { name: '규칙 12(가운뎃점 변경 금지)', text: '가운뎃점' },
+      { name: '규칙 12(복합명사 핑퐁 금지)', text: '둘 다 허용' },
+    ]
+    const inlinePrompts = {}
+    try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
+    try { inlinePrompts.rewriteGradingPrompt = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics }) } catch (e) { rec('RULES12', 'rewriteGradingPrompt 생성', false, `예외: ${e.message}`) }
+    for (const [pname, s] of Object.entries(inlinePrompts)) {
+      for (const kp of R12_PHRASES) {
+        const pass = s.includes(kp.text)
+        rec('RULES12', `${pname} · ${kp.name}`, pass, pass ? '포함' : `누락: "${kp.text}"`)
+      }
+    }
+  }
+
   // ── REWRITE: rewriteGradingPrompt의 이전 채점 맥락 3인자 (step442, step436 prevGradingText 대체) ──
   // 전부 미전달/null이면 기존 출력과 완전 동일(하위호환), 하나라도 있으면 [이전 채점 정보] 블록+일관성 규칙.
   try {
