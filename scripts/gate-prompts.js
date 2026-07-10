@@ -15,7 +15,7 @@ const { pathToFileURL } = require('url')
 ;(async () => {
   const pPath = path.join(__dirname, '..', 'lib', 'prompts.server.js')
   const mod = await import(pathToFileURL(pPath).href)
-  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt } = mod
+  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt, tutorChatPrompt } = mod
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -152,6 +152,25 @@ const { pathToFileURL } = require('url')
         rec('DATE', `${name} · 오늘 날짜 줄+미래 오지적 가드`, false, `예외: ${e.message}`)
       }
     }
+  }
+
+  // ── TUTOR: 튜터 챗봇 실질 도움 지시 잔존 (step449) ──
+  // 신규 3문구(다음 한 걸음·시작 막막 대응·이어쓰기) + 기존 유지 2문구(대필 금지·길이).
+  try {
+    const s = tutorChatPrompt({ gradeLabel: '초등학교 5학년', topicTitle: '신비한 상자', topicDescription: '상자를 열면 무슨 일이?', currentText: '', history: '' })
+    const T_PHRASES = [
+      { name: '다음 한 걸음 의무화',      text: '다음 한 걸음' },
+      { name: '시작 막막 대응(첫 문장)',  text: '첫 문장' },
+      { name: '이어쓰기(일반론 금지)',    text: '마지막 내용에 이어서' },
+      { name: '대필 금지(기존 유지)',     text: '대신 써주지 마세요' },
+      { name: '2~4문장 제한(기존 유지)',  text: '2~4문장' },
+    ]
+    for (const kp of T_PHRASES) {
+      const pass = s.includes(kp.text)
+      rec('TUTOR', kp.name, pass, pass ? '포함' : `누락: "${kp.text}"`)
+    }
+  } catch (e) {
+    rec('TUTOR', 'tutorChatPrompt 생성', false, `예외: ${e.message}`)
   }
 
   // ── 출력 (gate-korean-rules.js와 동일 형식) ──
