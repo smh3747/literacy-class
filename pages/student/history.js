@@ -38,7 +38,8 @@ function FeedbackList({ text, color = 'gray' }) {
 
 function escapeHtml(text) {
   if (!text) return ''
-  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  // step440: 따옴표 이스케이프 추가 — data-correction="..." 속성이 reason 속 큰따옴표에서 조기 종료되던 버그
+  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
 
 function applyGrammar(essayText, corrections) {
