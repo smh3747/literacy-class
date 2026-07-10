@@ -806,6 +806,7 @@ export default function StudentHome() {
         topic: { title: todayTopic.title, description: todayTopic.description },
         rewriteEssay,
         rubrics,
+        topicId: todayTopic.id,  // 🆕 step442: 서버가 직전 채점 요약을 조회하는 식별자(요약 자체는 서버 생성)
       })
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))

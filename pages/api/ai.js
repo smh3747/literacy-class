@@ -92,6 +92,72 @@ async function logDroppedCorrections(dropped, { userId, essayText } = {}) {
   } catch (e) { console.warn('폐기 교정 기록 실패(무시):', e?.message) }
 }
 
+// 🆕 step442: 수정본 채점용 직전 채점 요약 — 서버가 DB에서 직접 생성(클라 재료 수신 금지).
+//   해당 학생·해당 topic의 최신 채점완료 제출 1건 → 프롬프트 "📋 직전 제출 채점 요약" 블록용 텍스트.
+//   없거나 실패하면 null(기존 동작과 완전 동일 — 채점은 항상 성공해야 함).
+async function fetchPrevGrading({ userId, topicId, rubrics }) {
+  try {
+    if (!userId || !topicId) return null
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) return null
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+    const { data: prev } = await admin.from('submissions')
+      .select('total_score, max_score, scores, corrections, feedback_improve, created_at')
+      .eq('user_id', userId).eq('topic_id', topicId)
+      .is('deleted_at', null).not('total_score', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1).maybeSingle()
+    if (!prev) return null
+
+    const lines = [`- 총점: ${prev.total_score}/${prev.max_score ?? '?'}점`]
+    if (Array.isArray(prev.scores) && prev.scores.length > 0) {
+      const parts = prev.scores.map((sc, i) => `${rubrics?.[i]?.name || `기준${i + 1}`} ${sc}점`)
+      lines.push(`- 항목별: ${parts.join(', ')}`)
+    }
+    const corrs = Array.isArray(prev.corrections) ? prev.corrections : []
+    if (corrs.length > 0) {
+      const ex = corrs.slice(0, 3)
+        .map(c => `"${String(c?.original ?? '')}→${String(c?.correction ?? '')}"`)
+        .join(', ')
+      lines.push(`- 맞춤법 지적: 총 ${corrs.length}건 (예: ${ex})`)
+    } else {
+      lines.push('- 맞춤법 지적: 없음')
+    }
+    if (prev.feedback_improve) {
+      lines.push(`- 개선 제안 요지: ${String(prev.feedback_improve).slice(0, 300)}`)
+    }
+    return { text: lines.join('\n'), prev }
+  } catch (e) {
+    console.warn('직전 채점 요약 생성 실패(무시):', e?.message)
+    return null
+  }
+}
+
+// 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지). 지적을 고쳤는데(교정 수 감소) 총점이 떨어진 케이스.
+async function logScoreReversal({ userId, prev, newTotal, newCorrCount }) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) return
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+    const prevCorrCount = Array.isArray(prev.corrections) ? prev.corrections.length : 0
+    await admin.from('correction_alerts').insert({
+      submission_id: null,
+      original: `직전 ${prev.total_score}점 → 이번 ${newTotal}점`,
+      correction: `교정 ${prevCorrCount}건 → ${newCorrCount}건`,
+      reason: '수정본 점수 역전(지적 건수 감소 + 총점 하락) — B-2 이월 배관 감시 기록',
+      suspect_type: '점수역전',
+      submission_created_at: new Date().toISOString(),
+      blocked_user_id: userId || null,
+    })
+  } catch (e) { console.warn('점수역전 기록 실패(무시):', e?.message) }
+}
+
 // 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
 async function resolveApiKey({ accessToken, classId: classIdParam }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -164,6 +230,7 @@ export default async function handler(req, res) {
   try {
     let prompt, schema, opts
     let mergeEssay = null   // 🆕 맞춤법 규칙 병합용 원문(corrections 생성 type만 대입 → 응답 직전 서버 병합)
+    let prevGrading = null  // 🆕 step442: rewriteGrading 직전 채점 요약({ text, prev }) — 역전 감시에도 사용
 
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
@@ -183,11 +250,15 @@ export default async function handler(req, res) {
       mergeEssay = essay
 
     } else if (type === 'rewriteGrading') {
-      const { topic, rewriteEssay, rubrics } = payload || {}
+      const { topic, rewriteEssay, rubrics, topicId } = payload || {}
       if (!topic || !rewriteEssay || !Array.isArray(rubrics)) {
         return res.status(400).json({ error: '채점에 필요한 정보가 부족해요' })
       }
-      prompt = rewriteGradingPrompt({ topic, rewriteEssay, rubrics })
+      // 🆕 step442: 직전 채점 요약 이월 — 반드시 서버가 DB에서 직접 생성.
+      //   payload의 prevGradingText류 값은 절대 쓰지 않음(학생 브라우저의 채점 재료 조작 경로 차단).
+      //   직전 제출 없음/조회 실패 → null → 기존 프롬프트와 완전 동일(하위호환).
+      prevGrading = await fetchPrevGrading({ userId, topicId, rubrics })
+      prompt = rewriteGradingPrompt({ topic, rewriteEssay, rubrics, prevGradingText: prevGrading?.text || null })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
       mergeEssay = rewriteEssay
@@ -320,6 +391,21 @@ export default async function handler(req, res) {
           })
           .filter(Boolean)
       }
+    }
+
+    // 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지).
+    //   "지적 건수는 줄었는데(고쳤는데) 총점은 하락" 케이스를 correction_alerts에 남긴다. fire-and-forget.
+    if (type === 'rewriteGrading' && prevGrading?.prev && result) {
+      try {
+        const newTotal = Array.isArray(result.scores)
+          ? result.scores.reduce((s, x) => s + (Number(x) || 0), 0) : null
+        const newCorrCount = Array.isArray(result.corrections) ? result.corrections.length : 0
+        const prevCorrCount = Array.isArray(prevGrading.prev.corrections) ? prevGrading.prev.corrections.length : 0
+        if (newTotal != null && prevGrading.prev.total_score != null
+            && newTotal < prevGrading.prev.total_score && newCorrCount < prevCorrCount) {
+          logScoreReversal({ userId, prev: prevGrading.prev, newTotal, newCorrCount })  // await 안 함
+        }
+      } catch (e) { console.warn('역전 감시 실패(무시):', e?.message) }
     }
     return res.status(200).json({ result })
 
