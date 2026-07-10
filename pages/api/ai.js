@@ -217,7 +217,17 @@ export default async function handler(req, res) {
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
       const p = tutorChatPrompt(payload || {})
-      const answer = await callGemini(apiKey, p, { chainName: 'simple', temperature: 0.7, maxTokens: 500 })
+      // step447: maxTokens 500→1000 — 한국어 응답이 문장 중간에 잘리던 실사례("...떠올려 보는"에서 끝)
+      let answer = await callGemini(apiKey, p, { chainName: 'simple', temperature: 0.7, maxTokens: 1000 })
+      // step447: 미완성 꼬리 제거(휴리스틱) — callGemini가 텍스트만 반환해 finishReason 판별은 불가.
+      //   문장부호로 안 끝나면 마지막 완결 문장까지만 반환. 문장부호가 아예 없으면 원문 유지(통삭제 방지).
+      if (typeof answer === 'string') {
+        const t = answer.trim()
+        if (t && !/[.!?…]["')\]]?\s*$/.test(t)) {
+          const cut = Math.max(t.lastIndexOf('.'), t.lastIndexOf('!'), t.lastIndexOf('?'), t.lastIndexOf('…'))
+          if (cut > 0) answer = t.slice(0, cut + 1)
+        }
+      }
       return res.status(200).json({ answer })
     }
 
