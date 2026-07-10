@@ -49,19 +49,23 @@ const { pathToFileURL } = require('url')
     { name: "규칙 10(-는데 어미)",          text: "어미 '-는데/-ㄴ데'" },
     { name: '규칙 11(문체 일관 판정)',      text: '문장 대부분' },
     { name: '규칙 11(문체 교정 금지 지시)', text: '일관된 글에서는 문체 교정을 하나도 만들지 마세요' },
+    // step443: 오교정 금지 규칙 12 — '조사' 단독은 규칙 7에도 있어 무의미, 규칙 12 고유 문구로 검사
+    { name: '규칙 12(조사 떼기 금지)',      text: '조사는 항상 붙여 씁니다' },
+    { name: '규칙 12(가운뎃점 변경 금지)',  text: '가운뎃점' },
+    { name: '규칙 12(복합명사 핑퐁 금지)',  text: '둘 다 허용' },
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
       const pass = s.includes(kp.text)
       rec('RULES', `${pname} · ${kp.name}`, pass, pass ? '포함' : `누락: "${kp.text}"`)
     }
-    // 규칙 번호 1~11 전부 존재 (CORRECTIONS_RULES 항목은 3칸 들여쓰기 "   N. " 형식)
+    // 규칙 번호 1~12 전부 존재 (CORRECTIONS_RULES 항목은 3칸 들여쓰기 "   N. " 형식)
     const missing = []
-    for (let n = 1; n <= 11; n++) {
+    for (let n = 1; n <= 12; n++) {
       if (!s.includes(`\n   ${n}. `)) missing.push(n)
     }
-    rec('RULES', `${pname} · 규칙 1~11 전부 존재`, missing.length === 0,
-      missing.length === 0 ? '11개 모두 존재' : `누락 번호=${missing.join(',')}`)
+    rec('RULES', `${pname} · 규칙 1~12 전부 존재`, missing.length === 0,
+      missing.length === 0 ? '12개 모두 존재' : `누락 번호=${missing.join(',')}`)
   }
 
   // ── REWRITE: rewriteGradingPrompt의 이전 채점 맥락 3인자 (step442, step436 prevGradingText 대체) ──
