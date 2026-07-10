@@ -15,7 +15,7 @@ const { pathToFileURL } = require('url')
 ;(async () => {
   const pPath = path.join(__dirname, '..', 'lib', 'prompts.server.js')
   const mod = await import(pathToFileURL(pPath).href)
-  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt } = mod
+  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt } = mod
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -62,6 +62,35 @@ const { pathToFileURL } = require('url')
     }
     rec('RULES', `${pname} · 규칙 1~11 전부 존재`, missing.length === 0,
       missing.length === 0 ? '11개 모두 존재' : `누락 번호=${missing.join(',')}`)
+  }
+
+  // ── REWRITE: rewriteGradingPrompt의 prevGradingText 선택 인자 (step436) ──
+  // 미전달/null이면 기존 출력과 완전 동일(하위호환), 전달 시 요약 블록+일관성 규칙이 붙는다.
+  try {
+    const base = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics })
+    const withNull = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevGradingText: null })
+    const prevText = '총점 95점. 감점 사유: 마무리 문단이 갑자기 끝남.'
+    const withPrev = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevGradingText: prevText })
+
+    // (a) 하위호환: 미전달 === null, 둘 다 직전 맥락 문구 없음
+    const aPass = base === withNull
+      && !base.includes('직전 제출 채점 요약')
+      && !base.includes('직전 채점과의 일관성')
+    rec('REWRITE', 'prevGradingText 미전달 = null 동일(하위호환)', aPass,
+      aPass ? '출력 동일, 직전 맥락 문구 없음' : (base === withNull ? '직전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
+
+    // (b) 전달 시 요약 블록 표제 + 주입 텍스트 포함
+    const bPass = withPrev.includes('직전 제출 채점 요약') && withPrev.includes(prevText)
+    rec('REWRITE', 'prevGradingText 전달 시 요약 블록 삽입', bPass,
+      bPass ? '표제+원문 포함' : `누락(표제=${withPrev.includes('직전 제출 채점 요약')}, 원문=${withPrev.includes(prevText)})`)
+
+    // (c) 전달 시 일관성 규칙 문구 포함
+    const cPhrases = ['직전보다 내려가면 안 됩니다', '새로 생긴 결함일 때만', '오르는 것이 자연스럽습니다']
+    const cMissing = cPhrases.filter(p => !withPrev.includes(p))
+    rec('REWRITE', 'prevGradingText 전달 시 일관성 규칙 포함', cMissing.length === 0,
+      cMissing.length === 0 ? '3문구 모두 포함' : `누락: ${cMissing.join(' / ')}`)
+  } catch (e) {
+    rec('REWRITE', 'rewriteGradingPrompt 실행', false, `예외: ${e.message}`)
   }
 
   // ── 출력 (gate-korean-rules.js와 동일 형식) ──
