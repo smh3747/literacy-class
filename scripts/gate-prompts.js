@@ -164,6 +164,7 @@ const { pathToFileURL } = require('url')
       { name: '이어쓰기(일반론 금지)',    text: '마지막 내용에 이어서' },
       { name: '대필 금지(기존 유지)',     text: '대신 써주지 마세요' },
       { name: '2~4문장 제한(기존 유지)',  text: '2~4문장' },
+      { name: '호칭 금지',               text: '호칭으로 부르지 마세요' }, // step450
     ]
     for (const kp of T_PHRASES) {
       const pass = s.includes(kp.text)
