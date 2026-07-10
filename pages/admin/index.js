@@ -184,6 +184,10 @@ export default function AdminHome() {
   const [bulkStages, setBulkStages] = useState({ active: false, cooling: false, at_risk: false, dormant: false })
   const [bulkBody, setBulkBody] = useState('')
   const [bulkSending, setBulkSending] = useState(false)
+  // 🆕 step444: 대상 방식 — 'stage'(활동 단계, 기존) | 'pick'(직접 선택)
+  const [bulkMode, setBulkMode] = useState('stage')
+  const [bulkPickIds, setBulkPickIds] = useState([])      // 직접 선택된 교사 id (칩 순서 유지)
+  const [bulkSearch, setBulkSearch] = useState('')
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [suspectFilter, setSuspectFilter] = useState('전체') // 🆕 유형 필터 칩 — 클라이언트 표시 필터만(쿼리 불변)
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
@@ -652,7 +656,13 @@ export default function AdminHome() {
   }
 
   // 🆕 step422: 일괄 쪽지 대상 — step414 classifyTeacher 재사용(차단 제외, admin 포함=본인 테스트 가능)
+  // 🆕 step444: 'pick' 모드면 직접 선택 목록 그대로(칩 순서 유지, 차단 제외)
   const bulkTargets = () => {
+    if (bulkMode === 'pick') {
+      return bulkPickIds
+        .map(id => teachers.find(t => t.id === id))
+        .filter(t => t && !t.is_banned)
+    }
     const picked = Object.entries(bulkStages).filter(([, v]) => v).map(([k]) => k)
     if (picked.length === 0) return []
     return teachers.filter(t => !t.is_banned).filter(t => {
@@ -688,6 +698,8 @@ export default function AdminHome() {
       setBulkOpen(false)
       setBulkBody('')
       setBulkStages({ active: false, cooling: false, at_risk: false, dormant: false })
+      setBulkPickIds([])   // step444: 직접 선택 리셋
+      setBulkSearch('')
       setMsgData(prev => ({ ...prev, loaded: false }))  // 목록 리로드
     } catch (e) {
       alert('일괄 발송 실패: ' + (e?.message || ''))
@@ -3200,16 +3212,76 @@ export default function AdminHome() {
                       <button onClick={() => setBulkOpen(false)} aria-label="닫기"
                         className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
                       <h3 className="font-bold text-gray-900 pr-6">📢 일괄 쪽지</h3>
-                      <p className="text-xs text-gray-500 mt-1">대상 단계를 고르고 내용을 적어주세요. {'{이름}'}을 쓰면 각 선생님 성함으로 바뀌어요.</p>
-                      <div className="flex gap-2 flex-wrap mt-3">
-                        {['active', 'cooling', 'at_risk', 'dormant'].map(k => (
-                          <label key={k} className={`text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${bulkStages[k] ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200'}`}>
-                            <input type="checkbox" className="hidden" checked={bulkStages[k]}
-                              onChange={e => setBulkStages(prev => ({ ...prev, [k]: e.target.checked }))} />
-                            {STAGE_META[k].emoji} {STAGE_META[k].label}
-                          </label>
+                      <p className="text-xs text-gray-500 mt-1">대상을 고르고 내용을 적어주세요. {'{이름}'}을 쓰면 각 선생님 성함으로 바뀌어요.</p>
+                      {/* 🆕 step444: 대상 방식 토글 — 활동 단계(기존) / 직접 선택 */}
+                      <div className="flex gap-1.5 mt-3">
+                        {[['stage', '활동 단계로 선택'], ['pick', '직접 선택']].map(([v, label]) => (
+                          <button key={v} onClick={() => setBulkMode(v)}
+                            className={`text-xs px-2.5 py-1.5 rounded-lg border transition ${bulkMode === v
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                            {label}
+                          </button>
                         ))}
                       </div>
+                      {bulkMode === 'stage' ? (
+                        <div className="flex gap-2 flex-wrap mt-3">
+                          {['active', 'cooling', 'at_risk', 'dormant'].map(k => (
+                            <label key={k} className={`text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition ${bulkStages[k] ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200'}`}>
+                              <input type="checkbox" className="hidden" checked={bulkStages[k]}
+                                onChange={e => setBulkStages(prev => ({ ...prev, [k]: e.target.checked }))} />
+                              {STAGE_META[k].emoji} {STAGE_META[k].label}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        /* 🆕 step444: 직접 선택 — 검색 + 체크 목록 + 선택 칩 */
+                        <div className="mt-3">
+                          <input type="text" value={bulkSearch} onChange={e => setBulkSearch(e.target.value)}
+                            placeholder="🔍 이름·학교·아이디 검색"
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2" />
+                          {bulkSearch.trim() && (
+                            <div className="mt-1.5 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+                              {(() => {
+                                const q = bulkSearch.trim().toLowerCase()
+                                const hits = teachers.filter(t => !t.is_banned).filter(t =>
+                                  (t.realname || '').toLowerCase().includes(q)
+                                  || (t.school || '').toLowerCase().includes(q)
+                                  || (t.username || '').toLowerCase().includes(q)
+                                ).slice(0, 30)
+                                if (hits.length === 0) return <div className="px-3 py-2 text-xs text-gray-400">검색 결과가 없어요</div>
+                                return hits.map(t => (
+                                  <label key={t.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50">
+                                    <input type="checkbox" checked={bulkPickIds.includes(t.id)}
+                                      onChange={e => setBulkPickIds(prev => e.target.checked
+                                        ? [...prev, t.id]
+                                        : prev.filter(id => id !== t.id))} />
+                                    <span className="font-semibold text-gray-800">{t.realname}</span>
+                                    {t.school && <span className="text-gray-500">{t.school}</span>}
+                                    <span className="ml-auto font-mono text-gray-400">{t.username}</span>
+                                  </label>
+                                ))
+                              })()}
+                            </div>
+                          )}
+                          {bulkPickIds.length > 0 && (
+                            <div className="flex gap-1.5 flex-wrap mt-2">
+                              {bulkPickIds.map(id => {
+                                const t = teachers.find(x => x.id === id)
+                                if (!t) return null
+                                return (
+                                  <span key={id} className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full pl-2.5 pr-1 py-0.5">
+                                    {t.realname}
+                                    <button onClick={() => setBulkPickIds(prev => prev.filter(x => x !== id))}
+                                      aria-label="선택 제거"
+                                      className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-indigo-100">✕</button>
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="text-xs text-gray-600 mt-2">현재 대상: <strong>{bulkTargets().length}명</strong> (차단 제외)</div>
                       <textarea value={bulkBody} onChange={e => setBulkBody(e.target.value)}
                         placeholder={'{이름} 선생님, 안녕하세요. ...'} rows={5} maxLength={2000}
