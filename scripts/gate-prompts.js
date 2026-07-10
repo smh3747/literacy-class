@@ -64,31 +64,47 @@ const { pathToFileURL } = require('url')
       missing.length === 0 ? '11개 모두 존재' : `누락 번호=${missing.join(',')}`)
   }
 
-  // ── REWRITE: rewriteGradingPrompt의 prevGradingText 선택 인자 (step436) ──
-  // 미전달/null이면 기존 출력과 완전 동일(하위호환), 전달 시 요약 블록+일관성 규칙이 붙는다.
+  // ── REWRITE: rewriteGradingPrompt의 이전 채점 맥락 3인자 (step442, step436 prevGradingText 대체) ──
+  // 전부 미전달/null이면 기존 출력과 완전 동일(하위호환), 하나라도 있으면 [이전 채점 정보] 블록+일관성 규칙.
   try {
     const base = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics })
-    const withNull = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevGradingText: null })
-    const prevText = '총점 95점. 감점 사유: 마무리 문단이 갑자기 끝남.'
-    const withPrev = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevGradingText: prevText })
+    const withNulls = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: null, prevCorrections: null, prevFeedback: null })
+    const withPrev = rewriteGradingPrompt({
+      topic, rewriteEssay: essay, rubrics,
+      prevScore: 75,
+      prevCorrections: [{ original: '어느날', correction: '어느 날' }],
+      prevFeedback: '문단 구분 필요'
+    })
 
-    // (a) 하위호환: 미전달 === null, 둘 다 직전 맥락 문구 없음
-    const aPass = base === withNull
-      && !base.includes('직전 제출 채점 요약')
-      && !base.includes('직전 채점과의 일관성')
-    rec('REWRITE', 'prevGradingText 미전달 = null 동일(하위호환)', aPass,
-      aPass ? '출력 동일, 직전 맥락 문구 없음' : (base === withNull ? '직전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
+    // (a) 하위호환: 미전달 === 전부 null, 이전 맥락 문구 없음
+    const aPass = base === withNulls
+      && !base.includes('[이전 채점 정보]')
+      && !base.includes('낮은 점수를 주지 마세요')
+    rec('REWRITE', '이전 맥락 미전달 = 전부 null 동일(하위호환)', aPass,
+      aPass ? '출력 동일, 이전 맥락 문구 없음' : (base === withNulls ? '이전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
 
-    // (b) 전달 시 요약 블록 표제 + 주입 텍스트 포함
-    const bPass = withPrev.includes('직전 제출 채점 요약') && withPrev.includes(prevText)
-    rec('REWRITE', 'prevGradingText 전달 시 요약 블록 삽입', bPass,
-      bPass ? '표제+원문 포함' : `누락(표제=${withPrev.includes('직전 제출 채점 요약')}, 원문=${withPrev.includes(prevText)})`)
+    // (b) 전체 주입: 블록 표제·점수·지적 목록·총평·일관성 규칙 포함
+    const bPhrases = ['[이전 채점 정보]', '75점', '어느날 → 어느 날', '문단 구분 필요', '다시 포함', '낮은 점수를 주지 마세요']
+    const bMissing = bPhrases.filter(p => !withPrev.includes(p))
+    rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
+      bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
 
-    // (c) 전달 시 일관성 규칙 문구 포함
-    const cPhrases = ['직전보다 내려가면 안 됩니다', '새로 생긴 결함일 때만', '오르는 것이 자연스럽습니다']
-    const cMissing = cPhrases.filter(p => !withPrev.includes(p))
-    rec('REWRITE', 'prevGradingText 전달 시 일관성 규칙 포함', cMissing.length === 0,
-      cMissing.length === 0 ? '3문구 모두 포함' : `누락: ${cMissing.join(' / ')}`)
+    // (c) 상한: corrections 21개 → 20개+'외 1건', 총평 600자 → 500자 절단
+    const manyCorr = Array.from({ length: 21 }, (_, i) => ({ original: `오타${i + 1}`, correction: `교정${i + 1}` }))
+    const longFb = 'ㄱ'.repeat(600)
+    const capped = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevCorrections: manyCorr, prevFeedback: longFb })
+    const cPass = capped.includes('외 1건') && !capped.includes('오타21')
+      && capped.includes('ㄱ'.repeat(500)) && !capped.includes('ㄱ'.repeat(501))
+    rec('REWRITE', '상한 적용(지적 20개+외 N건, 총평 500자)', cPass,
+      cPass ? "'외 1건' 표기, 21번째 미포함, 총평 500자 절단" : `외1건=${capped.includes('외 1건')}, 오타21제외=${!capped.includes('오타21')}, 500자=${capped.includes('ㄱ'.repeat(500))}, 501자없음=${!capped.includes('ㄱ'.repeat(501))}`)
+
+    // (d) 부분 주입: prevScore만 → 블록은 있되 지적·총평 줄 없음
+    // ('이전에 지적한'만으로 검사하면 일관성 규칙 본문("이전에 지적한 오류가…")과 겹쳐 오탐 → 블록 줄 표제로 정밀 검사)
+    const scoreOnly = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 88 })
+    const dPass = scoreOnly.includes('[이전 채점 정보]') && scoreOnly.includes('88점')
+      && !scoreOnly.includes('이전에 지적한 맞춤법·표현') && !scoreOnly.includes('이전 총평 요약')
+    rec('REWRITE', '부분 주입(prevScore만) 시 점수 줄만', dPass,
+      dPass ? '점수 줄만 포함' : `블록=${scoreOnly.includes('[이전 채점 정보]')}, 88점=${scoreOnly.includes('88점')}, 지적줄없음=${!scoreOnly.includes('이전에 지적한 맞춤법·표현')}, 총평줄없음=${!scoreOnly.includes('이전 총평 요약')}`)
   } catch (e) {
     rec('REWRITE', 'rewriteGradingPrompt 실행', false, `예외: ${e.message}`)
   }
