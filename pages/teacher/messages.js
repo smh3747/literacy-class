@@ -22,6 +22,14 @@ export default function TeacherMessages() {
   const [editingId, setEditingId] = useState(null)   // 🆕 step432: 인라인 수정 중인 쪽지 id
   const [editDraft, setEditDraft] = useState('')
   const bottomRef = useRef(null)
+  const draftRef = useRef(null)  // 🆕 step439: 전송 후 입력칸 높이 복원용
+
+  // 🆕 step439: 입력 내용만큼 높이 자동 확장(최대 240px≈10줄, 초과 시 내부 스크롤)
+  const autoGrow = (el) => {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 240) + 'px'
+  }
 
   useEffect(() => { checkAuth() }, [])
 
@@ -82,6 +90,7 @@ export default function TeacherMessages() {
       if (error) throw error
       setItems(prev => [...prev, inserted || { id: Math.random(), sender_id: user.id, body, created_at: new Date().toISOString() }])
       setDraft('')
+      if (draftRef.current) draftRef.current.style.height = ''  // step439: 초기 높이 복원
       // 모든 admin에게 종 알림 — 실패해도 쪽지 자체는 성공 처리
       try {
         const { data: admins } = await supabase.from('profiles').select('id').eq('role', 'admin')
@@ -212,11 +221,13 @@ export default function TeacherMessages() {
 
         <div className="flex gap-2 mt-3">
           <textarea
+            ref={draftRef}
             value={draft} onChange={e => setDraft(e.target.value)}
+            onInput={e => autoGrow(e.target)}
             placeholder={isImpersonating ? '엿보기 모드에서는 쪽지를 보낼 수 없어요' : '문의 내용을 적어주세요'}
             disabled={isImpersonating}
             rows={2} maxLength={2000}
-            className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none disabled:bg-gray-50 disabled:text-gray-400"
+            className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-y min-h-[56px] max-h-[240px] overflow-y-auto disabled:bg-gray-50 disabled:text-gray-400"
           />
           <button onClick={send} disabled={sending || isImpersonating || !draft.trim()}
             className="shrink-0 self-end text-sm bg-indigo-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition disabled:opacity-40">

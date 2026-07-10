@@ -52,6 +52,13 @@ const OB_RESP_LABELS = {
   clicked: '버튼 클릭', dismissed: '닫음 ✕',
 }
 
+// 🆕 step439: 쪽지 입력 자동 확장 — 내용만큼(최대 240px≈10줄, 초과 시 내부 스크롤)
+const autoGrowTextarea = (el) => {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 240) + 'px'
+}
+
 // 🆕 step422: 캡쳐용 마스킹 라벨 — "경기 ○○초 신○○ 선생님" (렌더만, 저장 안 함)
 //   학교는 시·도 접두 매칭 시 "지역 ○○초", 추출 불확실하면 "○○초등학교".
 const REGION_PREFIXES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주']
@@ -170,6 +177,7 @@ export default function AdminHome() {
   const [msgSending, setMsgSending] = useState(false)
   const [msgEditingId, setMsgEditingId] = useState(null)  // 🆕 step432: 인라인 수정 중인 쪽지 id
   const [msgEditDraft, setMsgEditDraft] = useState('')
+  const msgReplyRef = useRef(null)  // 🆕 step439: 전송 후 답장 입력칸 높이 복원용
   const [msgFilter, setMsgFilter] = useState('replied')  // replied(기본) | all | unresolved | unread — step428: 일괄 발송 250스레드 중 답장 온 것부터
   const [msgMasked, setMsgMasked] = useState(false)      // 캡쳐용 마스킹 모드(렌더만)
   const [bulkOpen, setBulkOpen] = useState(false)        // 일괄 쪽지 모달
@@ -587,6 +595,7 @@ export default function AdminHome() {
       if (error) throw error
       setMsgData(prev => ({ ...prev, msgs: [...prev.msgs, ins] }))
       setMsgReply('')
+      if (msgReplyRef.current) msgReplyRef.current.style.height = ''  // step439: 초기 높이 복원
       try {
         await supabase.rpc('create_notification', {
           p_recipient: msgSelected,
@@ -3169,9 +3178,10 @@ export default function AdminHome() {
                             })}
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <textarea value={msgReply} onChange={e => setMsgReply(e.target.value)}
+                            <textarea ref={msgReplyRef} value={msgReply} onChange={e => setMsgReply(e.target.value)}
+                              onInput={e => autoGrowTextarea(e.target)}
                               placeholder="답장을 적어주세요" rows={2} maxLength={2000}
-                              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none" />
+                              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-y min-h-[56px] max-h-[240px] overflow-y-auto" />
                             <button onClick={sendReply} disabled={msgSending || !msgReply.trim()}
                               className="shrink-0 self-end text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-40">
                               {msgSending ? '보내는 중...' : '답장'}
