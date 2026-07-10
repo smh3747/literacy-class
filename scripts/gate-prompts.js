@@ -15,7 +15,7 @@ const { pathToFileURL } = require('url')
 ;(async () => {
   const pPath = path.join(__dirname, '..', 'lib', 'prompts.server.js')
   const mod = await import(pathToFileURL(pPath).href)
-  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt } = mod
+  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt } = mod
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -91,6 +91,28 @@ const { pathToFileURL } = require('url')
       cMissing.length === 0 ? '3문구 모두 포함' : `누락: ${cMissing.join(' / ')}`)
   } catch (e) {
     rec('REWRITE', 'rewriteGradingPrompt 실행', false, `예외: ${e.message}`)
+  }
+
+  // ── DATE: 채점 3종 오늘 날짜(KST) 주입 (step441) ──
+  // 형식 매칭 + 가드 문구 잔존만 확인. 연도 일치까지는 안 봄(자정 경계·타임존으로 게이트가 취약해지는 것 방지).
+  {
+    const DATE_RE = /오늘은 \d{4}년 \d{1,2}월 \d{1,2}일입니다/
+    const GUARD = '"미래의 일"이라고 잘못 지적하지 마세요'
+    const graders = {
+      gradingPrompt: () => gradingPrompt({ topic, essay, rubrics }),
+      regradePrompt: () => regradePrompt({ topic, essay, rubrics }),
+      rewriteGradingPrompt: () => rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics }),
+    }
+    for (const [name, build] of Object.entries(graders)) {
+      try {
+        const s = build()
+        const pass = DATE_RE.test(s) && s.includes(GUARD)
+        rec('DATE', `${name} · 오늘 날짜 줄+미래 오지적 가드`, pass,
+          pass ? (s.match(DATE_RE) || [''])[0] : `날짜형식=${DATE_RE.test(s)}, 가드문구=${s.includes(GUARD)}`)
+      } catch (e) {
+        rec('DATE', `${name} · 오늘 날짜 줄+미래 오지적 가드`, false, `예외: ${e.message}`)
+      }
+    }
   }
 
   // ── 출력 (gate-korean-rules.js와 동일 형식) ──
