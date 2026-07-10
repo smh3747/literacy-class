@@ -15,6 +15,7 @@ import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
+import { escapeHtml } from '../../lib/escapeHtml'
 
 // 한국 시간 기준 오늘 날짜
 function todayStr() {
@@ -116,15 +117,6 @@ function FeedbackList({ text, color = 'gray' }) {
   )
 }
 
-function escapeHtml(text) {
-  if (!text) return ''
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 // 맞춤법 빨간 밑줄 적용
 function applyGrammarHighlights(essayText, corrections) {

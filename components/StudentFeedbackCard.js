@@ -5,12 +5,8 @@ import { findOriginalRange } from '../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
 import { stampLabel } from '../lib/stamps'
 import { pickStr } from '../lib/pickStr'
+import { escapeHtml } from '../lib/escapeHtml'
 
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[m]))
-}
 
 // 🛡️ AI corrections 오탐 필터 + 중복 제거 + 실제 표시 가능한 것만
 // 와이프 피드백: "맞춤법 2개 밑줄인데 카운트는 3개" 문제 해결

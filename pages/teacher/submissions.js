@@ -9,6 +9,7 @@ import { regradeSubmission } from '../../lib/regrade'
 import { findOriginalRange } from '../../lib/koreanRules'
 import { GRAMMAR_NOTICE_TEACHER } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
+import { escapeHtml } from '../../lib/escapeHtml'
 import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
@@ -40,11 +41,6 @@ function FeedbackList({ text, color = 'gray' }) {
   )
 }
 
-function escapeHtml(text) {
-  if (!text) return ''
-  // step440: 따옴표 이스케이프 추가 — data-correction="..." 속성이 reason 속 큰따옴표에서 조기 종료되던 버그
-  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
-}
 
 function applyGrammar(essayText, corrections) {
   if (!essayText) return ''
