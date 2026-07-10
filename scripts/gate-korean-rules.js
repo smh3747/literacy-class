@@ -37,6 +37,8 @@ const DETECT = [
   { name: "의존명사 건(하는건)", text: '하는건 어렵다',      original: '하는건',    correction: '하는 건' },   // step425
   { name: '사리지다(집니다)',   text: '상자는 사리집니다',   original: '사리집니다', correction: '사라집니다' }, // step425
   { name: '사리지다(졌다)',     text: '갑자기 사리졌다',    original: '사리졌다',   correction: '사라졌다' },   // step425
+  { name: '다같은',            text: '다같은 옷',          original: '다같은',    correction: '다 같은' },    // step447
+  { name: '편한함',            text: '편한함을 제공',       original: '편한함',    correction: '편안함' },     // step447
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -60,6 +62,8 @@ const NO_FALSE_POSITIVE = [
   { name: "'그만두지 않나요'",       text: '운동을 그만두지 않나요?' },   // step435
   { name: "'먹지 않나 싶다'",        text: '먹지 않나 싶다' },            // step435
   { name: "'하지않나요'(붙여쓴 것)", text: '하지않나요' },                // step435
+  { name: "'다 같이'(띄어진 형태)",  text: '다 같이 갔다' },              // step447
+  { name: "'바다같이'(조사 같이)",   text: '바다같이 넓다' },             // step447
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
