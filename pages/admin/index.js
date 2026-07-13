@@ -54,10 +54,11 @@ const OB_RESP_LABELS = {
 // 🆕 step457: 응답 → 퍼널 상태 — 전진(버튼으로 응답한 모든 경우)/무시(닫음)/보류(둘러보는 중)
 const obOutcome = (response) =>
   response === 'dismissed' ? 'ignore' : response === 'just_looking' ? 'hold' : 'forward'
+// step461: 자기설명형 용어 — "시스템이 띄운 안내"에 대한 "선생님 반응"임이 문구로 드러나게
 const OB_OUTCOME_META = {
-  forward: { emoji: '🟢', label: '전진', badge: 'bg-green-100 text-green-700' },
-  ignore:  { emoji: '⚪', label: '무시', badge: 'bg-gray-100 text-gray-500' },
-  hold:    { emoji: '🟡', label: '보류', badge: 'bg-amber-100 text-amber-700' },
+  forward: { emoji: '👍', label: '안내 따라감', badge: 'bg-green-100 text-green-700' },
+  ignore:  { emoji: '✕', label: '닫음', badge: 'bg-gray-100 text-gray-500' },
+  hold:    { emoji: '👀', label: '읽고 지나감', badge: 'bg-amber-100 text-amber-700' },
 }
 
 // 🆕 step439: 쪽지 입력 자동 확장 — 내용만큼(최대 240px≈10줄, 초과 시 내부 스크롤)
@@ -2985,6 +2986,8 @@ export default function AdminHome() {
                 {/* 🆕 다음 걸음 카드(교사 온보딩 설문) 응답 — 사전 신청과 함께 로드된 섹션 */}
                 <div className="mt-8 pt-5 border-t border-gray-100">
                   <h2 className="text-lg font-bold mb-1">🧭 다음 걸음 응답</h2>
+                  {/* step461: 자기설명 — 이 화면이 무엇의 기록인지 첫 줄에서 밝힘 */}
+                  <p className="text-xs text-gray-500 mb-3">막힌 선생님에게 시스템이 자동으로 띄운 안내 팝업과, 그에 대한 선생님의 반응 기록이에요.</p>
                   {onboardingRows === null ? (
                     <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
                   ) : onboardingRows.length === 0 ? (
@@ -3015,10 +3018,10 @@ export default function AdminHome() {
                         .map(k => ({ k, ...rateOf(k) })).filter(x => x.total >= 5)
                       if (eligible.length > 0) {
                         const worst = [...eligible].sort((a, b) => a.rate - b.rate)[0]
-                        diagnosis.push(`⚠️ ${OB_CARD_LABELS[worst.k]} 카드가 가장 안 통해요 (전진율 ${worst.rate}%) — 문구·방법 안내를 손볼 후보예요.`)
+                        diagnosis.push(`⚠️ ${OB_CARD_LABELS[worst.k]} 안내 카드가 가장 안 통해요 (따라간 비율 ${worst.rate}%) — 문구·방법 안내를 손볼 후보예요.`)
                         const best = [...eligible].sort((a, b) => b.rate - a.rate)[0]
                         if (best.k !== worst.k && best.rate >= 50) {
-                          diagnosis.push(`✅ ${OB_CARD_LABELS[best.k]} 카드는 잘 작동 중이에요 (전진율 ${best.rate}%).`)
+                          diagnosis.push(`✅ ${OB_CARD_LABELS[best.k]} 안내 카드는 잘 작동 중이에요 (따라간 비율 ${best.rate}%).`)
                         }
                         // 계단 패턴: 온보딩 퍼널 순서(review는 퍼널 밖이라 제외)에서 전진율 단조 증가
                         const ladder = ['no_students', 'no_topics', 'no_class_run']
@@ -3060,9 +3063,9 @@ export default function AdminHome() {
                           return (
                             <button key={k} onClick={() => setObFilter(on ? null : k)}
                               className={`text-left rounded-xl border p-3 transition ${on ? 'ring-2 ring-indigo-300 border-transparent bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                              <div className="text-xs font-semibold text-gray-800">{OB_CARD_LABELS[k]}</div>
-                              <div className="text-[11px] text-gray-600 mt-1">🟢 전진 {f.forward} · ⚪ 무시 {f.ignore} · 🟡 보류 {f.hold}</div>
-                              <div className={`text-sm font-bold mt-0.5 ${rate >= 50 ? 'text-green-700' : 'text-gray-500'}`}>전진율 {rate}%</div>
+                              <div className="text-xs font-semibold text-gray-800">📢 {OB_CARD_LABELS[k]} 안내</div>
+                              <div className="text-[11px] text-gray-600 mt-1">👍 따라감 {f.forward} · ✕ 닫음 {f.ignore} · 👀 지나감 {f.hold}</div>
+                              <div className={`text-sm font-bold mt-0.5 ${rate >= 50 ? 'text-green-700' : 'text-gray-500'}`}>따라간 비율 {rate}%</div>
                             </button>
                           )
                         })}
@@ -3071,7 +3074,7 @@ export default function AdminHome() {
                       {/* 🆕 step459: 읽는 법·다음 액션 — 규칙 기반 자동 해석 */}
                       <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3.5 mb-4">
                         <div className="text-xs font-bold text-gray-800 mb-1.5">📌 읽는 법·다음 액션</div>
-                        <p className="text-[11px] text-gray-400 mb-2">🟢 전진=카드 버튼을 눌러 안내대로 행동 · ⚪ 무시=닫음 · 🟡 보류=열어만 봄</p>
+                        <p className="text-[11px] text-gray-400 mb-2">👍 안내 따라감=버튼을 눌러 안내대로 행동 · ✕ 닫음=바로 닫음 · 👀 읽고 지나감=열어만 봄</p>
                         {totalResponses < 10 ? (
                           <p className="text-xs text-gray-500">아직 데이터가 적어요. 응답이 쌓이면 진단이 표시돼요.</p>
                         ) : (
@@ -3123,14 +3126,15 @@ export default function AdminHome() {
                               <span className="text-sm font-semibold text-gray-800">{o.realname}</span>
                               {/* 🆕 step457: 전진 응답 2개 이상 교사 — 활성 전환 유력 후보 */}
                               {forwardByTeacher[o.teacher_id] >= 2 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-orange-100 text-orange-700">🔥 연속 전진 {forwardByTeacher[o.teacher_id]}</span>
+                                <span title={`안내 팝업을 ${forwardByTeacher[o.teacher_id]}회 연달아 따라 행동 — 정착 진행 중인 선생님`}
+                                  className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-orange-100 text-orange-700">🔥 안내 연속 따라감 {forwardByTeacher[o.teacher_id]}</span>
                               )}
                               {o.role === 'admin' && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-purple-100 text-purple-700">관리자</span>
                               )}
                               {o.school && <span className="text-xs text-gray-500">{o.school}</span>}
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700">
-                                {OB_CARD_LABELS[o.card_type] || o.card_type}
+                                📢 {OB_CARD_LABELS[o.card_type] || o.card_type} 안내
                               </span>
                               {/* 🆕 step457: 퍼널 상태 배지 + 원문 라벨 소자 보존 */}
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${om.badge}`}>{om.emoji} {om.label}</span>
