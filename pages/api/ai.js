@@ -106,7 +106,7 @@ async function fetchPrevGrading({ userId, topicId }) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
     const { data: prev } = await admin.from('submissions')
-      .select('total_score, max_score, scores, corrections, feedback_overall, created_at')
+      .select('id, total_score, max_score, scores, corrections, feedback_overall, created_at')  // step458: id — 역전 기록 글 보기용
       .eq('user_id', userId).eq('topic_id', topicId)
       .is('deleted_at', null).not('total_score', 'is', null)
       .order('created_at', { ascending: false })
@@ -129,10 +129,12 @@ async function logScoreReversal({ userId, prev, newTotal, newCorrCount }) {
     })
     const prevCorrCount = Array.isArray(prev.corrections) ? prev.corrections.length : 0
     await admin.from('correction_alerts').insert({
-      submission_id: null,
+      // step458: 직전 제출 id 기록 — '글 보기' 버튼 표시용. 새 수정본은 이 시점에 아직 저장 전(클라 insert)이라
+      //   비교 기준이 된 직전 글을 연결한다.
+      submission_id: prev.id || null,
       original: `직전 ${prev.total_score}점 → 이번 ${newTotal}점`,
       correction: `교정 ${prevCorrCount}건 → ${newCorrCount}건`,
-      reason: '수정본 점수 역전(지적 건수 감소 + 총점 하락) — B-2 이월 배관 감시 기록',
+      reason: '수정본 점수 역전(지적 건수 감소 + 총점 하락) — B-2 이월 배관 감시 기록 (글 보기=직전 제출)',
       suspect_type: '점수역전',
       submission_created_at: new Date().toISOString(),
       blocked_user_id: userId || null,
