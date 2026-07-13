@@ -180,6 +180,13 @@ export default function AdminHome() {
   const [onboardingRows, setOnboardingRows] = useState(null)  // 🆕 다음 걸음 카드 응답 (사전 신청 탭에서 함께 로드, null=미로드)
   const [reviewShowReal, setReviewShowReal] = useState(false) // 🆕 step423: 홍보용 리뷰 실명 병기 토글(기본 off, 렌더만)
   const [obFilter, setObFilter] = useState(null)              // 🆕 step457: 다음 걸음 응답 카드 유형 필터(null=전체)
+  // 🆕 step462: 주제 공급 탭 — AI 생성 → 검수 편집 → 발행(즉시/예약)
+  const [supplyForm, setSupplyForm] = useState({ supplyType: '시사', keyword: '', gradeLabel: '' })
+  const [supplyGenerating, setSupplyGenerating] = useState(false)
+  const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[] } — 편집 폼
+  const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
+  const [supplySaving, setSupplySaving] = useState(false)
+  const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
   // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
   const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
@@ -716,6 +723,99 @@ export default function AdminHome() {
       alert('일괄 발송 실패: ' + (e?.message || ''))
     }
     setBulkSending(false)
+  }
+
+  // 🆕 step462: 주제 공급 — KST 기준 ISO 주차('YYYY-Www')
+  const kstIsoWeek = (d = new Date()) => {
+    const kst = new Date(d.getTime() + 9 * 3600 * 1000)
+    const day = (kst.getUTCDay() + 6) % 7            // 월=0
+    const thu = new Date(kst); thu.setUTCDate(kst.getUTCDate() - day + 3)
+    const jan1 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 1))
+    const week = Math.ceil(((thu - jan1) / 86400000 + 1) / 7)
+    return `${thu.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+  }
+
+  // 🆕 step462: 공급 주제 목록 — 탭 열 때 1회(supply_type 있는 topics만)
+  useEffect(() => {
+    if (tab !== 'supply' || supplyList.loaded) return
+    ;(async () => {
+      const { data } = await supabase.from('topics')
+        .select('id, title, supply_type, publish_week, published_at, created_at')
+        .not('supply_type', 'is', null)
+        .order('created_at', { ascending: false }).limit(100)
+      setSupplyList({ loaded: true, rows: data || [] })
+    })()
+  }, [tab, supplyList.loaded])
+
+  // 🆕 step462: AI 생성 — 기존 feedbackSummary와 동일 패턴(키 등록 학급의 classId 전달)
+  const generateSupplyTopic = async () => {
+    const keyword = supplyForm.keyword.trim()
+    if (!keyword) return alert('키워드를 입력해주세요')
+    const keyedClass = classes.find(c => c.has_api_key)
+    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
+    setSupplyGenerating(true)
+    try {
+      const result = await callAI('supplyTopic', {
+        keyword, supplyType: supplyForm.supplyType,
+        gradeLabel: supplyForm.gradeLabel || undefined,
+      }, { classId: keyedClass.id })
+      setSupplyDraft({
+        title: result?.title || '',
+        background: result?.background || '',
+        guideQuestion: result?.guide_question || '',
+        rubrics: Array.isArray(result?.rubrics) && result.rubrics.length > 0
+          ? result.rubrics.map(r => ({ name: r.name || '', hint: r.hint || '', score: Number(r.score) || 0 }))
+          : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+      })
+    } catch (e) {
+      alert('생성에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplyGenerating(false)
+  }
+
+  // 🆕 step462: 발행/예약 발행 — 검수 편집 폼을 거쳐야만 저장(생성 즉시 발행 불가 원칙)
+  const publishSupplyTopic = async (scheduledDate) => {
+    if (!supplyDraft || supplySaving) return
+    const title = supplyDraft.title.trim()
+    if (!title) return alert('제목을 입력해주세요')
+    if (!supplyDraft.background.trim()) return alert('배경 설명을 입력해주세요')
+    const rubrics = supplyDraft.rubrics.map(r => ({ name: r.name.trim(), hint: r.hint.trim(), score: Number(r.score) || 0 }))
+    if (rubrics.some(r => !r.name)) return alert('평가 기준 이름을 모두 입력해주세요')
+    const sum = rubrics.reduce((s, r) => s + r.score, 0)
+    if (sum !== 100) return alert(`평가 기준 배점 합계가 100이어야 해요 (현재 ${sum}점)`)
+    let publishedAt = new Date().toISOString()
+    if (scheduledDate) {
+      // 예약: 그 날짜 KST 00:00 = UTC 전날 15:00 (미래 시각 저장 — 2차 노출 쿼리가 <= now()로 읽음)
+      publishedAt = new Date(new Date(`${scheduledDate}T00:00:00+09:00`)).toISOString()
+    }
+    const description = `${supplyDraft.background.trim()}\n\n✍️ 글쓰기 안내: ${supplyDraft.guideQuestion.trim()}`
+    setSupplySaving(true)
+    try {
+      const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+      const { error } = await supabase.from('topics').insert({
+        date: kstYmd, title, description, rubrics,
+        teacher_id: user.id,                      // 공급 주제 = 관리자 소유(topics 관행상 class_id 미사용)
+        supply_type: supplyForm.supplyType,
+        publish_week: kstIsoWeek(),
+        published_at: publishedAt,
+      })
+      if (error) throw error
+      alert(scheduledDate ? `예약 발행 완료 (${scheduledDate} 공개)` : '발행 완료!')
+      setSupplyDraft(null)
+      setSupplyDate('')
+      setSupplyList(prev => ({ ...prev, loaded: false }))   // 목록 리로드
+    } catch (e) {
+      alert('발행에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplySaving(false)
+  }
+
+  // 🆕 step462: 발행 취소 — published_at null(삭제 아님)
+  const unpublishSupplyTopic = async (t) => {
+    if (!confirm(`"${t.title}" 발행을 취소할까요? (삭제되지 않고 미공개로 남아요)`)) return
+    const { error } = await supabase.from('topics').update({ published_at: null }).eq('id', t.id)
+    if (error) return alert('취소 실패: ' + error.message)
+    setSupplyList(prev => ({ ...prev, rows: prev.rows.map(x => x.id === t.id ? { ...x, published_at: null } : x) }))
   }
 
   // 🆕 step371: 의심 교정 행 보강 — submission_id로 본문·작성자를 4개의 .in() 배치로만 조회.
@@ -1432,6 +1532,7 @@ export default function AdminHome() {
               { id: 'trash', label: `🗑️ 휴지통${(trashedTeachers.length + trashedClasses.length) > 0 ? ` (${trashedTeachers.length + trashedClasses.length})` : ''}` },
               { id: 'corrections', label: `🔍 의심 교정${suspectCount > 0 ? ` (${suspectCount})` : ''}` },
               { id: 'messages', label: '✉️ 쪽지' },
+              { id: 'supply', label: '🗞️ 주제 공급' },
               { id: 'preorders', label: '🎟️ 사전 신청' },
               { id: 'errors', label: `🚨 에러${errorLogs.length > 0 ? ` (${errorLogs.length})` : ''}` }
             ].map(t => (
@@ -2937,6 +3038,145 @@ export default function AdminHome() {
               </div>
             )
           })()}
+
+          {/* 🆕 step462: 주제 공급 탭 — 키워드 → AI 생성 → 검수 편집 → 발행(즉시/예약). 교사 노출은 2차 */}
+          {tab === 'supply' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+              <div>
+                <h2 className="text-lg font-bold mb-1">🗞️ 주제 공급</h2>
+                <p className="text-xs text-gray-500">키워드로 주제 초안을 만들고, 검수·수정한 뒤 발행하세요. 발행된 주제는 2차 작업에서 교사에게 노출돼요.</p>
+              </div>
+
+              {/* 생성 입력폼 */}
+              <div className="flex items-end gap-2 flex-wrap">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">유형</label>
+                  <select value={supplyForm.supplyType}
+                    onChange={e => setSupplyForm(prev => ({ ...prev, supplyType: e.target.value }))}
+                    className="text-sm border border-gray-200 rounded-lg p-2">
+                    <option value="시사">시사</option>
+                    <option value="교육과정">교육과정</option>
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs text-gray-600 mb-1">키워드</label>
+                  <input type="text" value={supplyForm.keyword}
+                    onChange={e => setSupplyForm(prev => ({ ...prev, keyword: e.target.value }))}
+                    placeholder="예: 폭염과 전기요금, 우주 쓰레기"
+                    className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">대상 학년(선택)</label>
+                  <select value={supplyForm.gradeLabel}
+                    onChange={e => setSupplyForm(prev => ({ ...prev, gradeLabel: e.target.value }))}
+                    className="text-sm border border-gray-200 rounded-lg p-2">
+                    <option value="">공통(5~6학년)</option>
+                    <option value="초등 5학년">5학년</option>
+                    <option value="초등 6학년">6학년</option>
+                  </select>
+                </div>
+                <button onClick={generateSupplyTopic} disabled={supplyGenerating}
+                  className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
+                  {supplyGenerating ? '생성 중...' : '✨ AI 생성'}
+                </button>
+              </div>
+
+              {/* 검수 편집 폼 — 생성 즉시 발행 불가, 반드시 여기를 거쳐 [발행]으로만 */}
+              {supplyDraft && (
+                <div className="border-2 border-indigo-200 rounded-xl p-4 space-y-3">
+                  <p className="text-xs text-indigo-700 font-semibold">✏️ 검수 후 발행하세요 — 모든 항목을 수정할 수 있어요</p>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">제목</label>
+                    <input type="text" value={supplyDraft.title}
+                      onChange={e => setSupplyDraft(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">학생용 배경 설명</label>
+                    <textarea value={supplyDraft.background} rows={5}
+                      onChange={e => setSupplyDraft(prev => ({ ...prev, background: e.target.value }))}
+                      className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">글쓰기 안내 질문</label>
+                    <input type="text" value={supplyDraft.guideQuestion}
+                      onChange={e => setSupplyDraft(prev => ({ ...prev, guideQuestion: e.target.value }))}
+                      className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">평가 기준 (배점 합계 100)</label>
+                    <div className="space-y-1.5">
+                      {supplyDraft.rubrics.map((r, i) => (
+                        <div key={i} className="flex gap-1.5 items-center">
+                          <input type="text" value={r.name} placeholder="기준 이름"
+                            onChange={e => setSupplyDraft(prev => ({ ...prev, rubrics: prev.rubrics.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
+                            className="w-36 text-xs border border-gray-200 rounded-lg p-2" />
+                          <input type="text" value={r.hint} placeholder="안내"
+                            onChange={e => setSupplyDraft(prev => ({ ...prev, rubrics: prev.rubrics.map((x, j) => j === i ? { ...x, hint: e.target.value } : x) }))}
+                            className="flex-1 text-xs border border-gray-200 rounded-lg p-2" />
+                          <input type="number" value={r.score} min={0} max={100}
+                            onChange={e => setSupplyDraft(prev => ({ ...prev, rubrics: prev.rubrics.map((x, j) => j === i ? { ...x, score: e.target.value } : x) }))}
+                            className="w-16 text-xs border border-gray-200 rounded-lg p-2" />
+                        </div>
+                      ))}
+                      <p className="text-[11px] text-gray-400">현재 합계: {supplyDraft.rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)}점</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <button onClick={() => publishSupplyTopic(null)} disabled={supplySaving}
+                      className="text-sm bg-primary text-white font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
+                      {supplySaving ? '저장 중...' : '📢 발행'}
+                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <input type="date" value={supplyDate} onChange={e => setSupplyDate(e.target.value)}
+                        className="text-sm border border-gray-200 rounded-lg p-2" />
+                      <button onClick={() => supplyDate ? publishSupplyTopic(supplyDate) : alert('공개 날짜를 선택해주세요')} disabled={supplySaving}
+                        className="text-sm border border-primary text-primary font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
+                        ⏰ 예약 발행
+                      </button>
+                    </div>
+                    <button onClick={() => setSupplyDraft(null)}
+                      className="text-sm text-gray-500 px-3 py-2 ml-auto">버리기</button>
+                  </div>
+                </div>
+              )}
+
+              {/* 발행 목록 */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-800 mb-2">발행 목록</h3>
+                {!supplyList.loaded ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">불러오는 중...</p>
+                ) : supplyList.rows.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">아직 발행한 공급 주제가 없어요</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {supplyList.rows.map(t => {
+                      const scheduled = t.published_at && new Date(t.published_at) > new Date()
+                      return (
+                        <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
+                          <span className="text-xs text-gray-400">{t.publish_week}</span>
+                          <span className="text-sm font-semibold text-gray-800">{t.title}</span>
+                          {!t.published_at ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">미공개</span>
+                          ) : scheduled ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⏰ {new Date(new Date(t.published_at).getTime() + 9 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} 공개 예정</span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">공개 중</span>
+                          )}
+                          <span className="text-[11px] text-gray-400">가져간 수 -</span>
+                          {t.published_at && (
+                            <button onClick={() => unpublishSupplyTopic(t)}
+                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">발행 취소</button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 🆕 step382: 사전 신청 명단 탭 — 응답 요약 + 신청자 목록 (SELECT만) */}
           {tab === 'preorders' && (() => {

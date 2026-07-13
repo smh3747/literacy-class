@@ -17,6 +17,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
+import { supplyTopicPrompt, supplyTopicSchema } from '../../lib/supplyTopicPrompt.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -358,6 +359,30 @@ export default async function handler(req, res) {
       prompt = briefingPrompt(payload || {})
       schema = briefingSchema
       opts = { taskType: 'quality', maxTokens: 800, temperature: 0.4 }
+
+    } else if (type === 'supplyTopic') {
+      // 🆕 step462: 공급 주제 생성 — 관리자 전용(발행 도구). 프롬프트·스키마는 별도 파일.
+      const { keyword } = payload || {}
+      if (!keyword || !String(keyword).trim()) {
+        return res.status(400).json({ error: '키워드를 입력해주세요' })
+      }
+      // 관리자 검증 — resolveApiKey는 role을 반환하지 않으므로 여기서 확인
+      try {
+        const adminClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+          { auth: { autoRefreshToken: false, persistSession: false } }
+        )
+        const { data: requester } = await adminClient.from('profiles')
+          .select('role').eq('id', userId).maybeSingle()
+        if (!requester || requester.role !== 'admin') {
+          return res.status(403).json({ error: '관리자만 공급 주제를 생성할 수 있어요' })
+        }
+      } catch (e) {
+        return res.status(500).json({ error: '권한 확인에 실패했어요' })
+      }
+      prompt = supplyTopicPrompt(payload || {})
+      schema = supplyTopicSchema
+      opts = { taskType: 'creative', maxTokens: 6000, temperature: 0.7 }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
