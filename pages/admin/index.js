@@ -198,7 +198,8 @@ export default function AdminHome() {
   const [showBannedTeachers, setShowBannedTeachers] = useState(false)  // 🆕 차단 선생님 표시 토글 (기본 OFF)
   const [teacherSearch, setTeacherSearch] = useState('')  // 🆕 step249: 선생님 검색(이름·아이디·학교) — 클라 필터
   const [teacherStageFilter, setTeacherStageFilter] = useState(null)  // 🆕 활동 단계 카드 필터 (null=전체)
-  const [teacherSort, setTeacherSort] = useState('recent')            // 🆕 recent|oldest_activity|students|subs
+  const [teacherSort, setTeacherSort] = useState('recent')            // 🆕 recent|oldest_activity|students|subs|recent_activity
+  const [onlineOnly, setOnlineOnly] = useState(false)                 // 🆕 접속 중(5분 이내)만 보기 토글
   const [classSearch, setClassSearch] = useState('')      // 🆕 step250: 학급 검색(학급명·담임·학교·코드) — 클라 필터
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState(new Set())
   const [replyDraft, setReplyDraft] = useState({})      // 🆕 피드백 답변 입력 { [id]: text }
@@ -311,7 +312,7 @@ export default function AdminHome() {
     const feedbackUserIds = [...new Set(feedbacksWithAuthor.map(f => f.user_id).filter(Boolean))]
     if (feedbackUserIds.length > 0) {
       const { data: authorProfiles } = await supabase.from('profiles')
-        .select('id, realname, role, school, username, class_id').in('id', feedbackUserIds)
+        .select('id, realname, nickname, role, school, username, class_id').in('id', feedbackUserIds)  // 🆕 nickname: displayStudentName 폴백용
       // class_id → 학급 이름 매핑
       const authorClassIds = [...new Set((authorProfiles || []).map(p => p.class_id).filter(Boolean))]
       let classNameMap = {}
@@ -1466,12 +1467,15 @@ export default function AdminHome() {
             const sorted = teacherSort === 'recent' ? enriched : [...enriched].sort((a, b) => {
               if (teacherSort === 'students') return b.totalStudents - a.totalStudents
               if (teacherSort === 'subs') return b.totalSubs - a.totalSubs
-              // oldest_activity: 활동 전무(null)=가장 오래된 것으로 맨 앞
+              // oldest_activity: 활동 전무(null)=가장 오래된 것으로 맨 앞 / recent_activity: 최신 활동 먼저(null=맨 뒤)
               const av = a.lastActivity ? new Date(a.lastActivity).getTime() : 0
               const bv = b.lastActivity ? new Date(b.lastActivity).getTime() : 0
+              if (teacherSort === 'recent_activity') return bv - av
               return av - bv
             })
-            const listed = teacherStageFilter ? sorted.filter(x => x.stage === teacherStageFilter) : sorted
+            const stageFiltered = teacherStageFilter ? sorted.filter(x => x.stage === teacherStageFilter) : sorted
+            // 🆕 접속 중 필터(단계 필터·검색과 AND)
+            const listed = onlineOnly ? stageFiltered.filter(x => isOnline(x.t.last_seen_at)) : stageFiltered
             // 카드 클릭 토글: 선택 시 '오래된 순' 자동 전환, 해제 시 기본 정렬 복귀
             const toggleStageFilter = (key) => {
               if (teacherStageFilter === key) { setTeacherStageFilter(null); setTeacherSort('recent') }
@@ -1593,10 +1597,13 @@ export default function AdminHome() {
                   {!showBannedTeachers && bannedCount > 0 && (
                     <span className="text-xs text-gray-500"> + 차단 {bannedCount}명 숨김</span>
                   )})
-                  {/* 🆕 step435: 지금 접속 중(전체 교사 기준, 검색·필터 무관) */}
-                  <span className="ml-2 text-xs font-normal text-blue-600">
-                    🟦 지금 접속 중 {teachers.filter(x => isOnline(x.last_seen_at)).length}명
-                  </span>
+                  {/* 🆕 step435: 지금 접속 중(전체 교사 기준) — 클릭 시 접속 중만 필터(재클릭 해제) */}
+                  <button onClick={() => setOnlineOnly(v => !v)}
+                    className={`ml-2 text-xs font-normal rounded-full px-2 py-0.5 transition ${onlineOnly
+                      ? 'bg-blue-600 text-white'
+                      : 'text-blue-600 hover:bg-blue-50'}`}>
+                    🟦 지금 접속 중 {teachers.filter(x => isOnline(x.last_seen_at)).length}명{onlineOnly ? ' ✕' : ''}
+                  </button>
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* 🆕 step249: 선생님 검색 (이름·아이디·학교) */}
@@ -1608,6 +1615,7 @@ export default function AdminHome() {
                     className="text-sm border border-gray-200 rounded p-2">
                     <option value="recent">가입 최신순</option>
                     <option value="oldest_activity">마지막 활동 오래된 순</option>
+                    <option value="recent_activity">최근 활동순</option>
                     <option value="students">학생 많은 순</option>
                     <option value="subs">글 많은 순</option>
                   </select>
@@ -2242,7 +2250,15 @@ export default function AdminHome() {
                                     }`}>
                                       {f.author.role === 'admin' ? '🛡️ ' :
                                        f.author.role === 'teacher' ? '👨‍🏫 ' : '👤 '}
-                                      {f.author.realname || f.author.username || '이름 없음'}
+                                      {/* 🆕 학생은 displayStudentName(미동의=닉네임, PII 원칙) + username 회색 병기 */}
+                                      {f.author.role === 'student' ? (
+                                        <>
+                                          {displayStudentName(f.author)}
+                                          {f.author.username && <span className="ml-1 font-mono text-xs text-gray-400 font-normal">{f.author.username}</span>}
+                                        </>
+                                      ) : (
+                                        f.author.realname || f.author.username || '이름 없음'
+                                      )}
                                       {f.author.role === 'student' && f.author.class_name && (
                                         <span className="ml-1 opacity-80">· {f.author.class_name}</span>
                                       )}
@@ -3365,7 +3381,8 @@ function AdminSubmissionsInner() {
     router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
   }
 
-  useEffect(() => { load() }, [selectedClass, dateFilter, customDate, subStatusFilter])
+  // 🆕 groupBy 추가: 묶음 모드 전환 시 재로드(묶음은 1000건 기준 — 200건만 쪼개던 문제 수리)
+  useEffect(() => { load() }, [selectedClass, dateFilter, customDate, subStatusFilter, groupBy])
 
   // 🆕 step431: URL ?class= 복원 — 학급 탭 "글 보기" 딥링크(tab=submissions&class=id).
   //   deps에 selectedClass 없음 → 드롭다운 수동 변경을 되돌리지 않음.
@@ -3442,7 +3459,8 @@ function AdminSubmissionsInner() {
     let query = supabase.from('submissions')
       .select('*, profiles!submissions_user_id_fkey(realname, nickname, username, number, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
-      .limit(selectedClass === 'all' ? 200 : 2000)  // 🆕 step431: 학급 지정 시 그 학급 전체 커버(상한 완화)
+      // 🆕 학급 지정=2000(그 학급 전체) / 묶음 모드=1000(전 학급 그룹핑용 완화) / 전체 flat=200(평시 무게 보존)
+      .limit(selectedClass !== 'all' ? 2000 : (groupBy !== 'flat' ? 1000 : 200))
 
     if (selectedClass !== 'all') {
       const { data: classStudents } = await supabase.from('profiles')
@@ -3572,7 +3590,9 @@ function AdminSubmissionsInner() {
           📝 학생 글 (최근 {submissions.length}건{sq ? ` · 검색 ${visibleSubmissions.length}건` : ''})
           {selectedClass === 'all' && (
             <span className="text-[10px] text-gray-400 font-normal ml-1.5">
-              전체 모드는 최근 200건만 — 특정 학급 글을 모두 보려면 학급을 선택하세요
+              {groupBy !== 'flat'
+                ? '묶음 보기는 최근 1000건 기준 — 한 학급 전체는 학급을 선택하세요'
+                : '전체 모드는 최근 200건만 — 특정 학급 글을 모두 보려면 학급을 선택하세요'}
             </span>
           )}
         </h3>
