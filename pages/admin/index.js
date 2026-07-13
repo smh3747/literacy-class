@@ -51,6 +51,14 @@ const OB_RESP_LABELS = {
   roster_hassle: '명렬표 번거로움', consent_burden: '동의 부담', just_looking: '둘러보는 중',
   clicked: '버튼 클릭', dismissed: '닫음 ✕',
 }
+// 🆕 step457: 응답 → 퍼널 상태 — 전진(버튼으로 응답한 모든 경우)/무시(닫음)/보류(둘러보는 중)
+const obOutcome = (response) =>
+  response === 'dismissed' ? 'ignore' : response === 'just_looking' ? 'hold' : 'forward'
+const OB_OUTCOME_META = {
+  forward: { emoji: '🟢', label: '전진', badge: 'bg-green-100 text-green-700' },
+  ignore:  { emoji: '⚪', label: '무시', badge: 'bg-gray-100 text-gray-500' },
+  hold:    { emoji: '🟡', label: '보류', badge: 'bg-amber-100 text-amber-700' },
+}
 
 // 🆕 step439: 쪽지 입력 자동 확장 — 내용만큼(최대 240px≈10줄, 초과 시 내부 스크롤)
 const autoGrowTextarea = (el) => {
@@ -170,6 +178,7 @@ export default function AdminHome() {
   const [preorderList, setPreorderList] = useState({ loaded: false, rows: [], error: null })  // 🆕 step382: 사전 신청 명단 (탭 열 때 로드)
   const [onboardingRows, setOnboardingRows] = useState(null)  // 🆕 다음 걸음 카드 응답 (사전 신청 탭에서 함께 로드, null=미로드)
   const [reviewShowReal, setReviewShowReal] = useState(false) // 🆕 step423: 홍보용 리뷰 실명 병기 토글(기본 off, 렌더만)
+  const [obFilter, setObFilter] = useState(null)              // 🆕 step457: 다음 걸음 응답 카드 유형 필터(null=전체)
   // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
   const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
@@ -2980,18 +2989,48 @@ export default function AdminHome() {
                     <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
                   ) : onboardingRows.length === 0 ? (
                     <div className="py-6 text-center text-sm text-gray-400">아직 응답이 없어요</div>
-                  ) : (
+                  ) : (() => {
+                    // 🆕 step457: 퍼널 요약(유형별 전진/무시/보류·전진율) + 교사별 연속 전진 집계 — 표시 전용
+                    const funnel = {}
+                    const forwardByTeacher = {}
+                    onboardingRows.forEach(o => {
+                      const f = (funnel[o.card_type] = funnel[o.card_type] || { forward: 0, ignore: 0, hold: 0 })
+                      const oc = obOutcome(o.response)
+                      f[oc]++
+                      if (oc === 'forward') forwardByTeacher[o.teacher_id] = (forwardByTeacher[o.teacher_id] || 0) + 1
+                    })
+                    const shownRows = obFilter ? onboardingRows.filter(o => o.card_type === obFilter) : onboardingRows
+                    return (
                     <>
-                      <p className="text-sm text-gray-600 mb-4">
-                        {['review', 'no_students', 'no_topics', 'no_class_run']
-                          .map(k => `${OB_CARD_LABELS[k]} ${onboardingRows.filter(o => o.card_type === k).length}`)
-                          .join(' · ')}
-                      </p>
+                      {/* 유형별 퍼널 카드 — 클릭 시 해당 유형만 필터(재클릭 해제) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                        {['no_students', 'no_topics', 'no_class_run', 'review'].map(k => {
+                          const f = funnel[k] || { forward: 0, ignore: 0, hold: 0 }
+                          const total = f.forward + f.ignore + f.hold
+                          const rate = total > 0 ? Math.round(f.forward / total * 100) : 0
+                          const on = obFilter === k
+                          return (
+                            <button key={k} onClick={() => setObFilter(on ? null : k)}
+                              className={`text-left rounded-xl border p-3 transition ${on ? 'ring-2 ring-indigo-300 border-transparent bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                              <div className="text-xs font-semibold text-gray-800">{OB_CARD_LABELS[k]}</div>
+                              <div className="text-[11px] text-gray-600 mt-1">🟢 전진 {f.forward} · ⚪ 무시 {f.ignore} · 🟡 보류 {f.hold}</div>
+                              <div className={`text-sm font-bold mt-0.5 ${rate >= 50 ? 'text-green-700' : 'text-gray-500'}`}>전진율 {rate}%</div>
+                            </button>
+                          )
+                        })}
+                      </div>
                       <div className="space-y-2">
-                        {onboardingRows.map((o, i) => (
+                        {shownRows.map((o, i) => {
+                          const oc = obOutcome(o.response)
+                          const om = OB_OUTCOME_META[oc]
+                          return (
                           <div key={`${o.teacher_id}-${o.card_type}` || i} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-semibold text-gray-800">{o.realname}</span>
+                              {/* 🆕 step457: 전진 응답 2개 이상 교사 — 활성 전환 유력 후보 */}
+                              {forwardByTeacher[o.teacher_id] >= 2 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-orange-100 text-orange-700">🔥 연속 전진 {forwardByTeacher[o.teacher_id]}</span>
+                              )}
                               {o.role === 'admin' && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-purple-100 text-purple-700">관리자</span>
                               )}
@@ -2999,15 +3038,19 @@ export default function AdminHome() {
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700">
                                 {OB_CARD_LABELS[o.card_type] || o.card_type}
                               </span>
-                              <span className="text-xs text-gray-700">{OB_RESP_LABELS[o.response] || o.response}</span>
+                              {/* 🆕 step457: 퍼널 상태 배지 + 원문 라벨 소자 보존 */}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${om.badge}`}>{om.emoji} {om.label}</span>
+                              <span className="text-[11px] text-gray-400">({OB_RESP_LABELS[o.response] || o.response})</span>
                               <span className="ml-auto text-xs text-gray-400">{toKST(o.created_at)}</span>
                             </div>
                             {o.comment && <div className="text-xs text-gray-600 mt-1.5 pl-2 border-l-2 border-indigo-100">{o.comment}</div>}
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </>
-                  )}
+                    )
+                  })()}
                 </div>
 
                 {/* 🆕 step423: 홍보용 리뷰 캡쳐 목록 — review+good+소감 있는 응답만, 마스킹 표기(렌더만) */}
