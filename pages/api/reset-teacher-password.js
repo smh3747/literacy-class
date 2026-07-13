@@ -82,9 +82,10 @@ export default async function handler(req, res) {
   }
 
   // step161: 초기화된 계정은 로그인 후 비번 변경을 강제 유도 (방치 방지)
+  // step453: must_setup_at — 로그인 시 닫기 불가 모달로 새 비번+이메일 등록 강제(완료 시 null)
   try {
     await supabaseAdmin.from('profiles')
-      .update({ must_change_password: true })
+      .update({ must_change_password: true, must_setup_at: new Date().toISOString() })
       .eq('id', teacherId)
   } catch (e) {
     console.warn('must_change_password 설정 실패(무시):', e?.message || e)

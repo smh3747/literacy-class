@@ -12,6 +12,8 @@ import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
 import SetupChecklist from '../../components/SetupChecklist'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import PasswordInput from '../../components/PasswordInput'
+import { isValidEmail } from '../../lib/email'
 import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
@@ -37,6 +39,14 @@ export default function TeacherHome() {
   // 🆕 step386: 복구용 이메일 미등록 배너 (합성 이메일 교사에게만, 닫기 유지)
   const [recoveryEmailMissing, setRecoveryEmailMissing] = useState(false)
   const [recoveryBannerHidden, setRecoveryBannerHidden] = useState(true)
+  // 🆕 step453: 비번 초기화 후 강제 설정 모달(새 비번+이메일, 닫기 불가)
+  const [mustSetup, setMustSetup] = useState(false)
+  const [hasRealEmail, setHasRealEmail] = useState(false)   // 실이메일 등록 계정이면 이메일 입력 생략
+  const [setupPw, setSetupPw] = useState('')
+  const [setupPw2, setSetupPw2] = useState('')
+  const [setupEmail, setSetupEmail] = useState('')
+  const [setupSaving, setSetupSaving] = useState(false)
+  const [setupError, setSetupError] = useState('')
   // 🆕 step380: 파운딩 멤버 사전 신청 (결제 아님, 관심 등록만). loaded=조회 성공(테이블 미생성이면 false→카드 숨김)
   // 🆕 step382: response('interested'|'not_sure') 응답 구분 추가
   const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
@@ -93,19 +103,65 @@ export default function TeacherHome() {
   useEffect(() => { checkAuth() }, [])
 
   // 🆕 step386: 복구용 이메일 등록 여부 — 본인 세션(비임퍼소네이션)에서만, 합성 이메일이면 배너
+  // 🆕 step453: 닫기=영구 아님 — 타임스탬프 저장, 7일 지나면 재노출(옛 값 '1'은 자동 재노출됨).
+  //   실이메일 여부(hasRealEmail)는 강제 설정 모달의 이메일 생략 판정에도 공용.
   useEffect(() => {
     if (!user?.id || user.role !== 'teacher' || isImpersonating) return
-    try { setRecoveryBannerHidden(!!localStorage.getItem('lc-recovery-email-banner-dismissed:' + user.id)) } catch { setRecoveryBannerHidden(false) }
+    try {
+      const ts = Number(localStorage.getItem('lc-recovery-email-banner-dismissed:' + user.id) || 0)
+      setRecoveryBannerHidden(Date.now() - ts < 7 * 24 * 3600 * 1000)
+    } catch { setRecoveryBannerHidden(false) }
     ;(async () => {
       const { data: { user: au } } = await supabase.auth.getUser()
       if (!au || au.id !== user.id) return
-      setRecoveryEmailMissing((au.email || '').endsWith('@writing.class'))
+      const missing = (au.email || '').endsWith('@writing.class')
+      setRecoveryEmailMissing(missing)
+      setHasRealEmail(!missing)
     })()
   }, [user?.id, isImpersonating, showProfileModal])  // 모달 닫힘 후 재평가(등록 완료 시 배너 소멸)
 
   const dismissRecoveryBanner = () => {
     setRecoveryBannerHidden(true)
-    if (user?.id) { try { localStorage.setItem('lc-recovery-email-banner-dismissed:' + user.id, '1') } catch {} }
+    if (user?.id) { try { localStorage.setItem('lc-recovery-email-banner-dismissed:' + user.id, String(Date.now())) } catch {} }
+  }
+
+  // 🆕 step453: 강제 설정 저장 — ①새 비번으로 변경 ②(필요 시) 새 비번으로 재인증해 이메일 등록
+  //   ③두 플래그(must_setup_at·must_change_password) 해제. 단계별 실패는 모달 유지+에러 표시.
+  const submitSetup = async () => {
+    if (setupSaving) return
+    setSetupError('')
+    if (setupPw.length < 6) return setSetupError('새 비밀번호는 6자 이상이어야 해요')
+    if (setupPw !== setupPw2) return setSetupError('새 비밀번호가 일치하지 않아요')
+    const needEmail = !hasRealEmail
+    const email = setupEmail.trim().toLowerCase()
+    if (needEmail && !isValidEmail(email)) return setSetupError('이메일 주소를 정확히 입력해주세요')
+    setSetupSaving(true)
+    try {
+      // ① 비밀번호 먼저 변경 (이후 이메일 API 재인증은 새 비번으로 통과)
+      const { error: pwErr } = await supabase.auth.updateUser({ password: setupPw })
+      if (pwErr) throw new Error('비밀번호 변경 실패: ' + pwErr.message)
+      // ② 이메일 등록 (기존 teacher-update-email 흐름 재사용)
+      if (needEmail) {
+        const { data: { session } } = await supabase.auth.getSession()
+        const r = await fetch('/api/teacher-update-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, currentPassword: setupPw, accessToken: session?.access_token }),
+        })
+        const j = await r.json()
+        if (!r.ok) throw new Error(j.error || '이메일 등록 실패')
+      }
+      // ③ 플래그 해제 (step161 잔존 배너 방지 위해 must_change_password도 함께)
+      await supabase.from('profiles')
+        .update({ must_setup_at: null, must_change_password: false })
+        .eq('id', user.id)
+      setMustSetup(false)
+      setMustChangePw(false)
+      setSetupPw(''); setSetupPw2(''); setSetupEmail('')
+    } catch (e) {
+      setSetupError(e?.message || '저장에 실패했어요. 잠시 후 다시 시도해주세요.')
+    }
+    setSetupSaving(false)
   }
 
   // 🆕 step380: 사전 신청 상태 조회 — 테이블·컬럼 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
@@ -358,8 +414,11 @@ export default function TeacherHome() {
     setUser(profile)
     setClassInfo(profile.classes)
 
-    // 🆕 step161: 비번 초기화된 계정이면 변경 모달 자동 노출 (임퍼소네이션 중엔 제외)
-    if (profile.must_change_password && !imp) {
+    // 🆕 step453: 초기화된 계정은 닫기 불가 설정 모달(새 비번+이메일) 우선 — step161 모달과 배타
+    if (profile.must_setup_at && !imp) {
+      setMustSetup(true)
+    } else if (profile.must_change_password && !imp) {
+      // 🆕 step161: 비번 초기화된 계정이면 변경 모달 자동 노출 (임퍼소네이션 중엔 제외)
       setMustChangePw(true)
       setShowPwModal(true)
     }
@@ -861,16 +920,17 @@ export default function TeacherHome() {
           {bannersBlock}
 
           {/* 🆕 step386: 복구용 이메일 등록 배너 (합성 이메일 교사에게만, 등록 기능은 내 정보 수정에) */}
-          {user?.role === 'teacher' && !isImpersonating && recoveryEmailMissing && !recoveryBannerHidden && (
+          {/* 🆕 step453: 강제 모달 대상(must_setup_at)은 배너 생략(중복 방지). 닫기=7일 뒤 재노출 */}
+          {user?.role === 'teacher' && !isImpersonating && recoveryEmailMissing && !recoveryBannerHidden && !mustSetup && (
             <div className="relative bg-blue-50 border border-blue-200 rounded-2xl p-4">
               <button onClick={dismissRecoveryBanner} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
               <p className="text-sm text-blue-900 break-keep pr-6 mb-2">
-                비밀번호를 잊었을 때를 대비해 이메일을 등록해 주세요. 등록해 두면 이메일로 바로 재설정할 수 있어요.
+                📧 이메일을 등록하면 비밀번호를 잊어도 스스로 바로 재설정할 수 있어요.
               </p>
               <button onClick={() => setShowProfileModal(true)}
                 className="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-700 transition">
-                내 정보 수정 열기
+                1분 만에 등록하기
               </button>
             </div>
           )}
@@ -1182,6 +1242,53 @@ export default function TeacherHome() {
           />
         )}
         {showProfileModal && <ProfileEditModal user={user} onClose={() => setShowProfileModal(false)} onUpdate={checkAuth} />}
+
+        {/* 🆕 step453: 비번 초기화 후 강제 설정 모달 — 닫기 불가(✕·배경 클릭·ESC 없음). 완료해야 해제 */}
+        {mustSetup && !isImpersonating && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h3 className="text-lg font-bold mb-2">🔐 새 비밀번호와 이메일을 설정해주세요</h3>
+              <p className="text-sm text-gray-600 break-keep mb-4">
+                임시 비밀번호로 로그인하셨어요. 새 비밀번호를 정하고, 다음부터 스스로 재설정할 수 있게 이메일을 등록해 주세요.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">새 비밀번호</label>
+                  <PasswordInput value={setupPw} onChange={e => setSetupPw(e.target.value)}
+                    placeholder="6자 이상" autoComplete="new-password"
+                    className="w-full p-3 border border-gray-200 rounded-lg" />
+                  {setupPw && (setupPw.length >= 6
+                    ? <p className="text-xs text-green-600 mt-1">✓ 6자 이상</p>
+                    : <p className="text-xs text-gray-400 mt-1">6자 이상 입력해주세요</p>)}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">새 비밀번호 확인</label>
+                  <PasswordInput value={setupPw2} onChange={e => setSetupPw2(e.target.value)}
+                    autoComplete="new-password"
+                    className="w-full p-3 border border-gray-200 rounded-lg" />
+                  {setupPw2 && (setupPw2 === setupPw
+                    ? <p className="text-xs text-green-600 mt-1">✓ 새 비밀번호와 일치해요</p>
+                    : <p className="text-xs text-red-600 mt-1">새 비밀번호가 일치하지 않아요</p>)}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">이메일</label>
+                  {hasRealEmail ? (
+                    <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">등록됨 ✓ 새 비밀번호만 정하면 돼요</p>
+                  ) : (
+                    <input type="email" value={setupEmail} onChange={e => setSetupEmail(e.target.value)}
+                      placeholder="예: kim@naver.com" autoComplete="email"
+                      className="w-full p-3 border border-gray-200 rounded-lg" />
+                  )}
+                </div>
+                {setupError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded whitespace-pre-wrap">{setupError}</div>}
+                <button onClick={submitSetup} disabled={setupSaving}
+                  className="w-full py-2.5 bg-primary text-white rounded-xl font-semibold text-sm disabled:opacity-50">
+                  {setupSaving ? '저장 중...' : '설정 완료'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 🆕 다음 걸음 모달 — 막힌 분기 3종(no_students·no_topics·no_class_run). '도움'이라 모달 정당(수업 0회라 방해할 작업 없음).
             ✕·오버레이 클릭·ESC 모두 dismissed 기록(평생 1회). review는 위 인라인 배너. 패턴=PasswordChangeModal */}
