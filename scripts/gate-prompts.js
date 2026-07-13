@@ -107,7 +107,9 @@ const { pathToFileURL } = require('url')
       aPass ? '출력 동일, 이전 맥락 문구 없음' : (base === withNulls ? '이전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
 
     // (b) 전체 주입: 블록 표제·점수·지적 목록·총평·일관성 규칙 포함
-    const bPhrases = ['[이전 채점 정보]', '75점', '어느날 → 어느 날', '문단 구분 필요', '다시 포함', '낮은 점수를 주지 마세요']
+    // step455: 보상 규칙 3문구 추가(고친 항목 점수 상승 선반영·총점 하락 조건·잘 고친 점 먼저)
+    const bPhrases = ['[이전 채점 정보]', '75점', '어느날 → 어느 날', '문단 구분 필요', '다시 포함', '낮은 점수를 주지 마세요',
+      '점수 상승으로 반드시 먼저 반영', '뚜렷이 초과해야', '잘 고쳤는지']
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
