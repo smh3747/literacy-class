@@ -53,6 +53,7 @@ const { pathToFileURL } = require('url')
     { name: '규칙 12(조사 떼기 금지)',      text: '조사는 항상 붙여 씁니다' },
     { name: '규칙 12(가운뎃점 변경 금지)',  text: '가운뎃점' },
     { name: '규칙 12(복합명사 핑퐁 금지)',  text: '둘 다 허용' },
+    { name: '규칙 12(자리 잡다 핑퐁 금지)', text: '다시 반대로 교정하는 것은 절대 금지' }, // step456
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
@@ -75,6 +76,7 @@ const { pathToFileURL } = require('url')
       { name: '규칙 12(조사 떼기 금지)',     text: '조사는 항상 붙여 씁니다' },
       { name: '규칙 12(가운뎃점 변경 금지)', text: '가운뎃점' },
       { name: '규칙 12(복합명사 핑퐁 금지)', text: '둘 다 허용' },
+      { name: '규칙 12(자리 잡다 핑퐁 금지)', text: '다시 반대로 교정하는 것은 절대 금지' }, // step456
     ]
     const inlinePrompts = {}
     try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
@@ -109,7 +111,8 @@ const { pathToFileURL } = require('url')
     // (b) 전체 주입: 블록 표제·점수·지적 목록·총평·일관성 규칙 포함
     // step455: 보상 규칙 3문구 추가(고친 항목 점수 상승 선반영·총점 하락 조건·잘 고친 점 먼저)
     const bPhrases = ['[이전 채점 정보]', '75점', '어느날 → 어느 날', '문단 구분 필요', '다시 포함', '낮은 점수를 주지 마세요',
-      '점수 상승으로 반드시 먼저 반영', '뚜렷이 초과해야', '잘 고쳤는지']
+      '점수 상승으로 반드시 먼저 반영', '뚜렷이 초과해야', '잘 고쳤는지',
+      '표준 표기가 확실한지 다시 확인'] // step456: 이월 지적 재인용 가드
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
