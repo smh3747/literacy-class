@@ -14,6 +14,7 @@ import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import PasswordInput from '../../components/PasswordInput'
 import { isValidEmail } from '../../lib/email'
+import { getAuthErrorMessage } from '../../lib/authErrors'
 import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
@@ -139,7 +140,7 @@ export default function TeacherHome() {
     try {
       // ① 비밀번호 먼저 변경 (이후 이메일 API 재인증은 새 비번으로 통과)
       const { error: pwErr } = await supabase.auth.updateUser({ password: setupPw })
-      if (pwErr) throw new Error('비밀번호 변경 실패: ' + pwErr.message)
+      if (pwErr) throw new Error(getAuthErrorMessage(pwErr))  // step454: 영어 날것 노출 방지
       // ② 이메일 등록 (기존 teacher-update-email 흐름 재사용)
       if (needEmail) {
         const { data: { session } } = await supabase.auth.getSession()
@@ -158,6 +159,8 @@ export default function TeacherHome() {
       setMustSetup(false)
       setMustChangePw(false)
       setSetupPw(''); setSetupPw2(''); setSetupEmail('')
+      // step454: 이메일 등록 완료 즉시 배너 판정 갱신 — updateUserById(email_confirm: true)라 대기 상태 없이 교체 완료
+      if (needEmail) { setHasRealEmail(true); setRecoveryEmailMissing(false) }
     } catch (e) {
       setSetupError(e?.message || '저장에 실패했어요. 잠시 후 다시 시도해주세요.')
     }

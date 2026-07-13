@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import SchoolAutocomplete from './SchoolAutocomplete'
 import PasswordInput from './PasswordInput'
 import { isValidEmail } from '../lib/email'
+import { getAuthErrorMessage } from '../lib/authErrors'
 
 export default function ProfileEditModal({ user, onClose, onUpdate }) {
   const [realname, setRealname] = useState('')
@@ -104,7 +105,7 @@ export default function ProfileEditModal({ user, onClose, onUpdate }) {
       onUpdate?.()
       setTimeout(() => onClose(), 1500)
     } catch(e) {
-      setError(e.message || '저장 실패')
+      setError(getAuthErrorMessage(e))  // step454: 영어 날것 노출 방지(한글 API 에러는 그대로 통과)
     }
     setLoading(false)
   }

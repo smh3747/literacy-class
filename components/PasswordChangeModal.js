@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import PasswordInput from './PasswordInput'
+import { getAuthErrorMessage } from '../lib/authErrors'
 
 export default function PasswordChangeModal({ onClose, onSuccess }) {
   const [currentPw, setCurrentPw] = useState('')
@@ -50,7 +51,7 @@ export default function PasswordChangeModal({ onClose, onSuccess }) {
       setSuccess(true)
       setTimeout(() => onClose(), 2000)
     } catch(e) {
-      setError(e.message || '비밀번호 변경 실패')
+      setError(getAuthErrorMessage(e))  // step454: 영어 날것 노출 방지
     }
     setLoading(false)
   }
