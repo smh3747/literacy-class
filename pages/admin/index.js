@@ -181,8 +181,11 @@ export default function AdminHome() {
   const [reviewShowReal, setReviewShowReal] = useState(false) // 🆕 step423: 홍보용 리뷰 실명 병기 토글(기본 off, 렌더만)
   const [obFilter, setObFilter] = useState(null)              // 🆕 step457: 다음 걸음 응답 카드 유형 필터(null=전체)
   // 🆕 step462: 주제 공급 탭 — AI 생성 → 검수 편집 → 발행(즉시/예약)
-  const [supplyForm, setSupplyForm] = useState({ supplyType: '시사', keyword: '', gradeLabel: '' })
+  // 🆕 step464: 원버튼 시사 3후보 + 학년대(gradeBand)
+  const [supplyForm, setSupplyForm] = useState({ supplyType: '시사', keyword: '', gradeBand: '공통' })
   const [supplyGenerating, setSupplyGenerating] = useState(false)
+  const [supplyBatchGenerating, setSupplyBatchGenerating] = useState(false)
+  const [supplyCandidates, setSupplyCandidates] = useState(null)   // 원버튼 결과 후보 3개
   const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[] } — 편집 폼
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
@@ -740,7 +743,7 @@ export default function AdminHome() {
     if (tab !== 'supply' || supplyList.loaded) return
     ;(async () => {
       const { data } = await supabase.from('topics')
-        .select('id, title, supply_type, publish_week, published_at, created_at')
+        .select('id, title, supply_type, supply_grade, publish_week, published_at, created_at')
         .not('supply_type', 'is', null)
         .order('created_at', { ascending: false }).limit(100)
       setSupplyList({ loaded: true, rows: data || [] })
@@ -757,7 +760,7 @@ export default function AdminHome() {
     try {
       const result = await callAI('supplyTopic', {
         keyword, supplyType: supplyForm.supplyType,
-        gradeLabel: supplyForm.gradeLabel || undefined,
+        gradeBand: supplyForm.gradeBand,
       }, { classId: keyedClass.id })
       setSupplyDraft({
         title: result?.title || '',
@@ -771,6 +774,36 @@ export default function AdminHome() {
       alert('생성에 실패했어요: ' + (e?.message || ''))
     }
     setSupplyGenerating(false)
+  }
+
+  // 🆕 step464: 원버튼 시사 — AI가 소재 3개 선정 → 후보 3개 생성(키워드 불필요)
+  const generateSupplyBatch = async () => {
+    const keyedClass = classes.find(c => c.has_api_key)
+    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
+    setSupplyBatchGenerating(true)
+    try {
+      const result = await callAI('supplyTopicBatch', { gradeBand: supplyForm.gradeBand }, { classId: keyedClass.id })
+      const list = Array.isArray(result?.topics) ? result.topics.slice(0, 3) : []
+      if (list.length === 0) throw new Error('후보를 만들지 못했어요. 다시 시도해주세요.')
+      setSupplyCandidates(list)
+      setSupplyDraft(null)   // 이전 편집 초안은 접기(후보 선택으로 다시 로드)
+    } catch (e) {
+      alert('생성에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplyBatchGenerating(false)
+  }
+
+  // 🆕 step464: 후보 선택 → 기존 편집 폼(supplyDraft)에 로드 — 이후 편집·발행 흐름 동일
+  const pickSupplyCandidate = (c) => {
+    setSupplyForm(prev => ({ ...prev, supplyType: '시사' }))
+    setSupplyDraft({
+      title: c.title || '',
+      background: c.background || '',
+      guideQuestion: c.guide_question || '',
+      rubrics: Array.isArray(c.rubrics) && c.rubrics.length > 0
+        ? c.rubrics.map(r => ({ name: r.name || '', hint: r.hint || '', score: Number(r.score) || 0 }))
+        : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+    })
   }
 
   // 🆕 step462: 발행/예약 발행 — 검수 편집 폼을 거쳐야만 저장(생성 즉시 발행 불가 원칙)
@@ -796,6 +829,7 @@ export default function AdminHome() {
         date: kstYmd, title, description, rubrics,
         teacher_id: user.id,                      // 공급 주제 = 관리자 소유(topics 관행상 class_id 미사용)
         supply_type: supplyForm.supplyType,
+        supply_grade: supplyForm.gradeBand,       // step464: 대상 학년대
         publish_week: kstIsoWeek(),
         published_at: publishedAt,
       })
@@ -3047,39 +3081,69 @@ export default function AdminHome() {
                 <p className="text-xs text-gray-500">키워드로 주제 초안을 만들고, 검수·수정한 뒤 발행하세요. 발행된 주제는 2차 작업에서 교사에게 노출돼요.</p>
               </div>
 
-              {/* 생성 입력폼 */}
-              <div className="flex items-end gap-2 flex-wrap">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">유형</label>
-                  <select value={supplyForm.supplyType}
-                    onChange={e => setSupplyForm(prev => ({ ...prev, supplyType: e.target.value }))}
-                    className="text-sm border border-gray-200 rounded-lg p-2">
-                    <option value="시사">시사</option>
-                    <option value="교육과정">교육과정</option>
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <label className="block text-xs text-gray-600 mb-1">키워드</label>
-                  <input type="text" value={supplyForm.keyword}
-                    onChange={e => setSupplyForm(prev => ({ ...prev, keyword: e.target.value }))}
-                    placeholder="예: 폭염과 전기요금, 우주 쓰레기"
-                    className="w-full text-sm border border-gray-200 rounded-lg p-2" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">대상 학년(선택)</label>
-                  <select value={supplyForm.gradeLabel}
-                    onChange={e => setSupplyForm(prev => ({ ...prev, gradeLabel: e.target.value }))}
-                    className="text-sm border border-gray-200 rounded-lg p-2">
-                    <option value="">공통(5~6학년)</option>
-                    <option value="초등 5학년">5학년</option>
-                    <option value="초등 6학년">6학년</option>
-                  </select>
-                </div>
-                <button onClick={generateSupplyTopic} disabled={supplyGenerating}
-                  className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
-                  {supplyGenerating ? '생성 중...' : '✨ AI 생성'}
-                </button>
+              {/* 🆕 step464: 학년대 선택(원버튼·키워드 생성 공용) + 원버튼 시사 생성 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-600">대상 학년대:</span>
+                {['3~4학년', '5~6학년', '공통'].map(g => (
+                  <button key={g} onClick={() => setSupplyForm(prev => ({ ...prev, gradeBand: g }))}
+                    className={`text-xs px-2.5 py-1.5 rounded-lg border transition ${supplyForm.gradeBand === g
+                      ? 'bg-gray-800 text-white border-gray-800'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                    {g}
+                  </button>
+                ))}
               </div>
+              <div>
+                <button onClick={generateSupplyBatch} disabled={supplyBatchGenerating}
+                  className="w-full sm:w-auto text-sm bg-indigo-600 text-white font-bold px-6 py-3 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
+                  {supplyBatchGenerating ? '소재 고르고 후보 만드는 중... (조금 걸려요)' : '🗞️ 오늘의 시사 주제 만들기'}
+                </button>
+                <p className="text-[11px] text-gray-400 mt-1">소재는 AI가 오늘 날짜 기준 시기 지식(계절·학사 일정·연중 이슈)으로 골라요. 실시간 뉴스 검색은 아니에요.</p>
+              </div>
+
+              {/* 🆕 step464: 후보 3장 — 골라서 편집 폼으로 */}
+              {supplyCandidates && (
+                <div className="grid sm:grid-cols-3 gap-2">
+                  {supplyCandidates.map((c, i) => (
+                    <div key={i} className="border border-gray-200 rounded-xl p-3 flex flex-col">
+                      <p className="text-[11px] text-indigo-600 mb-1">💡 {c.material}</p>
+                      <p className="text-sm font-bold text-gray-900">{c.title}</p>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-3 flex-1">{c.background}</p>
+                      <button onClick={() => pickSupplyCandidate(c)}
+                        className="mt-2 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">
+                        ✏️ 이걸로 편집
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 키워드 지정 생성(보조) — 특정 소재를 지정하고 싶을 때 */}
+              <details className="border border-gray-100 rounded-xl p-3">
+                <summary className="text-xs font-semibold text-gray-600 cursor-pointer select-none">🔎 특정 소재를 지정하고 싶을 때 (키워드 생성)</summary>
+                <div className="flex items-end gap-2 flex-wrap mt-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">유형</label>
+                    <select value={supplyForm.supplyType}
+                      onChange={e => setSupplyForm(prev => ({ ...prev, supplyType: e.target.value }))}
+                      className="text-sm border border-gray-200 rounded-lg p-2">
+                      <option value="시사">시사</option>
+                      <option value="교육과정">교육과정</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-xs text-gray-600 mb-1">키워드</label>
+                    <input type="text" value={supplyForm.keyword}
+                      onChange={e => setSupplyForm(prev => ({ ...prev, keyword: e.target.value }))}
+                      placeholder="예: 폭염과 전기요금, 우주 쓰레기"
+                      className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                  </div>
+                  <button onClick={generateSupplyTopic} disabled={supplyGenerating}
+                    className="text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
+                    {supplyGenerating ? '생성 중...' : '✨ AI 생성'}
+                  </button>
+                </div>
+              </details>
 
               {/* 검수 편집 폼 — 생성 즉시 발행 불가, 반드시 여기를 거쳐 [발행]으로만 */}
               {supplyDraft && (
@@ -3155,6 +3219,7 @@ export default function AdminHome() {
                       return (
                         <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
+                          {t.supply_grade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{t.supply_grade}</span>}
                           <span className="text-xs text-gray-400">{t.publish_week}</span>
                           <span className="text-sm font-semibold text-gray-800">{t.title}</span>
                           {!t.published_at ? (

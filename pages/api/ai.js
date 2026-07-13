@@ -17,7 +17,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
-import { supplyTopicPrompt, supplyTopicSchema } from '../../lib/supplyTopicPrompt.server'
+import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema } from '../../lib/supplyTopicPrompt.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -360,13 +360,15 @@ export default async function handler(req, res) {
       schema = briefingSchema
       opts = { taskType: 'quality', maxTokens: 800, temperature: 0.4 }
 
-    } else if (type === 'supplyTopic') {
-      // 🆕 step462: 공급 주제 생성 — 관리자 전용(발행 도구). 프롬프트·스키마는 별도 파일.
-      const { keyword } = payload || {}
-      if (!keyword || !String(keyword).trim()) {
-        return res.status(400).json({ error: '키워드를 입력해주세요' })
+    } else if (type === 'supplyTopic' || type === 'supplyTopicBatch') {
+      // 🆕 step462·464: 공급 주제 생성(키워드 단건 / 원버튼 시사 3후보) — 관리자 전용(발행 도구).
+      if (type === 'supplyTopic') {
+        const { keyword } = payload || {}
+        if (!keyword || !String(keyword).trim()) {
+          return res.status(400).json({ error: '키워드를 입력해주세요' })
+        }
       }
-      // 관리자 검증 — resolveApiKey는 role을 반환하지 않으므로 여기서 확인
+      // 관리자 검증 — resolveApiKey는 role을 반환하지 않으므로 여기서 확인(두 타입 공용)
       try {
         const adminClient = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -380,9 +382,15 @@ export default async function handler(req, res) {
       } catch (e) {
         return res.status(500).json({ error: '권한 확인에 실패했어요' })
       }
-      prompt = supplyTopicPrompt(payload || {})
-      schema = supplyTopicSchema
-      opts = { taskType: 'creative', maxTokens: 6000, temperature: 0.7 }
+      if (type === 'supplyTopicBatch') {
+        prompt = supplyTopicBatchPrompt(payload || {})
+        schema = supplyTopicBatchSchema
+        opts = { taskType: 'creative', maxTokens: 16000, temperature: 0.8 }
+      } else {
+        prompt = supplyTopicPrompt(payload || {})
+        schema = supplyTopicSchema
+        opts = { taskType: 'creative', maxTokens: 6000, temperature: 0.7 }
+      }
 
     } else {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
