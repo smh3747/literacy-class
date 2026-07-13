@@ -3000,6 +3000,54 @@ export default function AdminHome() {
                       if (oc === 'forward') forwardByTeacher[o.teacher_id] = (forwardByTeacher[o.teacher_id] || 0) + 1
                     })
                     const shownRows = obFilter ? onboardingRows.filter(o => o.card_type === obFilter) : onboardingRows
+
+                    // 🆕 step459: 규칙 기반 자동 진단(프론트 계산, AI 아님) — 숫자를 결론·액션 문장으로
+                    const totalResponses = onboardingRows.length
+                    const rateOf = (k) => {
+                      const f = funnel[k] || { forward: 0, ignore: 0, hold: 0 }
+                      const total = f.forward + f.ignore + f.hold
+                      return { total, rate: total > 0 ? Math.round(f.forward / total * 100) : 0 }
+                    }
+                    const diagnosis = []
+                    if (totalResponses >= 10) {
+                      // 최저/최고 판정: 응답 5건 이상 유형만(소표본 왜곡 방지 — 후기 1건은 자동 제외)
+                      const eligible = Object.keys(OB_CARD_LABELS)
+                        .map(k => ({ k, ...rateOf(k) })).filter(x => x.total >= 5)
+                      if (eligible.length > 0) {
+                        const worst = [...eligible].sort((a, b) => a.rate - b.rate)[0]
+                        diagnosis.push(`⚠️ ${OB_CARD_LABELS[worst.k]} 카드가 가장 안 통해요 (전진율 ${worst.rate}%) — 문구·방법 안내를 손볼 후보예요.`)
+                        const best = [...eligible].sort((a, b) => b.rate - a.rate)[0]
+                        if (best.k !== worst.k && best.rate >= 50) {
+                          diagnosis.push(`✅ ${OB_CARD_LABELS[best.k]} 카드는 잘 작동 중이에요 (전진율 ${best.rate}%).`)
+                        }
+                        // 계단 패턴: 온보딩 퍼널 순서(review는 퍼널 밖이라 제외)에서 전진율 단조 증가
+                        const ladder = ['no_students', 'no_topics', 'no_class_run']
+                          .map(k => ({ k, ...rateOf(k) })).filter(x => x.total > 0)
+                        const ascending = ladder.length >= 2 && ladder.every((x, i) => i === 0 || x.rate >= ladder[i - 1].rate)
+                        if (ascending && ladder[0].rate < ladder[ladder.length - 1].rate) {
+                          diagnosis.push(`💡 첫 관문(${OB_CARD_LABELS[ladder[0].k]})만 넘으면 이후 단계는 잘 진행돼요 — 개선 효과가 가장 큰 지점이에요.`)
+                        }
+                      }
+                    }
+                    // 추적 대상: 연속 전진(≥2) / 최근 7일 무시 ≥2 + 전진 0
+                    const nameOf = {}
+                    onboardingRows.forEach(o => { if (!nameOf[o.teacher_id]) nameOf[o.teacher_id] = o.realname })
+                    const watchIds = Object.keys(forwardByTeacher).filter(id => forwardByTeacher[id] >= 2)
+                    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
+                    const ignoreByTeacher = {}
+                    onboardingRows.forEach(o => {
+                      if (obOutcome(o.response) === 'ignore' && new Date(o.created_at).getTime() > weekAgo) {
+                        ignoreByTeacher[o.teacher_id] = (ignoreByTeacher[o.teacher_id] || 0) + 1
+                      }
+                    })
+                    const coldIds = Object.keys(ignoreByTeacher)
+                      .filter(id => ignoreByTeacher[id] >= 2 && !(forwardByTeacher[id] > 0))
+                    // 이름 클릭 → 선생님 탭에 그 교사가 검색된 상태로 이동(기존 탭 전환 패턴)
+                    const goToTeacher = (name) => {
+                      setTeacherSearch(name || '')
+                      router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'overview' } }, undefined, { shallow: true })
+                      setTabState('overview')
+                    }
                     return (
                     <>
                       {/* 유형별 퍼널 카드 — 클릭 시 해당 유형만 필터(재클릭 해제) */}
@@ -3019,6 +3067,52 @@ export default function AdminHome() {
                           )
                         })}
                       </div>
+
+                      {/* 🆕 step459: 읽는 법·다음 액션 — 규칙 기반 자동 해석 */}
+                      <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3.5 mb-4">
+                        <div className="text-xs font-bold text-gray-800 mb-1.5">📌 읽는 법·다음 액션</div>
+                        <p className="text-[11px] text-gray-400 mb-2">🟢 전진=카드 버튼을 눌러 안내대로 행동 · ⚪ 무시=닫음 · 🟡 보류=열어만 봄</p>
+                        {totalResponses < 10 ? (
+                          <p className="text-xs text-gray-500">아직 데이터가 적어요. 응답이 쌓이면 진단이 표시돼요.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {diagnosis.map((d, i) => (
+                              <p key={i} className="text-xs text-gray-700 break-keep">{d}</p>
+                            ))}
+                            {watchIds.length > 0 && (
+                              <p className="text-xs text-gray-700 break-keep">
+                                🔥 지켜볼 선생님:{' '}
+                                {watchIds.map((id, i) => (
+                                  <span key={id}>
+                                    {i > 0 && ', '}
+                                    <button onClick={() => goToTeacher(nameOf[id])}
+                                      className="text-indigo-700 font-semibold underline decoration-dotted hover:text-indigo-900">
+                                      {nameOf[id] || '(이름 없음)'}
+                                    </button>
+                                  </span>
+                                ))}
+                                {' '}— 며칠 내 활성 전환 여부를 선생님 탭에서 확인하세요.
+                              </p>
+                            )}
+                            {coldIds.length > 0 && (
+                              <p className="text-xs text-gray-700 break-keep">
+                                🧊 카드가 안 통한 선생님:{' '}
+                                {coldIds.map((id, i) => (
+                                  <span key={id}>
+                                    {i > 0 && ', '}
+                                    <button onClick={() => goToTeacher(nameOf[id])}
+                                      className="text-indigo-700 font-semibold underline decoration-dotted hover:text-indigo-900">
+                                      {nameOf[id] || '(이름 없음)'}
+                                    </button>
+                                  </span>
+                                ))}
+                                {' '}— 쪽지 등 다른 접근이 필요할 수 있어요.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="space-y-2">
                         {shownRows.map((o, i) => {
                           const oc = obOutcome(o.response)
