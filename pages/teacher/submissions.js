@@ -412,7 +412,10 @@ export default function TeacherSubmissions() {
     const { error } = await supabase.from('submissions').update({ extra_rewrite_allowed: true }).eq('id', subId)
     if (error) return alert('실패: ' + error.message)
     alert('✅ 추가 수정이 허용되었어요!')
-    openTopic(selectedTopic) // 새로고침
+    // step473: 전체 리로드(openTopic) 대신 로컬 패치 — 화면 그 자리 유지(patchLocalCorrections 패턴)
+    const patch = (it) => (it.id === subId ? { ...it, extra_rewrite_allowed: true } : it)
+    setTopicStudents(prev => prev.map(g => ({ ...g, items: g.items.map(patch) })))
+    setSelectedStudent(prev => (prev ? { ...prev, items: prev.items.map(patch) } : prev))
   }
 
   // 🗑️ 쓰레기통으로 이동 (soft delete, 30일 후 자동 영구 삭제)
