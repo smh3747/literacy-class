@@ -1544,14 +1544,14 @@ export default function TopicsPage() {
                 const rubricLocked = !!editingTopicId && editLocked
                 return (
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-y-1 mb-2">
                   <label className="text-sm font-medium">
                     평가 기준 (총 <span className={totalMax !== 100 ? 'text-red-600 font-bold' : ''}>{totalMax}</span>점)
                     {totalMax !== 100 && <span className="ml-1.5 text-xs text-red-600">⚠️ 합계 100이어야 저장돼요</span>}
-                    {/* 🆕 step469: 비율 유지한 채 합 100으로 자동 조정(잠금·합0이면 숨김) */}
+                    {/* 🆕 step469: 비율 유지한 채 합 100으로 자동 조정(잠금·합0이면 숨김) — step470: 실제 버튼으로 강조 */}
                     {totalMax !== 100 && totalMax > 0 && !rubricLocked && (
                       <button onClick={() => setRubrics(normalizeRubrics(rubrics))}
-                        className="ml-1.5 text-xs text-primary hover:underline">➗ 100점에 맞게 조정</button>
+                        className="ml-1.5 inline-flex items-center px-2.5 py-1 text-xs font-semibold text-white bg-primary rounded-lg shadow-sm hover:opacity-90 animate-pulse">➗ 100점에 맞게 조정</button>
                     )}
                   </label>
                   {!rubricLocked && <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>}
