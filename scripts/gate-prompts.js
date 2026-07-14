@@ -15,7 +15,7 @@ const { pathToFileURL } = require('url')
 ;(async () => {
   const pPath = path.join(__dirname, '..', 'lib', 'prompts.server.js')
   const mod = await import(pathToFileURL(pPath).href)
-  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt, tutorChatPrompt } = mod
+  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt, tutorChatPrompt, topicBatchPrompt } = mod
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -185,6 +185,28 @@ const { pathToFileURL } = require('url')
     }
   } catch (e) {
     rec('TUTOR', 'tutorChatPrompt 생성', false, `예외: ${e.message}`)
+  }
+
+  // ── TOPICMIX: 개별 주제 추천 시사·주장 글감 구비 + 아동 적합성 (step478) ──
+  // 구비 규칙은 count>=2 & (batch면 theme 없음)일 때만, 아동 적합성은 항상.
+  try {
+    const base = { gradeText: '초등 5학년', count: 3, recentTitles: '', categoryText: '일상', levelText: '보통' }
+    const sug3 = topicBatchPrompt({ ...base, style: 'suggest' })
+    const bat3 = topicBatchPrompt({ ...base, style: 'batch' })
+    const batTheme = topicBatchPrompt({ ...base, style: 'batch', theme: '우주 탐험' })
+    const sug1 = topicBatchPrompt({ ...base, count: 1, style: 'suggest' })
+    const MIX = ['시사·사회적 소재', '주장하는 글', '아는 척하지 말고']
+
+    const p1 = MIX.every(t => sug3.includes(t))
+    rec('TOPICMIX', 'suggest(3개) 구비+적합성 포함', p1, p1 ? '3문구 포함' : `누락: ${MIX.filter(t => !sug3.includes(t)).join(' / ')}`)
+    const p2 = MIX.every(t => bat3.includes(t))
+    rec('TOPICMIX', 'batch(3개) 구비+적합성 포함', p2, p2 ? '3문구 포함' : `누락: ${MIX.filter(t => !bat3.includes(t)).join(' / ')}`)
+    const p3 = !batTheme.includes('시사·사회적 소재') && batTheme.includes('아는 척하지 말고')
+    rec('TOPICMIX', 'batch(theme) 구비 생략·적합성 유지', p3, p3 ? 'theme 우선 확인' : `구비생략=${!batTheme.includes('시사·사회적 소재')}, 적합성=${batTheme.includes('아는 척하지 말고')}`)
+    const p4 = !sug1.includes('시사·사회적 소재') && sug1.includes('아는 척하지 말고')
+    rec('TOPICMIX', 'suggest(1개) 구비 생략·적합성 유지', p4, p4 ? 'count=1 모순 방지 확인' : `구비생략=${!sug1.includes('시사·사회적 소재')}, 적합성=${sug1.includes('아는 척하지 말고')}`)
+  } catch (e) {
+    rec('TOPICMIX', 'topicBatchPrompt 생성', false, `예외: ${e.message}`)
   }
 
   // ── 출력 (gate-korean-rules.js와 동일 형식) ──
