@@ -906,6 +906,17 @@ export default function AdminHome() {
     setSupplyList(prev => ({ ...prev, rows: prev.rows.map(x => x.id === t.id ? { ...x, published_at: null } : x) }))
   }
 
+  // 🆕 step483: 재공개 — 미공개 원본을 지금 공개. date도 오늘(KST)로 갱신해
+  //   supply-adopt의 "오늘 발행분" 창과 발행일 관행을 정합시킨다.
+  const republishSupplyTopic = async (t) => {
+    if (!confirm(`"${t.title}"을 지금 공개할까요?`)) return
+    const publishedAt = new Date().toISOString()
+    const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    const { error } = await supabase.from('topics').update({ published_at: publishedAt, date: kstYmd }).eq('id', t.id)
+    if (error) return alert('공개 실패: ' + error.message)
+    setSupplyList(prev => ({ ...prev, rows: prev.rows.map(x => x.id === t.id ? { ...x, published_at: publishedAt } : x) }))
+  }
+
   // 🆕 step480: 원본 삭제 — 미공개 상태에서만 노출. hard delete(복원 불가).
   //   미제출 복사본은 함께 삭제, 제출 있는 복사본은 FK(source_supply_id)를 분리한 뒤 원본을 지운다
   //   (분리하지 않으면 FK 위반으로 원본 삭제가 막힘).
@@ -3335,8 +3346,12 @@ export default function AdminHome() {
                             <button onClick={() => retractSupplyTopic(t)}
                               className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">공개 취소</button>
                           ) : (
-                            <button onClick={() => deleteSupplyTopic(t)}
-                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
+                            <>
+                              <button onClick={() => republishSupplyTopic(t)}
+                                className="ml-auto text-xs px-2.5 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100">공개</button>
+                              <button onClick={() => deleteSupplyTopic(t)}
+                                className="text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
+                            </>
                           )}
                         </div>
                       )
