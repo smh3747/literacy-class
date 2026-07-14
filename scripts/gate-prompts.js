@@ -107,6 +107,7 @@ const { pathToFileURL } = require('url')
     const aPass = base === withNulls
       && !base.includes('[이전 채점 정보]')
       && !base.includes('낮은 점수를 주지 마세요')
+      && !base.includes('모순되면 안 됩니다') // step476: 미주입 시 신규 항도 없음 명시 검증
     rec('REWRITE', '이전 맥락 미전달 = 전부 null 동일(하위호환)', aPass,
       aPass ? '출력 동일, 이전 맥락 문구 없음' : (base === withNulls ? '이전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
 
@@ -115,7 +116,9 @@ const { pathToFileURL } = require('url')
     const bPhrases = ['[이전 채점 정보]', '75점', '어느날 → 어느 날', '문단 구분 필요', '다시 포함', '낮은 점수를 주지 마세요',
       '점수 상승으로 반드시 먼저 반영', '뚜렷이 초과해야', '잘 고쳤는지',
       '표준 표기가 확실한지 다시 확인', // step456: 이월 지적 재인용 가드
-      '실제로 고쳐진 항목에만'] // step473: 항목 단위 유지(후광 방지)
+      '실제로 고쳐진 항목에만', // step473: 항목 단위 유지(후광 방지)
+      '새로운 감점 사유로 삼지 마세요', // step476: 기존 결함 신규 감점 금지(step442 누락 복원)
+      '모순되면 안 됩니다'] // step476: 의견·점수 방향 모순 금지
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
