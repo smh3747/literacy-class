@@ -82,6 +82,9 @@ const MERGE = [
   { name: '모여 있다→모여 있어요', corr: { original: '모여 있다',   correction: '모여 있어요' },   essay: '아이들이 모여 있다',    expect: 'kept' },   // step409(문체 필터 없음)
   { name: '해결했습다→해결했습니다', corr: { original: '해결했습다', correction: '해결했습니다' }, essay: '문제를 해결했습다',    expect: 'kept' },
   { name: '막기위해→막기 위해',    corr: { original: '막기위해',    correction: '막기 위해' },    essay: '실수를 막기위해 애썼다', expect: 'kept' },
+  { name: '기억 않나→기억 안 나(통과)', corr: { original: '기억 않나', correction: '기억 안 나' }, essay: '형 나 기억 않나?',    expect: 'kept' },    // step477
+  { name: '생각 않나→생각 안 나(통과)', corr: { original: '생각 않나', correction: '생각 안 나' }, essay: '그때가 생각 않나?',   expect: 'kept' },    // step477
+  { name: '않아→안 아(여전히 차단)',   corr: { original: '않아',      correction: '안 아' },      essay: '말이 않아 나온다',    expect: 'dropped' }, // step477
 ]
 
 ;(async () => {
