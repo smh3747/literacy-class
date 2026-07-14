@@ -49,8 +49,10 @@ export default async function handler(req, res) {
     for (const cls of oldClasses || []) {
       try {
         // 1.1) 학급에 속한 주제들 찾기 (teacher_id 기준)
+        //      step482: 공급 원본(supply_type 있음)은 학급 소속이 아니므로 삭제 대상에서 제외
         const { data: classTopics } = await supabase
           .from('topics').select('id').eq('teacher_id', cls.teacher_id)
+          .is('supply_type', null)
         const topicIds = (classTopics || []).map(t => t.id)
 
         // 1.2) 주제들의 제출물 삭제

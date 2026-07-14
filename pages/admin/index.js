@@ -1312,8 +1312,8 @@ export default function AdminHome() {
       return
     }
     // 종속 데이터 cascade
-    // 1. 학급의 주제 ID 모음
-    const { data: classTopics } = await supabase.from('topics').select('id').eq('teacher_id', cls.teacher_id)
+    // 1. 학급의 주제 ID 모음 — step482: 공급 원본(supply_type 있음)은 학급 소속이 아니므로 보호
+    const { data: classTopics } = await supabase.from('topics').select('id').eq('teacher_id', cls.teacher_id).is('supply_type', null)
     const topicIds = (classTopics || []).map(t => t.id)
     // 2. 그 주제의 제출물 삭제
     if (topicIds.length > 0) {
