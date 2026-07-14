@@ -18,6 +18,7 @@ import { STAMPS, stampLabel } from '../../lib/stamps'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
+import { diffWords } from 'diff'
 
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
@@ -42,9 +43,40 @@ function FeedbackList({ text, color = 'gray' }) {
 }
 
 
-function applyGrammar(essayText, corrections) {
+// step474: 직전 글 대비 새로 쓰거나 바뀐 구간 계산 (curr 기준 오프셋)
+function calcAddedRanges(prevText, currText) {
+  if (!prevText || !currText) return []
+  const ranges = []
+  let offset = 0
+  for (const p of diffWords(prevText, currText)) {
+    if (p.removed) continue                       // curr에 없는 조각 → 오프셋 불변
+    if (p.added) ranges.push({ start: offset, end: offset + p.value.length })
+    offset += p.value.length                      // added·공통 모두 curr 오프셋 전진
+  }
+  return ranges                                    // 순회 순서상 start 오름차순
+}
+
+// step474: 텍스트 조각을 escapeHtml로 출력하되 addedRanges와 교차하는 부분만 초록 형광펜
+// addedRanges 미전달(undefined/빈 배열)이면 escapeHtml(text)와 완전 동일 — 하위호환
+function emitWithAdded(text, absStart, addedRanges) {
+  if (!addedRanges?.length) return escapeHtml(text)
+  const absEnd = absStart + text.length
+  let out = '', pos = absStart
+  for (const r of addedRanges) {
+    if (r.end <= pos) continue
+    if (r.start >= absEnd) break
+    const s = Math.max(r.start, pos), e = Math.min(r.end, absEnd)
+    if (s > pos) out += escapeHtml(text.slice(pos - absStart, s - absStart))
+    out += `<span class="diff-added">${escapeHtml(text.slice(s - absStart, e - absStart))}</span>`
+    pos = e
+  }
+  if (pos < absEnd) out += escapeHtml(text.slice(pos - absStart))
+  return out
+}
+
+function applyGrammar(essayText, corrections, addedRanges) {
   if (!essayText) return ''
-  if (!corrections?.length) return escapeHtml(essayText).replace(/\n/g,'<br>')
+  if (!corrections?.length) return emitWithAdded(essayText, 0, addedRanges).replace(/\n/g,'<br>')
   const matches = []
   corrections.forEach(c => {
     const orig = pickStr(c.original, c.error, c.wrong)   // step427: 비문자열 방어(깨진 항목 조용히 제외)
@@ -72,12 +104,12 @@ function applyGrammar(essayText, corrections) {
   matches.sort((a,b) => a.start - b.start)
   let result = '', last = 0
   matches.forEach(m => {
-    if (m.start > last) result += escapeHtml(essayText.slice(last, m.start))
+    if (m.start > last) result += emitWithAdded(essayText.slice(last, m.start), last, addedRanges)
     const tip = m.corr ? `${m.corr}${m.reason ? ' (' + m.reason + ')' : ''}` : '오류'
-    result += `<span class="grammar-error" data-correction="${escapeHtml(tip)}">${escapeHtml(m.orig)}</span>`
+    result += `<span class="grammar-error" data-correction="${escapeHtml(tip)}">${emitWithAdded(m.orig, m.start, addedRanges)}</span>`
     last = m.end
   })
-  if (last < essayText.length) result += escapeHtml(essayText.slice(last))
+  if (last < essayText.length) result += emitWithAdded(essayText.slice(last), last, addedRanges)
   return result.replace(/\n/g, '<br>')
 }
 
@@ -549,6 +581,7 @@ export default function TeacherSubmissions() {
   const [grammarProg, setGrammarProg] = useState({ done: 0, total: 0 })
   const [grammarToast, setGrammarToast] = useState(null)
   const [grammarOneId, setGrammarOneId] = useState(null)  // 🆕 step295: 단일 글 맞춤법 재검사 중인 글 id
+  const [showDiffAdded, setShowDiffAdded] = useState(true)  // 🆕 step474: 수정본 "바뀐 부분" 초록 형광펜 (화면당 1개, 기본 켬)
   const grammarToastTimer = useRef(null)  // 🆕 step301: 토스트 자동 해제 타이머(겹침 방지)
   const gSleep = (ms) => new Promise(r => setTimeout(r, ms))
   // 🆕 step300: 토스트 = { msg, targetStudentId }. targetStudentId 있으면 클릭 시 그 학생 글로 이동
@@ -806,6 +839,7 @@ export default function TeacherSubmissions() {
       <Head><title>학생 글 보기 - 다온클래스</title></Head>
       <style>{`
         .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
+        .diff-added { background: #dcfce7; border-radius: 2px; }
       `}</style>
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
@@ -1173,6 +1207,7 @@ export default function TeacherSubmissions() {
                   const isLast = (s.attempt || 1) === (ordered[ordered.length - 1].attempt || 1)
                   const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
                   const prevSub = ordered[idxInOrdered - 1]
+                  const isRewrite = (s.attempt || 1) >= 2 && !!prevSub  // 🆕 step474: 수정본 + 직전 글 존재
                   const prevExample = prevSub?.example_text
                   const similarity = prevExample
                     ? calcSimilarity(s.essay_text, prevExample)
@@ -1254,11 +1289,20 @@ export default function TeacherSubmissions() {
                         {regrading === s.id ? '🔄 평가 중...' : '🔄 다시 평가하기'}
                       </button>
                     </div>
+                    {/* 🆕 step474: 수정본에만 "바뀐 부분" 초록 형광펜 토글 (첫 글·직전 글 없는 카드는 없음) */}
+                    {isRewrite && (
+                      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none flex-wrap">
+                        <input type="checkbox" checked={showDiffAdded} onChange={e => setShowDiffAdded(e.target.checked)} />
+                        <span>🔍 지난 글에서 바뀐 부분 표시</span>
+                        <span className="text-gray-400">초록 형광펜 = 새로 쓰거나 바뀐 부분</span>
+                      </label>
+                    )}
                     <div className={`bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap ${
                       ordered.length >= 2 ? 'lg:h-[420px] lg:overflow-y-auto' : ''
                     }`}
                       style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-                      dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections)}} />
+                      dangerouslySetInnerHTML={{__html: applyGrammar(s.essay_text, s.corrections,
+                        isRewrite && showDiffAdded ? calcAddedRanges(prevSub.essay_text, s.essay_text) : undefined)}} />
 
                     {/* 🆕 담임 코멘트 — 학생 글 바로 아래 (가까이) */}
                     <TeacherCommentBox
