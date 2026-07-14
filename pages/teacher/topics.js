@@ -468,6 +468,13 @@ export default function TopicsPage() {
     if (!date || !title.trim()) return alert('날짜와 주제를 입력해주세요')
     if (rubrics.length === 0) return alert('평가 기준을 1개 이상 추가해주세요')
 
+    // step468: 배점 합계 100 강제 — 합 110 저장 → 105/110 채점 실사례 차단.
+    //   단 rubricLocked(제출물 잠금)면 rubrics가 payload에서 빠지므로 스킵(설명·날짜 수정까지 막지 않게).
+    if (!(editingTopicId && editLocked)) {
+      const rubricSum = rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)
+      if (rubricSum !== 100) return alert(`평가 기준 배점 합계가 100점이어야 해요 (현재 ${rubricSum}점)\n점수를 조정해주세요`)
+    }
+
     // 글자수 검증
     const minLen = parseInt(minLength)
     if (isNaN(minLen) || minLen < 10 || minLen > 5000) {
@@ -1525,7 +1532,10 @@ export default function TopicsPage() {
                 return (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium">평가 기준 (총 {totalMax}점)</label>
+                  <label className="text-sm font-medium">
+                    평가 기준 (총 <span className={totalMax !== 100 ? 'text-red-600 font-bold' : ''}>{totalMax}</span>점)
+                    {totalMax !== 100 && <span className="ml-1.5 text-xs text-red-600">⚠️ 합계 100이어야 저장돼요</span>}
+                  </label>
                   {!rubricLocked && <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>}
                 </div>
                 <div className="space-y-3">

@@ -61,6 +61,19 @@ const OB_OUTCOME_META = {
   hold:    { emoji: '👀', label: '읽고 지나감', badge: 'bg-amber-100 text-amber-700' },
 }
 
+// 🆕 step468: 루브릭 합계 100 자동 보정 — rubricGen(teacher/topics.js) 정규화 패턴 동일.
+//   합≠100이면 비율 재계산(Math.round) 후 마지막 항목에 잔차 보정. 공급 편집 폼 편의용(발행 차단은 별도).
+const normalizeRubrics = (rubrics) => {
+  const cleaned = rubrics.map(r => ({ name: r.name || '', hint: r.hint || '', score: Number(r.score) || 0 }))
+  const total = cleaned.reduce((s, r) => s + r.score, 0)
+  if (total !== 100 && total > 0) {
+    cleaned.forEach(r => { r.score = Math.round((r.score / total) * 100) })
+    const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
+    if (newTotal !== 100) cleaned[cleaned.length - 1].score += (100 - newTotal)
+  }
+  return cleaned
+}
+
 // 🆕 step439: 쪽지 입력 자동 확장 — 내용만큼(최대 240px≈10줄, 초과 시 내부 스크롤)
 const autoGrowTextarea = (el) => {
   if (!el) return
@@ -767,7 +780,7 @@ export default function AdminHome() {
         background: result?.background || '',
         guideQuestion: result?.guide_question || '',
         rubrics: Array.isArray(result?.rubrics) && result.rubrics.length > 0
-          ? result.rubrics.map(r => ({ name: r.name || '', hint: r.hint || '', score: Number(r.score) || 0 }))
+          ? normalizeRubrics(result.rubrics)   // step468: 합≠100 자동 보정
           : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
       })
     } catch (e) {
@@ -801,7 +814,7 @@ export default function AdminHome() {
       background: c.background || '',
       guideQuestion: c.guide_question || '',
       rubrics: Array.isArray(c.rubrics) && c.rubrics.length > 0
-        ? c.rubrics.map(r => ({ name: r.name || '', hint: r.hint || '', score: Number(r.score) || 0 }))
+        ? normalizeRubrics(c.rubrics)   // step468: 합≠100 자동 보정
         : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
     })
   }

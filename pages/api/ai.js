@@ -239,6 +239,11 @@ export default async function handler(req, res) {
       if (!topic || !essay || !Array.isArray(rubrics)) {
         return res.status(400).json({ error: '채점에 필요한 정보가 부족해요' })
       }
+      // step468: 배점 합계 감지(기록만 — 수업 중 학생 흐름 차단 금지)
+      {
+        const rubricSum = rubrics.reduce((s, r) => s + (Number(r?.score) || 0), 0)
+        if (rubricSum !== 100) console.warn(`[rubric-sum] 합계 ${rubricSum} — topic 확인 필요`, { userId })
+      }
       prompt = gradingPrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
@@ -248,6 +253,11 @@ export default async function handler(req, res) {
       const { topic, rewriteEssay, rubrics, topicId } = payload || {}
       if (!topic || !rewriteEssay || !Array.isArray(rubrics)) {
         return res.status(400).json({ error: '채점에 필요한 정보가 부족해요' })
+      }
+      // step468: 배점 합계 감지(기록만)
+      {
+        const rubricSum = rubrics.reduce((s, r) => s + (Number(r?.score) || 0), 0)
+        if (rubricSum !== 100) console.warn(`[rubric-sum] 합계 ${rubricSum} — topic 확인 필요`, { userId })
       }
       // 🆕 step443: 직전 채점 맥락 이월(3인자) — 반드시 서버가 DB에서 직접 조회.
       //   payload의 prev류 값은 절대 쓰지 않음(학생 브라우저의 채점 재료 조작 경로 차단).
@@ -267,6 +277,11 @@ export default async function handler(req, res) {
       const { topic, essay, rubrics } = payload || {}
       if (!topic || !essay || !Array.isArray(rubrics)) {
         return res.status(400).json({ error: '재평가에 필요한 정보가 부족해요' })
+      }
+      // step468: 배점 합계 감지(기록만)
+      {
+        const rubricSum = rubrics.reduce((s, r) => s + (Number(r?.score) || 0), 0)
+        if (rubricSum !== 100) console.warn(`[rubric-sum] 합계 ${rubricSum} — topic 확인 필요`, { userId })
       }
       prompt = regradePrompt({ topic, essay, rubrics })
       schema = SCHEMAS.essayFeedback
