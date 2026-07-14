@@ -92,6 +92,7 @@ export default function TopicsPage() {
   // 🆕 step159: AI 완료 후 "주제 등록" 버튼으로 유도 (스크롤 + 강조)
   const [highlightRegister, setHighlightRegister] = useState(false)
   const formStartRef = useRef(null)
+  const rubricSectionRef = useRef(null)  // 🆕 step471: 합계 차단 alert 후 평가 기준 섹션으로 스크롤
   const registerBtnRef = useRef(null)
   // 평가기준 생성 완료 후 등록 버튼으로 부드럽게 안내
   const guideToRegister = () => {
@@ -485,7 +486,14 @@ export default function TopicsPage() {
     //   단 rubricLocked(제출물 잠금)면 rubrics가 payload에서 빠지므로 스킵(설명·날짜 수정까지 막지 않게).
     if (!(editingTopicId && editLocked)) {
       const rubricSum = rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)
-      if (rubricSum !== 100) return alert(`평가 기준 배점 합계가 100점이어야 해요 (현재 ${rubricSum}점)\n점수를 조정해주세요\n(➗ 100점에 맞게 조정 버튼을 누르면 비율대로 자동으로 맞춰드려요)`)
+      if (rubricSum !== 100) {
+        alert(`평가 기준 배점 합계가 100점이어야 해요 (현재 ${rubricSum}점)\n점수를 조정해주세요\n(➗ 100점에 맞게 조정 버튼을 누르면 비율대로 자동으로 맞춰드려요)`)
+        // step471: alert 확인 후 ➗ 버튼이 있는 평가 기준 섹션으로 이동(formStartRef 패턴과 동일)
+        setTimeout(() => {
+          try { rubricSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (e) {}
+        }, 50)
+        return
+      }
     }
 
     // 글자수 검증
@@ -1544,7 +1552,7 @@ export default function TopicsPage() {
                 const rubricLocked = !!editingTopicId && editLocked
                 return (
               <div>
-                <div className="flex flex-wrap items-center justify-between gap-y-1 mb-2">
+                <div ref={rubricSectionRef} className="flex flex-wrap items-center justify-between gap-y-1 mb-2">
                   <label className="text-sm font-medium">
                     평가 기준 (총 <span className={totalMax !== 100 ? 'text-red-600 font-bold' : ''}>{totalMax}</span>점)
                     {totalMax !== 100 && <span className="ml-1.5 text-xs text-red-600">⚠️ 합계 100이어야 저장돼요</span>}
