@@ -290,6 +290,7 @@ export default function StudentHome() {
     const { data: pastTopics } = await supabase.from('topics')
       .select('id, date, title, description')
       .eq('teacher_id', teacherId)
+      .is('supply_type', null)   // step479: 공급 원본 격리(담임=관리자 학급 노출 방지)
       .lt('date', today)
       .order('date', { ascending: false })
       .limit(30)
@@ -348,7 +349,8 @@ export default function StudentHome() {
       const { data } = await withTimeout(supabase.from('topics')
         .select('*').eq('id', targetTopicId).maybeSingle()).catch(() => ({ data: null }))
       // 우리 학급 담임 주제인지 검증 (다른 학급 침입 방지)
-      if (data && data.teacher_id === teacherId) {
+      // step479: 공급 원본(supply_type 있음)은 URL로 직접 열어도 차단 — 학급 주제(복사본)만 허용
+      if (data && data.teacher_id === teacherId && !data.supply_type) {
         topic = data
       }
     }
@@ -375,6 +377,7 @@ export default function StudentHome() {
       const tToday = performance.now()
       const todayTopicsP = withTimeout(supabase.from('topics')
         .select('*').eq('teacher_id', teacherId).eq('date', today)
+        .is('supply_type', null)   // step479: 공급 원본 격리(발행 당일 오늘 주제 혼입 방지)
         .order('created_at', { ascending: true }))
       const pendingP = loadPendingTopics(profile, teacherId).catch(() => setPendingTopics([]))
       const unreadP = loadUnreadComments(profile)   // 내부 try/catch 유지

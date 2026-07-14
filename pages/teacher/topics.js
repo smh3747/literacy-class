@@ -188,6 +188,7 @@ export default function TopicsPage() {
     const { data } = await supabase.from('topics')
       .select('*')
       .eq('teacher_id', teacherId)
+      .is('supply_type', null)   // step479: 공급 원본 격리(담임=관리자면 원본이 목록에 섞이는 것 방지)
       .order('date', { ascending: false })
       .limit(50)
 

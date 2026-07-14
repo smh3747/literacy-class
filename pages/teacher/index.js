@@ -268,9 +268,10 @@ export default function TeacherHome() {
       const studentIds = (studs || []).filter(s => !s.is_hidden).map(s => s.id)
       if (studentIds.length < 2) return
 
-      // 교사 주제 (최신순)
+      // 교사 주제 (최신순) — step479: 공급 원본은 브리핑 소스에서 제외
       const { data: topics } = await supabase.from('topics')
         .select('id, date, title, rubrics').eq('teacher_id', profile.id)
+        .is('supply_type', null)
         .order('date', { ascending: false }).limit(50)
       if (!topics || topics.length === 0) return
       const topicIds = topics.map(t => t.id)
@@ -435,7 +436,8 @@ export default function TeacherHome() {
         type = students === 0 ? 'no_students' : 'no_topics'
       } else {
         const { data: tps } = await supabase.from('topics')
-          .select('id').eq('teacher_id', profile.id).limit(100)
+          .select('id').eq('teacher_id', profile.id)
+          .is('supply_type', null).limit(100)   // step479: 공급 원본 제외
         const ids = (tps || []).map(t => t.id)
         if (ids.length === 0) return
         const { data: subs } = await supabase.from('submissions')
@@ -512,7 +514,7 @@ export default function TeacherHome() {
         supabase.from('profiles').select('id', { count: 'exact', head: true })
           .eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false'),
-        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id),
+        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null),   // step479: 공급 원본 제외(수치 왜곡 방지)
         // 🆕 안내 카드용 학생 username 일부 (최대 5명)
         supabase.from('profiles').select('username').eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false').limit(5)
@@ -569,6 +571,7 @@ export default function TeacherHome() {
         const { count: tc } = await supabase.from('topics')
           .select('id', { count: 'exact', head: true })
           .eq('teacher_id', profile.id)
+          .is('supply_type', null)   // step479: 공급 원본 제외(수치 왜곡 방지)
         setTopicCount(tc || 0)
 
         // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)

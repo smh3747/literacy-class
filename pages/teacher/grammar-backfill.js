@@ -48,6 +48,7 @@ export default function GrammarBackfill() {
       const { data: topicList } = await supabase.from('topics')
         .select('id, date, title')
         .eq('teacher_id', profile.id)
+        .is('supply_type', null)   // step479: 공급 원본 격리
         .order('date', { ascending: false })
         .limit(60)
       setTopics(topicList || [])

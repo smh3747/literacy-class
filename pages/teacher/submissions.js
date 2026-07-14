@@ -202,7 +202,7 @@ export default function TeacherSubmissions() {
       } catch (e) { setHasApiKey(false) }
     }
 
-    const { data } = await supabase.from('topics').select('*').eq('teacher_id', profile.id).order('date', { ascending: false }).limit(30)
+    const { data } = await supabase.from('topics').select('*').eq('teacher_id', profile.id).is('supply_type', null).order('date', { ascending: false }).limit(30)   // step479: 공급 원본 격리
     setTopics(data || [])
     setLoading(false)
 

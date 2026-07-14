@@ -110,5 +110,25 @@ export default async function handler(req, res) {
     console.error('supply-adopt insert 실패(건너뜀):', insErr?.message)
   }
 
+  // step479: 청소 — 쓴 주제는 기록으로 남고, 안 쓴 자동 주제는 다음 날 사라진다.
+  //   이 교사의 어제 이전 복사본 중 제출 0건(휴지통 글 포함, deleted_at 무관)만 삭제. 실패는 무시.
+  try {
+    const { data: stale } = await admin.from('topics')
+      .select('id').eq('teacher_id', teacherId)
+      .not('source_supply_id', 'is', null).lt('date', kstYmd)
+    const staleIds = (stale || []).map(t => t.id)
+    if (staleIds.length > 0) {
+      const { data: subs } = await admin.from('submissions')
+        .select('topic_id').in('topic_id', staleIds)
+      const written = new Set((subs || []).map(s => s.topic_id))
+      const deletable = staleIds.filter(id => !written.has(id))
+      if (deletable.length > 0) {
+        await admin.from('topics').delete().in('id', deletable)
+      }
+    }
+  } catch (e) {
+    console.warn('supply-adopt 청소 실패(무시):', e?.message)
+  }
+
   return res.status(200).json({ ok: true, adopted })
 }
