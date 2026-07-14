@@ -28,6 +28,7 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   //   명렬표 일괄등록 시 students-bulk가 자동으로 false로 바꿔둠.
   const selfSignupEnabled = classInfo.self_signup_enabled !== false
   const autoSupplyEnabled = !!classInfo.auto_supply_enabled // step477: 기본값 false
+  const showcaseEnabled = classInfo.showcase_enabled !== false // step488: 기본값 true
 
   // step477: 켤 때만 고지 확인(취소 가능), 끌 때는 바로 저장
   const toggleAutoSupply = (checked) => {
@@ -130,6 +131,21 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             <p className="text-xs text-gray-500 mt-1 ml-6">
               매일 발행되는 전국 공통 주제가 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
               학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 날은 주제를 삭제하면 됩니다.
+            </p>
+          </div>
+
+          {/* 🆕 step488: 전국 소개 허용 */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={showcaseEnabled}
+                onChange={e => save({ showcase_enabled: e.target.checked })}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">🏆 우리 반 글 전국 소개 허용</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              전국 공통 주제에서 잘 쓴 글은 확인을 거쳐 닉네임으로 소개돼요.
+              {!showcaseEnabled && <span className="block mt-1 text-amber-600">현재 꺼짐 — 우리 반 학생 글은 전국 랭킹·소개에서 제외돼요.</span>}
             </p>
           </div>
 

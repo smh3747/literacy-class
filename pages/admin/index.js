@@ -207,6 +207,9 @@ export default function AdminHome() {
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
+  // 🆕 step488: 공급별 실집계(가져간 학급·참여 학생) + 소개 글 모니터링 패널
+  const [supplyStats, setSupplyStats] = useState({})            // { [supplyId]: { copies, participants } }
+  const [showcasePanel, setShowcasePanel] = useState(null)      // { supplyId, loading, rows } | null
   // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
   const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
@@ -766,6 +769,76 @@ export default function AdminHome() {
       setSupplyList({ loaded: true, rows: data || [] })
     })()
   }, [tab, supplyList.loaded])
+
+  // 🆕 step488: 공급별 실집계 — 가져간 학급 수(복사본 topics) + 참여 학생 수(복사본 제출 distinct)
+  useEffect(() => {
+    if (!supplyList.loaded || supplyList.rows.length === 0) return
+    ;(async () => {
+      try {
+        const supplyIds = supplyList.rows.map(t => t.id)
+        const { data: copies } = await supabase.from('topics')
+          .select('id, source_supply_id').in('source_supply_id', supplyIds)
+        const copyToSupply = {}
+        const stats = {}
+        supplyIds.forEach(id => { stats[id] = { copies: 0, participants: 0 } })
+        ;(copies || []).forEach(c => {
+          copyToSupply[c.id] = c.source_supply_id
+          if (stats[c.source_supply_id]) stats[c.source_supply_id].copies++
+        })
+        const copyIds = (copies || []).map(c => c.id)
+        if (copyIds.length > 0) {
+          const { data: subs } = await supabase.from('submissions')
+            .select('user_id, topic_id').in('topic_id', copyIds).is('deleted_at', null)
+          const seen = {}   // supplyId → Set(user_id)
+          ;(subs || []).forEach(s => {
+            const sid = copyToSupply[s.topic_id]
+            if (!sid) return
+            ;(seen[sid] = seen[sid] || new Set()).add(s.user_id)
+          })
+          Object.entries(seen).forEach(([sid, set]) => { if (stats[sid]) stats[sid].participants = set.size })
+        }
+        setSupplyStats(stats)
+      } catch (e) { console.warn('공급 실집계 실패(무시):', e?.message) }
+    })()
+  }, [supplyList.loaded, supplyList.rows])
+
+  // 🆕 step488: 소개 글 모니터링 — RLS 잠금 테이블이라 서버 API로만 조회·조작
+  const openShowcasePanel = async (supplyId) => {
+    if (showcasePanel?.supplyId === supplyId) { setShowcasePanel(null); return }   // 같은 행 재클릭 = 접기
+    setShowcasePanel({ supplyId, loading: true, rows: [] })
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/supply-showcase-admin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session?.access_token, action: 'list', supplyId }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '조회 실패')
+      setShowcasePanel({ supplyId, loading: false, rows: d.rows || [] })
+    } catch (e) {
+      alert('소개 글 조회에 실패했어요: ' + (e?.message || ''))
+      setShowcasePanel(null)
+    }
+  }
+
+  const toggleShowcaseHidden = async (row) => {
+    const next = !row.hidden
+    if (!confirm(next ? '이 글을 비공개할까요?' : '이 글을 다시 공개(복구)할까요?')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/supply-showcase-admin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session?.access_token, action: 'toggle', showcaseId: row.id, hidden: next }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '변경 실패')
+      setShowcasePanel(prev => prev
+        ? { ...prev, rows: prev.rows.map(x => x.id === row.id ? { ...x, hidden: next } : x) }
+        : prev)
+    } catch (e) {
+      alert('변경에 실패했어요: ' + (e?.message || ''))
+    }
+  }
 
   // 🆕 step462: AI 생성 — 기존 feedbackSummary와 동일 패턴(키 등록 학급의 classId 전달)
   const generateSupplyTopic = async () => {
@@ -3327,31 +3400,82 @@ export default function AdminHome() {
                       return new Date(b.published_at) - new Date(a.published_at)
                     }).map(t => {
                       const scheduled = t.published_at && new Date(t.published_at) > new Date()
+                      const st = supplyStats[t.id]
+                      const panelOpen = showcasePanel?.supplyId === t.id
                       return (
-                        <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
-                          {t.supply_grade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{t.supply_grade}</span>}
-                          {/* step480: 주차 대신 일시 — 공개·예약은 발행일시, 미공개는 등록일시 */}
-                          <span className="text-xs text-gray-400">{t.published_at ? kstShortDT(t.published_at) : `등록 ${kstShortDT(t.created_at)}`}</span>
-                          <span className="text-sm font-semibold text-gray-800">{t.title}</span>
-                          {!t.published_at ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">미공개</span>
-                          ) : scheduled ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⏰ {kstShortDT(t.published_at).split(' ')[0]} 예약</span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">공개 중</span>
-                          )}
-                          <span className="text-[11px] text-gray-400">가져간 수 -</span>
-                          {t.published_at ? (
-                            <button onClick={() => retractSupplyTopic(t)}
-                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">공개 취소</button>
-                          ) : (
-                            <>
-                              <button onClick={() => republishSupplyTopic(t)}
-                                className="ml-auto text-xs px-2.5 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100">공개</button>
-                              <button onClick={() => deleteSupplyTopic(t)}
-                                className="text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
-                            </>
+                        <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
+                            {t.supply_grade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{t.supply_grade}</span>}
+                            {/* step480: 주차 대신 일시 — 공개·예약은 발행일시, 미공개는 등록일시 */}
+                            <span className="text-xs text-gray-400">{t.published_at ? kstShortDT(t.published_at) : `등록 ${kstShortDT(t.created_at)}`}</span>
+                            <span className="text-sm font-semibold text-gray-800">{t.title}</span>
+                            {!t.published_at ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">미공개</span>
+                            ) : scheduled ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⏰ {kstShortDT(t.published_at).split(' ')[0]} 예약</span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">공개 중</span>
+                            )}
+                            {/* step488: 실집계 — 가져간 학급·참여 학생 */}
+                            <span className="text-[11px] text-gray-400">가져간 학급 {st ? st.copies : '-'} · 참여 {st ? st.participants : '-'}명</span>
+                            <button onClick={() => openShowcasePanel(t.id)}
+                              className={`text-xs px-2.5 py-1 rounded ${panelOpen ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}>
+                              🏆 소개 글
+                            </button>
+                            {t.published_at ? (
+                              <button onClick={() => retractSupplyTopic(t)}
+                                className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">공개 취소</button>
+                            ) : (
+                              <>
+                                <button onClick={() => republishSupplyTopic(t)}
+                                  className="ml-auto text-xs px-2.5 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100">공개</button>
+                                <button onClick={() => deleteSupplyTopic(t)}
+                                  className="text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
+                              </>
+                            )}
+                          </div>
+                          {/* step488: 소개 글 모니터링 패널 — 검토 상태·신고 강조·비공개/복구 */}
+                          {panelOpen && (
+                            <div className="mt-2 border-t border-gray-200 pt-2 space-y-1.5">
+                              {showcasePanel.loading ? (
+                                <p className="text-xs text-gray-400 py-2 text-center">불러오는 중...</p>
+                              ) : showcasePanel.rows.length === 0 ? (
+                                <p className="text-xs text-gray-400 py-2 text-center">아직 소개 후보가 없어요 (학생이 랭킹을 열면 집계돼요)</p>
+                              ) : (
+                                showcasePanel.rows.map(r => (
+                                  <div key={r.id} className={`p-2 rounded-lg border ${r.reported ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-white'}`}>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-mono text-gray-400">{r.rank}위</span>
+                                      <span className="text-sm font-semibold text-gray-800">{r.nickname}</span>
+                                      <span className="text-xs text-gray-500">{r.score}점</span>
+                                      {r.review_status === 'approved' ? (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">승인</span>
+                                      ) : r.review_status === 'rejected' ? (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700" title={r.review_reason}>거절</span>
+                                      ) : (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">검토 대기</span>
+                                      )}
+                                      {r.reported && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white font-semibold">🚨 신고됨</span>}
+                                      {r.hidden && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-white">비공개 중</span>}
+                                      <button onClick={() => toggleShowcaseHidden(r)}
+                                        className="ml-auto text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+                                        {r.hidden ? '복구' : '비공개'}
+                                      </button>
+                                    </div>
+                                    {r.review_reason && r.review_status === 'rejected' && (
+                                      <p className="text-[11px] text-red-600 mt-1">사유: {r.review_reason}</p>
+                                    )}
+                                    {r.essay_text && (
+                                      <details className="mt-1">
+                                        <summary className="text-[11px] text-gray-500 cursor-pointer select-none">본문 보기</summary>
+                                        <p className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">{r.essay_text}</p>
+                                      </details>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
                           )}
                         </div>
                       )
