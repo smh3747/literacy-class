@@ -58,6 +58,9 @@ export default function TeacherHome() {
   const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
   const [reviewComment, setReviewComment] = useState('')      // review 카드: 한 줄 의견(선택)
   const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
+  // 🆕 step477: 전국 공통 주제 — 자동 받기 OFF 교사용 원클릭 카드 { id, title, joined }
+  const [supplyCard, setSupplyCard] = useState(null)
+  const [supplyJoining, setSupplyJoining] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
   const togglePanel = (panel) => setActivePanel(prev => (prev === panel ? null : panel))
@@ -347,6 +350,74 @@ export default function TeacherHome() {
     }
   }
 
+  // 🆕 step477: 전국 공통 주제 — "오늘(KST) 발행분" 판정 창.
+  //   예약 발행은 topics.date에 클릭일이 저장되므로 date 비교가 아니라 published_at 창으로 판정한다.
+  const kstTodayWindow = () => {
+    const now = new Date()
+    const ymd = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    return { startISO: new Date(`${ymd}T00:00:00+09:00`).toISOString(), nowISO: now.toISOString() }
+  }
+
+  // 학급 학년 → 받을 수 있는 supply_grade 밴드 (서버 supply-adopt와 동일 규칙, 미설정은 공통만)
+  const supplyBands = (grade) => {
+    const bands = ['공통']
+    if (grade === 3 || grade === 4) bands.push('3~4학년')
+    if (grade === 5 || grade === 6) bands.push('5~6학년')
+    return bands
+  }
+
+  // 자동 받기 ON 학급: lazy 자동 등록 — 브리핑 패턴(비차단, 실패 무시). 호출부에서 !imp 가드.
+  const maybeSupplyAdopt = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      await fetch('/api/supply-adopt', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token }),
+      })
+    } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
+  }
+
+  // 자동 받기 OFF 교사: 오늘 발행 공통 주제 중 미참여분이 있으면 원클릭 카드. 호출부에서 !imp 가드.
+  const maybeShowSupplyCard = async (profile) => {
+    try {
+      const { startISO, nowISO } = kstTodayWindow()
+      const { data: supplies } = await supabase.from('topics')
+        .select('id, title, supply_grade')
+        .not('supply_type', 'is', null)
+        .gte('published_at', startISO).lte('published_at', nowISO)
+      const bands = supplyBands(profile.classes?.grade)
+      const targets = (supplies || []).filter(s => bands.includes(s.supply_grade || '공통'))
+      if (targets.length === 0) return
+      const { data: mine } = await supabase.from('topics')
+        .select('source_supply_id').eq('teacher_id', profile.id)
+        .in('source_supply_id', targets.map(t => t.id))
+      const joined = new Set((mine || []).map(m => m.source_supply_id))
+      const first = targets.find(t => !joined.has(t.id))
+      if (first) setSupplyCard({ id: first.id, title: first.title, joined: false })
+    } catch (e) { console.warn('공통 주제 카드 판정 실패(무시):', e?.message) }
+  }
+
+  // 원클릭 참여 — force: 토글 무관(서버가 교사 role·담임 학급 검증)
+  const joinSupplyTopic = async () => {
+    if (supplyJoining) return
+    setSupplyJoining(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인이 필요해요')
+      const res = await fetch('/api/supply-adopt', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, force: true }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) throw new Error(data?.error || '등록에 실패했어요')
+      setSupplyCard(prev => prev ? { ...prev, joined: true } : prev)
+    } catch (e) {
+      alert('참여에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplyJoining(false)
+  }
+
   // 🆕 다음 걸음 카드 판정 — 교사의 막힌 지점(학생 0명·주제 0개·수업 0회·후기 대상)에 맞는 카드 1장.
   //   card_type별 평생 1회(onboarding_responses에 행 있으면 재노출 안 함). 비차단, 실패는 조용히.
   //   쿼리: 응답 이력 1회 + (주제 있을 때만) 주제 id·제출 소량 2회.
@@ -407,7 +478,7 @@ export default function TeacherHome() {
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp } = await getEffectiveProfile(
-      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled)'
+      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled)'
     )
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
@@ -449,6 +520,11 @@ export default function TeacherHome() {
       setStudentSamples(samples?.data || [])
       // 🆕 다음 걸음 카드 — 본인 세션(비임퍼소네이션)에서만, 비차단(await 안 함). API키 불필요.
       if (!imp) maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
+      // 🆕 step477: 전국 공통 주제 — 자동 받기 ON이면 lazy 등록, OFF면 원클릭 카드 판정 (비차단, 실패 무시)
+      if (!imp && profile.role === 'teacher') {
+        if (profile.classes?.auto_supply_enabled) maybeSupplyAdopt()
+        else maybeShowSupplyCard(profile)
+      }
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
       // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
@@ -812,6 +888,32 @@ export default function TeacherHome() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* 🆕 step477: 전국 공통 주제 원클릭 카드 — 자동 받기 OFF 교사에게, 오늘 발행분 미참여일 때 */}
+          {!isImpersonating && supplyCard && (
+            <div className="bg-white border-2 border-sky-200 rounded-2xl p-5">
+              {supplyCard.joined ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm font-semibold text-sky-900">✅ 우리 반 주제로 등록했어요. 학생들이 오늘 바로 쓸 수 있어요.</p>
+                  <Link href={withImpersonation('/teacher/topics')}
+                    className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 flex-shrink-0">
+                    주제 관리로 가기
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <h3 className="font-bold text-sky-900">🌏 오늘의 전국 공통 주제: {supplyCard.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    전국 선생님들이 오늘 함께 쓰는 주제예요. 학급 설정에서 자동 받기를 켜면 매일 자동으로 등록돼요.
+                  </p>
+                  <button onClick={joinSupplyTopic} disabled={supplyJoining}
+                    className="mt-3 px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
+                    {supplyJoining ? '등록 중...' : '우리 반도 참여하기'}
+                  </button>
+                </>
               )}
             </div>
           )}

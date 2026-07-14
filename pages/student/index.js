@@ -261,7 +261,7 @@ export default function StudentHome() {
       if (!uid) { router.push('/student/login'); return }
 
       const tProfile = performance.now()
-      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id)').eq('id', uid).maybeSingle())
+      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled)').eq('id', uid).maybeSingle())
       console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
       if (!profile || profile.role !== 'student') {
         await supabase.auth.signOut(); router.push('/student/login'); return
@@ -356,6 +356,21 @@ export default function StudentHome() {
     // 특정 주제가 없거나 검증 실패 → 오늘 주제로 폴백
     if (!topic) {
       const today = todayStr()
+
+      // 🆕 step477: 전국 공통 주제 lazy 자동 등록 — 오늘 발행분이 아직 없으면 서버가 복사해 준다.
+      //   첫 진입 학생에게도 주제가 바로 보이게 조회 전에 짧게 기다리되(4초 타임아웃), 실패·지연은 무시.
+      if (profile.classes?.auto_supply_enabled) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            await withTimeout(fetch('/api/supply-adopt', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accessToken: session.access_token }),
+            }), 4000)
+          }
+        } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
+      }
+
       // 🆕 step327: 독립 조회 동시 실행 — todayTopics(핵심) + 지난주제(보조) + 미확인코멘트(보조)
       const tToday = performance.now()
       const todayTopicsP = withTimeout(supabase.from('topics')
@@ -1190,8 +1205,14 @@ export default function StudentHome() {
                       {todayTopic.date !== todayStr() && (
                         <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
                       )}
+                      {todayTopic.source_supply_id && (
+                        <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
+                      )}
                     </div>
                     <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
+                    {todayTopic.source_supply_id && todayTopic.date === todayStr() && (
+                      <p className="text-xs text-sky-700 mb-1">🌏 오늘 전국 친구들이 같은 주제로 글을 써요</p>
+                    )}
                     {todayTopic.description && <p className="text-sm text-primary-dark/80">{todayTopic.description}</p>}
                   </div>
                   {todayTopic.date !== todayStr() && (

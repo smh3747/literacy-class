@@ -27,6 +27,19 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   // step206: 학생 자가가입 허용. 기본 true(미적용/null도 허용으로 간주 → false일 때만 막힘).
   //   명렬표 일괄등록 시 students-bulk가 자동으로 false로 바꿔둠.
   const selfSignupEnabled = classInfo.self_signup_enabled !== false
+  const autoSupplyEnabled = !!classInfo.auto_supply_enabled // step477: 기본값 false
+
+  // step477: 켤 때만 고지 확인(취소 가능), 끌 때는 바로 저장
+  const toggleAutoSupply = (checked) => {
+    if (!checked) return save({ auto_supply_enabled: false })
+    const ok = window.confirm(
+      '매일 아침 전국 선생님들이 함께 쓰는 공통 주제가 우리 반에 자동 등록돼요.\n\n' +
+      '· 주제는 다온클래스가 매일 검수해 발행해요\n' +
+      '· 필요 없는 날은 주제를 삭제하면 돼요\n' +
+      '· 앞으로 잘 쓴 글은 닉네임으로 전국에 소개하는 기능이 추가될 예정이에요'
+    )
+    if (ok) save({ auto_supply_enabled: true })
+  }
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -102,6 +115,21 @@ export default function ClassSettings({ classInfo, onUpdate }) {
               명렬표로 학생을 등록했다면 <strong>꺼두는 걸 권해요.</strong> 끄면 학생이 회원가입 탭으로 새 계정을 만들 수 없어
               (로그인 아이디 오타로 생기는 ‘유령 계정’을 막아요). 전학생은 보통 위의 <strong>[한 명 추가]</strong>로 넣으면 돼요(가입 허용을 켜지 않아도 됩니다).
               {!selfSignupEnabled && <span className="block mt-1 text-amber-600">현재 가입 차단됨 — 학생은 선생님이 만든 아이디로 로그인만 가능해요.</span>}
+            </p>
+          </div>
+
+          {/* 🆕 step477: 전국 공통 주제 자동 받기 */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={autoSupplyEnabled}
+                onChange={e => toggleAutoSupply(e.target.checked)}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">🌏 매일 전국 공통 주제 자동 받기</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              매일 발행되는 전국 공통 주제가 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
+              학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 날은 주제를 삭제하면 됩니다.
             </p>
           </div>
 

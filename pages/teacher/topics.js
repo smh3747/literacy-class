@@ -1911,6 +1911,12 @@ export default function TopicsPage() {
                               <span className="px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">🌐 공유 중</span>
                             </>
                           )}
+                          {t.source_supply_id && (
+                            <>
+                              <span>·</span>
+                              <span className="px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700">🌏 전국 공통</span>
+                            </>
+                          )}
                         </div>
                       </button>
                       <div className="flex gap-1 flex-shrink-0 ml-2">
