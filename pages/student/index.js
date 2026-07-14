@@ -24,6 +24,23 @@ function todayStr() {
   return kst.toISOString().slice(0, 10)
 }
 
+// step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
+//   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
+//   저장·채점 payload는 원문 description을 그대로 쓰므로 여기서 원본은 건드리지 않는다.
+function parseTopicDescription(desc) {
+  if (!desc) return { genreLabel: null, body: '', guide: null }
+  let rest = desc, genreLabel = null
+  const m = rest.match(/^✏️ 오늘은 (.+?)[을를] 써요\.\s*/)
+  if (m) { genreLabel = m[1]; rest = rest.slice(m[0].length) }
+  let guide = null
+  const gi = rest.indexOf('✍️ 글쓰기 안내:')
+  if (gi >= 0) {
+    guide = rest.slice(gi + '✍️ 글쓰기 안내:'.length).trim()
+    rest = rest.slice(0, gi)
+  }
+  return { genreLabel, body: rest.trim(), guide }
+}
+
 // 현재 시간이 락 시간대 안에 있는지 검사
 // 반환: { allowed: boolean, reason: string }
 function checkTimeLock(topic) {
@@ -1203,20 +1220,34 @@ export default function StudentHome() {
               <div className="bg-primary-light border border-primary rounded-2xl p-4">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex-1">
-                    <div className="text-xs text-primary-dark font-semibold mb-1">
-                      📅 {todayTopic.date}
-                      {todayTopic.date !== todayStr() && (
-                        <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
-                      )}
-                      {todayTopic.source_supply_id && (
-                        <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
-                      )}
-                    </div>
-                    <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
-                    {todayTopic.source_supply_id && todayTopic.date === todayStr() && (
-                      <p className="text-xs text-sky-700 mb-1">🌏 오늘 전국 친구들이 같은 주제로 글을 써요</p>
-                    )}
-                    {todayTopic.description && <p className="text-sm text-primary-dark/80">{todayTopic.description}</p>}
+                    {(() => {
+                      // step481: 갈래 줄→📝 배지 승격, 글쓰기 안내→구분선 아래 박스(패턴 없으면 기존과 동일)
+                      const { genreLabel, body, guide } = parseTopicDescription(todayTopic.description)
+                      return (<>
+                        <div className="text-xs text-primary-dark font-semibold mb-1">
+                          📅 {todayTopic.date}
+                          {todayTopic.date !== todayStr() && (
+                            <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
+                          )}
+                          {todayTopic.source_supply_id && (
+                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
+                          )}
+                          {genreLabel && (
+                            <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
+                          )}
+                        </div>
+                        <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
+                        {todayTopic.source_supply_id && todayTopic.date === todayStr() && (
+                          <p className="text-xs text-sky-700 mb-1">🌏 오늘 전국 친구들이 같은 주제로 글을 써요</p>
+                        )}
+                        {body && <p className="text-sm text-primary-dark/80 whitespace-pre-wrap">{body}</p>}
+                        {guide && (
+                          <div className="mt-2 pt-2 border-t border-primary/20">
+                            <div className="bg-gray-50 rounded-lg p-2.5 text-sm text-gray-700 whitespace-pre-wrap">✍️ 글쓰기 안내: {guide}</div>
+                          </div>
+                        )}
+                      </>)
+                    })()}
                   </div>
                   {todayTopic.date !== todayStr() && (
                     <button onClick={() => loadTodayTopic(user)}
