@@ -74,6 +74,10 @@ const normalizeRubrics = (rubrics) => {
   return cleaned
 }
 
+// 🆕 step478: 공급 주제 갈래 — 후보 genre 값 → 학생 대면 라벨. topics에 저장하지 않고
+//   발행 시 description 앞머리 한 줄("✏️ 오늘은 ○○을 써요.")로만 녹인다.
+const SUPPLY_GENRE_LABELS = { '주장': '주장하는 글', '설명': '설명하는 글', '감상': '감상문', '제안': '제안하는 글' }
+
 // 🆕 step439: 쪽지 입력 자동 확장 — 내용만큼(최대 240px≈10줄, 초과 시 내부 스크롤)
 const autoGrowTextarea = (el) => {
   if (!el) return
@@ -199,7 +203,7 @@ export default function AdminHome() {
   const [supplyGenerating, setSupplyGenerating] = useState(false)
   const [supplyBatchGenerating, setSupplyBatchGenerating] = useState(false)
   const [supplyCandidates, setSupplyCandidates] = useState(null)   // 원버튼 결과 후보 3개
-  const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[] } — 편집 폼
+  const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[], genre } — 편집 폼
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
@@ -782,6 +786,7 @@ export default function AdminHome() {
         rubrics: Array.isArray(result?.rubrics) && result.rubrics.length > 0
           ? normalizeRubrics(result.rubrics)   // step468: 합≠100 자동 보정
           : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+        genre: '',   // step478: 키워드 단건 경로는 갈래 미지정(발행 문구 생략)
       })
     } catch (e) {
       alert('생성에 실패했어요: ' + (e?.message || ''))
@@ -816,6 +821,7 @@ export default function AdminHome() {
       rubrics: Array.isArray(c.rubrics) && c.rubrics.length > 0
         ? normalizeRubrics(c.rubrics)   // step468: 합≠100 자동 보정
         : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+      genre: SUPPLY_GENRE_LABELS[c.genre] ? c.genre : '',   // step478: 알 수 없는 값은 미지정 처리
     })
   }
 
@@ -834,7 +840,10 @@ export default function AdminHome() {
       // 예약: 그 날짜 KST 00:00 = UTC 전날 15:00 (미래 시각 저장 — 2차 노출 쿼리가 <= now()로 읽음)
       publishedAt = new Date(new Date(`${scheduledDate}T00:00:00+09:00`)).toISOString()
     }
-    const description = `${supplyDraft.background.trim()}\n\n✍️ 글쓰기 안내: ${supplyDraft.guideQuestion.trim()}`
+    // step478: 갈래가 지정되면 배경 앞에 한 줄 안내(학생 대면 문구, topics에 별도 저장 안 함)
+    const genreLabel = SUPPLY_GENRE_LABELS[supplyDraft.genre] || null
+    const genreLine = genreLabel ? `✏️ 오늘은 ${genreLabel}을 써요.\n\n` : ''
+    const description = `${genreLine}${supplyDraft.background.trim()}\n\n✍️ 글쓰기 안내: ${supplyDraft.guideQuestion.trim()}`
     setSupplySaving(true)
     try {
       const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
@@ -3120,6 +3129,13 @@ export default function AdminHome() {
                   {supplyCandidates.map((c, i) => (
                     <div key={i} className="border border-gray-200 rounded-xl p-3 flex flex-col">
                       <p className="text-[11px] text-indigo-600 mb-1">💡 {c.material}</p>
+                      {SUPPLY_GENRE_LABELS[c.genre] && (
+                        <p className="mb-1">
+                          <span className={`text-[11px] px-1.5 py-0.5 rounded font-semibold ${c.genre === '주장' ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-600'}`}>
+                            📝 {SUPPLY_GENRE_LABELS[c.genre]}
+                          </span>
+                        </p>
+                      )}
                       <p className="text-sm font-bold text-gray-900">{c.title}</p>
                       <p className="text-xs text-gray-500 mt-1 line-clamp-3 flex-1">{c.background}</p>
                       <button onClick={() => pickSupplyCandidate(c)}
@@ -3167,6 +3183,18 @@ export default function AdminHome() {
                     <input type="text" value={supplyDraft.title}
                       onChange={e => setSupplyDraft(prev => ({ ...prev, title: e.target.value }))}
                       className="w-full text-sm border border-gray-200 rounded-lg p-2" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">글의 갈래 — 발행 시 배경 설명 앞에 "✏️ 오늘은 ○○을 써요." 한 줄로 들어가요</label>
+                    <select value={supplyDraft.genre || ''}
+                      onChange={e => setSupplyDraft(prev => ({ ...prev, genre: e.target.value }))}
+                      className="text-sm border border-gray-200 rounded-lg p-2">
+                      <option value="">표시 안 함</option>
+                      <option value="주장">주장하는 글 (논설문)</option>
+                      <option value="설명">설명하는 글</option>
+                      <option value="감상">감상문</option>
+                      <option value="제안">제안하는 글</option>
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">학생용 배경 설명</label>
