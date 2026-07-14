@@ -21,6 +21,19 @@ function AiLoadingBlock({ title, sub }) {
   )
 }
 
+// 🆕 step469: 루브릭 배점 합계를 100으로 자동 보정 — 비율 재계산(Math.round) + 마지막 항목 잔차 보정.
+//   admin(step468) normalizeRubrics와 같은 로직이되 name·hint는 원본 그대로 유지(score만 교체).
+function normalizeRubrics(rubrics) {
+  const cleaned = rubrics.map(r => ({ ...r, score: Number(r.score) || 0 }))
+  const total = cleaned.reduce((s, r) => s + r.score, 0)
+  if (total !== 100 && total > 0) {
+    cleaned.forEach(r => { r.score = Math.round((r.score / total) * 100) })
+    const newTotal = cleaned.reduce((s, r) => s + r.score, 0)
+    if (newTotal !== 100) cleaned[cleaned.length - 1].score += (100 - newTotal)
+  }
+  return cleaned
+}
+
 const DEFAULT_RUBRICS = [
   { name: '주제에 맞는 내용', hint: '주제에서 벗어나지 않고 핵심을 잘 표현', score: 25 },
   { name: '글의 짜임새', hint: '처음-가운데-끝의 흐름이 자연스러운가', score: 25 },
@@ -472,7 +485,7 @@ export default function TopicsPage() {
     //   단 rubricLocked(제출물 잠금)면 rubrics가 payload에서 빠지므로 스킵(설명·날짜 수정까지 막지 않게).
     if (!(editingTopicId && editLocked)) {
       const rubricSum = rubrics.reduce((s, r) => s + (Number(r.score) || 0), 0)
-      if (rubricSum !== 100) return alert(`평가 기준 배점 합계가 100점이어야 해요 (현재 ${rubricSum}점)\n점수를 조정해주세요`)
+      if (rubricSum !== 100) return alert(`평가 기준 배점 합계가 100점이어야 해요 (현재 ${rubricSum}점)\n점수를 조정해주세요\n(➗ 100점에 맞게 조정 버튼을 누르면 비율대로 자동으로 맞춰드려요)`)
     }
 
     // 글자수 검증
@@ -1535,6 +1548,11 @@ export default function TopicsPage() {
                   <label className="text-sm font-medium">
                     평가 기준 (총 <span className={totalMax !== 100 ? 'text-red-600 font-bold' : ''}>{totalMax}</span>점)
                     {totalMax !== 100 && <span className="ml-1.5 text-xs text-red-600">⚠️ 합계 100이어야 저장돼요</span>}
+                    {/* 🆕 step469: 비율 유지한 채 합 100으로 자동 조정(잠금·합0이면 숨김) */}
+                    {totalMax !== 100 && totalMax > 0 && !rubricLocked && (
+                      <button onClick={() => setRubrics(normalizeRubrics(rubrics))}
+                        className="ml-1.5 text-xs text-primary hover:underline">➗ 100점에 맞게 조정</button>
+                    )}
                   </label>
                   {!rubricLocked && <button onClick={addRubric} className="text-xs text-primary hover:underline">+ 기준 추가</button>}
                 </div>
