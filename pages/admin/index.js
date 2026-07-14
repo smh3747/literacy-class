@@ -866,12 +866,65 @@ export default function AdminHome() {
     setSupplySaving(false)
   }
 
-  // 🆕 step462: 발행 취소 — published_at null(삭제 아님)
-  const unpublishSupplyTopic = async (t) => {
-    if (!confirm(`"${t.title}" 발행을 취소할까요? (삭제되지 않고 미공개로 남아요)`)) return
+  // 🆕 step480: KST 'M/D HH:mm' — 공급 목록 일시 표기(주차 표기 대체)
+  const kstShortDT = (iso) => {
+    if (!iso) return ''
+    const d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000)
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+  }
+
+  // 🆕 step480: 복사본 정리 공통 — 이 원본을 가져간 학급 주제 중 제출 0건만 삭제.
+  //   제출 여부는 deleted_at 무관(휴지통 글도 기록으로 인정해 보존). RLS top_delete가 is_admin()을
+  //   허용하므로 관리자 클라이언트에서 타 교사 복사본도 직접 삭제 가능.
+  const cleanupSupplyCopies = async (sourceId) => {
+    const { data: copies } = await supabase.from('topics').select('id').eq('source_supply_id', sourceId)
+    const ids = (copies || []).map(c => c.id)
+    if (ids.length === 0) return { deleted: 0, kept: 0 }
+    const { data: subs } = await supabase.from('submissions').select('topic_id').in('topic_id', ids)
+    const written = new Set((subs || []).map(s => s.topic_id))
+    const deletable = ids.filter(id => !written.has(id))
+    if (deletable.length > 0) {
+      const { error } = await supabase.from('topics').delete().in('id', deletable)
+      if (error) throw error
+    }
+    return { deleted: deletable.length, kept: ids.length - deletable.length }
+  }
+
+  // 🆕 step462→480: 공개 취소 — published_at null(원본은 미공개로 남음) + 미제출 학급 복사본 정리
+  const retractSupplyTopic = async (t) => {
+    if (!confirm(`"${t.title}" 공개를 취소할까요?\n\n원본은 삭제되지 않고 미공개로 남아요.\n아직 아무도 글을 쓰지 않은 학급에서는 이 주제가 함께 사라져요. (학생 글이 있는 학급은 유지)`)) return
     const { error } = await supabase.from('topics').update({ published_at: null }).eq('id', t.id)
     if (error) return alert('취소 실패: ' + error.message)
+    let msg = '공개를 취소했어요.'
+    try {
+      const { deleted, kept } = await cleanupSupplyCopies(t.id)
+      if (deleted + kept > 0) {
+        msg += `\n학급 복사본 ${deleted}개 정리${kept > 0 ? `, ${kept}개는 학생 글이 있어 유지했어요.` : '했어요.'}`
+      }
+    } catch (e) { msg += '\n(복사본 정리 중 일부 실패: ' + (e?.message || '') + ')' }
+    alert(msg)
     setSupplyList(prev => ({ ...prev, rows: prev.rows.map(x => x.id === t.id ? { ...x, published_at: null } : x) }))
+  }
+
+  // 🆕 step480: 원본 삭제 — 미공개 상태에서만 노출. hard delete(복원 불가).
+  //   미제출 복사본은 함께 삭제, 제출 있는 복사본은 FK(source_supply_id)를 분리한 뒤 원본을 지운다
+  //   (분리하지 않으면 FK 위반으로 원본 삭제가 막힘).
+  const deleteSupplyTopic = async (t) => {
+    if (!confirm(`"${t.title}" 원본을 완전히 삭제할까요?\n\n복원할 수 없어요.\n아직 아무도 글을 쓰지 않은 학급 복사본도 함께 삭제돼요. (학생 글이 있는 복사본은 남아요)`)) return
+    try {
+      const { deleted, kept } = await cleanupSupplyCopies(t.id)
+      if (kept > 0) {
+        const { error: detachErr } = await supabase.from('topics')
+          .update({ source_supply_id: null }).eq('source_supply_id', t.id)
+        if (detachErr) throw detachErr
+      }
+      const { error } = await supabase.from('topics').delete().eq('id', t.id)
+      if (error) throw error
+      alert('삭제했어요.' + (deleted + kept > 0 ? ` (복사본 ${deleted}개 정리${kept > 0 ? `, ${kept}개는 학생 글이 있어 유지` : ''})` : ''))
+      setSupplyList(prev => ({ ...prev, rows: prev.rows.filter(x => x.id !== t.id) }))
+    } catch (e) {
+      alert('삭제 실패: ' + (e?.message || ''))
+    }
   }
 
   // 🆕 step371: 의심 교정 행 보강 — submission_id로 본문·작성자를 4개의 .in() 배치로만 조회.
@@ -3255,25 +3308,35 @@ export default function AdminHome() {
                   <p className="text-sm text-gray-400 py-4 text-center">아직 발행한 공급 주제가 없어요</p>
                 ) : (
                   <div className="space-y-1.5">
-                    {supplyList.rows.map(t => {
+                    {/* step480: 미공개 최상단(등록 역순) → 공개·예약은 발행일시 역순 */}
+                    {[...supplyList.rows].sort((a, b) => {
+                      if (!a.published_at && !b.published_at) return new Date(b.created_at) - new Date(a.created_at)
+                      if (!a.published_at) return -1
+                      if (!b.published_at) return 1
+                      return new Date(b.published_at) - new Date(a.published_at)
+                    }).map(t => {
                       const scheduled = t.published_at && new Date(t.published_at) > new Date()
                       return (
                         <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
                           {t.supply_grade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{t.supply_grade}</span>}
-                          <span className="text-xs text-gray-400">{t.publish_week}</span>
+                          {/* step480: 주차 대신 일시 — 공개·예약은 발행일시, 미공개는 등록일시 */}
+                          <span className="text-xs text-gray-400">{t.published_at ? kstShortDT(t.published_at) : `등록 ${kstShortDT(t.created_at)}`}</span>
                           <span className="text-sm font-semibold text-gray-800">{t.title}</span>
                           {!t.published_at ? (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">미공개</span>
                           ) : scheduled ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⏰ {new Date(new Date(t.published_at).getTime() + 9 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} 공개 예정</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⏰ {kstShortDT(t.published_at).split(' ')[0]} 예약</span>
                           ) : (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">공개 중</span>
                           )}
                           <span className="text-[11px] text-gray-400">가져간 수 -</span>
-                          {t.published_at && (
-                            <button onClick={() => unpublishSupplyTopic(t)}
-                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">발행 취소</button>
+                          {t.published_at ? (
+                            <button onClick={() => retractSupplyTopic(t)}
+                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">공개 취소</button>
+                          ) : (
+                            <button onClick={() => deleteSupplyTopic(t)}
+                              className="ml-auto text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
                           )}
                         </div>
                       )
