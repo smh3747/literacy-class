@@ -217,6 +217,9 @@ export default function StudentHome() {
   const [showNicknameModal, setShowNicknameModal] = useState(false)
   // AI 호출 에러 모달
   const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
+  // 🆕 step487: 전국 상위 글 — 참여 수 프리페치 + 모달
+  const [supplySummary, setSupplySummary] = useState(null)   // null 또는 { participants }
+  const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, participants }
   // 백업 복원 알림 (null 또는 { type, length })
   const [restoredBackup, setRestoredBackup] = useState(null)
   // AI 재시도 진행 표시 (null 또는 메시지)
@@ -692,6 +695,74 @@ export default function StudentHome() {
       // 예시 생성 실패는 학생에게 굳이 알리지 않음 (채점은 이미 성공)
     }
     setExampleLoading(false)
+  }
+
+  // 🆕 step487: 전국 상위 글 — 카드 진입점의 참여 수 프리페치(비차단, 실패 무시).
+  //   미제출(locked) 응답도 participants를 주므로 제출 전에도 N 표시 가능.
+  useEffect(() => {
+    const sid = todayTopic?.source_supply_id
+    if (!sid) { setSupplySummary(null); return }
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) return
+        const res = await fetch('/api/supply-ranking', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+        })
+        const d = await res.json()
+        if (res.ok && d?.ok) setSupplySummary({ participants: d.participants || 0 })
+      } catch (e) { /* 무시 — 진입점은 참여 수 없이도 동작 */ }
+    })()
+  }, [todayTopic?.source_supply_id])
+
+  // 🆕 step487: 전국 상위 글 모달 열기 — 항상 서버 재호출(제출 직후 잠금 해제 반영)
+  const openShowcase = async () => {
+    if (!todayTopic?.source_supply_id || showcaseModal?.loading) return
+    setShowcaseModal({ loading: true })
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인이 필요해요')
+      const res = await fetch('/api/supply-ranking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: todayTopic.source_supply_id }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
+      setSupplySummary({ participants: d.participants || 0 })
+      if (d.locked) {
+        setShowcaseModal(null)
+        alert('먼저 글을 쓰면 친구들 글을 볼 수 있어요!')
+        return
+      }
+      setShowcaseModal({ loading: false, winners: d.winners || [], participants: d.participants || 0 })
+    } catch (e) {
+      setShowcaseModal(null)
+      alert('상위 글을 불러오지 못했어요. 잠시 후 다시 해봐요.')
+      console.warn('showcase 조회 실패:', e?.message)
+    }
+  }
+
+  // 🆕 step487: 원터치 신고 — 즉시 비공개, 복구는 관리자가
+  const reportShowcase = async (w) => {
+    if (!confirm('이 글을 신고할까요?')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인이 필요해요')
+      const res = await fetch('/api/supply-report', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, showcaseId: w.showcaseId }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '')
+      setShowcaseModal(prev => prev?.winners
+        ? { ...prev, winners: prev.winners.map(x => x.showcaseId === w.showcaseId ? { ...x, essay: null, reportedByMe: true } : x) }
+        : prev)
+      alert('신고했어요. 확인 후 조치할게요.')
+    } catch (e) {
+      alert('신고에 실패했어요. 잠시 후 다시 해봐요.')
+      console.warn('showcase 신고 실패:', e?.message)
+    }
   }
 
   // 다시 쓰기 시작
@@ -1238,7 +1309,15 @@ export default function StudentHome() {
                         </div>
                         <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
                         {todayTopic.source_supply_id && todayTopic.date === todayStr() && (
-                          <p className="text-xs text-sky-700 mb-1">🌏 오늘 전국 친구들이 같은 주제로 글을 써요</p>
+                          <div className="mb-1">
+                            <p className="text-xs text-sky-700">🌏 전국 공통 주제 — 잘 쓴 글은 닉네임으로 소개될 수 있어요</p>
+                            <button onClick={openShowcase}
+                              className="mt-0.5 text-xs text-sky-800 font-semibold underline underline-offset-2">
+                              {supplySummary?.participants > 0
+                                ? `오늘 전국에서 ${supplySummary.participants}명이 참여했어요 · 🏆 상위 글 보기`
+                                : '🏆 전국 상위 글 보기'}
+                            </button>
+                          </div>
                         )}
                         {body && <p className="text-sm text-primary-dark/80 whitespace-pre-wrap">{body}</p>}
                         {guide && (
@@ -1557,6 +1636,14 @@ export default function StudentHome() {
                     </details>
                   )}
 
+                  {/* 🆕 step487: 전국 상위 글 진입점 — 공통 주제 제출 후 */}
+                  {todayTopic?.source_supply_id && (
+                    <button onClick={openShowcase}
+                      className="w-full py-2.5 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl text-sm font-semibold hover:bg-sky-100">
+                      🏆 전국 상위 글 보기{supplySummary?.participants > 0 ? ` · 오늘 ${supplySummary.participants}명 참여` : ''}
+                    </button>
+                  )}
+
                   {/* 다시 쓰기 버튼 (feedback 단계에서만) */}
                   {step === 'feedback' && (
                     <button onClick={startRewrite}
@@ -1715,6 +1802,63 @@ export default function StudentHome() {
             onSuccess={(newNick) => setUser(prev => ({ ...prev, nickname: newNick }))}
           />
         )}
+        {/* 🆕 step487: 전국 상위 글 모달 — approved만 본문, pending·신고분은 소문구 */}
+        {showcaseModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-bold">🏆 오늘의 전국 상위 글</h3>
+                <button onClick={() => setShowcaseModal(null)} aria-label="닫기"
+                  className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
+              {showcaseModal.loading ? (
+                <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
+              ) : (
+                <>
+                  {showcaseModal.participants > 0 && (
+                    <p className="text-xs text-gray-500 mb-3">🌏 오늘 전국에서 {showcaseModal.participants}명이 참여했어요</p>
+                  )}
+                  {(showcaseModal.winners || []).length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐요!</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {showcaseModal.winners.map(w => {
+                        const medal = w.rank === 1 ? '🥇' : w.rank === 2 ? '🥈' : '🥉'
+                        const meta = [w.school, w.grade ? `${w.grade}학년` : '', w.className].filter(Boolean).join(' ')
+                        return (
+                          <div key={w.showcaseId} className="border border-gray-200 rounded-xl p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xl">{medal}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-gray-900">{w.nickname}</p>
+                                {meta && <p className="text-xs text-gray-500">{meta}</p>}
+                              </div>
+                              <span className="text-sm font-bold text-primary shrink-0">{w.score}점</span>
+                            </div>
+                            {w.essay ? (
+                              <details className="mt-2">
+                                <summary className="text-xs text-sky-700 font-semibold cursor-pointer select-none">📖 글 읽기</summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{w.essay}</p>
+                                <button onClick={() => reportShowcase(w)}
+                                  className="mt-2 text-xs text-red-500 underline underline-offset-2">🚨 이 글 신고하기</button>
+                              </details>
+                            ) : (
+                              <p className="mt-2 text-xs text-gray-400">
+                                {w.reportedByMe ? '🙏 신고했어요. 확인 후 조치할게요.' : w.pending ? '🔍 아직 검토 중인 글이에요' : '확인을 거친 글만 보여요'}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-3">잘 쓴 글은 확인을 거쳐 닉네임으로 소개돼요</p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {errorModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
