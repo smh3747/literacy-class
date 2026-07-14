@@ -20,6 +20,9 @@ import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { diffWords } from 'diff'
 
+// step484: 동의 전 실명 잠금 판정 — students.js 배지·displayStudentName 폴백과 동일 규약(realname 빈값=동의 대기)
+const isConsentLocked = (p) => !!p && !p.is_hidden && !(p.realname && p.realname.trim())
+
 function FeedbackList({ text, color = 'gray' }) {
   if (!text) return null
   const items = splitFeedbackItems(text)
@@ -1002,6 +1005,10 @@ export default function TeacherSubmissions() {
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-sm text-gray-800">
                               {displayStudentName(g.profile)}
+                              {isConsentLocked(g.profile) && (
+                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+                                  title="학부모 동의가 완료되면 실명으로 표시됩니다">🔒 동의 대기</span>
+                              )}
                               <span className="ml-2 text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">미제출</span>
                             </div>
                             <div className="text-xs text-gray-500 mt-0.5">@{g.profile.username}</div>
@@ -1027,6 +1034,10 @@ export default function TeacherSubmissions() {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm">
                             {displayStudentName(g.profile)}
+                            {isConsentLocked(g.profile) && (
+                              <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+                                title="학부모 동의가 완료되면 실명으로 표시됩니다">🔒 동의 대기</span>
+                            )}
                             {pasted && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️ 복붙</span>}
                             {sorted.some(s => s.is_fallback_graded) && (
                               <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="메인 모델 한도로 보조 모델 채점됨 - 재평가 권장">
@@ -1188,7 +1199,13 @@ export default function TeacherSubmissions() {
                 )}
               </div>
               <div className="bg-primary-light rounded-2xl p-4">
-                <h2 className="text-lg font-bold text-primary-dark">{displayStudentNameWithNumber(selectedStudent.profile)}</h2>
+                <h2 className="text-lg font-bold text-primary-dark">
+                  {displayStudentNameWithNumber(selectedStudent.profile)}
+                  {isConsentLocked(selectedStudent.profile) && (
+                    <span className="ml-2 align-middle text-[10px] font-normal px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+                      title="학부모 동의가 완료되면 실명으로 표시됩니다">🔒 동의 대기</span>
+                  )}
+                </h2>
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
 
