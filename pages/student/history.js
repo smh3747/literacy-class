@@ -134,7 +134,7 @@ export default function StudentHistory() {
     }
     setUser(profile)
     
-    const { data } = await supabase.from('submissions').select('*, topics(title, date)').eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false })
+    const { data } = await supabase.from('submissions').select('*, topics(title, date, source_supply_id)').eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false })
     
     // 주제별로 그룹화
     const groups = {}
@@ -142,7 +142,7 @@ export default function StudentHistory() {
       const title = s.topic_title || (s.topics?.title) || '주제 없음'
       const date = (s.topics?.date) || (s.created_at ? s.created_at.slice(0, 10) : '')
       const key = (s.topic_id || 'no') + '_' + title
-      if (!groups[key]) groups[key] = { title, date, topic_id: s.topic_id, items: [] }
+      if (!groups[key]) groups[key] = { title, date, topic_id: s.topic_id, source_supply_id: s.topics?.source_supply_id || null, items: [] }
       groups[key].items.push(s)
     })
     setGrouped(Object.values(groups).sort((a,b) => new Date(b.date) - new Date(a.date)))
@@ -516,7 +516,12 @@ export default function StudentHistory() {
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm mb-1 truncate">{g.title}</div>
-                        <div className="text-xs text-gray-500">{g.date}</div>
+                        <div className="text-xs text-gray-500">
+                          {g.date}
+                          {g.source_supply_id && (
+                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+                          )}
+                        </div>
                       </div>
                       <div className="text-right text-xs ml-3">
                         {isImproved ? (
