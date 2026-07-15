@@ -217,9 +217,10 @@ export default function StudentHome() {
   const [showNicknameModal, setShowNicknameModal] = useState(false)
   // AI 호출 에러 모달
   const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
-  // 🆕 step487: 전국 상위 글 — 참여 수 프리페치 + 모달
-  const [supplySummary, setSupplySummary] = useState(null)   // null 또는 { participants }
-  const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, participants }
+  // 🆕 step492: 전국 글쓰기 챌린지 — 학급 주제와 분리된 오늘의 챌린지 주제들(하루 2개 가능: 공통+학년밴드)
+  const [challengeTopics, setChallengeTopics] = useState([])   // 각 항목 {...topic, myMaxAttempt}
+  const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: myRank }
+  const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, myRank }
   // 백업 복원 알림 (null 또는 { type, length })
   const [restoredBackup, setRestoredBackup] = useState(null)
   // AI 재시도 진행 표시 (null 또는 메시지)
@@ -379,7 +380,7 @@ export default function StudentHome() {
     if (!topic) {
       const today = todayStr()
 
-      // 🆕 step477: 전국 공통 주제 lazy 자동 등록 — 오늘 발행분이 아직 없으면 서버가 복사해 준다.
+      // 🆕 step477: 전국 글쓰기 챌린지 주제 lazy 자동 등록 — 오늘 발행분이 아직 없으면 서버가 복사해 준다.
       //   첫 진입 학생에게도 주제가 바로 보이게 조회 전에 짧게 기다리되(4초 타임아웃), 실패·지연은 무시.
       if (profile.classes?.auto_supply_enabled) {
         try {
@@ -420,25 +421,35 @@ export default function StudentHome() {
           if ((s.attempt || 1) > cur) maxAttemptByTopic[s.topic_id] = s.attempt || 1
         })
 
+        // 🆕 step492: 전국 글쓰기 챌린지 분리 — 자동 선택·선택 UI는 학급 주제만 대상
+        const challenges = todayTopics.filter(t => t.source_supply_id)
+        const classTopics = todayTopics.filter(t => !t.source_supply_id)
+        setChallengeTopics(challenges.map(t => ({
+          ...t,
+          myMaxAttempt: maxAttemptByTopic[t.id] || 0
+        })))
+
         // 미제출 주제 우선
-        const unsubmitted = todayTopics.filter(t => !maxAttemptByTopic[t.id])
+        const unsubmitted = classTopics.filter(t => !maxAttemptByTopic[t.id])
         if (unsubmitted.length > 0) {
           topic = unsubmitted[0]
         } else {
           // 모두 제출했으면 첫 글만 쓰고 수정 안 한 것 우선
-          const noRewrite = todayTopics.filter(t => maxAttemptByTopic[t.id] === 1)
-          topic = noRewrite[0] || todayTopics[0]
+          const noRewrite = classTopics.filter(t => maxAttemptByTopic[t.id] === 1)
+          topic = noRewrite[0] || classTopics[0]
         }
 
-        // 오늘 주제 여러 개라면 state에 저장 (화면 상단 선택 UI용)
-        if (todayTopics.length > 1) {
-          setTodayTopicList(todayTopics.map(t => ({
+        // 오늘 학급 주제 여러 개라면 state에 저장 (화면 상단 선택 UI용)
+        if (classTopics.length > 1) {
+          setTodayTopicList(classTopics.map(t => ({
             ...t,
             myMaxAttempt: maxAttemptByTopic[t.id] || 0
           })))
         } else {
           setTodayTopicList([])
         }
+      } else {
+        setChallengeTopics([])   // step492: 폴백 재실행 시 잔존 방지
       }
 
       // 보조 조회(지난 주제·미확인 코멘트) 완료 보장 — 실패해도 진행(화면 결과 동일)
@@ -652,7 +663,14 @@ export default function StudentHome() {
       setFeedbackResult(result)
       scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('feedback')
-      
+
+      // 🆕 step492: 챌린지 제출이면 카드의 제출 상태·내 순위 즉시 갱신(스테일 방지)
+      if (todayTopic.source_supply_id) {
+        setChallengeTopics(prev => prev.map(t =>
+          t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 1) } : t))
+        fetchMyRank(todayTopic.source_supply_id)
+      }
+
       // 예시 작품 생성 (백그라운드)
       // 🆕 step368: subId 명시 전달 — 기존 generateExample은 낡은 클로저의 currentSub(null)를 봐서
       //   첫 글 example_text가 DB에 저장된 적이 없었음(재방문 시 예시 미표시 원인)
@@ -697,45 +715,51 @@ export default function StudentHome() {
     setExampleLoading(false)
   }
 
-  // 🆕 step487: 전국 상위 글 — 카드 진입점의 참여 수 프리페치(비차단, 실패 무시).
-  //   미제출(locked) 응답도 participants를 주므로 제출 전에도 N 표시 가능.
-  useEffect(() => {
-    const sid = todayTopic?.source_supply_id
-    if (!sid) { setSupplySummary(null); return }
-    ;(async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) return
-        const res = await fetch('/api/supply-ranking', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
-        })
-        const d = await res.json()
-        if (res.ok && d?.ok) setSupplySummary({ participants: d.participants || 0 })
-      } catch (e) { /* 무시 — 진입점은 참여 수 없이도 동작 */ }
-    })()
-  }, [todayTopic?.source_supply_id])
+  // 🆕 step492: 내 순위 조회(비차단, 실패 무시) — 제출한 챌린지만 호출, null이면 미표시
+  const fetchMyRank = async (sid) => {
+    if (!sid) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      const res = await fetch('/api/supply-ranking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+      })
+      const d = await res.json()
+      if (res.ok && d?.ok && !d.locked && d.myRank != null) {
+        setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
+      }
+    } catch (e) { /* 무시 — 순위 없이도 카드는 동작 */ }
+  }
 
-  // 🆕 step487: 전국 상위 글 모달 열기 — 항상 서버 재호출(제출 직후 잠금 해제 반영)
-  const openShowcase = async () => {
-    if (!todayTopic?.source_supply_id || showcaseModal?.loading) return
+  // 🆕 step492: 제출한 챌린지의 내 순위 프리페치(카드 표시용)
+  useEffect(() => {
+    challengeTopics
+      .filter(t => t.myMaxAttempt > 0 && challengeRanks[t.source_supply_id] == null)
+      .forEach(t => fetchMyRank(t.source_supply_id))
+  }, [challengeTopics])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🆕 step487: 챌린지 상위 글 모달 열기 — 항상 서버 재호출(제출 직후 잠금 해제 반영)
+  //   step492: sid 인자화 — 챌린지 카드·주제 박스·제출 후 진입점이 각자 sid를 전달
+  const openShowcase = async (sid) => {
+    if (!sid || showcaseModal?.loading) return
     setShowcaseModal({ loading: true })
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('로그인이 필요해요')
       const res = await fetch('/api/supply-ranking', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token, supplyId: todayTopic.source_supply_id }),
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
       })
       const d = await res.json()
       if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
-      setSupplySummary({ participants: d.participants || 0 })
       if (d.locked) {
         setShowcaseModal(null)
         alert('먼저 글을 쓰면 친구들 글을 볼 수 있어요!')
         return
       }
-      setShowcaseModal({ loading: false, winners: d.winners || [], participants: d.participants || 0 })
+      if (d.myRank != null) setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
+      setShowcaseModal({ loading: false, winners: d.winners || [], myRank: d.myRank ?? null })
     } catch (e) {
       setShowcaseModal(null)
       alert('상위 글을 불러오지 못했어요. 잠시 후 다시 해봐요.')
@@ -990,6 +1014,13 @@ export default function StudentHome() {
       setExampleText('') // 새 예시 받기 위해 비우기
       scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('done')
+
+      // 🆕 step492: 챌린지 수정본이면 카드 상태·내 순위 즉시 갱신(스테일 방지)
+      if (todayTopic.source_supply_id) {
+        setChallengeTopics(prev => prev.map(t =>
+          t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 2) } : t))
+        fetchMyRank(todayTopic.source_supply_id)
+      }
       alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
 
       // 수정본에 대한 새 예시 작품 생성 (백그라운드)
@@ -1011,6 +1042,77 @@ export default function StudentHome() {
     }
     submittingRef.current = false
     setRewriting(false); setRetryMessage(null)
+  }
+
+  // 🆕 step492: 전국 글쓰기 챌린지 카드 — 학급 주제 카드와 분리, 지금 쓰는 중인 챌린지는 숨김(중복 방지)
+  const renderChallengeCards = () => challengeTopics
+    .filter(t => t.id !== todayTopic?.id)
+    .map(t => {
+      const { genreLabel } = parseTopicDescription(t.description)
+      const myRank = challengeRanks[t.source_supply_id]
+      return (
+        <div key={t.id} className="bg-sky-50 border border-sky-200 rounded-2xl p-4">
+          <div className="text-xs text-sky-700 font-semibold mb-1">
+            🌏 전국 글쓰기 챌린지
+            {genreLabel && (
+              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
+            )}
+            {t.myMaxAttempt > 0 && (
+              <span className="ml-2 bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✅ 참여했어요</span>
+            )}
+          </div>
+          <h3 className="font-bold text-sky-900">{t.title}</h3>
+          {t.myMaxAttempt > 0 && myRank != null && (
+            <p className="text-xs text-sky-800 font-semibold mt-1">🏅 지금 내 순위: 전국 {myRank}위</p>
+          )}
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => loadTodayTopic(user, t.id)}
+              className="flex-1 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2 rounded-lg transition">
+              ✍️ 챌린지 글쓰기
+            </button>
+            <button onClick={() => openShowcase(t.source_supply_id)}
+              className="flex-1 bg-white border border-sky-300 hover:bg-sky-100 text-sky-800 text-sm font-semibold py-2 rounded-lg transition">
+              🏆 상위 글 보기
+            </button>
+          </div>
+        </div>
+      )
+    })
+
+  // 🆕 step492: 안 쓴 글 목록 — 학급 주제 먼저, 챌린지는 "🌏 챌린지" 그룹으로 구분(두 카드 공용)
+  const renderPendingList = () => {
+    const classPending = pendingTopics.filter(t => !t.source_supply_id)
+    const challengePending = pendingTopics.filter(t => t.source_supply_id)
+    const item = (t, challenge) => {
+      // step491: 오늘 카드와 동일한 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
+      const { genreLabel, body } = parseTopicDescription(t.description)
+      return (
+        <button key={t.id}
+          onClick={() => loadTodayTopic(user, t.id)}
+          className={`w-full text-left p-3 border rounded-lg transition ${challenge ? 'bg-sky-50 border-sky-200 hover:bg-sky-100' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}>
+          <div className={`text-xs font-semibold ${challenge ? 'text-sky-700' : 'text-amber-700'}`}>
+            📅 {t.date}
+            {challenge && (
+              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+            )}
+            {genreLabel && (
+              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
+            )}
+          </div>
+          <div className="font-medium text-sm mt-0.5">{t.title}</div>
+          {body && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{body}</div>}
+        </button>
+      )
+    }
+    return (
+      <>
+        {classPending.map(t => item(t, false))}
+        {challengePending.length > 0 && (
+          <p className="text-xs text-sky-700 font-semibold pt-1">🌏 챌린지</p>
+        )}
+        {challengePending.map(t => item(t, true))}
+      </>
+    )
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
@@ -1167,14 +1269,19 @@ export default function StudentHome() {
           
           {!todayTopic ? (
             <>
-              <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
-                <div className="text-5xl mb-3">📝</div>
-                <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
-                <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
-                <Link href="/student/history" className="mt-6 inline-block text-primary text-sm hover:underline">
-                  내 글 기록 보기 →
-                </Link>
-              </div>
+              {/* step492: 챌린지가 있는 날은 "주제 없어요" 대신 챌린지 카드 — 빈 상태 판정은 학급 주제 기준 */}
+              {challengeTopics.length === 0 && (
+                <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
+                  <div className="text-5xl mb-3">📝</div>
+                  <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
+                  <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
+                  <Link href="/student/history" className="mt-6 inline-block text-primary text-sm hover:underline">
+                    내 글 기록 보기 →
+                  </Link>
+                </div>
+              )}
+
+              {renderChallengeCards()}
 
               {/* 지난 주제 중 안 쓴 글 안내 */}
               {pendingTopics.length > 0 && (
@@ -1182,27 +1289,7 @@ export default function StudentHome() {
                   <h3 className="font-bold mb-1 text-base">📚 안 쓴 글이 있어요 ({pendingTopics.length}개)</h3>
                   <p className="text-xs text-gray-600 mb-3">결석했거나 못 쓴 지난 주제예요. 지금 써도 돼요!</p>
                   <div className="space-y-2">
-                    {pendingTopics.map(t => {
-                      // step491: 오늘 카드와 동일한 🌏·📝 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
-                      const { genreLabel, body } = parseTopicDescription(t.description)
-                      return (
-                        <button key={t.id}
-                          onClick={() => loadTodayTopic(user, t.id)}
-                          className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
-                          <div className="text-xs text-amber-700 font-semibold">
-                            📅 {t.date}
-                            {t.source_supply_id && (
-                              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
-                            )}
-                            {genreLabel && (
-                              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
-                            )}
-                          </div>
-                          <div className="font-medium text-sm mt-0.5">{t.title}</div>
-                          {body && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{body}</div>}
-                        </button>
-                      )
-                    })}
+                    {renderPendingList()}
                   </div>
                 </div>
               )}
@@ -1232,27 +1319,7 @@ export default function StudentHome() {
                       className="text-xs text-gray-500 hover:text-gray-700">✕ 닫기</button>
                   </div>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {pendingTopics.map(t => {
-                      // step491: 오늘 카드와 동일한 🌏·📝 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
-                      const { genreLabel, body } = parseTopicDescription(t.description)
-                      return (
-                        <button key={t.id}
-                          onClick={() => loadTodayTopic(user, t.id)}
-                          className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
-                          <div className="text-xs text-amber-700 font-semibold">
-                            📅 {t.date}
-                            {t.source_supply_id && (
-                              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
-                            )}
-                            {genreLabel && (
-                              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
-                            )}
-                          </div>
-                          <div className="font-medium text-sm mt-0.5">{t.title}</div>
-                          {body && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{body}</div>}
-                        </button>
-                      )
-                    })}
+                    {renderPendingList()}
                   </div>
                 </div>
               )}
@@ -1325,7 +1392,7 @@ export default function StudentHome() {
                             <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
                           )}
                           {todayTopic.source_supply_id && (
-                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
+                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
                           )}
                           {genreLabel && (
                             <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
@@ -1334,12 +1401,10 @@ export default function StudentHome() {
                         <h2 className="text-lg font-bold text-primary-dark mb-1">{todayTopic.title}</h2>
                         {todayTopic.source_supply_id && todayTopic.date === todayStr() && (
                           <div className="mb-1">
-                            <p className="text-xs text-sky-700">🌏 전국 공통 주제 — 잘 쓴 글은 닉네임으로 소개될 수 있어요</p>
-                            <button onClick={openShowcase}
+                            <p className="text-xs text-sky-700">🌏 전국 글쓰기 챌린지 — 잘 쓴 글은 닉네임으로 소개될 수 있어요</p>
+                            <button onClick={() => openShowcase(todayTopic.source_supply_id)}
                               className="mt-0.5 text-xs text-sky-800 font-semibold underline underline-offset-2">
-                              {supplySummary?.participants > 0
-                                ? `오늘 전국에서 ${supplySummary.participants}명이 참여했어요 · 🏆 상위 글 보기`
-                                : '🏆 전국 상위 글 보기'}
+                              🏆 상위 글 보기
                             </button>
                           </div>
                         )}
@@ -1399,6 +1464,9 @@ export default function StudentHome() {
                   )
                 })()}
               </div>
+
+              {/* step492: 전국 글쓰기 챌린지 카드 — 학급 주제 카드 아래 */}
+              {renderChallengeCards()}
 
               {/* 단계별 화면 */}
               {step === 'write' && (
@@ -1660,12 +1728,19 @@ export default function StudentHome() {
                     </details>
                   )}
 
-                  {/* 🆕 step487: 전국 상위 글 진입점 — 공통 주제 제출 후 */}
+                  {/* 🆕 step487: 챌린지 상위 글 진입점 — 챌린지 제출 후 (step492: 내 순위 표시) */}
                   {todayTopic?.source_supply_id && (
-                    <button onClick={openShowcase}
-                      className="w-full py-2.5 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl text-sm font-semibold hover:bg-sky-100">
-                      🏆 전국 상위 글 보기{supplySummary?.participants > 0 ? ` · 오늘 ${supplySummary.participants}명 참여` : ''}
-                    </button>
+                    <div className="space-y-1.5">
+                      {challengeRanks[todayTopic.source_supply_id] != null && (
+                        <p className="text-center text-sm text-sky-800 font-semibold">
+                          🏅 지금 내 순위: 전국 {challengeRanks[todayTopic.source_supply_id]}위
+                        </p>
+                      )}
+                      <button onClick={() => openShowcase(todayTopic.source_supply_id)}
+                        className="w-full py-2.5 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl text-sm font-semibold hover:bg-sky-100">
+                        🏆 상위 글 보기
+                      </button>
+                    </div>
                   )}
 
                   {/* 다시 쓰기 버튼 (feedback 단계에서만) */}
@@ -1826,12 +1901,12 @@ export default function StudentHome() {
             onSuccess={(newNick) => setUser(prev => ({ ...prev, nickname: newNick }))}
           />
         )}
-        {/* 🆕 step487: 전국 상위 글 모달 — approved만 본문, pending·신고분은 소문구 */}
+        {/* 🆕 step487: 챌린지 상위 글 모달 — approved만 본문, pending·신고분은 소문구 */}
         {showcaseModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl max-h-[85vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold">🏆 오늘의 전국 상위 글</h3>
+                <h3 className="text-lg font-bold">🏆 오늘의 챌린지 상위 글</h3>
                 <button onClick={() => setShowcaseModal(null)} aria-label="닫기"
                   className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
               </div>
@@ -1839,8 +1914,8 @@ export default function StudentHome() {
                 <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
               ) : (
                 <>
-                  {showcaseModal.participants > 0 && (
-                    <p className="text-xs text-gray-500 mb-3">🌏 오늘 전국에서 {showcaseModal.participants}명이 참여했어요</p>
+                  {showcaseModal.myRank != null && (
+                    <p className="text-sm text-sky-800 font-semibold mb-3">🏅 지금 내 순위: 전국 {showcaseModal.myRank}위</p>
                   )}
                   {(showcaseModal.winners || []).length === 0 ? (
                     <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐요!</p>

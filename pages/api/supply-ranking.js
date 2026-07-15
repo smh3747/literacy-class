@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     .select('id').eq('source_supply_id', supplyId)
   const copyIds = (copies || []).map(t => t.id)
   if (copyIds.length === 0) {
-    return res.status(200).json({ ok: true, locked: false, participants: 0, winners: [] })
+    return res.status(200).json({ ok: true, locked: false, participants: 0, winners: [], myRank: null })
   }
 
   // 복사본 전체의 채점 완료 제출
@@ -82,7 +82,7 @@ export default async function handler(req, res) {
   }
   const pool = Object.values(bestByUser)
   if (pool.length === 0) {
-    return res.status(200).json({ ok: true, locked: false, participants, winners: [] })
+    return res.status(200).json({ ok: true, locked: false, participants, winners: [], myRank: null })
   }
 
   // 표시 정보 배치 조회 — realname은 동의 판정(존재=학부모 동의 완료)에만 쓰고 즉시 버린다(반환·로그 금지, step490)
@@ -102,8 +102,8 @@ export default async function handler(req, res) {
     : { data: [] }
   const clsById = Object.fromEntries((clss || []).map(c => [c.id, c]))
 
-  // 숨김 학생·소개 비허용 학급·학부모 미동의 학생 제외 후 점수순 후보 5명
-  const candidates = pool
+  // 숨김 학생·소개 비허용 학급·학부모 미동의 학생 제외 후 점수순 풀
+  const eligible = pool
     .filter(s => {
       const p = profById[s.user_id]
       if (!p || p.is_hidden) return false
@@ -113,7 +113,11 @@ export default async function handler(req, res) {
       return true
     })
     .sort((a, b) => (b.total_score || 0) - (a.total_score || 0))
-    .slice(0, CANDIDATE_LIMIT)
+  const candidates = eligible.slice(0, CANDIDATE_LIMIT)
+
+  // step492: 내 순위 — 동의 완료 랭킹 풀 내 호출자 위치(풀 제외·교사면 null). 순위 숫자만 반환.
+  const myIdx = profile.role === 'student' ? eligible.findIndex(s => s.user_id === uid) : -1
+  const myRank = myIdx >= 0 ? myIdx + 1 : null
 
   // showcase 행 확보(upsert 성격) + pending 검토
   const subIds = candidates.map(s => s.id)
@@ -186,5 +190,5 @@ export default async function handler(req, res) {
     })
   }
 
-  return res.status(200).json({ ok: true, locked: false, participants, winners })
+  return res.status(200).json({ ok: true, locked: false, participants, winners, myRank })
 }
