@@ -105,6 +105,7 @@ export default function StudentHistory() {
   const [grouped, setGrouped] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(null)
+  const [challengeRanks, setChallengeRanks] = useState({}) // step499: { [source_supply_id]: 당시(최종) 순위 }
 
   useEffect(() => { checkAuth() }, [])
 
@@ -147,6 +148,23 @@ export default function StudentHistory() {
     })
     setGrouped(Object.values(groups).sort((a,b) => new Date(b.date) - new Date(a.date)))
     setLoading(false)
+
+    // step499: 챌린지 그룹의 당시(최종) 순위 — 비차단 병렬 조회, 실패 무시(student/index.js fetchMyRank 패턴).
+    //   마감된 주제는 랭킹 풀이 더 안 변하므로 myRank = 최종 순위. myRank null(미동의·집계 제외)이면 미표시.
+    //   호출 수는 학생당 챌린지 참여 수만큼이라 현재 규모에선 무해 — 규모가 커지면 확정 순위를 저장해 두는 방식으로 전환할 것.
+    const challengeSids = [...new Set(Object.values(groups).map(g => g.source_supply_id).filter(Boolean))]
+    challengeSids.forEach(async (sid) => {
+      try {
+        const res = await fetch('/api/supply-ranking', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+        })
+        const d = await res.json()
+        if (res.ok && d?.ok && !d.locked && d.myRank != null) {
+          setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
+        }
+      } catch (e) { /* 무시 — 순위 없이도 목록은 동작 */ }
+    })
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
@@ -520,6 +538,11 @@ export default function StudentHistory() {
                           {g.date}
                           {g.source_supply_id && (
                             <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+                          )}
+                          {g.source_supply_id && challengeRanks[g.source_supply_id] != null && (
+                            <span className={`ml-1 ${challengeRanks[g.source_supply_id] <= 3 ? 'bg-amber-200' : 'bg-amber-100'} text-amber-800 px-2 py-0.5 rounded-full font-semibold`}>
+                              🏅 전국 {challengeRanks[g.source_supply_id]}위
+                            </span>
                           )}
                         </div>
                       </div>

@@ -465,15 +465,20 @@ export default function TeacherSubmissions() {
       ''
     )
     if (reason === null) return // 취소
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('submissions').update({
-      deleted_at: new Date().toISOString(),
-      deleted_by: authUser?.id || null,
-      delete_reason: reason.trim() || null
-    }).eq('id', subId)
-    if (error) return alert('실패: ' + error.message)
-    alert('🗑️ 쓰레기통으로 이동되었어요.\n학급 설정 > 쓰레기통에서 복원 가능합니다.')
-    openTopic(selectedTopic) // 새로고침
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      const { error } = await supabase.from('submissions').update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: authUser?.id || null,
+        delete_reason: reason.trim() || null
+      }).eq('id', subId)
+      if (error) return alert('실패: ' + error.message)
+      alert('🗑️ 쓰레기통으로 이동되었어요.\n학급 설정 > 쓰레기통에서 복원 가능합니다.')
+      openTopic(selectedTopic) // 새로고침
+    } catch (e) {
+      // step499: 예외도 표시 — 조용한 먹통 방지
+      alert('실패: ' + (e?.message || '알 수 없는 오류'))
+    }
   }
 
   // 🔄 단일 글 재평가
@@ -1552,7 +1557,7 @@ export default function TeacherSubmissions() {
                         className="flex-1 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs hover:bg-blue-100 transition disabled:opacity-50">
                         {regrading === s.id ? '🔄 평가 중...' : '🔄 이 글 다시 평가'}
                       </button>
-                      <button onClick={() => moveToTrash(s.id, selectedStudent.profile.realname)}
+                      <button onClick={() => moveToTrash(s.id, displayStudentName(selectedStudent.profile))}
                         disabled={regrading === s.id || bulkRegrading}
                         className="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-red-100 hover:text-red-700 transition disabled:opacity-50">
                         🗑️ 쓰레기통으로
