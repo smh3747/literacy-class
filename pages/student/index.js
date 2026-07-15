@@ -1852,7 +1852,7 @@ export default function StudentHome() {
                       })}
                     </div>
                   )}
-                  <p className="text-[11px] text-gray-400 mt-3">잘 쓴 글은 확인을 거쳐 닉네임으로 소개돼요</p>
+                  <p className="text-[11px] text-gray-400 mt-3">학부모 동의가 완료된 친구들의 글만 소개돼요. 잘 쓴 글은 확인을 거쳐 닉네임으로 나와요.</p>
                 </>
               )}
             </div>

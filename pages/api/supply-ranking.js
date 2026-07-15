@@ -3,6 +3,7 @@
 // 원칙: ① AI 검토(approved)만 본문 공개 — pending·hidden은 본문 null, rejected는 다음 순위로 대체
 //       ② 학생은 본인 제출 후에만 열람(미제출은 locked+참여 수만)
 //       ③ 응답에 실명·student_id·review_reason 절대 미포함(닉네임·학교·학년·반·점수만)
+//       ④ 학부모 동의 완료(realname 존재) 학생만 순위·본문·닉네임 집계(step490) — realname은 판정 후 즉시 버림
 // supply_showcase는 RLS 전면 차단(서버 전용) — 이 API가 유일한 읽기·집계 경로.
 // 검토 키는 SYSTEM_GEMINI_API_KEY(시스템 전용). 미설정·실패 시 pending 유지(fail-safe).
 //
@@ -84,22 +85,29 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, locked: false, participants, winners: [] })
   }
 
-  // 표시 정보 배치 조회 — realname은 절대 조회하지 않는다
+  // 표시 정보 배치 조회 — realname은 동의 판정(존재=학부모 동의 완료)에만 쓰고 즉시 버린다(반환·로그 금지, step490)
   const userIds = pool.map(s => s.user_id)
   const { data: profs } = await admin.from('profiles')
-    .select('id, nickname, username, school, class_id, is_hidden').in('id', userIds)
-  const profById = Object.fromEntries((profs || []).map(p => [p.id, p]))
+    .select('id, nickname, username, school, class_id, is_hidden, realname').in('id', userIds)
+  const consentById = {}
+  const profById = {}
+  for (const raw of profs || []) {
+    consentById[raw.id] = !!(raw.realname || '').trim()
+    const { realname, ...p } = raw
+    profById[p.id] = p
+  }
   const classIds = [...new Set((profs || []).map(p => p.class_id).filter(Boolean))]
   const { data: clss } = classIds.length > 0
     ? await admin.from('classes').select('id, name, school, grade, showcase_enabled').in('id', classIds)
     : { data: [] }
   const clsById = Object.fromEntries((clss || []).map(c => [c.id, c]))
 
-  // 숨김 학생·소개 비허용 학급 제외 후 점수순 후보 5명
+  // 숨김 학생·소개 비허용 학급·학부모 미동의 학생 제외 후 점수순 후보 5명
   const candidates = pool
     .filter(s => {
       const p = profById[s.user_id]
       if (!p || p.is_hidden) return false
+      if (!consentById[s.user_id]) return false   // step490: 동의 완료 학생만 순위·본문·닉네임 집계(participants 카운트는 유지)
       const c = clsById[p.class_id]
       if (!c || c.showcase_enabled === false) return false
       return true
