@@ -1329,7 +1329,7 @@ export default function TeacherSubmissions() {
                           {grammarOneId === s.id ? '🔍 검사 중...' : '🔍 맞춤법만 다시 검사'}
                         </button>
                       )}
-                      <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
+                      <button onClick={() => regradeOne(s, displayStudentName(selectedStudent.profile))}
                         disabled={regrading === s.id || bulkRegrading}
                         className="text-xs bg-amber-600 text-white px-2.5 py-1 rounded-lg hover:bg-amber-700 transition disabled:opacity-50 whitespace-nowrap">
                         {regrading === s.id ? '🔄 평가 중...' : '🔄 다시 평가하기'}
@@ -1552,7 +1552,7 @@ export default function TeacherSubmissions() {
 
                     {/* 🔄 재평가 + 🗑️ 쓰레기통 (선생님만) */}
                     <div className="flex gap-2">
-                      <button onClick={() => regradeOne(s, selectedStudent.profile.realname)}
+                      <button onClick={() => regradeOne(s, displayStudentName(selectedStudent.profile))}
                         disabled={regrading === s.id || bulkRegrading}
                         className="flex-1 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs hover:bg-blue-100 transition disabled:opacity-50">
                         {regrading === s.id ? '🔄 평가 중...' : '🔄 이 글 다시 평가'}
