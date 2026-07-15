@@ -105,6 +105,7 @@ export default function TopicsPage() {
 
   // 📅 기간 일괄 등록 모드
   const [batchMode, setBatchMode] = useState(false)
+  const [topicFilter, setTopicFilter] = useState('all') // step493: all / class / challenge(source_supply_id 유무)
   const [batchStartDate, setBatchStartDate] = useState(() => {
     const d = new Date()
     d.setHours(d.getHours() + 9)
@@ -1851,6 +1852,17 @@ export default function TopicsPage() {
           {/* 주제 목록 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h3 className="font-bold mb-3">📚 등록된 주제 ({topics.length}개)</h3>
+            {/* step493: 학급 주제/챌린지 3단 필터 — source_supply_id 유무로 판정 */}
+            <div className="bg-gray-50 rounded-xl p-1 flex gap-1 mb-3">
+              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 챌린지']].map(([k, label]) => (
+                <button key={k} onClick={() => setTopicFilter(k)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
+                    topicFilter === k ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
             {topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 주제가 없어요</p>
             ) : (() => {
@@ -1859,9 +1871,15 @@ export default function TopicsPage() {
                 const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
                 return kst.toISOString().slice(0, 10)
               })()
-              const todayTopics = topics.filter(t => t.date === today)
-              const futureTopics = topics.filter(t => t.date > today)
-              const pastTopics = topics.filter(t => t.date < today)
+              // step493: 필터 적용 후 날짜별 분류
+              const visibleTopics = topics.filter(t =>
+                topicFilter === 'all' ? true : topicFilter === 'challenge' ? !!t.source_supply_id : !t.source_supply_id)
+              if (visibleTopics.length === 0) {
+                return <p className="text-sm text-gray-500 py-8 text-center">이 필터에 해당하는 주제가 없어요.</p>
+              }
+              const todayTopics = visibleTopics.filter(t => t.date === today)
+              const futureTopics = visibleTopics.filter(t => t.date > today)
+              const pastTopics = visibleTopics.filter(t => t.date < today)
 
               // 🆕 step279: 추천 풀에 공유 중인 주제 id 집합 (배지·취소 버튼용)
               const sharedTopicIds = new Set((suggestionLogs || []).filter(l => l.resulting_topic_id).map(l => l.resulting_topic_id))

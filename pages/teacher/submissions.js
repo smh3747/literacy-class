@@ -158,6 +158,7 @@ export default function TeacherSubmissions() {
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('topics') // topics / topicStudents / studentDetail / allFinal
+  const [topicFilter, setTopicFilter] = useState('all') // step493: all / class / challenge(source_supply_id 유무)
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [topicStudents, setTopicStudents] = useState([])
   const [expandedEssays, setExpandedEssays] = useState({})  // 🆕 전체 최종본 뷰: 학생별 본문 더보기 토글
@@ -859,19 +860,42 @@ export default function TeacherSubmissions() {
               </div>
               <div className="bg-white rounded-2xl p-5 shadow-sm">
                 <h3 className="font-bold mb-3">📚 등록된 주제 ({topics.length}개)</h3>
+                {/* step493: 학급 주제/챌린지 3단 필터 — source_supply_id 유무로 판정 */}
+                <div className="bg-gray-50 rounded-xl p-1 flex gap-1 mb-3">
+                  {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 챌린지']].map(([k, label]) => (
+                    <button key={k} onClick={() => setTopicFilter(k)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
+                        topicFilter === k ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 {topics.length === 0 ? (
                   <p className="text-sm text-gray-500 py-8 text-center">등록된 주제가 없어요. 먼저 주제를 등록해주세요.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {topics.map(t => (
-                      <button key={t.id} onClick={() => openTopic(t)}
-                        className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition">
-                        <div className="font-medium text-sm">{t.title}</div>
-                        <div className="text-xs text-gray-500 mt-1">{t.date}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                ) : (() => {
+                  const visible = topics.filter(t =>
+                    topicFilter === 'all' ? true : topicFilter === 'challenge' ? !!t.source_supply_id : !t.source_supply_id)
+                  if (visible.length === 0) {
+                    return <p className="text-sm text-gray-500 py-8 text-center">이 필터에 해당하는 주제가 없어요.</p>
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {visible.map(t => (
+                        <button key={t.id} onClick={() => openTopic(t)}
+                          className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition">
+                          <div className="font-medium text-sm">
+                            {t.title}
+                            {t.source_supply_id && (
+                              <span className="ml-2 text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">{t.date}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             </>
           )}
