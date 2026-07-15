@@ -104,9 +104,10 @@ export default async function handler(req, res) {
     if (!supplyId) return res.status(400).json({ error: 'supplyId가 필요해요' })
     try {
       const { allSubs, participants } = await loadSupplySubmissions(admin, supplyId)
-      const { eligible } = await aggregateShowcase(admin, supplyId, allSubs)
+      const { eligible, excluded } = await aggregateShowcase(admin, supplyId, allSubs)
       const list = await buildList(admin, supplyId)
-      return res.status(200).json({ ok: true, rows: list, participants, eligible: eligible.length })
+      // excluded(step503): 사유별 제외 수 — 관리자 힌트 전용
+      return res.status(200).json({ ok: true, rows: list, participants, eligible: eligible.length, excluded })
     } catch (e) {
       return res.status(500).json({ error: e?.message || '집계에 실패했어요' })
     }

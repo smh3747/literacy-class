@@ -836,7 +836,7 @@ export default function AdminHome() {
       if (!res.ok || !d?.ok) throw new Error(d?.error || '집계 실패')
       setShowcasePanel({
         supplyId, loading: false, collecting: false, rows: d.rows || [],
-        counts: { participants: d.participants || 0, eligible: d.eligible || 0 },
+        counts: { participants: d.participants || 0, eligible: d.eligible || 0, excluded: d.excluded || null },
       })
     } catch (e) {
       alert('집계에 실패했어요: ' + (e?.message || ''))
@@ -3465,12 +3465,19 @@ export default function AdminHome() {
                               {showcasePanel.loading ? (
                                 <p className="text-xs text-gray-400 py-2 text-center">불러오는 중...</p>
                               ) : (<>
-                                {/* step502: 집계 결과 0명 사유 힌트 — 참여는 있는데 소개 가능 학생이 없는 경우 */}
-                                {showcasePanel.counts && showcasePanel.counts.eligible === 0 && showcasePanel.counts.participants > 0 && (
-                                  <p className="text-[11px] text-amber-700 text-center">
-                                    참여 {showcasePanel.counts.participants}명 중 소개 가능 학생이 없어요 (학부모 동의 미완료·학급 소개 꺼짐 등)
-                                  </p>
-                                )}
+                                {/* step502: 집계 결과 0명 사유 힌트 — step503: 사유별 카운트(0인 사유 생략) */}
+                                {showcasePanel.counts && showcasePanel.counts.eligible === 0 && showcasePanel.counts.participants > 0 && (() => {
+                                  const EX_LABELS = { paste: '복붙 감지', no_consent: '동의 미완료', hidden: '숨김 학생', class_off: '학급 소개 꺼짐' }
+                                  const parts = Object.entries(showcasePanel.counts.excluded || {})
+                                    .filter(([k, v]) => EX_LABELS[k] && v > 0)
+                                    .map(([k, v]) => `${EX_LABELS[k]} ${v}`)
+                                  return (
+                                    <p className="text-[11px] text-amber-700 text-center">
+                                      참여 {showcasePanel.counts.participants}명 중 소개 가능 0명
+                                      {parts.length > 0 ? ` — ${parts.join(' · ')}` : ' (학부모 동의 미완료·학급 소개 꺼짐 등)'}
+                                    </p>
+                                  )
+                                })()}
                                 {showcasePanel.rows.length === 0 ? (
                                   <div className="py-2 text-center space-y-1.5">
                                     <p className="text-xs text-gray-400">아직 집계된 소개 후보가 없어요</p>
