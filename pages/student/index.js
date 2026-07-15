@@ -16,11 +16,7 @@ import { findOriginalRange } from '../../lib/koreanRules'
 import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
-
-// 한국 시간 기준 오늘 날짜 — step497: getTimezoneOffset 이중 가산 버그 수정(KST 브라우저에서 15시 이후 내일 반환)
-function todayStr() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-}
+import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).

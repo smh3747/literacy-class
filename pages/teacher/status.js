@@ -5,11 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { displayStudentName } from '../../lib/displayName'
-
-// 한국 시간 기준 오늘 날짜 — step497: getTimezoneOffset 이중 가산 버그 수정
-function todayStr() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-}
+import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 
 export default function SubmissionStatus() {
   const router = useRouter()

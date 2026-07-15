@@ -7,6 +7,7 @@ import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
+import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 
 // 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
 function AiLoadingBlock({ title, sub }) {
@@ -50,10 +51,7 @@ export default function TopicsPage() {
   const [loading, setLoading] = useState(true)
   
   // 새 주제 입력
-  const [date, setDate] = useState(() => {
-    // step497: getTimezoneOffset 이중 가산 버그 수정(KST 브라우저에서 15시 이후 내일 반환)
-    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-  })
+  const [date, setDate] = useState(() => todayStr())
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [rubrics, setRubrics] = useState(DEFAULT_RUBRICS)
@@ -1865,7 +1863,7 @@ export default function TopicsPage() {
             {topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 주제가 없어요</p>
             ) : (() => {
-              const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)   // step497: 이중 가산 버그 수정
+              const today = todayStr()
               // step493: 필터 적용 후 날짜별 분류
               const visibleTopics = topics.filter(t =>
                 topicFilter === 'all' ? true : topicFilter === 'challenge' ? !!t.source_supply_id : !t.source_supply_id)
