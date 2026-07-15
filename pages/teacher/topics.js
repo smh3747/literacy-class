@@ -1851,7 +1851,7 @@ export default function TopicsPage() {
             <h3 className="font-bold mb-3">📚 등록된 주제 ({topics.length}개)</h3>
             {/* step493: 학급 주제/챌린지 3단 필터 — source_supply_id 유무로 판정 */}
             <div className="bg-gray-50 rounded-xl p-1 flex gap-1 mb-3">
-              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 챌린지']].map(([k, label]) => (
+              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 전국 글쓰기 챌린지']].map(([k, label]) => (
                 <button key={k} onClick={() => setTopicFilter(k)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
                     topicFilter === k ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1934,7 +1934,7 @@ export default function TopicsPage() {
                           {t.source_supply_id && (
                             <>
                               <span>·</span>
-                              <span className="px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700">🌏 챌린지</span>
+                              <span className="px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700 whitespace-nowrap">🌏 전국 글쓰기 챌린지</span>
                             </>
                           )}
                         </div>

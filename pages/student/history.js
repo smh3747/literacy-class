@@ -537,7 +537,7 @@ export default function StudentHistory() {
                         <div className="text-xs text-gray-500">
                           {g.date}
                           {g.source_supply_id && (
-                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full whitespace-nowrap">🌏 전국 글쓰기 챌린지</span>
                           )}
                           {g.source_supply_id && challengeRanks[g.source_supply_id] != null && (
                             <span className={`ml-1 ${challengeRanks[g.source_supply_id] <= 3 ? 'bg-amber-200' : 'bg-amber-100'} text-amber-800 px-2 py-0.5 rounded-full font-semibold`}>

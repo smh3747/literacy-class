@@ -189,7 +189,7 @@ export default function SubmissionStatus() {
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             {/* step494: 학급 주제/챌린지 3단 필터 — source_supply_id 유무로 판정 */}
             <div className="bg-gray-50 rounded-xl p-1 flex gap-1 mb-3">
-              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 챌린지']].map(([k, label]) => (
+              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 전국 글쓰기 챌린지']].map(([k, label]) => (
                 <button key={k} onClick={() => handleFilterChange(k)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
                     topicFilter === k ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'

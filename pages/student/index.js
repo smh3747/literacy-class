@@ -1072,7 +1072,7 @@ export default function StudentHome() {
       )
     })
 
-  // 🆕 step492: 안 쓴 글 목록 — 학급 주제 먼저, 챌린지는 "🌏 챌린지" 그룹으로 구분(두 카드 공용)
+  // 🆕 step492: 안 쓴 글 목록 — 학급 주제 먼저, 챌린지는 "🌏 전국 글쓰기 챌린지" 그룹으로 구분(두 카드 공용)
   const renderPendingList = () => {
     const classPending = pendingTopics.filter(t => !t.source_supply_id)
     const challengePending = pendingTopics.filter(t => t.source_supply_id)
@@ -1086,7 +1086,7 @@ export default function StudentHome() {
           <div className={`text-xs font-semibold ${challenge ? 'text-sky-700' : 'text-amber-700'}`}>
             📅 {t.date}
             {challenge && (
-              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full whitespace-nowrap">🌏 전국 글쓰기 챌린지</span>
             )}
             {genreLabel && (
               <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
@@ -1357,7 +1357,7 @@ export default function StudentHome() {
                             <span className="ml-2 bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">지난 주제</span>
                           )}
                           {todayTopic.source_supply_id && (
-                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 챌린지</span>
+                            <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full whitespace-nowrap">🌏 전국 글쓰기 챌린지</span>
                           )}
                           {genreLabel && (
                             <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
