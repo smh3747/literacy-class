@@ -308,7 +308,7 @@ export default function StudentHome() {
     // 최근 30일 이내 주제 중 오늘보다 이전 것
     const tPast = performance.now()
     const { data: pastTopics } = await supabase.from('topics')
-      .select('id, date, title, description')
+      .select('id, date, title, description, source_supply_id')
       .eq('teacher_id', teacherId)
       .is('supply_type', null)   // step479: 공급 원본 격리(담임=관리자 학급 노출 방지)
       .lt('date', today)
@@ -1182,15 +1182,27 @@ export default function StudentHome() {
                   <h3 className="font-bold mb-1 text-base">📚 안 쓴 글이 있어요 ({pendingTopics.length}개)</h3>
                   <p className="text-xs text-gray-600 mb-3">결석했거나 못 쓴 지난 주제예요. 지금 써도 돼요!</p>
                   <div className="space-y-2">
-                    {pendingTopics.map(t => (
-                      <button key={t.id}
-                        onClick={() => loadTodayTopic(user, t.id)}
-                        className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
-                        <div className="text-xs text-amber-700 font-semibold">📅 {t.date}</div>
-                        <div className="font-medium text-sm mt-0.5">{t.title}</div>
-                        {t.description && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{t.description}</div>}
-                      </button>
-                    ))}
+                    {pendingTopics.map(t => {
+                      // step491: 오늘 카드와 동일한 🌏·📝 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
+                      const { genreLabel, body } = parseTopicDescription(t.description)
+                      return (
+                        <button key={t.id}
+                          onClick={() => loadTodayTopic(user, t.id)}
+                          className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
+                          <div className="text-xs text-amber-700 font-semibold">
+                            📅 {t.date}
+                            {t.source_supply_id && (
+                              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
+                            )}
+                            {genreLabel && (
+                              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
+                            )}
+                          </div>
+                          <div className="font-medium text-sm mt-0.5">{t.title}</div>
+                          {body && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{body}</div>}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1220,15 +1232,27 @@ export default function StudentHome() {
                       className="text-xs text-gray-500 hover:text-gray-700">✕ 닫기</button>
                   </div>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {pendingTopics.map(t => (
-                      <button key={t.id}
-                        onClick={() => loadTodayTopic(user, t.id)}
-                        className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
-                        <div className="text-xs text-amber-700 font-semibold">📅 {t.date}</div>
-                        <div className="font-medium text-sm mt-0.5">{t.title}</div>
-                        {t.description && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{t.description}</div>}
-                      </button>
-                    ))}
+                    {pendingTopics.map(t => {
+                      // step491: 오늘 카드와 동일한 🌏·📝 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
+                      const { genreLabel, body } = parseTopicDescription(t.description)
+                      return (
+                        <button key={t.id}
+                          onClick={() => loadTodayTopic(user, t.id)}
+                          className="w-full text-left p-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition">
+                          <div className="text-xs text-amber-700 font-semibold">
+                            📅 {t.date}
+                            {t.source_supply_id && (
+                              <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">🌏 전국 공통</span>
+                            )}
+                            {genreLabel && (
+                              <span className="ml-2 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">📝 {genreLabel}</span>
+                            )}
+                          </div>
+                          <div className="font-medium text-sm mt-0.5">{t.title}</div>
+                          {body && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{body}</div>}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
