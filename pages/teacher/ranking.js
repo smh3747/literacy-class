@@ -11,18 +11,13 @@ import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
-// 한국 시간 기준 오늘 날짜 (student/ranking.js와 동일)
+// 한국 시간 기준 오늘 날짜 (student/ranking.js와 동일) — step497: getTimezoneOffset 이중 가산 버그 수정
 function todayStr() {
-  const now = new Date()
-  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
-  return kst.toISOString().slice(0, 10)
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 }
 // N일 전 날짜 (student/ranking.js와 동일)
 function daysAgoStr(days) {
-  const now = new Date()
-  now.setDate(now.getDate() - days)
-  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
-  return kst.toISOString().slice(0, 10)
+  return new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000).toISOString().slice(0, 10)
 }
 
 export default function TeacherRanking() {

@@ -17,11 +17,9 @@ import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 
-// 한국 시간 기준 오늘 날짜
+// 한국 시간 기준 오늘 날짜 — step497: getTimezoneOffset 이중 가산 버그 수정(KST 브라우저에서 15시 이후 내일 반환)
 function todayStr() {
-  const now = new Date()
-  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
-  return kst.toISOString().slice(0, 10)
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
@@ -68,8 +66,7 @@ function checkTimeLock(topic) {
   if (topic.date !== todayStr()) {
     return { allowed: true, reason: '' }
   }
-  const now = new Date()
-  const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
+  const kst = new Date(Date.now() + 9 * 3600 * 1000)   // step497: 이중 가산 버그 수정(시간 락 시각 오판)
   const hh = String(kst.getUTCHours()).padStart(2, '0')
   const mm = String(kst.getUTCMinutes()).padStart(2, '0')
   const nowHM = `${hh}:${mm}`

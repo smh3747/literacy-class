@@ -51,9 +51,8 @@ export default function TopicsPage() {
   
   // 새 주제 입력
   const [date, setDate] = useState(() => {
-    const now = new Date()
-    const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
-    return kst.toISOString().slice(0, 10)
+    // step497: getTimezoneOffset 이중 가산 버그 수정(KST 브라우저에서 15시 이후 내일 반환)
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
   })
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
@@ -1866,11 +1865,7 @@ export default function TopicsPage() {
             {topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 주제가 없어요</p>
             ) : (() => {
-              const today = (() => {
-                const now = new Date()
-                const kst = new Date(now.getTime() + (9 * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000))
-                return kst.toISOString().slice(0, 10)
-              })()
+              const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)   // step497: 이중 가산 버그 수정
               // step493: 필터 적용 후 날짜별 분류
               const visibleTopics = topics.filter(t =>
                 topicFilter === 'all' ? true : topicFilter === 'challenge' ? !!t.source_supply_id : !t.source_supply_id)
