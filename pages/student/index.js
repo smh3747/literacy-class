@@ -1108,7 +1108,7 @@ export default function StudentHome() {
       <>
         {classPending.map(t => item(t, false))}
         {challengePending.length > 0 && (
-          <p className="text-xs text-sky-700 font-semibold pt-1">🌏 챌린지</p>
+          <p className="text-xs text-sky-700 font-semibold pt-1">🌏 전국 글쓰기 챌린지</p>
         )}
         {challengePending.map(t => item(t, true))}
       </>
@@ -1296,34 +1296,6 @@ export default function StudentHome() {
             </>
           ) : (
             <>
-              {/* 지난 주제 글쓰기 안내 배너 (오늘 주제 있을 때 — 모든 단계에서 표시) */}
-              {pendingTopics.length > 0 && !showPendingPicker && todayTopic.date === todayStr() && (
-                <button onClick={() => setShowPendingPicker(true)}
-                  className="w-full bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-2xl p-3 text-left transition">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-sm text-amber-900">📚 안 쓴 지난 글이 {pendingTopics.length}개 있어요</div>
-                      <div className="text-xs text-amber-700 mt-0.5">결석했거나 못 쓴 주제도 지금 쓸 수 있어요</div>
-                    </div>
-                    <div className="text-amber-700">→</div>
-                  </div>
-                </button>
-              )}
-
-              {/* 지난 주제 선택 모드 */}
-              {showPendingPicker && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-base">📚 지난 주제 선택</h3>
-                    <button onClick={() => setShowPendingPicker(false)}
-                      className="text-xs text-gray-500 hover:text-gray-700">✕ 닫기</button>
-                  </div>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {renderPendingList()}
-                  </div>
-                </div>
-              )}
-
               {/* 오늘 주제가 여러 개일 때 선택 UI */}
               {todayTopicList.length > 1 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4">
@@ -1467,6 +1439,34 @@ export default function StudentHome() {
 
               {/* step492: 전국 글쓰기 챌린지 카드 — 학급 주제 카드 아래 */}
               {renderChallengeCards()}
+
+              {/* 지난 주제 글쓰기 안내 배너 — step496: 챌린지 카드 아래로 이동(학급 주제 → 챌린지 → 안 쓴 글) */}
+              {pendingTopics.length > 0 && !showPendingPicker && todayTopic.date === todayStr() && (
+                <button onClick={() => setShowPendingPicker(true)}
+                  className="w-full bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-2xl p-3 text-left transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-sm text-amber-900">📚 안 쓴 지난 글이 {pendingTopics.length}개 있어요</div>
+                      <div className="text-xs text-amber-700 mt-0.5">결석했거나 못 쓴 주제도 지금 쓸 수 있어요</div>
+                    </div>
+                    <div className="text-amber-700">→</div>
+                  </div>
+                </button>
+              )}
+
+              {/* 지난 주제 선택 모드 */}
+              {showPendingPicker && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-base">📚 지난 주제 선택</h3>
+                    <button onClick={() => setShowPendingPicker(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700">✕ 닫기</button>
+                  </div>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {renderPendingList()}
+                  </div>
+                </div>
+              )}
 
               {/* 단계별 화면 */}
               {step === 'write' && (
