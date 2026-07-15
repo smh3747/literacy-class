@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import { toKST, toKSTDate } from '../../lib/timeFormat'
+import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 
@@ -763,7 +764,7 @@ export default function AdminHome() {
     if (tab !== 'supply' || supplyList.loaded) return
     ;(async () => {
       const { data } = await supabase.from('topics')
-        .select('id, title, supply_type, supply_grade, publish_week, published_at, created_at')
+        .select('id, title, date, supply_type, supply_grade, publish_week, published_at, created_at')   // step504: date = 마감 표시용
         .not('supply_type', 'is', null)
         .order('created_at', { ascending: false }).limit(100)
       setSupplyList({ loaded: true, rows: data || [] })
@@ -3462,6 +3463,10 @@ export default function AdminHome() {
                           {/* step488: 소개 글 모니터링 패널 — 검토 상태·신고 강조·비공개/복구 */}
                           {panelOpen && (
                             <div className="mt-2 border-t border-gray-200 pt-2 space-y-1.5">
+                              {/* step504: 마감 주제 = 순위 확정(supply_final_ranks) — 다시 집계해도 순위 불변, 검토 상태만 갱신 */}
+                              {t.date && t.date < todayStr() && (
+                                <p className="text-[11px] text-gray-500 text-center">🔒 {t.date} 마감 — 순위 확정됨</p>
+                              )}
                               {showcasePanel.loading ? (
                                 <p className="text-xs text-gray-400 py-2 text-center">불러오는 중...</p>
                               ) : (<>

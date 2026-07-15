@@ -13,7 +13,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { nicknameFromSeed } from '../../lib/nickname'
 // step502: 집계·검토 코어는 lib/showcaseRanking.server.js로 이전 — supply-showcase-admin(collect)과 공유
-import { loadSupplySubmissions, aggregateShowcase, WINNER_LIMIT } from '../../lib/showcaseRanking.server'
+// step504: 마감(원본 date < 오늘) 후에는 supply_final_ranks 확정본으로 응답 — "그날의 순위" 동결
+import {
+  loadSupplySubmissions, aggregateShowcase, WINNER_LIMIT,
+  isClosed, finalizeRanks, getFinalRanks, buildFrozenWinners,
+} from '../../lib/showcaseRanking.server'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -54,7 +58,7 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e?.message || '집계에 실패했어요' })
   }
-  const { copyIds, allSubs, participants } = loaded
+  const { copyIds, allSubs, participants, supplyDate } = loaded
   if (copyIds.length === 0) {
     return res.status(200).json({ ok: true, locked: false, participants: 0, winners: [], myRank: null })
   }
@@ -64,8 +68,24 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, locked: true, participants })
   }
 
+  // step504: 마감 후 확정본이 있으면 그대로 반환 — 재계산·재검토 없음, 지각 제출자는 myRank null
+  const closed = isClosed(supplyDate)
+  if (closed) {
+    const finalRanks = await getFinalRanks(admin, supplyId)
+    if (finalRanks.length > 0) {
+      const frozenRank = profile.role === 'student'
+        ? (finalRanks.find(r => r.student_id === uid)?.rank ?? null)
+        : null
+      const frozenWinners = await buildFrozenWinners(admin, supplyId, finalRanks)
+      return res.status(200).json({ ok: true, locked: false, participants, winners: frozenWinners, myRank: frozenRank })
+    }
+  }
+
   // 동의 필터·후보 선정·showcase upsert·AI 검토 (step502: 공용 모듈)
   const { eligible, candidates, rowBySub, profById, clsById } = await aggregateShowcase(admin, supplyId, allSubs)
+
+  // step504: 마감 후 첫 조회면 이번 계산값으로 확정(lazy) — 이후 조회는 위 확정본 경로
+  if (closed) await finalizeRanks(admin, supplyId, eligible)
 
   // step492: 내 순위 — 동의 완료 랭킹 풀 내 호출자 위치(풀 제외·교사면 null). 순위 숫자만 반환.
   const myIdx = profile.role === 'student' ? eligible.findIndex(s => s.user_id === uid) : -1
