@@ -821,6 +821,29 @@ export default function AdminHome() {
     }
   }
 
+  // step502: 즉시 집계 — 학생 랭킹 열람과 동일한 집계·검토를 지금 실행하고 최신 목록·카운트 반영
+  const collectShowcase = async (supplyId) => {
+    setShowcasePanel(prev => prev?.supplyId === supplyId
+      ? { ...prev, collecting: true }
+      : { supplyId, loading: false, rows: [], collecting: true })
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/supply-showcase-admin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session?.access_token, action: 'collect', supplyId }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '집계 실패')
+      setShowcasePanel({
+        supplyId, loading: false, collecting: false, rows: d.rows || [],
+        counts: { participants: d.participants || 0, eligible: d.eligible || 0 },
+      })
+    } catch (e) {
+      alert('집계에 실패했어요: ' + (e?.message || ''))
+      setShowcasePanel(prev => prev ? { ...prev, collecting: false } : prev)
+    }
+  }
+
   const toggleShowcaseHidden = async (row) => {
     const next = !row.hidden
     if (!confirm(next ? '이 글을 비공개할까요?' : '이 글을 다시 공개(복구)할까요?')) return
@@ -3441,10 +3464,29 @@ export default function AdminHome() {
                             <div className="mt-2 border-t border-gray-200 pt-2 space-y-1.5">
                               {showcasePanel.loading ? (
                                 <p className="text-xs text-gray-400 py-2 text-center">불러오는 중...</p>
-                              ) : showcasePanel.rows.length === 0 ? (
-                                <p className="text-xs text-gray-400 py-2 text-center">아직 소개 후보가 없어요 (학생이 랭킹을 열면 집계돼요)</p>
-                              ) : (
-                                showcasePanel.rows.map(r => (
+                              ) : (<>
+                                {/* step502: 집계 결과 0명 사유 힌트 — 참여는 있는데 소개 가능 학생이 없는 경우 */}
+                                {showcasePanel.counts && showcasePanel.counts.eligible === 0 && showcasePanel.counts.participants > 0 && (
+                                  <p className="text-[11px] text-amber-700 text-center">
+                                    참여 {showcasePanel.counts.participants}명 중 소개 가능 학생이 없어요 (학부모 동의 미완료·학급 소개 꺼짐 등)
+                                  </p>
+                                )}
+                                {showcasePanel.rows.length === 0 ? (
+                                  <div className="py-2 text-center space-y-1.5">
+                                    <p className="text-xs text-gray-400">아직 집계된 소개 후보가 없어요</p>
+                                    <button onClick={() => collectShowcase(t.id)} disabled={showcasePanel.collecting}
+                                      className="text-xs px-3 py-1 rounded bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50">
+                                      {showcasePanel.collecting ? '집계 중...' : '지금 집계하기'}
+                                    </button>
+                                  </div>
+                                ) : (<>
+                                  <div className="flex justify-end">
+                                    <button onClick={() => collectShowcase(t.id)} disabled={showcasePanel.collecting}
+                                      className="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+                                      {showcasePanel.collecting ? '집계 중...' : '🔄 다시 집계'}
+                                    </button>
+                                  </div>
+                                  {showcasePanel.rows.map(r => (
                                   <div key={r.id} className={`p-2 rounded-lg border ${r.reported ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-white'}`}>
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-xs font-mono text-gray-400">{r.rank}위</span>
@@ -3474,8 +3516,9 @@ export default function AdminHome() {
                                       </details>
                                     )}
                                   </div>
-                                ))
-                              )}
+                                  ))}
+                                </>)}
+                              </>)}
                             </div>
                           )}
                         </div>
