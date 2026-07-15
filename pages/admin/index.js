@@ -927,6 +927,7 @@ export default function AdminHome() {
         supply_grade: supplyForm.gradeBand,       // step464: 대상 학년대
         publish_week: kstIsoWeek(),
         published_at: publishedAt,
+        max_rewrites: 1,                          // step494: 챌린지 기본값 — 총 2회(첫 글+수정 1회)
       })
       if (error) throw error
       alert(scheduledDate ? `예약 발행 완료 (${scheduledDate} 공개)` : '발행 완료!')

@@ -1941,7 +1941,7 @@ export default function TopicsPage() {
                           {t.source_supply_id && (
                             <>
                               <span>·</span>
-                              <span className="px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700">🌏 전국 공통</span>
+                              <span className="px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700">🌏 챌린지</span>
                             </>
                           )}
                         </div>

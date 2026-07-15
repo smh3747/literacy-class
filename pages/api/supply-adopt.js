@@ -1,4 +1,4 @@
-// 전국 공통 주제 자동 등록 (step476)
+// 전국 글쓰기 챌린지 주제 자동 등록 (step476)
 // 오늘(KST) 발행된 공급 주제(supply_type 있는 topics)를 호출자의 학급 주제로 복사한다.
 // 호출 경로: ① 학생 글쓰기 진입·교사 홈 로드 시 lazy(auto_supply_enabled 학급만)
 //           ② 교사 홈 원클릭 카드(force: true — 토글 무관, 교사 role만 허용)
@@ -95,6 +95,7 @@ export default async function handler(req, res) {
       rubrics: s.rubrics,
       teacher_id: teacherId,
       source_supply_id: s.id,
+      max_rewrites: 1,   // step494: 챌린지 참여는 총 2회(첫 글+수정 1회)로 고정 — 원본 값과 무관
     }).select('id').single()
     if (!insErr && inserted) {
       adopted.push({ id: inserted.id, title: s.title })

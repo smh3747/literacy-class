@@ -22,6 +22,8 @@ export default function SubmissionStatus() {
   const [students, setStudents] = useState([])
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [topicFilter, setTopicFilter] = useState('all') // step494: all / class / challenge(source_supply_id 유무)
+  const [weeklyChallengeCount, setWeeklyChallengeCount] = useState(null) // step494: 이번 주 챌린지 참여 학생 수(필터 무관)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -38,12 +40,34 @@ export default function SubmissionStatus() {
     if (profile.classes?.id) {
       // 주제 목록 (최근 30개)
       const { data: topicList } = await supabase.from('topics')
-        .select('id, date, title')
+        .select('id, date, title, source_supply_id')   // step494: 챌린지 필터 판정용 컬럼 추가
         .eq('teacher_id', profile.id)
         .is('supply_type', null)   // step479: 공급 원본 격리
         .order('date', { ascending: false })
         .limit(30)
       setTopics(topicList || [])
+
+      // step494: 이번 주(KST 월~일) 챌린지 참여 학생 수 — 필터와 무관한 소지표(실패 무시)
+      try {
+        const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
+        const monday = new Date(kstNow)
+        monday.setUTCDate(kstNow.getUTCDate() - ((kstNow.getUTCDay() + 6) % 7))
+        const sunday = new Date(monday)
+        sunday.setUTCDate(monday.getUTCDate() + 6)
+        const { data: weekChTopics } = await supabase.from('topics')
+          .select('id').eq('teacher_id', profile.id)
+          .not('source_supply_id', 'is', null)
+          .gte('date', monday.toISOString().slice(0, 10))
+          .lte('date', sunday.toISOString().slice(0, 10))
+        const chIds = (weekChTopics || []).map(t => t.id)
+        if (chIds.length === 0) {
+          setWeeklyChallengeCount(0)
+        } else {
+          const { data: chSubs } = await supabase.from('submissions')
+            .select('user_id').in('topic_id', chIds).is('deleted_at', null)
+          setWeeklyChallengeCount(new Set((chSubs || []).map(s => s.user_id)).size)
+        }
+      } catch (e) { /* 소지표 실패는 무시 */ }
 
       // 오늘 주제를 기본 선택
       const today = todayStr()
@@ -81,6 +105,20 @@ export default function SubmissionStatus() {
   const handleTopicChange = async (topicId) => {
     setSelectedTopicId(topicId)
     if (topicId) await loadSubmissions(topicId)
+  }
+
+  // step494: 필터 변경 — 현재 선택 주제가 필터에서 빠지면 첫 주제로 자동 전환
+  const matchesFilter = (t, filter) =>
+    filter === 'all' ? true : filter === 'challenge' ? !!t.source_supply_id : !t.source_supply_id
+  const handleFilterChange = async (k) => {
+    setTopicFilter(k)
+    const visible = topics.filter(t => matchesFilter(t, k))
+    if (!visible.some(t => t.id === selectedTopicId)) {
+      const next = visible[0]?.id || ''
+      setSelectedTopicId(next)
+      if (next) await loadSubmissions(next)
+      else setSubmissions([])
+    }
   }
 
   // 미제출 학생 명단을 클립보드에 복사
@@ -155,18 +193,38 @@ export default function SubmissionStatus() {
 
           {/* 주제 선택 */}
           <div className="bg-white rounded-2xl p-4 shadow-sm">
+            {/* step494: 학급 주제/챌린지 3단 필터 — source_supply_id 유무로 판정 */}
+            <div className="bg-gray-50 rounded-xl p-1 flex gap-1 mb-3">
+              {[['all', '전체'], ['class', '학급 주제'], ['challenge', '🌏 챌린지']].map(([k, label]) => (
+                <button key={k} onClick={() => handleFilterChange(k)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${
+                    topicFilter === k ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <label className="block text-xs text-gray-600 mb-1">주제 선택</label>
             {topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-4 text-center">등록된 주제가 없어요</p>
-            ) : (
-              <select value={selectedTopicId} onChange={e => handleTopicChange(e.target.value)}
-                className="w-full p-2 border border-gray-200 rounded-lg text-sm">
-                {topics.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.date === todayStr() ? '🌟 ' : ''}{t.date} · {t.title}
-                  </option>
-                ))}
-              </select>
+            ) : (() => {
+              const visible = topics.filter(t => matchesFilter(t, topicFilter))
+              if (visible.length === 0) {
+                return <p className="text-sm text-gray-500 py-4 text-center">이 필터에 해당하는 주제가 없어요</p>
+              }
+              return (
+                <select value={selectedTopicId} onChange={e => handleTopicChange(e.target.value)}
+                  className="w-full p-2 border border-gray-200 rounded-lg text-sm">
+                  {visible.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.date === todayStr() ? '🌟 ' : ''}{t.source_supply_id ? '🌏 ' : ''}{t.date} · {t.title}
+                    </option>
+                  ))}
+                </select>
+              )
+            })()}
+            {weeklyChallengeCount != null && (
+              <p className="text-xs text-sky-700 mt-2">🌏 이번 주 챌린지 참여 {weeklyChallengeCount}명</p>
             )}
           </div>
 

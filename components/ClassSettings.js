@@ -34,10 +34,10 @@ export default function ClassSettings({ classInfo, onUpdate }) {
   const toggleAutoSupply = (checked) => {
     if (!checked) return save({ auto_supply_enabled: false })
     const ok = window.confirm(
-      '매일 아침 전국 선생님들이 함께 쓰는 공통 주제가 우리 반에 자동 등록돼요.\n\n' +
+      '매일 아침 전국 글쓰기 챌린지 주제가 우리 반에 자동 등록돼요.\n\n' +
       '· 주제는 다온클래스가 매일 검수해 발행해요\n' +
       '· 필요 없는 날은 주제를 삭제하면 돼요\n' +
-      '· 앞으로 잘 쓴 글은 닉네임으로 전국에 소개하는 기능이 추가될 예정이에요'
+      '· 잘 쓴 글은 확인을 거쳐 닉네임으로 전국에 소개돼요'
     )
     if (ok) save({ auto_supply_enabled: true })
   }
@@ -119,17 +119,17 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             </p>
           </div>
 
-          {/* 🆕 step477: 전국 공통 주제 자동 받기 */}
+          {/* 🆕 step477: 전국 글쓰기 챌린지 자동 받기 */}
           <div>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={autoSupplyEnabled}
                 onChange={e => toggleAutoSupply(e.target.checked)}
                 disabled={saving}
                 className="w-4 h-4" />
-              <span className="text-sm font-medium">🌏 매일 전국 공통 주제 자동 받기</span>
+              <span className="text-sm font-medium">🌏 매일 전국 글쓰기 챌린지 자동 받기</span>
             </label>
             <p className="text-xs text-gray-500 mt-1 ml-6">
-              매일 발행되는 전국 공통 주제가 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
+              매일 발행되는 전국 글쓰기 챌린지 주제가 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
               학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 날은 주제를 삭제하면 됩니다.
             </p>
           </div>
@@ -144,7 +144,7 @@ export default function ClassSettings({ classInfo, onUpdate }) {
               <span className="text-sm font-medium">🏆 우리 반 글 전국 소개 허용</span>
             </label>
             <p className="text-xs text-gray-500 mt-1 ml-6">
-              전국 공통 주제에서 잘 쓴 글은 확인을 거쳐 닉네임으로 소개돼요.
+              전국 글쓰기 챌린지에서 잘 쓴 글은 확인을 거쳐 닉네임으로 소개돼요.
               {!showcaseEnabled && <span className="block mt-1 text-amber-600">현재 꺼짐 — 우리 반 학생 글은 전국 랭킹·소개에서 제외돼요.</span>}
             </p>
           </div>

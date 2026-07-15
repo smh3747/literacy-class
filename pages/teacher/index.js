@@ -895,7 +895,7 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 step477: 전국 공통 주제 원클릭 카드 — 자동 받기 OFF 교사에게, 오늘 발행분 미참여일 때 */}
+          {/* 🆕 step477: 전국 글쓰기 챌린지 원클릭 카드 — 자동 받기 OFF 교사에게, 오늘 발행분 미참여일 때 */}
           {!isImpersonating && supplyCard && (
             <div className="bg-white border-2 border-sky-200 rounded-2xl p-5">
               {supplyCard.joined ? (
@@ -908,9 +908,9 @@ export default function TeacherHome() {
                 </div>
               ) : (
                 <>
-                  <h3 className="font-bold text-sky-900">🌏 오늘의 전국 공통 주제: {supplyCard.title}</h3>
+                  <h3 className="font-bold text-sky-900">🌏 오늘의 전국 글쓰기 챌린지: {supplyCard.title}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    전국 선생님들이 오늘 함께 쓰는 주제예요. 학급 설정에서 자동 받기를 켜면 매일 자동으로 등록돼요.
+                    전국 학생들이 오늘 함께 쓰는 챌린지 주제예요. 학급 설정에서 자동 받기를 켜면 매일 자동으로 등록돼요.
                   </p>
                   <button onClick={joinSupplyTopic} disabled={supplyJoining}
                     className="mt-3 px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
