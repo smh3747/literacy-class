@@ -126,7 +126,8 @@ export default function ConsentDocument({ school, className, grade, student, par
         <section className="mb-3">
           <h2 className="font-bold text-gray-800">4. 글 공유 및 권리·보안</h2>
           <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
-            <li><strong>글 공유:</strong> 학생·교사가 공유를 선택한 글에 한해, 작성자를 익명(닉네임)으로 하여 다른 학급·학교와 공유될 수 있습니다 (선택, 강제 아님)</li>
+            {/* step509: 전국 글쓰기 챌린지 우수작 소개 반영 (v2-challenge) */}
+            <li><strong>글 공유:</strong> 공유를 선택한 글과 &lsquo;전국 글쓰기 챌린지&rsquo; 우수작에 한해, 익명(닉네임)으로 다른 학교 학생들에게 소개될 수 있습니다 (글·닉네임·학교·학년·반만 공개, 실명·연락처 미공개). 검토 후 소개되며, 담임 교사를 통해 소개 중단 요청 가능.</li>
             <li>본인 정보 열람·수정·삭제 요청 가능 (담임 교사를 통해 처리), 거부 시 학습 불이익 없음</li>
             <li>HTTPS 암호화 통신, 로그인 비밀번호는 단방향 암호화 저장</li>
           </ul>
