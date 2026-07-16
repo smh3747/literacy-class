@@ -1,12 +1,26 @@
 // 학급 설정 - 랭킹 on/off, 게시판 범위, 학년
 // (학생 로그인 안내는 StudentLoginInfoCard로 이관됨 - step90.5)
 // (학부모 동의는 학생 관리 동의 페이지로 일원화 — step289에서 학급설정 노출 제거)
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function ClassSettings({ classInfo, onUpdate }) {
+export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight }) {
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
+
+  // 🆕 step506: 챌린지 안내 배너 → 자동 받기 토글 스포트라이트 (openSignal 관용구 + 스크롤·강조)
+  const autoSupplyRef = useRef(null)
+  const [spotlight, setSpotlight] = useState(false)
+  useEffect(() => {
+    if (!autoSupplySpotlight) return
+    setOpen(true)
+    const t1 = setTimeout(() => {
+      autoSupplyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setSpotlight(true)
+    }, 150)   // 드로어·펼침 렌더 대기
+    const t2 = setTimeout(() => setSpotlight(false), 2650)   // 150ms + 강조 2.5초
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [autoSupplySpotlight])
 
   const save = async (updates) => {
     setSaving(true)
@@ -119,8 +133,9 @@ export default function ClassSettings({ classInfo, onUpdate }) {
             </p>
           </div>
 
-          {/* 🆕 step477: 전국 글쓰기 챌린지 자동 받기 */}
-          <div>
+          {/* 🆕 step477: 전국 글쓰기 챌린지 자동 받기 (step506: 배너 유도 시 스크롤·강조 대상) */}
+          <div ref={autoSupplyRef}
+            className={`rounded-lg transition-all duration-500 ${spotlight ? 'ring-2 ring-sky-400 bg-sky-50' : ''}`}>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={autoSupplyEnabled}
                 onChange={e => toggleAutoSupply(e.target.checked)}

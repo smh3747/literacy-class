@@ -62,6 +62,8 @@ export default function TeacherHome() {
   const [supplyCard, setSupplyCard] = useState(null)
   // 🆕 step505: 챌린지 신기능 안내 배너 닫힘 여부 (교사별 localStorage, step234 방식 lc-..-dismissed:<id>)
   const [challengeIntroDismissed, setChallengeIntroDismissed] = useState(false)
+  // 🆕 step506: 배너 → 학급 설정 자동 받기 토글 스포트라이트 신호 (guideToPanel의 openSignal 패턴)
+  const [settingsSpotlightSignal, setSettingsSpotlightSignal] = useState(0)
   const [supplyJoining, setSupplyJoining] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
@@ -921,7 +923,11 @@ export default function TeacherHome() {
                   잘 쓴 글은 검토를 거쳐 닉네임으로 소개되고, 학생들은 전국 순위를 확인할 수 있어요.
                 </p>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => document.getElementById('class-settings')?.scrollIntoView({ behavior: 'smooth' })}
+                  <button onClick={() => {
+                    // step506: 플로팅 ⚙️와 동일하게 설정 패널 열기 + 토글 스크롤·강조는 ClassSettings가 수행
+                    setActivePanel('settings')
+                    setSettingsSpotlightSignal(s => s + 1)
+                  }}
                     className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700">
                     🌏 자동 받기 켜러 가기
                   </button>
@@ -1281,9 +1287,7 @@ export default function TeacherHome() {
             {/* 학급 설정 (랭킹/게시판) */}
             {classInfo && !isImpersonating && (
               <div ref={settingsRef} className={`rounded-2xl transition-all relative ${activePanel === 'settings' ? 'lg:block' : 'lg:hidden'}`}>
-                <div id="class-settings">{/* step505: 안내 배너 [켜러 가기] 스크롤 목적지 */}
-                  <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />
-                </div>
+                <ClassSettings classInfo={classInfo} onUpdate={checkAuth} autoSupplySpotlight={settingsSpotlightSignal} />
               </div>
             )}
           </aside>
