@@ -452,7 +452,7 @@ export default function TeacherSubmissions() {
         p_type: 'rewrite_allowed',
         p_title: '✏️ 선생님이 수정 기회를 주셨어요!',
         p_body: '글을 다시 고칠 수 있어요',
-        p_link: '/student?topic=' + sub.topic_id,   // step513 URL 복원으로 해당 글 화면이 열림
+        p_link: '/student?topic=' + sub.topic_id + '&action=rewrite',   // step513 URL 복원 + step516 다시 쓰기 버튼 직행
       })
     } catch (e) { console.warn('수정 기회 알림 발송 실패:', e?.message) }
   }

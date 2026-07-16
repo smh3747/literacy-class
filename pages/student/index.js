@@ -218,6 +218,10 @@ export default function StudentHome() {
   const [restoredBackup, setRestoredBackup] = useState(null)
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
+  // 🆕 step516: 수정 허용 알림(action=rewrite) 직행 — 다시 쓰기 버튼 스크롤·강조
+  const [rewriteSpotlight, setRewriteSpotlight] = useState(false)
+  const rewriteBtnRef = useRef(null)
+  const handledQueryRef = useRef(null)   // 자기 발신 replace·초기 로드가 처리한 쿼리 서명(topic|action)
   const pasteCountRef = useRef(0)
   const pasteDetectedRef = useRef(false)
   const backupTimerRef = useRef(null)
@@ -286,6 +290,8 @@ export default function StudentHome() {
 
       // URL 쿼리에 topic_id 있으면 그 주제로 진입 (history에서 "추가 수정" 등)
       const queryTopicId = router.query?.topic
+      // step516: 초기 쿼리를 처리 완료로 선기록 — query 감시자의 중복 발화 방지
+      handledQueryRef.current = `${queryTopicId || ''}|${router.query?.action || ''}`
       await loadTodayTopic(profile, queryTopicId || null)
       console.log(`[perf] 학생 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
     } catch (e) {
@@ -357,6 +363,9 @@ export default function StudentHome() {
     const teacherId = profile.classes?.teacher_id
     if (!teacherId) return
 
+    // step516: 알림 직행 여부 — action은 아래 syncTopicUrl이 URL에서 소비(제거)하므로 시작 시 선캡처
+    const wantRewrite = router.query?.action === 'rewrite'
+
     // step513: 보던 주제 URL 동기화(shallow) — 새로고침 유지. 교사 submissions.js syncUrl 패턴 이식.
     //   명시 선택 성공만 기록, 폴백·빈 화면은 제거(묵은 ?topic=이 다음 날 붙잡는 역버그 방지).
     const syncTopicUrl = (topicId) => {
@@ -364,6 +373,8 @@ export default function StudentHome() {
         const q = { ...router.query }
         if (topicId) q.topic = topicId
         else delete q.topic
+        delete q.action   // step516: action은 1회 소비 — F5 재강조 방지
+        handledQueryRef.current = `${topicId || ''}|`   // step516: 자기 발신 표시(감시자 무시)
         router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
       } catch (e) { /* URL 반영 실패는 무시 — 화면 동작에 영향 없음 */ }
     }
@@ -545,6 +556,20 @@ export default function StudentHome() {
           setRewriteEssay(rewriteBackup)
         }
       } catch(e) {}
+    }
+
+    // 🆕 step516: 알림 직행 — 재작성 가능(feedback: 첫 글만 있거나 추가 허용됨)일 때만 버튼 스크롤·강조.
+    //   done(소진·회수)·새 주제(write)면 무시하고 일반 진입. 렌더 대기 후 실행(step506 패턴).
+    if (wantRewrite && existing && existing.length > 0) {
+      const lastSub = [...existing].sort((a, b) => (b.attempt || 1) - (a.attempt || 1))[0]
+      const canRewrite = (lastSub.attempt || 1) === 1 || !!lastSub.extra_rewrite_allowed
+      if (canRewrite) {
+        setTimeout(() => {
+          rewriteBtnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setRewriteSpotlight(true)
+          setTimeout(() => setRewriteSpotlight(false), 3000)
+        }, 300)
+      }
     }
    } catch (e) {
      // 🆕 step327: 핵심 조회 타임아웃/실패 → 무한 스피너 대신 재시도 화면
@@ -743,6 +768,16 @@ export default function StudentHome() {
       .filter(t => t.myMaxAttempt > 0 && challengeRanks[t.source_supply_id] == null)
       .forEach(t => fetchMyRank(t.source_supply_id))
   }, [challengeTopics])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🆕 step516: same-route 쿼리 변경 감시 — 벨 알림 클릭(router.push)은 remount가 없어 여기서 데이터 리로드.
+  //   자기 발신 replace(syncTopicUrl)·초기 로드가 기록한 서명과 같으면 무시(루프 방지).
+  useEffect(() => {
+    if (!user) return
+    const sig = `${router.query?.topic || ''}|${router.query?.action || ''}`
+    if (handledQueryRef.current === sig) return
+    handledQueryRef.current = sig
+    loadTodayTopic(user, router.query?.topic || null)
+  }, [router.query?.topic, router.query?.action, user])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🆕 step487: 챌린지 상위 글 모달 열기 — 항상 서버 재호출(제출 직후 잠금 해제 반영)
   //   step492: sid 인자화 — 챌린지 카드·주제 박스·제출 후 진입점이 각자 sid를 전달
@@ -1765,10 +1800,12 @@ export default function StudentHome() {
                     </div>
                   )}
 
-                  {/* 다시 쓰기 버튼 (feedback 단계에서만) */}
+                  {/* 다시 쓰기 버튼 (feedback 단계에서만) — step516: 알림 직행 강조 대상 */}
                   {step === 'feedback' && (
-                    <button onClick={startRewrite}
-                      className="w-full py-3 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary-light">
+                    <button ref={rewriteBtnRef} onClick={startRewrite}
+                      className={`w-full py-3 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary-light transition-all ${
+                        rewriteSpotlight ? 'ring-4 ring-amber-300 animate-pulse' : ''
+                      }`}>
                       ✏️ 다시 쓰기
                     </button>
                   )}
