@@ -994,13 +994,14 @@ export default function StudentsPage() {
   }
 
   // 🆕 step508: 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모 거부 의사(학생 단위, 소개·순위에서 제외)
+  //   step511: 문구를 긍정형 "우리 반에만 공개"로 전환(컬럼·로직 무변경), 해제도 confirm
   const toggleShowcaseOptOut = async (s) => {
     const next = !s.showcase_opt_out
     if (next && !confirm(
-      `🏆 전국 글쓰기 챌린지 우수작 소개 제외\n\n` +
-      `학부모님이 원치 않으시는 경우 체크 — 이 학생 글은 전국 소개·순위에서 빠져요.\n\n` +
-      `"${displayStudentName(s)}" 학생을 제외할까요?`
+      `🔒 "${displayStudentName(s)}" 학생 글을 우리 반에만 공개할까요?\n` +
+      `전국 글쓰기 챌린지 순위·우수작 소개에서 빠져요. (언제든 되돌릴 수 있어요)`
     )) return
+    if (!next && !confirm(`"${displayStudentName(s)}" 학생을 다시 전국 공개 대상에 포함할까요?`)) return
     setSavingId(s.id)
     try {
       const { error } = await supabase.from('profiles').update({ showcase_opt_out: next }).eq('id', s.id)
@@ -1861,8 +1862,17 @@ export default function StudentsPage() {
                         <th className="py-2 px-2">이름</th>
                         <th className="py-2 px-2 hidden sm:table-cell">아이디</th>
                         <th className="py-2 px-2 text-center w-16">동의서</th>
-                        <th className="py-2 px-2 text-center w-16"
-                          title="🏆 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모님이 원치 않으시는 경우 체크, 이 학생 글은 전국 소개·순위에서 빠져요">소개 제외</th>
+                        <th className="py-2 px-2 text-center w-20">
+                          {/* step511: 즉시 툴팁(CSS group-hover) — title 지연·중복 방지 위해 title 미사용, 아래 방향(상단 잘림 방지) */}
+                          <span className="relative group cursor-help inline-flex items-center gap-0.5">
+                            🔒 우리 반에만<span className="text-gray-400">ⓘ</span>
+                            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-56 opacity-0 group-hover:opacity-100 transition pointer-events-none z-20 bg-gray-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow text-left font-normal whitespace-normal">
+                              학부모님이 원치 않으시는 경우 체크하세요.
+                              체크한 학생의 글은 전국 글쓰기 챌린지 순위·우수작 소개에서 빠지고, 우리 반에서만 보여요.
+                              언제든 되돌릴 수 있어요.
+                            </span>
+                          </span>
+                        </th>
                         <th className="py-2 px-2 text-center w-12">비번</th>
                         <th className="py-2 px-2 text-center w-12">숨김</th>
                       </tr>
@@ -1991,15 +2001,19 @@ export default function StudentsPage() {
                               </button>
                             </td>
                             <td className="py-2 px-2 text-center">
-                              {/* step508: 챌린지 우수작 소개 제외 — 학부모 거부 의사 */}
-                              <input
-                                type="checkbox"
-                                checked={!!s.showcase_opt_out}
-                                onChange={() => toggleShowcaseOptOut(s)}
-                                disabled={savingId === s.id || s.is_hidden}
-                                className="w-4 h-4 cursor-pointer disabled:opacity-40"
-                                title="🏆 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모님이 원치 않으시는 경우 체크, 이 학생 글은 전국 소개·순위에서 빠져요"
-                              />
+                              {/* step508: 챌린지 소개 제외(showcase_opt_out) — step511: 우리 반에만 공개 표기 + 즉시 툴팁 */}
+                              <span className="relative group inline-block">
+                                <input
+                                  type="checkbox"
+                                  checked={!!s.showcase_opt_out}
+                                  onChange={() => toggleShowcaseOptOut(s)}
+                                  disabled={savingId === s.id || s.is_hidden}
+                                  className="w-4 h-4 cursor-pointer disabled:opacity-40"
+                                />
+                                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-44 opacity-0 group-hover:opacity-100 transition pointer-events-none z-20 bg-gray-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow text-left whitespace-normal">
+                                  이 학생 글은 우리 반에만 공개돼요
+                                </span>
+                              </span>
                             </td>
                             <td className="py-2 px-2 text-center">
                               <button

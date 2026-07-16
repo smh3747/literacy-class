@@ -3472,7 +3472,7 @@ export default function AdminHome() {
                               ) : (<>
                                 {/* step502: 집계 결과 0명 사유 힌트 — step503: 사유별 카운트(0인 사유 생략) */}
                                 {showcasePanel.counts && showcasePanel.counts.eligible === 0 && showcasePanel.counts.participants > 0 && (() => {
-                                  const EX_LABELS = { paste: '복붙 감지', no_consent: '동의 미완료', opt_out: '소개 제외(학부모 거부)', hidden: '숨김 학생', class_off: '학급 소개 꺼짐' }
+                                  const EX_LABELS = { paste: '복붙 감지', no_consent: '동의 미완료', opt_out: '우리 반에만 공개', hidden: '숨김 학생', class_off: '학급 소개 꺼짐' }
                                   const parts = Object.entries(showcasePanel.counts.excluded || {})
                                     .filter(([k, v]) => EX_LABELS[k] && v > 0)
                                     .map(([k, v]) => `${EX_LABELS[k]} ${v}`)
