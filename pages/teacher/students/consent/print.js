@@ -42,7 +42,7 @@ export default function ConsentBulkPrintPage() {
     const { data: studs } = await supabase.from('profiles').select('*')
       .eq('class_id', classId).eq('role', 'student')
     const { data: consents } = await supabase.from('consents')
-      .select('id, student_id, parent_name, signature, consent_items, source, consented_at')
+      .select('id, student_id, parent_name, signature, consent_items, source, consented_at, consent_version')   // step510: 버전별 문구 출력
       .eq('class_id', classId)
       .order('consented_at', { ascending: false })
     const byStudent = {}
@@ -121,6 +121,7 @@ export default function ConsentBulkPrintPage() {
                   consentItems={valid.consent_items || ['privacy', 'ai_processing']}
                   consentedAt={valid.consented_at || null}
                   status={valid.source || 'paper'}
+                  version={valid.consent_version || null}
                 />
                 <p className="bulk-stamp text-xs text-gray-500 mt-2">
                   본 문서는 {todayText()} 온라인으로 접수된 동의 기록의 출력본입니다.

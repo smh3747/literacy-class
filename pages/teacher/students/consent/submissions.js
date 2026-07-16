@@ -49,7 +49,7 @@ export default function ConsentSubmissionsPage() {
       .eq('class_id', classId).eq('role', 'student')
     // 동의 이력 → student_id로 매핑
     const { data: consents } = await supabase.from('consents')
-      .select('id, student_id, parent_name, signature, consent_items, source, consented_at')
+      .select('id, student_id, parent_name, signature, consent_items, source, consented_at, consent_version')   // step510: 버전별 문구 열람
       .eq('class_id', classId)
       .order('consented_at', { ascending: false })
     const byStudent = {}
@@ -112,6 +112,7 @@ export default function ConsentSubmissionsPage() {
       consentItems: v?.consent_items || (isConsented ? ['privacy', 'ai_processing'] : []),
       consentedAt: v?.consented_at || s.consent_received_at || null,
       status: source,
+      version: v?.consent_version || null,   // step510: 서명 당시 문구로 열람(null=v1 구문구)
     }
   })()
 

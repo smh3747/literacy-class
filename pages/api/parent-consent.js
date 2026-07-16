@@ -134,6 +134,7 @@ export default async function handler(req, res) {
       signature: String(signature),
       consent_items: Array.isArray(consentItems) ? consentItems : (consentItems || null),
       consented_at: new Date().toISOString(),
+      consent_version: 'v2-challenge',   // step510: 서명 당시 문구 버전(기존 행 null=v1, 백필 금지)
     }
 
     if (!pn) {

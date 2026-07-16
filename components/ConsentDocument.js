@@ -4,7 +4,8 @@
 //   status: 'online' | 'paper' | 'none'(미동의) | undefined(빈 양식)
 // 인쇄 CSS는 이 컴포넌트가 들고 다님 — 어느 페이지에서 써도 A4 한 장 압축 + "이 문서만" 인쇄.
 
-export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status, bulk = false }) {
+// step510: version — 서명 당시 동의 문구 버전. 기본 'v2-challenge'(신규 서명·빈 양식), null·구값이면 구문구로 열람.
+export default function ConsentDocument({ school, className, grade, student, parentName, signature, consentItems, consentedAt, status, bulk = false, version = 'v2-challenge' }) {
   const items = Array.isArray(consentItems) ? consentItems : []
   const has = (k) => items.includes(k)
   // 🆕 step344: 동의서는 실명 문서 — 실명 있으면 표시, 없으면(미동의) 빈칸(밑줄에 수기 기입). 닉네임 폴백 금지.
@@ -126,8 +127,12 @@ export default function ConsentDocument({ school, className, grade, student, par
         <section className="mb-3">
           <h2 className="font-bold text-gray-800">4. 글 공유 및 권리·보안</h2>
           <ul className="list-disc pl-5 space-y-0.5 text-[13px]">
-            {/* step509: 전국 글쓰기 챌린지 우수작 소개 반영 (v2-challenge) */}
-            <li><strong>글 공유:</strong> 공유를 선택한 글과 &lsquo;전국 글쓰기 챌린지&rsquo; 우수작에 한해, 익명(닉네임)으로 다른 학교 학생들에게 소개될 수 있습니다 (글·닉네임·학교·학년·반만 공개, 실명·연락처 미공개). 검토 후 소개되며, 담임 교사를 통해 소개 중단 요청 가능.</li>
+            {/* step509 신문구 / step510: 서명 당시 버전으로 분기(null=v1 구문구 — 감사 증빙 보존) */}
+            {version === 'v2-challenge' ? (
+              <li><strong>글 공유:</strong> 공유를 선택한 글과 &lsquo;전국 글쓰기 챌린지&rsquo; 우수작에 한해, 익명(닉네임)으로 다른 학교 학생들에게 소개될 수 있습니다 (글·닉네임·학교·학년·반만 공개, 실명·연락처 미공개). 검토 후 소개되며, 담임 교사를 통해 소개 중단 요청 가능.</li>
+            ) : (
+              <li><strong>글 공유:</strong> 학생·교사가 공유를 선택한 글에 한해, 작성자를 익명(닉네임)으로 하여 다른 학급·학교와 공유될 수 있습니다 (선택, 강제 아님)</li>
+            )}
             <li>본인 정보 열람·수정·삭제 요청 가능 (담임 교사를 통해 처리), 거부 시 학습 불이익 없음</li>
             <li>HTTPS 암호화 통신, 로그인 비밀번호는 단방향 암호화 저장</li>
           </ul>
