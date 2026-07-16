@@ -15,6 +15,7 @@ const TYPE_META = {
   stamp:           { emoji: '⭐', bg: 'bg-amber-100' },
   teacher_comment: { emoji: '📝', bg: 'bg-green-100' },
   grammar_done:    { emoji: '✅', bg: 'bg-green-100' },
+  rewrite_allowed: { emoji: '✏️', bg: 'bg-purple-100' },   // step515: 추가 수정 허용(학생 수신)
 }
 const DEFAULT_META = { emoji: '🔔', bg: 'bg-gray-100' }
 

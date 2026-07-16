@@ -443,13 +443,28 @@ export default function TeacherSubmissions() {
     XLSX.writeFile(wb, filename)
   }
 
-  const allowExtraRewrite = async (subId) => {
+  // 🔔 step515: 추가 수정 허용 → 학생 종 알림(비차단, 실패 warn — stamp/코멘트 알림과 동일 패턴).
+  //   type 'rewrite_allowed'는 notifications_type_check 제약에 추가돼야 생성됨(미적용 시 이 알림만 조용히 미생성).
+  const notifyRewriteAllowed = async (sub) => {
+    try {
+      await supabase.rpc('create_notification', {
+        p_recipient: sub.user_id,
+        p_type: 'rewrite_allowed',
+        p_title: '✏️ 선생님이 수정 기회를 주셨어요!',
+        p_body: '글을 다시 고칠 수 있어요',
+        p_link: '/student?topic=' + sub.topic_id,   // step513 URL 복원으로 해당 글 화면이 열림
+      })
+    } catch (e) { console.warn('수정 기회 알림 발송 실패:', e?.message) }
+  }
+
+  const allowExtraRewrite = async (sub) => {
     if (!confirm('이 학생에게 추가 수정을 허용하시겠어요?\n허용하면 학생이 한 번 더 글을 고칠 수 있어요.')) return
-    const { error } = await supabase.from('submissions').update({ extra_rewrite_allowed: true }).eq('id', subId)
+    const { error } = await supabase.from('submissions').update({ extra_rewrite_allowed: true }).eq('id', sub.id)
     if (error) return alert('실패: ' + error.message)
+    notifyRewriteAllowed(sub)   // step515: 비차단
     alert('✅ 추가 수정이 허용되었어요!')
     // step473: 전체 리로드(openTopic) 대신 로컬 패치 — 화면 그 자리 유지(patchLocalCorrections 패턴)
-    const patch = (it) => (it.id === subId ? { ...it, extra_rewrite_allowed: true } : it)
+    const patch = (it) => (it.id === sub.id ? { ...it, extra_rewrite_allowed: true } : it)
     setTopicStudents(prev => prev.map(g => ({ ...g, items: g.items.map(patch) })))
     setSelectedStudent(prev => (prev ? { ...prev, items: prev.items.map(patch) } : prev))
   }
@@ -771,6 +786,7 @@ export default function TeacherSubmissions() {
         const { error } = await supabase.from('submissions')
           .update({ extra_rewrite_allowed: true }).eq('id', s.id)
         if (error) throw error
+        notifyRewriteAllowed(s)   // step515: 학생 종 알림(비차단)
         success++
       } catch(e) { failed++ }
     }
@@ -799,6 +815,7 @@ export default function TeacherSubmissions() {
         const { error } = await supabase.from('submissions')
           .update({ extra_rewrite_allowed: true }).eq('id', s.id)
         if (error) throw error
+        notifyRewriteAllowed(s)   // step515: 학생 종 알림(비차단)
         success++
       } catch (e) { failed++ }
     }
@@ -1609,7 +1626,7 @@ export default function TeacherSubmissions() {
                       </div>
                     )}
                     {showAllowBtn && (
-                      <button onClick={() => allowExtraRewrite(s.id)}
+                      <button onClick={() => allowExtraRewrite(s)}
                         className="w-full py-2 bg-purple-100 text-purple-700 rounded-lg font-medium text-sm hover:bg-purple-200">
                         ✏️ 이 학생에게 추가 수정 허용
                       </button>
