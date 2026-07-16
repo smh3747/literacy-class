@@ -461,7 +461,7 @@ export default function StudentHome() {
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
     const { data: existing } = await withTimeout(supabase.from('submissions')
-      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed')
+      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at')
       .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null))
     console.log(`[perf] existing 제출 조회: ${Math.round(performance.now() - tExisting)}ms, rows=${(existing || []).length}`)
@@ -781,6 +781,23 @@ export default function StudentHome() {
     }
   }
 
+  // 🆕 step512: 수정 소진 시 선생님께 수정 기회 요청 — 최신 글에 타임스탬프만 기록(자기 글 update, 기존 RLS 경로).
+  //   추후 알림 센터 범용 알림으로 통합 예정.
+  const requestRewriteChance = async () => {
+    if (!currentSub?.id) return
+    if (!confirm('선생님께 수정 기회를 요청할까요?')) return
+    try {
+      const requestedAt = new Date().toISOString()
+      const { error } = await supabase.from('submissions')
+        .update({ rewrite_requested_at: requestedAt }).eq('id', currentSub.id)
+      if (error) throw error
+      setCurrentSub(prev => prev ? { ...prev, rewrite_requested_at: requestedAt } : prev)
+    } catch (e) {
+      alert('요청에 실패했어요. 잠시 후 다시 해봐요.')
+      console.warn('수정 기회 요청 실패:', e?.message)
+    }
+  }
+
   // 다시 쓰기 시작
   const startRewrite = () => {
     setRewriteEssay(essay) // 처음 글로 채워둠
@@ -913,7 +930,7 @@ export default function StudentHome() {
           submittingRef.current = false  // 🆕 잠금 해제 후 종료
           return alert(
             `수정 횟수를 모두 사용했어요 (${maxRewrites}회).\n` +
-            `추가 수정을 원하면 선생님께 요청해주세요.`
+            `더 고치고 싶으면 선생님께 수정 기회를 요청할 수 있어요!`
           )
         }
       }
@@ -991,8 +1008,8 @@ export default function StudentHome() {
       }).select().single()
       if (error) throw error
 
-      // 이전 글들도 final 처리
-      await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false })
+      // 이전 글들도 final 처리 (step512: 수정 기회 요청 흔적도 청소 — 요청이 이행됐으므로)
+      await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
 
       try { localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`) } catch(e) {}
@@ -1741,6 +1758,20 @@ export default function StudentHome() {
                       className="w-full py-3 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary-light">
                       ✏️ 다시 쓰기
                     </button>
+                  )}
+
+                  {/* 🆕 step512: 수정 소진(done) 상태 — 선생님께 수정 기회 요청. 추후 알림 센터 범용 알림으로 통합 예정 */}
+                  {step === 'done' && currentSub && !currentSub.extra_rewrite_allowed && (
+                    currentSub.rewrite_requested_at ? (
+                      <p className="w-full py-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-semibold text-center">
+                        ✋ 선생님께 요청했어요. 확인해주시면 다시 쓸 수 있어요!
+                      </p>
+                    ) : (
+                      <button onClick={requestRewriteChance}
+                        className="w-full py-3 bg-white border-2 border-amber-300 text-amber-800 rounded-xl font-semibold hover:bg-amber-50">
+                        ✋ 선생님께 수정 기회 요청하기
+                      </button>
+                    )
                   )}
                 </>
               )}

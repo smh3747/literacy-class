@@ -778,6 +778,34 @@ export default function TeacherSubmissions() {
     openTopic(selectedTopic)
   }
 
+  // 🆕 step512: 요청 학생만 일괄 허용 — 최신 글에 rewrite_requested_at 있고 아직 미허용인 학생만.
+  //   전원 대상 allowAllExtraRewrites와 용도 구분(요청자만 / 도달자 전원). 추후 알림 센터 통합 예정.
+  const allowRequestedRewrites = async () => {
+    if (!selectedTopic) return
+    const subsByStudent = {}
+    topicStudents.forEach(g => {
+      g.items.forEach(s => {
+        const cur = subsByStudent[s.user_id]
+        if (!cur || (s.attempt || 1) > (cur.attempt || 1)) subsByStudent[s.user_id] = s
+      })
+    })
+    const targets = Object.values(subsByStudent).filter(s => s.rewrite_requested_at && !s.extra_rewrite_allowed)
+    if (targets.length === 0) return alert('수정 기회를 요청한 학생이 없어요.')
+    if (!confirm(`✋ 요청한 ${targets.length}명에게 수정 기회를 줄까요?`)) return
+
+    let success = 0, failed = 0
+    for (const s of targets) {
+      try {
+        const { error } = await supabase.from('submissions')
+          .update({ extra_rewrite_allowed: true }).eq('id', s.id)
+        if (error) throw error
+        success++
+      } catch (e) { failed++ }
+    }
+    alert(`✅ ${success}명 허용 완료${failed > 0 ? `\n❌ 실패: ${failed}명` : ''}`)
+    openTopic(selectedTopic)
+  }
+
   // 🆕 일괄 격려 코멘트 — 코멘트 없는 학생의 최신 글에만 (기존 코멘트 안 건드림)
   const bulkEncourageComment = async () => {
     if (!selectedTopic || isImpersonating) return
@@ -924,6 +952,10 @@ export default function TeacherSubmissions() {
                 const needExtraCount = Object.values(subsByStudent).filter(s =>
                   (s.attempt || 1) >= 1 + maxRewrites && !s.extra_rewrite_allowed
                 ).length
+                // 🆕 step512: 수정 기회 요청 건수 (최신 글 기준, 미허용만)
+                const rewriteReqCount = Object.values(subsByStudent).filter(s =>
+                  s.rewrite_requested_at && !s.extra_rewrite_allowed
+                ).length
 
                 // 🆕 코멘트 못 받은 제출 학생 수
                 const noCommentCount = topicStudents.filter(g =>
@@ -939,6 +971,7 @@ export default function TeacherSubmissions() {
                         <span>✅ {submittedCount}명 제출</span>
                         {absentCount > 0 && <span className="text-amber-700">🚨 {absentCount}명 미제출</span>}
                         {noCommentCount > 0 && <span className="text-yellow-700">💬 코멘트 전 {noCommentCount}명</span>}
+                        {rewriteReqCount > 0 && <span className="text-amber-700 font-medium">✋ 수정 기회 요청 {rewriteReqCount}건</span>}
                         <span className="text-gray-600">
                           · 최소 {selectedTopic.min_length || 30}자 / 수정 {maxRewrites}회
                         </span>
@@ -954,6 +987,12 @@ export default function TeacherSubmissions() {
                       </div>
                     </div>
                     <div className="flex gap-2 flex-wrap">
+                      {rewriteReqCount > 0 && (
+                        <button onClick={allowRequestedRewrites}
+                          className="bg-amber-200 border border-amber-400 text-amber-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-300">
+                          ✋ 요청 학생만 일괄 허용 ({rewriteReqCount}명)
+                        </button>
+                      )}
                       {needExtraCount > 0 && (
                         <button onClick={allowAllExtraRewrites}
                           className="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-200">
@@ -1078,6 +1117,22 @@ export default function TeacherSubmissions() {
                                 💬 코멘트 전
                               </span>
                             )}
+                            {/* 🆕 step512: 수정 기회 요청·추가 기회 횟수 배지 */}
+                            {last.rewrite_requested_at && !last.extra_rewrite_allowed && (
+                              <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full"
+                                title={`요청 시각: ${new Date(last.rewrite_requested_at).toLocaleString('ko-KR')}`}>
+                                ✋ 수정 기회 요청
+                              </span>
+                            )}
+                            {(() => {
+                              const extraCount = g.items.filter(s => s.extra_rewrite_allowed).length
+                              return extraCount > 0 && (
+                                <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
+                                  title="선생님이 추가로 준 수정 기회 횟수">
+                                  ✚ 추가 기회 {extraCount}회
+                                </span>
+                              )
+                            })()}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">@{g.profile.username}</div>
                         </div>
@@ -1234,6 +1289,14 @@ export default function TeacherSubmissions() {
                     <span className="ml-2 align-middle text-[10px] font-normal px-1 py-0.5 rounded bg-amber-100 text-amber-700"
                       title="학부모 동의가 완료되면 실명으로 표시됩니다">🔒 동의 대기</span>
                   )}
+                  {/* 🆕 step512: 추가 기회 부여 횟수 */}
+                  {(() => {
+                    const extraCount = selectedStudent.items.filter(s => s.extra_rewrite_allowed).length
+                    return extraCount > 0 && (
+                      <span className="ml-2 align-middle text-xs font-normal px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"
+                        title="선생님이 추가로 준 수정 기회 횟수">✚ 추가 기회 {extraCount}회</span>
+                    )
+                  })()}
                 </h2>
                 <div className="text-xs text-primary-dark mt-1">{selectedTopic.title} · {selectedTopic.date}</div>
               </div>
@@ -1538,6 +1601,13 @@ export default function TeacherSubmissions() {
                       </details>
                     )}
 
+                    {/* 🆕 step512: 학생이 수정 기회를 요청한 글 표시 — 허용하면 자동 소멸 */}
+                    {isLast && s.rewrite_requested_at && !s.extra_rewrite_allowed && (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-2 rounded text-center"
+                        title={`요청 시각: ${new Date(s.rewrite_requested_at).toLocaleString('ko-KR')}`}>
+                        ✋ 학생이 수정 기회를 요청했어요
+                      </div>
+                    )}
                     {showAllowBtn && (
                       <button onClick={() => allowExtraRewrite(s.id)}
                         className="w-full py-2 bg-purple-100 text-purple-700 rounded-lg font-medium text-sm hover:bg-purple-200">

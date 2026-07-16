@@ -64,6 +64,8 @@ export default function TeacherHome() {
   const [challengeIntroDismissed, setChallengeIntroDismissed] = useState(false)
   // 🆕 step506: 배너 → 학급 설정 자동 받기 토글 스포트라이트 신호 (guideToPanel의 openSignal 패턴)
   const [settingsSpotlightSignal, setSettingsSpotlightSignal] = useState(0)
+  // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정
+  const [rewriteRequestCount, setRewriteRequestCount] = useState(0)
   const [supplyJoining, setSupplyJoining] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
@@ -606,6 +608,17 @@ export default function TeacherHome() {
             .is('deleted_at', null)
           reportCount = count || 0
 
+          // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정(실패 무시)
+          try {
+            const { count: reqCount } = await supabase.from('submissions')
+              .select('id', { count: 'exact', head: true })
+              .in('user_id', ids)
+              .not('rewrite_requested_at', 'is', null)
+              .or('extra_rewrite_allowed.is.null,extra_rewrite_allowed.eq.false')
+              .is('deleted_at', null)
+            setRewriteRequestCount(reqCount || 0)
+          } catch (e) { /* 소지표 실패 무시 */ }
+
           // 오늘 (PT 자정 기준 - Gemini 한도 리셋 시점)
           // PT는 PST/PDT 자동 전환되므로 Intl API로 정확히 계산
           // PT 자정 = 한국 시간 오후 4시 (PDT, 3~11월) / 오후 5시 (PST, 11~3월)
@@ -905,6 +918,14 @@ export default function TeacherHome() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* 🆕 step512: 수정 기회 요청 알림 1줄 — 추후 알림 센터 범용 알림으로 통합 예정 */}
+          {rewriteRequestCount > 0 && (
+            <Link href={withImpersonation('/teacher/submissions')}
+              className="block bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-900 font-medium hover:bg-amber-100 transition">
+              ✋ 수정 기회 요청 {rewriteRequestCount}건 — 확인하기 →
+            </Link>
           )}
 
           {/* 🆕 step505: 챌린지 신기능 안내 배너 — 교사별 1회 닫기, 자동 받기 켠 학급 미노출, 노출 중엔 원클릭 카드 숨김 */}
