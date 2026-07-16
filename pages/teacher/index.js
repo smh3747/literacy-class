@@ -60,6 +60,8 @@ export default function TeacherHome() {
   const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
   // 🆕 step477: 전국 공통 주제 — 자동 받기 OFF 교사용 원클릭 카드 { id, title, joined }
   const [supplyCard, setSupplyCard] = useState(null)
+  // 🆕 step505: 챌린지 신기능 안내 배너 닫힘 여부 (교사별 localStorage, step234 방식 lc-..-dismissed:<id>)
+  const [challengeIntroDismissed, setChallengeIntroDismissed] = useState(false)
   const [supplyJoining, setSupplyJoining] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
@@ -499,6 +501,13 @@ export default function TeacherHome() {
       setShowPwModal(true)
     }
 
+    // 🆕 step505: 챌린지 안내 배너를 이 교사가 이미 닫았는지 복원 (교사별 키)
+    try {
+      if (profile?.id && localStorage.getItem('lc-challenge-intro-dismissed:' + profile.id) === '1') {
+        setChallengeIntroDismissed(true)
+      }
+    } catch {}
+
     // 🆕 step163: 표준학교코드가 없는 기존 교사면 "학교 다시 선택" 배너 1회 노출
     //   (임퍼소네이션 중엔 쓰기 불가하므로 제외 / "나중에" 누르면 localStorage로 끔)
     if (!imp && profile.role === 'teacher' && !profile.school_code) {
@@ -895,8 +904,38 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 step477: 전국 글쓰기 챌린지 원클릭 카드 — 자동 받기 OFF 교사에게, 오늘 발행분 미참여일 때 */}
-          {!isImpersonating && supplyCard && (
+          {/* 🆕 step505: 챌린지 신기능 안내 배너 — 교사별 1회 닫기, 자동 받기 켠 학급 미노출, 노출 중엔 원클릭 카드 숨김 */}
+          {(() => {
+            const showChallengeIntro = !isImpersonating && user?.role === 'teacher' &&
+              !challengeIntroDismissed && classInfo && !classInfo.auto_supply_enabled
+            const dismissChallengeIntro = () => {
+              setChallengeIntroDismissed(true)
+              try { if (user?.id) localStorage.setItem('lc-challenge-intro-dismissed:' + user.id, '1') } catch {}
+            }
+            if (!showChallengeIntro) return null
+            return (
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5">
+                <h3 className="font-bold text-sky-900">🌏 새 기능: 전국 글쓰기 챌린지가 열렸어요!</h3>
+                <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
+                  매일 시사·계절 주제가 발행되고, 전국 학생들이 같은 주제로 글을 써요.
+                  잘 쓴 글은 검토를 거쳐 닉네임으로 소개되고, 학생들은 전국 순위를 확인할 수 있어요.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => document.getElementById('class-settings')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700">
+                    🌏 자동 받기 켜러 가기
+                  </button>
+                  <button onClick={dismissChallengeIntro}
+                    className="px-4 py-2 bg-white border border-sky-300 text-sky-800 rounded-lg text-sm hover:bg-sky-100">
+                    나중에
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* 🆕 step477: 전국 글쓰기 챌린지 원클릭 카드 — 자동 받기 OFF 교사에게, 오늘 발행분 미참여일 때 (step505: 안내 배너와 동시 노출 금지) */}
+          {!isImpersonating && supplyCard && !(user?.role === 'teacher' && !challengeIntroDismissed && classInfo && !classInfo.auto_supply_enabled) && (
             <div className="bg-white border-2 border-sky-200 rounded-2xl p-5">
               {supplyCard.joined ? (
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1242,7 +1281,9 @@ export default function TeacherHome() {
             {/* 학급 설정 (랭킹/게시판) */}
             {classInfo && !isImpersonating && (
               <div ref={settingsRef} className={`rounded-2xl transition-all relative ${activePanel === 'settings' ? 'lg:block' : 'lg:hidden'}`}>
-                <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />
+                <div id="class-settings">{/* step505: 안내 배너 [켜러 가기] 스크롤 목적지 */}
+                  <ClassSettings classInfo={classInfo} onUpdate={checkAuth} />
+                </div>
               </div>
             )}
           </aside>
