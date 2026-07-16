@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = 38f8207 (step421))
+# 핸드오버 데이터 (HEAD = 8221bb0 (step485))
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -22,7 +22,20 @@
 > 스냅샷 4개(`_snapshot/SNAPSHOT-{pages,components,lib,migrations}.md`)는 `node scripts/make-snapshot.js`로 최신화(로컬 산출물, step356에서 추적 제거).
 
 ## 1. 현재 HEAD
-> ⚠️ **문체 오교정 방어 변천 요약(step393~409)**: 프롬프트 규칙 11(예방)과 koreanRules `isStyleChange`(fail-safe 차단+기록)의 왕복이 있었다. **현재 상태 = 규칙 11은 step403판(4원인 차단)이 단독 전담. isStyleChange 필터는 step409에서 최종 제거됨(함수 자체 없음).** 데이터 분석 결과 필터가 옳은 문체 통일 지적("모여 있다→모여 있어요")과 맞춤법 교정("해결했습다→해결했습니다")까지 오차단해 폐기. 아래 개별 항목은 이력이므로 최신 결론만 볼 거면 이 줄과 §7·§13을 보라.
+> ⚠️ **문체 오교정 방어 변천 요약(step393~409)**: 프롬프트 규칙 11(예방)과 koreanRules `isStyleChange`(fail-safe 차단+기록)의 왕복이 있었다. **현재 상태 = 규칙 11은 step403판(4원인 차단)이 단독 전담. isStyleChange 필터는 step409에서 최종 제거됨(함수 자체 없음).** 데이터 분석 결과 필터가 옳은 문체 통일 지적("모여 있다→모여 있어요")과 맞춤법 교정("해결했습다→해결했습니다")까지 오차단해 폐기. 이후 프롬프트 측 방어는 규칙 12(NO_CORRECT_LIST, step443~485)로 확장 — 반말→존댓말 오교정은 step485에서 규칙 12에도 단정 금지로 편입. 아래 개별 항목은 이력이므로 최신 결론만 볼 거면 이 줄과 §7·§13을 보라.
+- `8221bb0` — **step485: 반말 글 존댓말 오교정 금지(`lib/prompts.server.js`+`scripts/gate-prompts.js`).** NO_CORRECT_LIST 끝에 단정 문구("반말체는 글쓰기에서 완전히 올바른 문체", 문체 교정은 두 문체가 실제로 섞였을 때 다수 쪽 통일만) 추가 — 5개 프롬프트 전파. 규칙 11 다수결 지시를 AI가 뚫던 재발 대응(인천송담초 7/13·14: "좋아하셔다→좋아하셨어요"·"모셔다 드렸다→모셔다드렸어요", reason "높임말을 사용하면 더 정중한 글"). 게이트 67케이스(신규 5경로 검사).
+- `be998a8` — **step484: 않나 화이트리스트 조사 구조 일반화(`lib/koreanRules.js`+`scripts/gate-korean-rules.js`).** step477의 명사 열거(기억|생각)를 구조로 일반화 — '명사+조사(이/가)+않나'→'안 나'는 항상 통과(보조용언 '않'은 반드시 '-지 않나' 꼴이라 조사 뒤 불가). 단 '-지가 않나'(믿기지가)·'-치가 않나'(만만치가)는 조사 '가'여도 정당한 '않'이라 제외(fail-safe). 문화초 7/15 ×4("실감이 않나"·"상상이 않나" 옳은 교정 차단) 구제. 게이트 71케이스. ⚠️**step484 번호 중복: spell=be998a8 / 메인=f626ae4(동의 대기 배지) — 해시가 권위.** step478도 메인(3ed0fc7)이 사용.
+- (step478~483·486~516 — 병렬 세션: 주제 공급·전국 글쓰기 챌린지·동의서 v2·수정 기회 요청·KST 날짜 헬퍼 등. git log 참조.)
+- `b4f272d` — **step477: 안/않 가드 과차단 구제(`lib/koreanRules.js`).** isInvalidAnhToAn에 '기억/생각 않나'→'안 나' 화이트리스트 — "기억 안 나"의 '나'는 1글자 용언이라 step405 가드(2글자 요건)가 면제 못 하던 한계(서울선곡초 ×6 실사례). → step484에서 조사 구조로 일반화됨.
+- `e1cb5e3` — **step476: 수정본 채점 일관성 2항(`lib/prompts.server.js`).** ①원래 있던 결함을 수정본에서 새 감점 사유로 삼기 금지(step442 지시 누락 복원) ②의견·점수 방향 모순 금지. 인천산곡초 72→58 실사례(안 고친 글이 14점 폭락).
+- `91a0cbe` — **step475: 규칙 2건(`lib/koreanRules.js`).** ㄹ받침+'때' 띄어쓰기(살때→살 때. 물때·볼때기·그때·한때·제때·오만원권 오탐 가드)·숫자+만원(150만원→150만 원). 김지우 실사례.
+- `261f34b` — **step474: 표현 다듬기 오교정 금지(`lib/prompts.server.js`).** NO_CORRECT_LIST에 뜻 같은 표현 교체('거→것', '있어서→있기 때문에') 금지 — 원문이 문법적으로 틀리지 않으면 불변경(허서준 실사례).
+- `c7684a6` — **step473: 수정본 채점 항목 단위 유지** — 점수 상승은 실제로 고쳐진 항목에만(step456 후광 방지). (한 줄 — 상세는 §13 완료 목록.)
+- (step444~446·452~472 — 쪽지 직접 선택·모델 장애 해소·admin 4종·비밀번호 강제 설정·주제 자동 공급 1차 등. spell분: 6631ccc step455 보상 규칙 / f2948c6 step456 자리 잡다 핑퐁+재인용 가드 / 9029394·3f5bd8f·6089584 step449~451 튜터 챗봇 품질·호칭·형식. 상세는 §13 완료 목록·git log.)
+- `b3d2a2e` — **step448: 규칙 12 금지 목록 단일 소스화(`lib/prompts.server.js`).** NO_CORRECT_LIST 상수 추출 — CORRECTIONS_RULES(3경로)에 더해 인라인 규칙을 쓰는 regradePrompt·rewriteGradingPrompt(핑퐁의 실제 무대)에도 반영. 이후 474·485가 이 상수 위에 누적.
+- `9eeea88` — **step447: 규칙 2건(`lib/koreanRules.js`).** '다같은/다같이'(다 같은. '바다같이' 조사 오탐 가드)·'편한함→편안함' 오타. 김지우 실사례.
+- `efc0da0` — **step443: 오교정 금지 규칙 12 신설(`lib/prompts.server.js`).** 조사 떼기·% 띄우기·어치·가운뎃점·복합명사 핑퐁 5유형(14회 채점 실데이터). → step448에서 상수화.
+- (step410~442 — 두 세션 병렬 구간(번호 중복 다수): 게이트 신설(411)·규칙 확장(425·435)·정규화(426·427)·프롬프트 게이트(431)·날짜 주입(441)·작업 B 3인자(442) 등. §13 [완료 2026-07-09~10]의 해시 매핑표가 권위.)
 - `c329053` — **step409: isStyleChange 필터 최종 제거(`lib/koreanRules.js` 단일).** correction_alerts 분석상 이 필터가 옳은 문체 통일 지적("모여 있다→모여 있어요")과 맞춤법 교정("해결했습다→해결했습니다", 글자 빠짐)까지 오차단해 함수·필터체인·주석을 전부 제거(23줄 삭제). 이후 문체 판단은 프롬프트 규칙 11(step403) 단독. 유지 필터: 안않오교정·불가능형태·무의미. **필터 왕복 종결(393신설→400제거→401복원→409최종제거).**
 - `5fcf782` — **step408: 알림 종 개선(병렬 세션).** 개별 x 소프트 삭제(dismissed_at) + 타입 아이콘·여백 가독성.
 - `1bdfc74` — **step407: 차단 교정 발췌 맥락 확대(`pages/api/ai.js` 단일, 메인 세션 영역이나 이 세션이 커밋).** `buildEssayExcerpt` 발췌를 original 앞뒤 40→100자, 못 찾으면 앞 100→200자, 상한 300→500자로. 관리자 의심 교정 탭 차단 기록(submission_id 없음)의 맥락을 문장 2~3개 담기게. buildEssayExcerpt 외 불변. ※step407 해시 2개(병렬 브리핑 `c511e7d`와 이 커밋 `1bdfc74`).
@@ -60,20 +73,20 @@
   - **성장 그래프** 3단 재설계 + 학년 맥락 보정(step342~346).
   - **학생 화면** 재설계(step363~377): 피드백 결과 재배치·채점 완료 스크롤·다시쓰기 체크리스트·맞춤법 퀴즈 1차(step361).
 
-## 2. lib/koreanRules.js — 함수 역할 + 줄 위치 (step409 기준 재확인)
+## 2. lib/koreanRules.js — 함수 역할 + 줄 위치 (step485 기준 재확인)
 | 함수 | 줄 | 역할(1줄) |
 |---|---|---|
-| `findRuleBasedErrors(text)` | `:10` | 정규식으로 AI가 놓친 맞춤법/띄어쓰기 보강 생성(문장부호 뒤 띄어쓰기, 할수있다, 안/않, 되/돼, ㄹ께요, 번째, 입니다/습니다, 조사 '의', 되다/시키다/하다 접미사, 였다·이였다, COMMON_TYPOS 등). |
-| `isAndaVerbCorrection(o,c)` | `:429` | '안다' 활용형(안아·안고·안으며) 화이트리스트 — 안/않 차단망 과차단 방지(step378). |
-| `isInvalidAnhToAn(o,c)` | `:450` | "맞는 '않'을 '안'으로 바꾸는" 오교정 판정(내부 가드). step405 조기 가드: '안'+공백+2글자 용언("안 지나")은 정당 교정으로 통과. |
-| `isImpossibleCorrection(c)` | `:493` | 불가능 형태 교정 fail-safe 필터('안 '+어미 등, step327). |
-| `dropAnhFalsePositives(corr)` | `:502` | mergeCorrections 안 타는 경로용 — 안/않 오교정 + 불가능형태 필터. |
-| `findOriginalRange(essay, original)` | `:513` | original을 본문에서 찾되 공백 무시 매칭→실제 구간 인덱스 환산. `{start,end,exact,ambiguous}` 또는 `null`. |
-| `snapOriginalToEssay(c, essay)` | `:546` | AI correction의 original을 공백무시로 **유일하게** 찾힐 때만 본문 실제 문자열로 스냅. |
-| `mergeCorrectionsDetailed(aiCorr, essay)` | `:561` | **본체(step360 신설).** 병합 + **폐기된 항목까지 `{corrections, dropped}`로 반환**. dropped는 correction_alerts 기록(작업 C-2, step362)에 쓰임. drop_reason: 안않오교정·불가능형태(문체개입은 step409에서 필터 제거로 사라짐). |
-| `mergeCorrections(aiCorr, essay)` | `:620` | 얇은 래퍼 — `mergeCorrectionsDetailed(...).corrections`만 반환(동작 불변). |
+| `findRuleBasedErrors(text)` | `:10` | 정규식으로 AI가 놓친 맞춤법/띄어쓰기 보강 생성(문장부호 뒤 띄어쓰기, 할수있다, 안/않, 되/돼, ㄹ께요, 번째, 입니다/습니다, 조사 '의', 되다/시키다/하다 접미사, 였다·이였다, 의존명사 는건(step425), 사리지다(step425), 다같은·편한함(step447), ㄹ받침+'때'·숫자+만원(step475), COMMON_TYPOS 등). |
+| `isAndaVerbCorrection(o,c)` | `:514` | '안다' 활용형(안아·안고·안으며) 화이트리스트 — 안/않 차단망 과차단 방지(step378). |
+| `isInvalidAnhToAn(o,c)` | `:535` | "맞는 '않'을 '안'으로 바꾸는" 오교정 판정(내부 가드). step405 조기 가드: '안'+공백+2글자 용언("안 지나")은 정당 교정으로 통과. **step477·484 화이트리스트**: '기억/생각+않나'와 '명사+조사(이/가)+않나'→'안 나'는 통과(조사 뒤 '않나'는 보조용언 불가). 단 '-지가/-치가 않나'(믿기지가·만만치가)는 정당한 '않'이라 제외. |
+| `isImpossibleCorrection(c)` | `:598` | 불가능 형태 교정 fail-safe 필터('안 '+어미 등, step327). |
+| `findOriginalRange(essay, original)` | `:612` | original을 본문에서 찾되 공백 무시 매칭→실제 구간 인덱스 환산. `{start,end,exact,ambiguous}` 또는 `null`. |
+| `snapOriginalToEssay(c, essay)` | `:645` | AI correction의 original을 공백무시로 **유일하게** 찾힐 때만 본문 실제 문자열로 스냅. |
+| `mergeCorrectionsDetailed(aiCorr, essay)` | `:660` | **본체(step360 신설).** 병합 + **폐기된 항목까지 `{corrections, dropped}`로 반환**. dropped는 correction_alerts 기록(작업 C-2, step362)에 쓰임. drop_reason: 안않오교정·불가능형태(문체개입은 step409에서 필터 제거로 사라짐). |
+| `mergeCorrections(aiCorr, essay)` | `:731` | 얇은 래퍼 — `mergeCorrectionsDetailed(...).corrections`만 반환(동작 불변). |
 
-- **무의미 교정 필터(step273)** + **불가능형태 필터(step327)**가 mergeCorrectionsDetailed 안에 통합. (문체개입 필터 isStyleChange는 step393 신설→409 최종 제거되어 없음.)
+- **무의미 교정 필터(step273)** + **불가능형태 필터(step327)**가 mergeCorrectionsDetailed 안에 통합. (문체개입 필터 isStyleChange는 step393 신설→409 최종 제거되어 없음. `dropAnhFalsePositives`도 step430에서 죽은 코드로 제거되어 없음.)
+- **회귀 게이트 현황**: `scripts/gate-korean-rules.js` **71케이스** / `scripts/gate-prompts.js` **67케이스**. CLAUDE.md 절차 유지 중 — `lib/koreanRules.js` 수정 시 gate-korean-rules, `lib/prompts.server.js` 수정 시 gate-prompts를 커밋 전 전체 PASS 필수(규칙을 의도적으로 바꾸면 기대값도 같은 커밋에서 갱신).
 
 ## 3. mergeCorrections 실행 위치 — ★서버로 이전됨(step350)
 - **병합은 서버에서 1회만 수행**: `pages/api/ai.js:278` `mergeCorrectionsDetailed(...)` (import `:18`). corrections 생성 type(grading·rewriteGrading·regrade·grammarOnly·grammarStrict) 응답 반환 직전.
@@ -112,6 +125,8 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **grammarStrict**(step299 신설): 정식 채점과 동일 품질(taskType 'grading'·temp 0·같은 모델). CORRECTIONS_RULES 단일 소스에서 프롬프트 추출.
 - **현재 사용처**: 전체일괄(`runGrammarBatch`·grammar-backfill)은 grammarOnly, 단일 재검사(recheckGrammarOne)는 grammarStrict. step331에서 grammarOnly도 CORRECTIONS_RULES로 통일.
 - **CORRECTIONS_RULES 규칙 11(현재 step403판):** 문체 오교정 4원인 차단 — ①일관된 글은 문장 끝맺음 다수결로 판정해 문체 교정 금지 ②표현 다듬기(있어서→있기 때문에 등) 금지 ③마침표 없는 문장중간을 문장끝으로 단정 금지 ④내용 단어 교체(사건 해결이다→사건들입니다) 금지. **변천: step395 강화 → step397 "섞였을 때만 통일" → step403 4원인 차단.** 상수 단일 소스라 세 프롬프트 자동 반영. **문체 판단은 이제 이 규칙 11(프롬프트, 예방)이 단독 전담.** `koreanRules`의 fail-safe 필터 `isStyleChange`는 step409에서 최종 제거됨(옳은 통일 지적·맞춤법까지 오차단한 데이터 확인). 틀린 문체 교정은 여전히 프롬프트에서 예방하고, cron 감시(correction_alerts)로 다른 유형 오교정을 계속 수집.
+- **NO_CORRECT_LIST(규칙 12, 오교정 금지 목록 — step443 신설→448 상수화, `lib/prompts.server.js:27`):** 단일 소스가 **5개 프롬프트에 전파** — CORRECTIONS_RULES 경유 3경로(gradingPrompt·grammarStrictPrompt·grammarOnlyPrompt) + 인라인 2경로(regradePrompt·rewriteGradingPrompt, 핑퐁의 실제 무대). 현재 항목 8개: 조사 떼기 / 숫자·% 띄우기 / '-어치·-짜리' 떼기 / 가운뎃점 변경 / 복합명사 핑퐁(제주지역) / '자리 잡다' 핑퐁+반대 재교정 금지(456) / 표현 다듬기 '거→것'(474) / **반말 글 존댓말 교정 금지(485 — "반말체는 완전히 올바른 문체" 단정, 규칙 11을 뚫는 재발 대응)**. 항목 추가 시 gate-prompts.js의 KEY_PHRASES(3경로)+R12_PHRASES(인라인 2경로) 양쪽에 검사 문구도 추가할 것.
+- **rewriteGradingPrompt 현재 체제(`lib/prompts.server.js:228`):** 3인자 구조화 이월(prevScore·prevCorrections·prevFeedback, step442 — 미전달 시 기존 출력과 완전 동일한 하위호환) + **일관성 규칙 9항**: 기본 이월·재지적(442) / 고친 항목 점수 상승 선반영·총점 하락 조건 강화·잘 고친 점 먼저(455 보상 3항) / 이월 지적 재인용 전 표준 표기 재확인(456) / 점수 상승은 실제 고쳐진 항목에만(473 후광 방지) / 기존 결함 신규 감점 금지·의견-점수 모순 금지(476). 상한: 지적 20개+'외 N건', 총평 500자.
 
 ## 8~9. 재평가 배너 / 학생 안내 (변경 없음, git log step273·274 참조)
 - 교사 `submissions.js`: 맞춤법 배지 뒤 amber 배너 + "🔄 다시 평가하기"(regradeOne). 학생: `GRAMMAR_NOTICE_STUDENT`.
@@ -151,9 +166,11 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **③ 도메인+SMTP(확정 트랙)**: daonclass.kr 계열 구입(가비아) → Vercel 연결 → Resend
   도메인 인증 → Supabase SMTP 입력 → 이메일 안내 일괄 쪽지 발송(문구 준비됨, 그때까지 보류).
   근거: 학교망 vercel.app 간헐 차단 + Supabase 메일 시간당 2통(실서비스 불가) + 유료화 신뢰도.
-- **④ 관찰(며칠 주기)**: 의심 교정 탭 점수역전·핑퐁 재발 / 🔥 연속 따라감 교사(임영선·차소연·
-  강병주) 활성 전환 / B문구 답장 축적 → 미정착 처방(학생 등록 카드 개선 포함, 전진율 13%) /
-  Vercel 웹훅 누락 2회째 — 재발 시 GitHub 연동 재설치.
+- **④ 관찰(며칠 주기)**: 의심 교정 탭 점수역전·핑퐁 재발 / **맞춤법 세션 처방 3건 효과 확인
+  (의심 교정 탭)**: step476 이후 점수역전 감소 · step484 이후 '않나'류 정당 교정 차단 기록 소멸
+  ("실감이 않나" 등) · step485 이후 반말 글 존댓말 오교정("~다→~요/습니다", reason "더 정중")
+  소멸 / 🔥 연속 따라감 교사(임영선·차소연·강병주) 활성 전환 / B문구 답장 축적 → 미정착 처방
+  (학생 등록 카드 개선 포함, 전진율 13%) / Vercel 웹훅 누락 2회째 — 재발 시 GitHub 연동 재설치.
 
 **[★수익화 로드맵 (2026-07-03 확정, 2026-07-06 사전 신청 착수)]**
 - 전제: 고객=교사 B2B. 무료=현행 전부(개인 API 키). 유료 후보(교사 개인 구독): ①키 없이 바로 사용(AI 비용 대납) ②검증 수업·창체 레시피 팩 ③성장 리포트 PDF.
@@ -194,13 +211,29 @@ export const GRAMMAR_NOTICE_TEACHER =
 
 **[대형 항목 — 진행 상태]**
 - **범용 알림 센터**: ✅1차(step348 교사·관리자, 🔔+60초 폴링) ✅2차(step358 학생 도장·코멘트). 남은 것: 3차=실시간 채팅(별도 설계, 아동 안전·PII).
-- **맞춤법 파이프라인 B(수정본 corrections 승계)**: 📋 **미착수(백로그 유지).** A(서버 이전 step350)·C(자동 감시 step359~362)는 완료. B는 `rewriteGrading`에 prevCorrections 넘겨 "첫 글에서 잡힌 오류가 수정본에서 사라지는" 들쭉날쭉 제거. **prompts.server.js 수정이라 병렬 맞춤법 세션 종료 확인 후 착수.** grep 확인: prevCorrections 코드상 미사용(진짜 미착수).
+- **맞춤법 파이프라인 B(수정본 corrections 승계)**: ✅ **완료** — step442(spell 3인자 재설계 4da6bd4)·step443(메인 배관 f4c7fe3) 양 세션 맞물림으로 완성. 서버(ai.js)가 직전 제출을 직접 조회해 rewriteGradingPrompt 3인자로 이월 + 점수역전 감시(correction_alerts '점수역전') + 이후 일관성 규칙 9항으로 보강(455·456·473·476 — §7 참조). 실검증 통과(뽀로로반, 2026-07-10). A(서버 이전 step350)·C(자동 감시 step359~362) 포함 파이프라인 A·B·C 전부 완료.
 
 **[대기 — 저순위]**
 - DB 부분 UNIQUE 인덱스(중복 제출 후속, 보류): 별개 글 8건 충돌로 미적용. 현 방어=코드 가드(한-화면 연타만). "두 기기/두 탭 동시 제출"은 무방비. 급하지 않음.
 - 맞춤법 전체일괄(runGrammarBatch, 3곳) vs 단일검사 공존 — grammar-backfill 페이지 정리 여부 추후 판단.
 - 회색지대 발견성 배지·admin 집계뷰 / 전체 UI 폴리시 / A3 교사 평판 표시(개인정보 trade-off).
 - **AI 비용 2단 모델 구조 검토** — 싼 모델 1차 + 애매한 것만 상위 모델. 사용량 커져 비용 아플 때 착수.
+
+**[완료 2026-07-14~16 (맞춤법 세션) — 다시 만들지 말 것]**
+- ✅ **수정본 채점 항목 단위 유지(step473, c7684a6)**: 점수 상승은 실제로 고쳐진 항목에만, 같은
+  지적 남으면 직전 점수 유지 — step456 보상 규칙의 후광(안 고쳤는데 점수 상승) 방지.
+- ✅ **표현 다듬기 오교정 금지(step474, 261f34b)**: NO_CORRECT_LIST에 '거→것'·'있어서→있기 때문에'류
+  뜻 같은 표현 교체 금지(허서준 실사례).
+- ✅ **규칙 2건(step475, 91a0cbe)**: ㄹ받침+'때' 띄어쓰기(물때·볼때기·그때·한때·제때·오만원권 오탐
+  가드)·숫자+만원(김지우 실사례).
+- ✅ **수정본 채점 일관성 2항(step476, e1cb5e3)**: 기존 결함 신규 감점 금지(step442 지시 누락 복원)+
+  의견·점수 방향 모순 금지(인천산곡초 72→58 실사례). → 일관성 규칙 9항 체제 완성(§7).
+- ✅ **안/않 화이트리스트 → 조사 구조 일반화(step477 b4f272d → step484 be998a8)**: '기억/생각 않나'
+  명사 열거(서울선곡초)에서 '명사+이/가+않나→안 나' 구조로 일반화(문화초 — 두더지잡기 종결).
+  '-지가/-치가 않나'(믿기지가·만만치가)는 정당 '않'이라 제외(fail-safe).
+- ✅ **반말 글 존댓말 오교정 금지(step485, 8221bb0)**: NO_CORRECT_LIST에 단정 문구 — 규칙 11
+  다수결을 AI가 뚫던 재발(인천송담초 7/13·14) 대응. 5개 프롬프트 전파.
+- 게이트 최종: gate-korean-rules 71케이스 / gate-prompts 67케이스.
 
 **[완료 2026-07-13 — 다시 만들지 말 것]**
 - ✅ **admin 개선 4종(step452)**: 의견 탭 학생 실명(미동의=닉네임)+아이디 병기 / 접속 중 N명
@@ -346,7 +379,12 @@ notifications CHECK 'message' / profiles.last_seen_at / submissions.teacher_scor
 - ❌ 학년별 채점 차등 → 데이터로 기각(2026-07-03). 대체=학년 맥락 보정(step345).
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
-## 워킹트리 상태 (2026-07-10)
-- 메인 HEAD=f4c7fe3(step443) 이후 진행 중. spell은 literacy-class-spell 별도 폴더(정상화 완료).
-- 두 세션 force-push 금지·커밋 전 pull --rebase 유지. Vercel 웹훅 1회 누락 이력(93fae57 빈 커밋으로
-  재트리거) — 배포 안 뜨면 빈 커밋 트리거가 검증된 해법.
+## 워킹트리 상태 (2026-07-16)
+- HEAD=8221bb0(step485, spell). 워킹트리 clean. 병렬(메인) 세션은 step516(수정 허용 알림)까지
+  활발히 진행 중 — push 경합이 잦아 push 거절 시 pull --rebase 후 재push가 일상 절차.
+- spell은 literacy-class-spell 별도 폴더(정상화 완료). 두 세션 force-push 금지·커밋 전
+  pull --rebase 유지. ⚠️ step 번호 중복 계속 발생 중(478·484 등 — 해시가 권위, 커밋 직전
+  git fetch로 번호 확인). Vercel 웹훅 1회 누락 이력(93fae57 빈 커밋으로 재트리거) — 배포 안
+  뜨면 빈 커밋 트리거가 검증된 해법.
+- ⚠️ 인코딩 사고 이력(2026-07-16): PS 5.1 Get-Content/Set-Content 일괄 치환이 한글 파일을
+  깨뜨림(즉시 checkout 복원). **한글 파일 치환은 Edit 도구로만.**
