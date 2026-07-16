@@ -357,6 +357,17 @@ export default function StudentHome() {
     const teacherId = profile.classes?.teacher_id
     if (!teacherId) return
 
+    // step513: 보던 주제 URL 동기화(shallow) — 새로고침 유지. 교사 submissions.js syncUrl 패턴 이식.
+    //   명시 선택 성공만 기록, 폴백·빈 화면은 제거(묵은 ?topic=이 다음 날 붙잡는 역버그 방지).
+    const syncTopicUrl = (topicId) => {
+      try {
+        const q = { ...router.query }
+        if (topicId) q.topic = topicId
+        else delete q.topic
+        router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+      } catch (e) { /* URL 반영 실패는 무시 — 화면 동작에 영향 없음 */ }
+    }
+
     let topic = null
     if (targetTopicId) {
       // 특정 주제 로드 (지난 주제 선택 시 또는 URL ?topic=)
@@ -448,7 +459,9 @@ export default function StudentHome() {
       await Promise.allSettled([pendingP, unreadP])
     }
 
-    if (!topic) return
+    if (!topic) { syncTopicUrl(null); return }   // step513: 빈 날(챌린지만 등) — 홈은 깨끗한 URL
+    // step513: 명시 선택 성공만 기록, 폴백(오늘 기본·검증 실패)은 제거
+    syncTopicUrl(targetTopicId && topic.id === targetTopicId ? topic.id : null)
     setTodayTopic(topic)
     setShowPendingPicker(false)
     // 화면 리셋
