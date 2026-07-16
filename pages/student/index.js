@@ -375,17 +375,16 @@ export default function StudentHome() {
 
       // 🆕 step477: 전국 글쓰기 챌린지 주제 lazy 자동 등록 — 오늘 발행분이 아직 없으면 서버가 복사해 준다.
       //   첫 진입 학생에게도 주제가 바로 보이게 조회 전에 짧게 기다리되(4초 타임아웃), 실패·지연은 무시.
-      if (profile.classes?.auto_supply_enabled) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.access_token) {
-            await withTimeout(fetch('/api/supply-adopt', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ accessToken: session.access_token }),
-            }), 4000)
-          }
-        } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
-      }
+      //   step507: 토글 무관 상시 호출 — OFF 학급이면 서버가 전일 미제출 복사본 청소만 하고 disabled 반환.
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          await withTimeout(fetch('/api/supply-adopt', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: session.access_token }),
+          }), 4000)
+        }
+      } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
 
       // 🆕 step327: 독립 조회 동시 실행 — todayTopics(핵심) + 지난주제(보조) + 미확인코멘트(보조)
       const tToday = performance.now()

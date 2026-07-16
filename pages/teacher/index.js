@@ -533,10 +533,11 @@ export default function TeacherHome() {
       setStudentSamples(samples?.data || [])
       // 🆕 다음 걸음 카드 — 본인 세션(비임퍼소네이션)에서만, 비차단(await 안 함). API키 불필요.
       if (!imp) maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
-      // 🆕 step477: 전국 공통 주제 — 자동 받기 ON이면 lazy 등록, OFF면 원클릭 카드 판정 (비차단, 실패 무시)
+      // 🆕 step477: 전국 글쓰기 챌린지 — lazy 등록·원클릭 카드 판정 (비차단, 실패 무시)
+      //   step507: adopt는 토글 무관 상시 호출(OFF면 서버가 청소만 하고 disabled 반환), 원클릭 카드는 OFF일 때만
       if (!imp && profile.role === 'teacher') {
-        if (profile.classes?.auto_supply_enabled) maybeSupplyAdopt()
-        else maybeShowSupplyCard(profile)
+        maybeSupplyAdopt()
+        if (!profile.classes?.auto_supply_enabled) maybeShowSupplyCard(profile)
       }
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
