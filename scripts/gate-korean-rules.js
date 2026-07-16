@@ -85,6 +85,10 @@ const MERGE = [
   { name: '기억 않나→기억 안 나(통과)', corr: { original: '기억 않나', correction: '기억 안 나' }, essay: '형 나 기억 않나?',    expect: 'kept' },    // step477
   { name: '생각 않나→생각 안 나(통과)', corr: { original: '생각 않나', correction: '생각 안 나' }, essay: '그때가 생각 않나?',   expect: 'kept' },    // step477
   { name: '않아→안 아(여전히 차단)',   corr: { original: '않아',      correction: '안 아' },      essay: '말이 않아 나온다',    expect: 'dropped' }, // step477
+  { name: '실감이 않나→실감이 안 나(통과)', corr: { original: '실감이 않나', correction: '실감이 안 나' }, essay: '실감이 않나 😂',      expect: 'kept' },    // step484
+  { name: '상상이 않나→상상이 안 나(통과)', corr: { original: '상상이 않나', correction: '상상이 안 나' }, essay: '도무지 상상이 않나?',  expect: 'kept' },    // step484
+  { name: '힘들어하진 않나(정당 않, 차단)', corr: { original: '힘들어하진 않나', correction: '힘들어하진 안 나' }, essay: '친구가 힘들어하진 않나 걱정했다', expect: 'dropped' }, // step484
+  { name: '믿기지가 않나(정당 않, 차단)',   corr: { original: '믿기지가 않나', correction: '믿기지가 안 나' }, essay: '정말 믿기지가 않나?', expect: 'dropped' }, // step484
 ]
 
 ;(async () => {
