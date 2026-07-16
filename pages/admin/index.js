@@ -845,6 +845,20 @@ export default function AdminHome() {
     }
   }
 
+  // 🆕 step518: 신고 알림 딥링크 — ?tab=supply&supply={id}면 해당 주제의 소개 글 패널 자동 오픈 + 행 스크롤(1회).
+  //   sub 파라미터는 학생 글 탭 상세 복원에 예약돼 있어 supply 파라미터를 사용.
+  const supplyDeepRef = useRef(false)
+  useEffect(() => {
+    if (!router.isReady || supplyDeepRef.current) return
+    const sid = router.query.supply
+    if (!sid || tab !== 'supply' || !supplyList.loaded) return
+    supplyDeepRef.current = true
+    openShowcasePanel(String(sid))
+    setTimeout(() => {
+      try { document.getElementById('supply-row-' + sid)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (e) {}
+    }, 150)
+  }, [router.isReady, router.query.supply, tab, supplyList.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleShowcaseHidden = async (row) => {
     const next = !row.hidden
     if (!confirm(next ? '이 글을 비공개할까요?' : '이 글을 다시 공개(복구)할까요?')) return
@@ -3428,7 +3442,7 @@ export default function AdminHome() {
                       const st = supplyStats[t.id]
                       const panelOpen = showcasePanel?.supplyId === t.id
                       return (
-                        <div key={t.id} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50">
+                        <div key={t.id} id={`supply-row-${t.id}`} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.supply_type === '시사' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{t.supply_type}</span>
                             {t.supply_grade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">{t.supply_grade}</span>}

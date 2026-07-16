@@ -16,6 +16,7 @@ const TYPE_META = {
   teacher_comment: { emoji: '📝', bg: 'bg-green-100' },
   grammar_done:    { emoji: '✅', bg: 'bg-green-100' },
   rewrite_allowed: { emoji: '✏️', bg: 'bg-purple-100' },   // step515: 추가 수정 허용(학생 수신)
+  showcase_report: { emoji: '🚨', bg: 'bg-red-100' },      // step518: 챌린지 소개 글 신고(관리자 수신)
 }
 const DEFAULT_META = { emoji: '🔔', bg: 'bg-gray-100' }
 

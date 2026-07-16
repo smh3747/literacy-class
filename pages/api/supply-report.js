@@ -38,12 +38,34 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: '학생·교사만 신고할 수 있어요' })
   }
 
-  const { error } = await admin.from('supply_showcase')
+  const { data: reported, error } = await admin.from('supply_showcase')
     .update({ hidden: true, reported_by: uid })
     .eq('id', showcaseId)
+    .select('supply_topic_id')
+    .maybeSingle()
   if (error) {
     console.error('supply-report 실패:', error.message)
     return res.status(500).json({ error: '신고 처리에 실패했어요' })
   }
+
+  // 🔔 step518: 관리자(admin 전원) 종 알림 — 비차단, 실패해도 신고 처리는 유지(admin-messages-bulk 직접 insert 패턴).
+  //   type 'showcase_report'는 notifications_type_check 제약에 추가돼야 생성됨(미적용 시 이 알림만 조용히 미생성).
+  try {
+    const supplyTopicId = reported?.supply_topic_id
+    if (supplyTopicId) {
+      const [{ data: topicRow }, { data: admins }] = await Promise.all([
+        admin.from('topics').select('title').eq('id', supplyTopicId).maybeSingle(),
+        admin.from('profiles').select('id').eq('role', 'admin'),
+      ])
+      const rows = (admins || []).map(a => ({
+        recipient_id: a.id,
+        type: 'showcase_report',
+        title: `🚨 챌린지 소개 글이 신고되었어요 — ${topicRow?.title || '주제 확인 필요'}`,
+        link: `/admin?tab=supply&supply=${supplyTopicId}`,
+      }))
+      if (rows.length > 0) await admin.from('notifications').insert(rows)
+    }
+  } catch (e) { console.warn('신고 알림 발송 실패(무시):', e?.message) }
+
   return res.status(200).json({ ok: true })
 }
