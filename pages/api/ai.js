@@ -143,6 +143,36 @@ async function logScoreReversal({ userId, prev, newTotal, newCorrCount }) {
   } catch (e) { console.warn('점수역전 기록 실패(무시):', e?.message) }
 }
 
+// 🔔 step519: API 키 무효 → 담임 종 알림 (비차단, 1일 1회 도배 방지).
+//   type 'api_key_invalid'는 notifications_type_check 제약에 추가돼야 생성됨(미적용 시 이 알림만 조용히 미생성).
+async function notifyApiKeyInvalid(classId) {
+  try {
+    if (!classId) return
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) return
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+    const { data: cls } = await admin.from('classes').select('teacher_id').eq('id', classId).maybeSingle()
+    const teacherId = cls?.teacher_id
+    if (!teacherId) return
+    // 도배 방지: 최근 24시간 내 동일 type 알림이 있으면 skip
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    const { count } = await admin.from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', teacherId).eq('type', 'api_key_invalid').gte('created_at', since)
+    if ((count || 0) > 0) return
+    await admin.from('notifications').insert({
+      recipient_id: teacherId,
+      type: 'api_key_invalid',
+      title: '🔑 API 키 오류로 채점이 실패하고 있어요',
+      body: 'API 키 관리에서 키를 다시 등록해주세요',
+      link: '/teacher',
+    })
+  } catch (e) { console.warn('API 키 무효 알림 실패(무시):', e?.message) }
+}
+
 // 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
 async function resolveApiKey({ accessToken, classId: classIdParam }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -188,7 +218,7 @@ async function resolveApiKey({ accessToken, classId: classIdParam }) {
   if (!apiKey) {
     return { error: { status: 400, message: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' } }
   }
-  return { apiKey, userId: userData.user.id }
+  return { apiKey, userId: userData.user.id, classId }   // step519: classId — 키 무효 시 담임 알림 대상 특정용
 }
 
 export default async function handler(req, res) {
@@ -460,6 +490,11 @@ export default async function handler(req, res) {
     console.error('AI proxy error:', e?.message || e)
     // 서버 측 에러 기록 (개인정보 없는 원본 메시지만)
     await logServerError({ accessToken, type, message: e?.message || e })
+    // 🔔 step519: 키 무효면 담임에게 즉시 알림(fire-and-forget, 1일 1회) — getFriendlyErrorMessage와 동일 판정 문자열
+    const errMsg = String(e?.message || '')
+    if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid')) {
+      notifyApiKeyInvalid(keyResult?.classId)   // await 안 함
+    }
     // 친절한 에러 메시지는 클라이언트에서 처리하도록 원문 전달
     return res.status(500).json({ error: e?.message || 'AI 처리 중 오류가 발생했어요' })
   }

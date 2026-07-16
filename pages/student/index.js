@@ -712,11 +712,15 @@ export default function StudentHome() {
       const isAuthExpired = /인증|로그인/.test(rawMsg)
       // 유료 잔액 소진은 학생이 못 고침 → 선생님께 알리도록 안내 (버튼 없음)
       const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
+      // step519: 키 무효는 원인이 학생에게 전달되게(담임에게는 서버가 종 알림)
+      const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
       setErrorModal({
         title: '🚨 글 제출에 문제가 생겼어요',
-        message: isPrepayment
-          ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
-          : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
+        message: isKeyInvalid
+          ? '🔑 선생님의 API 키 확인이 필요해요. 선생님께 말씀드려 주세요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+          : isPrepayment
+            ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+            : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
         showReload: isAuthExpired
       })
     }
@@ -1089,11 +1093,15 @@ export default function StudentHome() {
       const isAuthExpired = /인증|로그인/.test(rawMsg)
       // 유료 잔액 소진은 학생이 못 고침 → 선생님께 알리도록 안내 (버튼 없음)
       const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
+      // step519: 키 무효는 원인이 학생에게 전달되게(담임에게는 서버가 종 알림)
+      const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
       setErrorModal({
         title: '🚨 수정본 제출에 문제가 생겼어요',
-        message: isPrepayment
-          ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
-          : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
+        message: isKeyInvalid
+          ? '🔑 선생님의 API 키 확인이 필요해요. 선생님께 말씀드려 주세요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+          : isPrepayment
+            ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 자동 저장돼 있어요!'
+            : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 자동 저장돼 있어요!',
         showReload: isAuthExpired
       })
     }
