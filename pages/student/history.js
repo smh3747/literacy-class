@@ -143,10 +143,23 @@ export default function StudentHistory() {
       const title = s.topic_title || (s.topics?.title) || '주제 없음'
       const date = (s.topics?.date) || (s.created_at ? s.created_at.slice(0, 10) : '')
       const key = (s.topic_id || 'no') + '_' + title
-      if (!groups[key]) groups[key] = { title, date, topic_id: s.topic_id, source_supply_id: s.topics?.source_supply_id || null, items: [] }
+      if (!groups[key]) groups[key] = { key, title, date, topic_id: s.topic_id, source_supply_id: s.topics?.source_supply_id || null, items: [] }   // step514: key 보존(URL 복원용)
       groups[key].items.push(s)
     })
-    setGrouped(Object.values(groups).sort((a,b) => new Date(b.date) - new Date(a.date)))
+    const sortedGroups = Object.values(groups).sort((a,b) => new Date(b.date) - new Date(a.date))
+    setGrouped(sortedGroups)
+
+    // step514: URL ?g= 복원 — 새로고침해도 보던 글 상세 유지(step513 패턴). 매칭 없으면(삭제 등) 목록 유지 + 쿼리 정리.
+    const g = router.query?.g
+    if (g) {
+      const idx = sortedGroups.findIndex(x => x.key === g)
+      if (idx >= 0) {
+        setSelectedIdx(idx)
+        window.scrollTo(0, 0)
+      } else {
+        syncGroupUrl(null)
+      }
+    }
     setLoading(false)
 
     // step499: 챌린지 그룹의 당시(최종) 순위 — 비차단 병렬 조회, 실패 무시(student/index.js fetchMyRank 패턴).
@@ -168,6 +181,18 @@ export default function StudentHistory() {
   }
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+
+  // step514: 상세 진입/복귀를 URL에 반영(shallow) — 새로고침 유지, step513 syncTopicUrl 패턴
+  const syncGroupUrl = (key) => {
+    try {
+      const q = { ...router.query }
+      if (key) q.g = key
+      else delete q.g
+      router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+    } catch (e) { /* URL 반영 실패 무시 */ }
+  }
+  const openGroup = (idx, key) => { setSelectedIdx(idx); syncGroupUrl(key) }
+  const closeGroup = () => { setSelectedIdx(null); syncGroupUrl(null) }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -193,7 +218,7 @@ export default function StudentHistory() {
         <div className="min-h-screen bg-gray-50">
           <Header user={user} onLogout={logout} />
           <main className="mx-auto px-4 py-6 space-y-4 max-w-3xl">
-            <button onClick={() => setSelectedIdx(null)} className="text-sm text-gray-600">← 목록으로</button>
+            <button onClick={closeGroup} className="text-sm text-gray-600">← 목록으로</button>
             
             <div className="bg-primary-light rounded-2xl p-4">
               <div className="text-xs text-primary-dark">📅 {g.date}</div>
@@ -529,7 +554,7 @@ export default function StudentHistory() {
                 const isImproved = first.id !== last.id
                 
                 return (
-                  <button key={idx} onClick={() => setSelectedIdx(idx)}
+                  <button key={idx} onClick={() => openGroup(idx, g.key)}
                     className="w-full bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition text-left">
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
