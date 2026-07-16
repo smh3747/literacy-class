@@ -55,6 +55,7 @@ const { pathToFileURL } = require('url')
     { name: '규칙 12(복합명사 핑퐁 금지)',  text: '둘 다 허용' },
     { name: '규칙 12(자리 잡다 핑퐁 금지)', text: '다시 반대로 교정하는 것은 절대 금지' }, // step456
     { name: '규칙 12(표현 다듬기 금지)',    text: "'거→것'" }, // step474
+    { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
@@ -79,6 +80,7 @@ const { pathToFileURL } = require('url')
       { name: '규칙 12(복합명사 핑퐁 금지)', text: '둘 다 허용' },
       { name: '규칙 12(자리 잡다 핑퐁 금지)', text: '다시 반대로 교정하는 것은 절대 금지' }, // step456
       { name: '규칙 12(표현 다듬기 금지)',    text: "'거→것'" }, // step474
+      { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
     ]
     const inlinePrompts = {}
     try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
