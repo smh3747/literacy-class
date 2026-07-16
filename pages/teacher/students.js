@@ -993,6 +993,25 @@ export default function StudentsPage() {
     }
   }
 
+  // 🆕 step508: 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모 거부 의사(학생 단위, 소개·순위에서 제외)
+  const toggleShowcaseOptOut = async (s) => {
+    const next = !s.showcase_opt_out
+    if (next && !confirm(
+      `🏆 전국 글쓰기 챌린지 우수작 소개 제외\n\n` +
+      `학부모님이 원치 않으시는 경우 체크 — 이 학생 글은 전국 소개·순위에서 빠져요.\n\n` +
+      `"${displayStudentName(s)}" 학생을 제외할까요?`
+    )) return
+    setSavingId(s.id)
+    try {
+      const { error } = await supabase.from('profiles').update({ showcase_opt_out: next }).eq('id', s.id)
+      if (error) throw error
+      await loadStudents(classInfo.id)
+    } catch (e) {
+      alert('실패: ' + e.message)
+    }
+    setSavingId(null)
+  }
+
   // 🆕 step255: 선택 학생 일괄 숨김 (확인창·건수명시, 임퍼소네이션 차단)
   const bulkHide = async () => {
     if (isImpersonating) return  // 읽기 전용 모드 차단
@@ -1842,6 +1861,8 @@ export default function StudentsPage() {
                         <th className="py-2 px-2">이름</th>
                         <th className="py-2 px-2 hidden sm:table-cell">아이디</th>
                         <th className="py-2 px-2 text-center w-16">동의서</th>
+                        <th className="py-2 px-2 text-center w-16"
+                          title="🏆 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모님이 원치 않으시는 경우 체크, 이 학생 글은 전국 소개·순위에서 빠져요">소개 제외</th>
                         <th className="py-2 px-2 text-center w-12">비번</th>
                         <th className="py-2 px-2 text-center w-12">숨김</th>
                       </tr>
@@ -1968,6 +1989,17 @@ export default function StudentsPage() {
                               >
                                 {s.consent_received ? '✓' : '·'}
                               </button>
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              {/* step508: 챌린지 우수작 소개 제외 — 학부모 거부 의사 */}
+                              <input
+                                type="checkbox"
+                                checked={!!s.showcase_opt_out}
+                                onChange={() => toggleShowcaseOptOut(s)}
+                                disabled={savingId === s.id || s.is_hidden}
+                                className="w-4 h-4 cursor-pointer disabled:opacity-40"
+                                title="🏆 전국 글쓰기 챌린지 우수작 소개 제외 — 학부모님이 원치 않으시는 경우 체크, 이 학생 글은 전국 소개·순위에서 빠져요"
+                              />
                             </td>
                             <td className="py-2 px-2 text-center">
                               <button
