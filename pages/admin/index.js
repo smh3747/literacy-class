@@ -222,6 +222,13 @@ export default function AdminHome() {
   const [msgFilter, setMsgFilter] = useState('replied')  // replied(기본) | all | unresolved | unread — step428: 일괄 발송 250스레드 중 답장 온 것부터
   const [msgMasked, setMsgMasked] = useState(false)      // 캡쳐용 마스킹 모드(렌더만)
   const [bulkOpen, setBulkOpen] = useState(false)        // 일괄 쪽지 모달
+  // 🆕 step520: 새 쪽지(관리자 선발신) — 교사 검색 모달
+  const [newMsgOpen, setNewMsgOpen] = useState(false)
+  const [newMsgSearch, setNewMsgSearch] = useState('')   // 입력값(즉시)
+  const [newMsgQuery, setNewMsgQuery] = useState('')     // 디바운스 300ms 반영값
+  const [newMsgTarget, setNewMsgTarget] = useState(null) // 선택된 교사 profile
+  const [newMsgBody, setNewMsgBody] = useState('')
+  const [newMsgSending, setNewMsgSending] = useState(false)
   const [bulkStages, setBulkStages] = useState({ active: false, cooling: false, at_risk: false, dormant: false })
   const [bulkBody, setBulkBody] = useState('')
   const [bulkSending, setBulkSending] = useState(false)
@@ -614,6 +621,40 @@ export default function AdminHome() {
       }
     })()
   }, [tab, msgData.loaded])
+
+  // 🆕 step520: 새 쪽지 검색 디바운스(300ms)
+  useEffect(() => {
+    const t = setTimeout(() => setNewMsgQuery(newMsgSearch), 300)
+    return () => clearTimeout(t)
+  }, [newMsgSearch])
+
+  // 🆕 step520: 관리자 선발신 — sendReply와 동일 insert(스레드 키 teacher_id) + 종 알림(type 'message').
+  //   성공 시 msgData 리로드(loaded:false → 로드 effect 재실행)로 스레드·profs 즉시 반영, 해당 스레드 선택.
+  const sendNewMessage = async () => {
+    const body = newMsgBody.trim()
+    if (!body || !newMsgTarget || newMsgSending) return
+    setNewMsgSending(true)
+    try {
+      const { error } = await supabase.from('messages')
+        .insert({ teacher_id: newMsgTarget.id, sender_id: user.id, body })
+      if (error) throw error
+      try {
+        await supabase.rpc('create_notification', {
+          p_recipient: newMsgTarget.id,
+          p_type: 'message',
+          p_title: '관리자 쪽지가 도착했어요',
+          p_body: body.slice(0, 100),
+          p_link: '/teacher/messages',
+        })
+      } catch (e) { console.warn('새 쪽지 알림 실패(무시):', e?.message) }
+      setMsgSelected(newMsgTarget.id)
+      setNewMsgOpen(false); setNewMsgBody(''); setNewMsgTarget(null); setNewMsgSearch(''); setNewMsgQuery('')
+      setMsgData(prev => ({ ...prev, loaded: false }))
+    } catch (e) {
+      alert('쪽지를 보내지 못했어요: ' + (e?.message || ''))
+    }
+    setNewMsgSending(false)
+  }
 
   // 🆕 step422: 스레드 열람 — 교사발 안읽음 read_at 갱신(+로컬 배지 반영)
   const openThread = async (tid) => {
@@ -3822,11 +3863,13 @@ export default function AdminHome() {
               // 🆕 step434: '대화 중' 판정 — 교사발 메시지가 1개라도 있으면(마지막이 누구든).
               //   is_bulk는 관리자발이라 이 판정과 무관.
               hasTeacherMsg: list.some(m => m.sender_id === m.teacher_id),
+              // 🆕 step520: 관리자 개인 발신 존재 — 선발신 스레드도 '대화 중'에 노출(일괄 쪽지만 있는 스레드는 제외)
+              hasAdminDirect: list.some(m => !m.is_bulk && m.sender_id !== m.teacher_id),
             })).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
             const shown = threads.filter(t =>
               // 🆕 step434: '답장 옴'(마지막=교사발) → '대화 중'(교사발 존재)으로 재정의.
-              //   관리자 본인 스레드(teacher_id의 role=admin)는 제외.
-              msgFilter === 'replied' ? (t.hasTeacherMsg && msgData.profs[t.tid]?.role !== 'admin') :
+              //   관리자 본인 스레드(teacher_id의 role=admin)는 제외. step520: 관리자 개인 선발신 스레드 포함.
+              msgFilter === 'replied' ? ((t.hasTeacherMsg || t.hasAdminDirect) && msgData.profs[t.tid]?.role !== 'admin') :
               msgFilter === 'unresolved' ? !t.resolved :
               msgFilter === 'unread' ? t.unread > 0 : true)
             const sel = msgSelected ? threads.find(t => t.tid === msgSelected) : null
@@ -3846,6 +3889,10 @@ export default function AdminHome() {
                       <input type="checkbox" checked={msgMasked} onChange={e => setMsgMasked(e.target.checked)} />
                       마스킹 모드(캡쳐용)
                     </label>
+                    <button onClick={() => setNewMsgOpen(true)}
+                      className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition">
+                      ✉️ 새 쪽지
+                    </button>
                     <button onClick={() => setBulkOpen(true)}
                       className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition">
                       📢 일괄 쪽지
@@ -3981,6 +4028,60 @@ export default function AdminHome() {
                 )}
 
                 {/* 일괄 쪽지 모달 — 발송 전 반드시 N명 confirm. ⚠️ 테스트는 관리자 본인 1명으로만 */}
+                {/* 🆕 step520: 새 쪽지 모달 — 교사 검색(2자·300ms 디바운스) → 선택 → 내용 → 전송 */}
+                {newMsgOpen && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setNewMsgOpen(false)}>
+                    <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setNewMsgOpen(false)} aria-label="닫기"
+                        className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+                      <h3 className="text-base font-bold mb-3">✉️ 새 쪽지</h3>
+                      {!newMsgTarget ? (
+                        <>
+                          <input value={newMsgSearch} onChange={e => setNewMsgSearch(e.target.value)}
+                            placeholder="교사 이름 또는 학교명 (2자 이상)"
+                            className="w-full p-2.5 border border-gray-200 rounded-lg text-sm mb-2" autoFocus />
+                          <div className="max-h-72 overflow-y-auto space-y-1">
+                            {newMsgQuery.trim().length < 2 ? (
+                              <p className="text-xs text-gray-400 py-4 text-center">이름이나 학교명을 2자 이상 입력하세요</p>
+                            ) : (() => {
+                              const q = newMsgQuery.trim().toLowerCase()
+                              const results = teachers.filter(t => !t.is_banned && t.role === 'teacher' &&
+                                ((t.realname || '').toLowerCase().includes(q) || (t.school || '').toLowerCase().includes(q))
+                              ).slice(0, 30)
+                              if (results.length === 0) return <p className="text-xs text-gray-400 py-4 text-center">검색 결과가 없어요</p>
+                              return results.map(t => (
+                                <button key={t.id} onClick={() => setNewMsgTarget(t)}
+                                  className="w-full text-left p-2.5 rounded-lg border border-gray-100 hover:bg-indigo-50 transition">
+                                  <span className="text-sm font-semibold text-gray-800">{t.realname || '(이름 없음)'}</span>
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    {t.school || '학교 미상'}{(() => { const c = classes.find(c => c.teacher_id === t.id); return c?.name ? ' · ' + c.name : '' })()}
+                                  </span>
+                                </button>
+                              ))
+                            })()}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm font-semibold text-gray-800">{newMsgTarget.realname}</span>
+                            <span className="text-xs text-gray-500">{newMsgTarget.school || ''}</span>
+                            <button onClick={() => setNewMsgTarget(null)}
+                              className="ml-auto text-xs text-gray-500 underline hover:text-gray-700">다시 선택</button>
+                          </div>
+                          <textarea value={newMsgBody} onChange={e => setNewMsgBody(e.target.value)}
+                            rows={5} placeholder="보낼 내용을 입력하세요"
+                            className="w-full p-2.5 border border-gray-200 rounded-lg text-sm" autoFocus />
+                          <button onClick={sendNewMessage} disabled={newMsgSending || !newMsgBody.trim()}
+                            className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                            {newMsgSending ? '보내는 중...' : '보내기'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {bulkOpen && (
                   <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setBulkOpen(false)}>
                     <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
