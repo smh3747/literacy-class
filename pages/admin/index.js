@@ -206,6 +206,7 @@ export default function AdminHome() {
   const [supplyCandidates, setSupplyCandidates] = useState(null)   // 원버튼 결과 후보 3개
   const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[], genre } — 편집 폼
   const [editingSupplyId, setEditingSupplyId] = useState(null) // step523: 미공개 행 편집 모드(값 있으면 저장이 UPDATE)
+  const [candidateArchive, setCandidateArchive] = useState({}) // step524: 후보 카드 원클릭 보관 상태 { [index]: 'saving' | 'saved' }
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
@@ -958,6 +959,7 @@ export default function AdminHome() {
       const list = Array.isArray(result?.topics) ? result.topics.slice(0, 3) : []
       if (list.length === 0) throw new Error('후보를 만들지 못했어요. 다시 시도해주세요.')
       setSupplyCandidates(list)
+      setCandidateArchive({})   // step524: 새 후보 세트 = 보관 상태 초기화
       setSupplyDraft(null)   // 이전 편집 초안은 접기(후보 선택으로 다시 로드)
     } catch (e) {
       alert('생성에 실패했어요: ' + (e?.message || ''))
@@ -965,63 +967,73 @@ export default function AdminHome() {
     setSupplyBatchGenerating(false)
   }
 
+  // 🆕 step464→524: 후보 → 초안 형태 변환 공통(카드 선택·원클릭 보관 공용)
+  const candidateToDraft = (c) => ({
+    title: c.title || '',
+    background: c.background || '',
+    guideQuestion: c.guide_question || '',
+    rubrics: Array.isArray(c.rubrics) && c.rubrics.length > 0
+      ? normalizeRubrics(c.rubrics)   // step468: 합≠100 자동 보정
+      : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+    genre: SUPPLY_GENRE_LABELS[c.genre] ? c.genre : '',   // step478: 알 수 없는 값은 미지정 처리
+  })
+
   // 🆕 step464: 후보 선택 → 기존 편집 폼(supplyDraft)에 로드 — 이후 편집·발행 흐름 동일
   const pickSupplyCandidate = (c) => {
     setSupplyForm(prev => ({ ...prev, supplyType: '시사' }))
-    setSupplyDraft({
-      title: c.title || '',
-      background: c.background || '',
-      guideQuestion: c.guide_question || '',
-      rubrics: Array.isArray(c.rubrics) && c.rubrics.length > 0
-        ? normalizeRubrics(c.rubrics)   // step468: 합≠100 자동 보정
-        : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
-      genre: SUPPLY_GENRE_LABELS[c.genre] ? c.genre : '',   // step478: 알 수 없는 값은 미지정 처리
-    })
+    setSupplyDraft(candidateToDraft(c))
     setEditingSupplyId(null)   // step523: 후보 선택 초안은 항상 신규 insert
+  }
+
+  // 🆕 step524: 검증 + description 합성 + topics row 구성(state 미접근 — 폼 저장·카드 보관 공용).
+  //   실패 시 { error }, 성공 시 { row }. alert 문구는 경로별로 다르므로 호출자가 담당.
+  const buildSupplyRow = (draft, { publishedAt, supplyType, gradeBand }) => {
+    const title = draft.title.trim()
+    if (!title) return { error: '제목을 입력해주세요' }
+    if (!draft.background.trim()) return { error: '배경 설명을 입력해주세요' }
+    const rubrics = draft.rubrics.map(r => ({ name: r.name.trim(), hint: r.hint.trim(), score: Number(r.score) || 0 }))
+    if (rubrics.some(r => !r.name)) return { error: '평가 기준 이름을 모두 입력해주세요' }
+    const sum = rubrics.reduce((s, r) => s + r.score, 0)
+    if (sum !== 100) return { error: `평가 기준 배점 합계가 100이어야 해요 (현재 ${sum}점)` }
+    // step478: 갈래가 지정되면 배경 앞에 한 줄 안내(학생 대면 문구, topics에 별도 저장 안 함)
+    const genreLabel = SUPPLY_GENRE_LABELS[draft.genre] || null
+    const genreLine = genreLabel ? `✏️ 오늘은 ${genreLabel}을 써요.\n\n` : ''
+    const description = `${genreLine}${draft.background.trim()}\n\n✍️ 글쓰기 안내: ${draft.guideQuestion.trim()}`
+    const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    return { row: {
+      date: kstYmd, title, description, rubrics,   // date=오늘(KST) — 발행·재공개(step483) 관행과 동일
+      teacher_id: user.id,                      // 공급 주제 = 관리자 소유(topics 관행상 class_id 미사용)
+      supply_type: supplyType,
+      supply_grade: gradeBand,                  // step464: 대상 학년대
+      publish_week: kstIsoWeek(),
+      published_at: publishedAt,
+      max_rewrites: 1,                          // step494: 챌린지 기본값 — 총 2회(첫 글+수정 1회)
+    } }
   }
 
   // 🆕 step462→523: 발행/예약 발행/보관 공통 저장 — 검수 편집 폼을 거쳐야만 저장(생성 즉시 발행 불가 원칙).
   //   mode: 'publish'(즉시 공개) | 'schedule'(예약 공개) | 'archive'(보관 — published_at null로 저장만).
-  //   editingSupplyId가 있으면 기존 행 UPDATE(중복 행 생성 방지), 없으면 insert. 검증·description 합성은 세 모드 공통.
+  //   editingSupplyId가 있으면 기존 행 UPDATE(중복 행 생성 방지), 없으면 insert. 검증·합성은 buildSupplyRow 공통.
   //   보관 행(published_at null) 노출 안전 확인(step523, 코드 확인만): supply-adopt는 published_at 오늘 창
   //   (gte 시작~lte now)만 조회하고 학생·교사 화면은 supply_type is null 필터(step479)라 보관 행은 자동 배제됨.
   const saveSupplyTopic = async (mode, scheduledDate) => {
     if (!supplyDraft || supplySaving) return
-    const title = supplyDraft.title.trim()
-    if (!title) return alert('제목을 입력해주세요')
-    if (!supplyDraft.background.trim()) return alert('배경 설명을 입력해주세요')
-    const rubrics = supplyDraft.rubrics.map(r => ({ name: r.name.trim(), hint: r.hint.trim(), score: Number(r.score) || 0 }))
-    if (rubrics.some(r => !r.name)) return alert('평가 기준 이름을 모두 입력해주세요')
-    const sum = rubrics.reduce((s, r) => s + r.score, 0)
-    if (sum !== 100) return alert(`평가 기준 배점 합계가 100이어야 해요 (현재 ${sum}점)`)
     let publishedAt = null                       // archive: 미공개 보관
     if (mode === 'publish') publishedAt = new Date().toISOString()
     if (mode === 'schedule') {
       // 예약: 그 날짜 KST 00:00 = UTC 전날 15:00 (미래 시각 저장 — 2차 노출 쿼리가 <= now()로 읽음)
       publishedAt = new Date(new Date(`${scheduledDate}T00:00:00+09:00`)).toISOString()
     }
-    // step478: 갈래가 지정되면 배경 앞에 한 줄 안내(학생 대면 문구, topics에 별도 저장 안 함)
-    const genreLabel = SUPPLY_GENRE_LABELS[supplyDraft.genre] || null
-    const genreLine = genreLabel ? `✏️ 오늘은 ${genreLabel}을 써요.\n\n` : ''
-    const description = `${genreLine}${supplyDraft.background.trim()}\n\n✍️ 글쓰기 안내: ${supplyDraft.guideQuestion.trim()}`
+    const built = buildSupplyRow(supplyDraft, { publishedAt, supplyType: supplyForm.supplyType, gradeBand: supplyForm.gradeBand })
+    if (built.error) return alert(built.error)
     setSupplySaving(true)
     try {
-      const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-      const row = {
-        date: kstYmd, title, description, rubrics,   // date=오늘(KST) — 발행·재공개(step483) 관행과 동일
-        teacher_id: user.id,                      // 공급 주제 = 관리자 소유(topics 관행상 class_id 미사용)
-        supply_type: supplyForm.supplyType,
-        supply_grade: supplyForm.gradeBand,       // step464: 대상 학년대
-        publish_week: kstIsoWeek(),
-        published_at: publishedAt,
-        max_rewrites: 1,                          // step494: 챌린지 기본값 — 총 2회(첫 글+수정 1회)
-      }
       if (editingSupplyId) {
         // 편집 모드는 항상 UPDATE — insert 금지(같은 주제가 두 행이 되는 것 방지). WHERE(id) 필수.
-        const { error } = await supabase.from('topics').update(row).eq('id', editingSupplyId)
+        const { error } = await supabase.from('topics').update(built.row).eq('id', editingSupplyId)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('topics').insert(row)
+        const { error } = await supabase.from('topics').insert(built.row)
         if (error) throw error
       }
       if (mode === 'archive') alert('보관했어요. 발행 목록에서 언제든 공개할 수 있어요.')
@@ -1034,6 +1046,23 @@ export default function AdminHome() {
       alert((mode === 'archive' ? '보관' : '발행') + '에 실패했어요: ' + (e?.message || ''))
     }
     setSupplySaving(false)
+  }
+
+  // 🆕 step524: 후보 카드 원클릭 보관 — 편집 폼을 거치지 않고 published_at null로 백그라운드 insert.
+  //   supplyDraft·supplyForm·editingSupplyId는 건드리지 않는다(진행 중인 편집과 무간섭).
+  //   항상 insert — 다른 보관 주제 편집 중(editingSupplyId 有)에 눌러도 그 행이 UPDATE로 덮이지 않게.
+  const archiveSupplyCandidate = async (c, i) => {
+    if (candidateArchive[i]) return   // saving/saved 재클릭 무시
+    const built = buildSupplyRow(candidateToDraft(c), { publishedAt: null, supplyType: '시사', gradeBand: supplyForm.gradeBand })
+    if (built.error) return alert(`이 후보는 [이걸로 편집]에서 다듬은 뒤 보관해주세요.\n(사유: ${built.error})`)
+    setCandidateArchive(prev => ({ ...prev, [i]: 'saving' }))
+    const { error } = await supabase.from('topics').insert(built.row)
+    if (error) {
+      setCandidateArchive(prev => { const next = { ...prev }; delete next[i]; return next })   // 재시도 가능하게 원복
+      return alert('보관에 실패했어요: ' + error.message)
+    }
+    setCandidateArchive(prev => ({ ...prev, [i]: 'saved' }))
+    setSupplyList(prev => ({ ...prev, loaded: false }))   // 발행 목록 리로드
   }
 
   // 🆕 step523: 미공개 행 → 검수 편집 폼 역로드. 공개된 행에는 편집을 제공하지 않는다
@@ -3409,10 +3438,19 @@ export default function AdminHome() {
                       )}
                       <p className="text-sm font-bold text-gray-900">{c.title}</p>
                       <p className="text-xs text-gray-500 mt-1 line-clamp-3 flex-1">{c.background}</p>
-                      <button onClick={() => pickSupplyCandidate(c)}
-                        className="mt-2 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">
-                        ✏️ 이걸로 편집
-                      </button>
+                      <div className="mt-2 flex gap-1.5">
+                        <button onClick={() => pickSupplyCandidate(c)}
+                          className="flex-1 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">
+                          ✏️ 이걸로 편집
+                        </button>
+                        {/* step524: 원클릭 보관 — 편집 폼 없이 미공개 저장. 완료 후엔 ✔ 보관됨(비활성) */}
+                        <button onClick={() => archiveSupplyCandidate(c, i)} disabled={!!candidateArchive[i]}
+                          className={`flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition ${candidateArchive[i] === 'saved'
+                            ? 'bg-gray-100 text-gray-400 cursor-default'
+                            : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 disabled:opacity-60'}`}>
+                          {candidateArchive[i] === 'saved' ? '✔ 보관됨' : candidateArchive[i] === 'saving' ? '저장 중...' : '💾 보관'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
