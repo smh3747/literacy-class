@@ -434,7 +434,9 @@ export default async function handler(req, res) {
         //   supplyTopicBatchPrompt가 기존 시기 지식 방식과 완전 동일하게 동작(원버튼 불사).
         try {
           supplyNewsMaterials = await callGeminiGrounded(
-            apiKey, supplyNewsScoutPrompt(payload?.gradeBand), { timeoutMs: 30000 })
+            apiKey, supplyNewsScoutPrompt(payload?.gradeBand),
+            // step526: 소재 선정은 Lite로 충분 — RPD 20짜리 3-flash를 생성 품질(2차)에 아껴둠
+            { timeoutMs: 30000, models: ['gemini-3.1-flash-lite', 'gemini-3-flash-preview'] })
           if (!supplyNewsMaterials || !String(supplyNewsMaterials).trim()) supplyNewsMaterials = null
         } catch (e) {
           console.warn('뉴스 스카우트 실패 → 시기 지식 폴백:', e?.message)
