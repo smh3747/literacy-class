@@ -111,6 +111,7 @@ export default async function handler(req, res) {
   const targets = (supplies || []).filter(s => bands.includes(s.supply_grade || '공통'))
 
   const adopted = []
+  const freshTitles = []   // step530: 이번 호출에서 새로 insert된 제목만 — 23505(기존)는 알림 제외
   for (const s of targets) {
     const { data: inserted, error: insErr } = await admin.from('topics').insert({
       date: kstYmd,
@@ -123,6 +124,7 @@ export default async function handler(req, res) {
     }).select('id').single()
     if (!insErr && inserted) {
       adopted.push({ id: inserted.id, title: s.title })
+      freshTitles.push(s.title)
       continue
     }
     if (insErr?.code === '23505') {
@@ -133,6 +135,25 @@ export default async function handler(req, res) {
       continue
     }
     console.error('supply-adopt insert 실패(건너뜀):', insErr?.message)
+  }
+
+  // step530: 자동 등록 성공 시 담임 알림 — 원클릭(isForce)은 본인이 눌렀으므로 제외.
+  //   비차단: 실패해도 등록 결과에 영향 없음. type은 제약 11종 고정이라 'message' 재사용(새 type 금지).
+  if (!isForce && freshTitles.length > 0) {
+    try {
+      for (const title of freshTitles) {
+        const notiTitle = `🌏 오늘의 전국 글쓰기 챌린지가 학급에 등록됐어요 — ${title}`
+        // 도배 방지: 같은 교사·같은 날(KST) 동일 문구 알림이 있으면 skip
+        const { count } = await admin.from('notifications')
+          .select('id', { count: 'exact', head: true })
+          .eq('recipient_id', teacherId).eq('type', 'message')
+          .eq('title', notiTitle).gte('created_at', dayStartISO)
+        if ((count || 0) > 0) continue
+        await admin.from('notifications').insert({
+          recipient_id: teacherId, type: 'message', title: notiTitle, link: '/teacher',
+        })
+      }
+    } catch (e) { console.warn('supply-adopt 교사 알림 실패(무시):', e?.message) }
   }
 
   return res.status(200).json({ ok: true, adopted })

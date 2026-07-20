@@ -214,6 +214,9 @@ export default function AdminHome() {
   // 🆕 step488: 공급별 실집계(가져간 학급·참여 학생) + 소개 글 모니터링 패널
   const [supplyStats, setSupplyStats] = useState({})            // { [supplyId]: { copies, participants } }
   const [showcasePanel, setShowcasePanel] = useState(null)      // { supplyId, loading, rows } | null
+  // 🆕 step530: 학급별 채택·참여 현황 패널 — 단일 열림 + 행별 캐시(재클릭 접기, 재열기 즉시 표시)
+  const [supplyStatusOpenId, setSupplyStatusOpenId] = useState(null)
+  const [supplyStatusCache, setSupplyStatusCache] = useState({})  // { [supplyId]: rows[] }
   // 🆕 step422: 쪽지 탭 — msgs(전체 시간순)·status(처리됨)·profs(교사 배치 조인)
   const [msgData, setMsgData] = useState({ loaded: false, msgs: [], status: {}, profs: {} })
   const [msgSelected, setMsgSelected] = useState(null)   // 선택된 스레드 teacher_id
@@ -863,6 +866,26 @@ export default function AdminHome() {
     } catch (e) {
       alert('소개 글 조회에 실패했어요: ' + (e?.message || ''))
       setShowcasePanel(null)
+    }
+  }
+
+  // 🆕 step530: 학급별 채택·참여 현황 — 행별 lazy 조회(캐시), 재클릭 접기
+  const toggleSupplyStatus = async (supplyId) => {
+    if (supplyStatusOpenId === supplyId) { setSupplyStatusOpenId(null); return }   // 재클릭 = 접기
+    setSupplyStatusOpenId(supplyId)
+    if (supplyStatusCache[supplyId]) return   // 캐시 있으면 재호출 없이 표시
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/supply-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session?.access_token, supplyId }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '조회 실패')
+      setSupplyStatusCache(prev => ({ ...prev, [supplyId]: d.rows || [] }))
+    } catch (e) {
+      alert('현황 조회에 실패했어요: ' + (e?.message || ''))
+      setSupplyStatusOpenId(null)
     }
   }
 
@@ -3610,6 +3633,8 @@ export default function AdminHome() {
                       const scheduled = t.published_at && new Date(t.published_at) > new Date()
                       const st = supplyStats[t.id]
                       const panelOpen = showcasePanel?.supplyId === t.id
+                      const statusOpen = supplyStatusOpenId === t.id   // step530: 학급별 현황 패널
+                      const statusRows = supplyStatusCache[t.id]       // undefined = 로딩 중
                       return (
                         <div key={t.id} id={`supply-row-${t.id}`} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -3625,8 +3650,11 @@ export default function AdminHome() {
                             ) : (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">공개 중</span>
                             )}
-                            {/* step488: 실집계 — 가져간 학급·참여 학생 */}
-                            <span className="text-[11px] text-gray-400">가져간 학급 {st ? st.copies : '-'} · 참여 {st ? st.participants : '-'}명</span>
+                            {/* step488: 실집계 — 가져간 학급·참여 학생 / step530: 클릭 시 학급별 현황 패널 */}
+                            <button onClick={() => toggleSupplyStatus(t.id)}
+                              className="text-[11px] text-gray-400 hover:text-gray-600">
+                              가져간 학급 {st ? st.copies : '-'} · 참여 {st ? st.participants : '-'}명 {statusOpen ? '▲' : '▼'}
+                            </button>
                             <button onClick={() => openShowcasePanel(t.id)}
                               className={`text-xs px-2.5 py-1 rounded ${panelOpen ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}>
                               🏆 소개 글
@@ -3646,6 +3674,26 @@ export default function AdminHome() {
                               </>
                             )}
                           </div>
+                          {/* step530: 학급별 채택·참여 현황 패널 — 참여 수 내림차순(서버 정렬) */}
+                          {statusOpen && (
+                            <div className="mt-2 border-t border-gray-200 pt-2 space-y-1.5">
+                              {!statusRows ? (
+                                <div className="text-xs text-gray-400">불러오는 중...</div>
+                              ) : statusRows.length === 0 ? (
+                                <div className="text-xs text-gray-400">아직 가져간 학급이 없어요</div>
+                              ) : (
+                                statusRows.map((r, i) => (
+                                  <div key={i} className="p-2 rounded-lg border border-gray-100 bg-white text-xs text-gray-600">
+                                    <span className="font-semibold text-gray-800">{r.school || '학교 미설정'}</span>
+                                    {' '}{r.grade ? `${r.grade}학년` : ''} {r.className}
+                                    {r.teacherName && <span> · {r.teacherName} 선생님</span>}
+                                    <span className="text-gray-400"> · 등록 {kstShortDT(r.adoptedAt)}</span>
+                                    <span className="font-semibold text-sky-700"> · 참여 {r.participants}명</span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
                           {/* step488: 소개 글 모니터링 패널 — 검토 상태·신고 강조·비공개/복구 */}
                           {panelOpen && (
                             <div className="mt-2 border-t border-gray-200 pt-2 space-y-1.5">
