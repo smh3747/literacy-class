@@ -439,7 +439,8 @@ export default async function handler(req, res) {
             { timeoutMs: 30000, models: ['gemini-3.1-flash-lite', 'gemini-3-flash-preview'] })
           if (!supplyNewsMaterials || !String(supplyNewsMaterials).trim()) supplyNewsMaterials = null
         } catch (e) {
-          console.warn('뉴스 스카우트 실패 → 시기 지식 폴백:', e?.message)
+          // step527: 진단 정보 — 실제 사용 키 끝 4자리·판별 학급(전체 키 로그 절대 금지)
+          console.warn(`뉴스 스카우트 실패 → 시기 지식 폴백 [key ..${apiKey.slice(-4)} class ${keyResult?.classId}]: ${e?.message}`)
           supplyNewsMaterials = null
         }
         prompt = supplyTopicBatchPrompt({ ...(payload || {}), newsMaterials: supplyNewsMaterials })
