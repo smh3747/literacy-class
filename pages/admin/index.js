@@ -922,11 +922,23 @@ export default function AdminHome() {
     }
   }
 
+  // 🆕 step528: 관리자 AI 도구가 쓸 키 학급 선정 — 본인 학급 키를 최우선.
+  //   step527 진단: 기존 classes.find(c => c.has_api_key)는 전체 목록(created_at 내림차순)에서
+  //   임의(대개 최근 가입 교사) 학급 키를 집어, 타 교사 무료 한도를 소모하고 관리자 키 교체가
+  //   반영되지 않았음. 본인 학급에 키가 없을 때만 타 학급 키로 폴백(경고 남김).
+  const pickAdminKeyedClass = () => {
+    const own = classes.find(c => c.teacher_id === user?.id && c.has_api_key)
+    if (own) return own
+    const fallback = classes.find(c => c.has_api_key)
+    if (fallback) console.warn('관리자 본인 학급에 키 없음 — 타 학급 키 폴백')
+    return fallback
+  }
+
   // 🆕 step462: AI 생성 — 기존 feedbackSummary와 동일 패턴(키 등록 학급의 classId 전달)
   const generateSupplyTopic = async () => {
     const keyword = supplyForm.keyword.trim()
     if (!keyword) return alert('키워드를 입력해주세요')
-    const keyedClass = classes.find(c => c.has_api_key)
+    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
     if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
     setSupplyGenerating(true)
     try {
@@ -952,7 +964,7 @@ export default function AdminHome() {
 
   // 🆕 step464: 원버튼 시사 — AI가 소재 3개 선정 → 후보 3개 생성(키워드 불필요)
   const generateSupplyBatch = async () => {
-    const keyedClass = classes.find(c => c.has_api_key)
+    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
     if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
     setSupplyBatchGenerating(true)
     try {
@@ -1791,7 +1803,7 @@ export default function AdminHome() {
     if (target.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
 
     // 키 서버격리(step153~): 키 등록된 학급의 키로 호출 (admin은 classId 지정 가능)
-    const keyedClass = classes.find(c => c.has_api_key)
+    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
     if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 선생님이 먼저 키를 등록해야 해요.')
 
     setAiSummarizing(true)
