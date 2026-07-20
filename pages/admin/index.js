@@ -207,6 +207,7 @@ export default function AdminHome() {
   const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[], genre } — 편집 폼
   const [editingSupplyId, setEditingSupplyId] = useState(null) // step523: 미공개 행 편집 모드(값 있으면 저장이 UPDATE)
   const [candidateArchive, setCandidateArchive] = useState({}) // step524: 후보 카드 원클릭 보관 상태 { [index]: 'saving' | 'saved' }
+  const [supplyGrounded, setSupplyGrounded] = useState(false)  // step525: 이번 후보가 실뉴스 검색 기반인지(폴백이면 false)
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
@@ -959,6 +960,7 @@ export default function AdminHome() {
       const list = Array.isArray(result?.topics) ? result.topics.slice(0, 3) : []
       if (list.length === 0) throw new Error('후보를 만들지 못했어요. 다시 시도해주세요.')
       setSupplyCandidates(list)
+      setSupplyGrounded(!!result?.grounded)   // step525: 실뉴스 스카우트 성공 여부(배지용)
       setCandidateArchive({})   // step524: 새 후보 세트 = 보관 상태 초기화
       setSupplyDraft(null)   // 이전 편집 초안은 접기(후보 선택으로 다시 로드)
     } catch (e) {
@@ -3420,12 +3422,17 @@ export default function AdminHome() {
                   className="w-full sm:w-auto text-sm bg-indigo-600 text-white font-bold px-6 py-3 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
                   {supplyBatchGenerating ? '소재 고르고 후보 만드는 중... (조금 걸려요)' : '🗞️ 오늘의 시사 주제 만들기'}
                 </button>
-                <p className="text-[11px] text-gray-400 mt-1">소재는 AI가 오늘 날짜 기준 시기 지식(계절·학사 일정·연중 이슈)으로 골라요. 실시간 뉴스 검색은 아니에요.</p>
+                <p className="text-[11px] text-gray-400 mt-1">소재는 AI가 오늘 뉴스를 검색해 골라요. 검색이 안 되는 날은 시기 지식(계절·학사 일정·연중 이슈)으로 만들어요.</p>
               </div>
 
               {/* 🆕 step464: 후보 3장 — 골라서 편집 폼으로 */}
               {supplyCandidates && (
-                <div className="grid sm:grid-cols-3 gap-2">
+                <div>
+                  {/* step525: 실뉴스 반영 여부 — 스카우트 폴백(시기 지식) 시 미표시 */}
+                  {supplyGrounded && (
+                    <p className="text-[11px] text-emerald-700 font-semibold mb-1.5">🔎 오늘 뉴스를 검색해 고른 소재예요</p>
+                  )}
+                  <div className="grid sm:grid-cols-3 gap-2">
                   {supplyCandidates.map((c, i) => (
                     <div key={i} className="border border-gray-200 rounded-xl p-3 flex flex-col">
                       <p className="text-[11px] text-indigo-600 mb-1">💡 {c.material}</p>
@@ -3453,6 +3460,7 @@ export default function AdminHome() {
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
 

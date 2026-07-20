@@ -10,14 +10,14 @@
 //   class_secrets에 없으면 classes.api_key 폴백 (step154에서 제거 예정).
 // ============================================
 import { createClient } from '@supabase/supabase-js'
-import { callGeminiStructured, callGemini, SCHEMAS } from '../../lib/gemini'
+import { callGeminiStructured, callGemini, callGeminiGrounded, SCHEMAS } from '../../lib/gemini'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
 import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
-import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema } from '../../lib/supplyTopicPrompt.server'
+import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema, supplyNewsScoutPrompt } from '../../lib/supplyTopicPrompt.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -246,6 +246,7 @@ export default async function handler(req, res) {
     let prompt, schema, opts
     let mergeEssay = null   // 🆕 맞춤법 규칙 병합용 원문(corrections 생성 type만 대입 → 응답 직전 서버 병합)
     let prevGrading = null  // 🆕 step443: rewriteGrading 직전 제출 원시 행 — 3인자 전달·역전 감시에 사용
+    let supplyNewsMaterials = null   // 🆕 step525: supplyTopicBatch 1차 뉴스 스카우트 결과(성공 시 텍스트) — 응답 grounded 플래그용
 
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
@@ -428,7 +429,18 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: '권한 확인에 실패했어요' })
       }
       if (type === 'supplyTopicBatch') {
-        prompt = supplyTopicBatchPrompt(payload || {})
+        // 🆕 step525: 1차 뉴스 스카우트(검색 그라운딩, 자유 텍스트) → 소재를 2차 프롬프트에 주입.
+        //   실패 유형 전부(도구 미지원·한도·타임아웃 30초·기타)에서 조용히 폴백 — newsMaterials 미전달이면
+        //   supplyTopicBatchPrompt가 기존 시기 지식 방식과 완전 동일하게 동작(원버튼 불사).
+        try {
+          supplyNewsMaterials = await callGeminiGrounded(
+            apiKey, supplyNewsScoutPrompt(payload?.gradeBand), { timeoutMs: 30000 })
+          if (!supplyNewsMaterials || !String(supplyNewsMaterials).trim()) supplyNewsMaterials = null
+        } catch (e) {
+          console.warn('뉴스 스카우트 실패 → 시기 지식 폴백:', e?.message)
+          supplyNewsMaterials = null
+        }
+        prompt = supplyTopicBatchPrompt({ ...(payload || {}), newsMaterials: supplyNewsMaterials })
         schema = supplyTopicBatchSchema
         opts = { taskType: 'creative', maxTokens: 16000, temperature: 0.8 }
       } else {
@@ -483,6 +495,10 @@ export default async function handler(req, res) {
           logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount })  // await 안 함
         }
       } catch (e) { console.warn('역전 감시 실패(무시):', e?.message) }
+    }
+    // 🆕 step525: 실뉴스 반영 여부 플래그 — 관리자 검수 화면 배지용(supplyTopicBatch만)
+    if (type === 'supplyTopicBatch' && result && typeof result === 'object') {
+      result.grounded = !!supplyNewsMaterials
     }
     return res.status(200).json({ result })
 
