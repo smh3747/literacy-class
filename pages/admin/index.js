@@ -205,6 +205,7 @@ export default function AdminHome() {
   const [supplyBatchGenerating, setSupplyBatchGenerating] = useState(false)
   const [supplyCandidates, setSupplyCandidates] = useState(null)   // 원버튼 결과 후보 3개
   const [supplyDraft, setSupplyDraft] = useState(null)        // { title, background, guideQuestion, rubrics[], genre } — 편집 폼
+  const [editingSupplyId, setEditingSupplyId] = useState(null) // step523: 미공개 행 편집 모드(값 있으면 저장이 UPDATE)
   const [supplyDate, setSupplyDate] = useState('')            // 예약 발행 날짜(YYYY-MM-DD)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyList, setSupplyList] = useState({ loaded: false, rows: [] })
@@ -940,6 +941,7 @@ export default function AdminHome() {
           : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
         genre: '',   // step478: 키워드 단건 경로는 갈래 미지정(발행 문구 생략)
       })
+      setEditingSupplyId(null)   // step523: 새 생성 초안은 항상 신규 insert
     } catch (e) {
       alert('생성에 실패했어요: ' + (e?.message || ''))
     }
@@ -975,10 +977,15 @@ export default function AdminHome() {
         : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
       genre: SUPPLY_GENRE_LABELS[c.genre] ? c.genre : '',   // step478: 알 수 없는 값은 미지정 처리
     })
+    setEditingSupplyId(null)   // step523: 후보 선택 초안은 항상 신규 insert
   }
 
-  // 🆕 step462: 발행/예약 발행 — 검수 편집 폼을 거쳐야만 저장(생성 즉시 발행 불가 원칙)
-  const publishSupplyTopic = async (scheduledDate) => {
+  // 🆕 step462→523: 발행/예약 발행/보관 공통 저장 — 검수 편집 폼을 거쳐야만 저장(생성 즉시 발행 불가 원칙).
+  //   mode: 'publish'(즉시 공개) | 'schedule'(예약 공개) | 'archive'(보관 — published_at null로 저장만).
+  //   editingSupplyId가 있으면 기존 행 UPDATE(중복 행 생성 방지), 없으면 insert. 검증·description 합성은 세 모드 공통.
+  //   보관 행(published_at null) 노출 안전 확인(step523, 코드 확인만): supply-adopt는 published_at 오늘 창
+  //   (gte 시작~lte now)만 조회하고 학생·교사 화면은 supply_type is null 필터(step479)라 보관 행은 자동 배제됨.
+  const saveSupplyTopic = async (mode, scheduledDate) => {
     if (!supplyDraft || supplySaving) return
     const title = supplyDraft.title.trim()
     if (!title) return alert('제목을 입력해주세요')
@@ -987,8 +994,9 @@ export default function AdminHome() {
     if (rubrics.some(r => !r.name)) return alert('평가 기준 이름을 모두 입력해주세요')
     const sum = rubrics.reduce((s, r) => s + r.score, 0)
     if (sum !== 100) return alert(`평가 기준 배점 합계가 100이어야 해요 (현재 ${sum}점)`)
-    let publishedAt = new Date().toISOString()
-    if (scheduledDate) {
+    let publishedAt = null                       // archive: 미공개 보관
+    if (mode === 'publish') publishedAt = new Date().toISOString()
+    if (mode === 'schedule') {
       // 예약: 그 날짜 KST 00:00 = UTC 전날 15:00 (미래 시각 저장 — 2차 노출 쿼리가 <= now()로 읽음)
       publishedAt = new Date(new Date(`${scheduledDate}T00:00:00+09:00`)).toISOString()
     }
@@ -999,24 +1007,70 @@ export default function AdminHome() {
     setSupplySaving(true)
     try {
       const kstYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-      const { error } = await supabase.from('topics').insert({
-        date: kstYmd, title, description, rubrics,
+      const row = {
+        date: kstYmd, title, description, rubrics,   // date=오늘(KST) — 발행·재공개(step483) 관행과 동일
         teacher_id: user.id,                      // 공급 주제 = 관리자 소유(topics 관행상 class_id 미사용)
         supply_type: supplyForm.supplyType,
         supply_grade: supplyForm.gradeBand,       // step464: 대상 학년대
         publish_week: kstIsoWeek(),
         published_at: publishedAt,
         max_rewrites: 1,                          // step494: 챌린지 기본값 — 총 2회(첫 글+수정 1회)
-      })
-      if (error) throw error
-      alert(scheduledDate ? `예약 발행 완료 (${scheduledDate} 공개)` : '발행 완료!')
+      }
+      if (editingSupplyId) {
+        // 편집 모드는 항상 UPDATE — insert 금지(같은 주제가 두 행이 되는 것 방지). WHERE(id) 필수.
+        const { error } = await supabase.from('topics').update(row).eq('id', editingSupplyId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('topics').insert(row)
+        if (error) throw error
+      }
+      if (mode === 'archive') alert('보관했어요. 발행 목록에서 언제든 공개할 수 있어요.')
+      else alert(mode === 'schedule' ? `예약 발행 완료 (${scheduledDate} 공개)` : '발행 완료!')
       setSupplyDraft(null)
       setSupplyDate('')
+      setEditingSupplyId(null)
       setSupplyList(prev => ({ ...prev, loaded: false }))   // 목록 리로드
     } catch (e) {
-      alert('발행에 실패했어요: ' + (e?.message || ''))
+      alert((mode === 'archive' ? '보관' : '발행') + '에 실패했어요: ' + (e?.message || ''))
     }
     setSupplySaving(false)
+  }
+
+  // 🆕 step523: 미공개 행 → 검수 편집 폼 역로드. 공개된 행에는 편집을 제공하지 않는다
+  //   (이미 학급에 복사된 주제와 원본 내용이 어긋나는 것 방지 — 고치려면 먼저 공개 취소).
+  const editSupplyTopic = async (t) => {
+    // 목록 쿼리는 가벼운 필드만 들고 있어 편집 재료(description·rubrics)는 단건 조회로 가져온다
+    const { data: row, error } = await supabase.from('topics')
+      .select('id, title, description, rubrics, supply_type, supply_grade')
+      .eq('id', t.id).maybeSingle()
+    if (error || !row) return alert('불러오기 실패: ' + (error?.message || '행을 찾지 못했어요'))
+    // description 역파싱 — 저장 합성 규칙(갈래 줄 + 배경 + "✍️ 글쓰기 안내: " + 질문)의 역순
+    let rest = row.description || ''
+    let genre = ''
+    const gm = rest.match(/^✏️ 오늘은 (.+?)을 써요\.\n\n/)
+    if (gm) {
+      const found = Object.entries(SUPPLY_GENRE_LABELS).find(([, label]) => label === gm[1])
+      // 라벨 역매핑 실패 시엔 줄을 지우지 않고 배경에 남긴다(genre ''인 채 데이터 유실 금지)
+      if (found) { genre = found[0]; rest = rest.slice(gm[0].length) }
+    }
+    const SEP = '\n\n✍️ 글쓰기 안내: '
+    const sepIdx = rest.lastIndexOf(SEP)
+    // 구분자가 없으면 전체를 배경에 넣는다(데이터 유실 금지)
+    const background = sepIdx >= 0 ? rest.slice(0, sepIdx) : rest
+    const guideQuestion = sepIdx >= 0 ? rest.slice(sepIdx + SEP.length) : ''
+    setSupplyForm(prev => ({ ...prev, supplyType: row.supply_type || '시사', gradeBand: row.supply_grade || '공통' }))
+    setSupplyDraft({
+      title: row.title || '',
+      background,
+      guideQuestion,
+      rubrics: Array.isArray(row.rubrics) && row.rubrics.length > 0
+        ? row.rubrics.map(r => ({ name: r?.name || '', hint: r?.hint || '', score: Number(r?.score) || 0 }))
+        : [{ name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }, { name: '', hint: '', score: 25 }],
+      genre,
+    })
+    setEditingSupplyId(t.id)
+    setSupplyCandidates(null)   // 후보 카드는 접기(편집 대상과 혼동 방지)
+    setTimeout(() => document.getElementById('supply-draft-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   // 🆕 step480: KST 'M/D HH:mm' — 공급 목록 일시 표기(주차 표기 대체)
@@ -3393,8 +3447,18 @@ export default function AdminHome() {
 
               {/* 검수 편집 폼 — 생성 즉시 발행 불가, 반드시 여기를 거쳐 [발행]으로만 */}
               {supplyDraft && (
-                <div className="border-2 border-indigo-200 rounded-xl p-4 space-y-3">
-                  <p className="text-xs text-indigo-700 font-semibold">✏️ 검수 후 발행하세요 — 모든 항목을 수정할 수 있어요</p>
+                <div id="supply-draft-form" className="border-2 border-indigo-200 rounded-xl p-4 space-y-3">
+                  {editingSupplyId ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-amber-700 font-semibold">✏️ 기존 보관 주제를 수정하고 있어요 — 저장하면 목록의 그 행이 갱신돼요</p>
+                      <button onClick={() => { setSupplyDraft(null); setEditingSupplyId(null) }}
+                        className="text-xs text-gray-500 border border-gray-200 px-2.5 py-1 rounded-lg hover:bg-gray-50 shrink-0">
+                        취소
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-indigo-700 font-semibold">✏️ 검수 후 발행하세요 — 모든 항목을 수정할 수 있어요</p>
+                  )}
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">제목</label>
                     <input type="text" value={supplyDraft.title}
@@ -3445,20 +3509,27 @@ export default function AdminHome() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap pt-1">
-                    <button onClick={() => publishSupplyTopic(null)} disabled={supplySaving}
+                    <button onClick={() => saveSupplyTopic('publish')} disabled={supplySaving}
                       className="text-sm bg-primary text-white font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
                       {supplySaving ? '저장 중...' : '📢 발행'}
+                    </button>
+                    {/* step523: 발행 없이 저장 — published_at null(미공개 원본). 발행 목록 [공개]로 언제든 공개 */}
+                    <button onClick={() => saveSupplyTopic('archive')} disabled={supplySaving}
+                      className="text-sm border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                      💾 보관
                     </button>
                     <div className="flex items-center gap-1.5">
                       <input type="date" value={supplyDate} onChange={e => setSupplyDate(e.target.value)}
                         className="text-sm border border-gray-200 rounded-lg p-2" />
-                      <button onClick={() => supplyDate ? publishSupplyTopic(supplyDate) : alert('공개 날짜를 선택해주세요')} disabled={supplySaving}
+                      <button onClick={() => supplyDate ? saveSupplyTopic('schedule', supplyDate) : alert('공개 날짜를 선택해주세요')} disabled={supplySaving}
                         className="text-sm border border-primary text-primary font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
                         ⏰ 예약 발행
                       </button>
                     </div>
-                    <button onClick={() => setSupplyDraft(null)}
-                      className="text-sm text-gray-500 px-3 py-2 ml-auto">버리기</button>
+                    {!editingSupplyId && (
+                      <button onClick={() => setSupplyDraft(null)}
+                        className="text-sm text-gray-500 px-3 py-2 ml-auto">버리기</button>
+                    )}
                   </div>
                 </div>
               )}
@@ -3510,6 +3581,9 @@ export default function AdminHome() {
                               <>
                                 <button onClick={() => republishSupplyTopic(t)}
                                   className="ml-auto text-xs px-2.5 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100">공개</button>
+                                {/* step523: 편집은 미공개 행에만 — 공개된 원본을 고치면 이미 학급에 복사된 주제와 어긋나므로 제공하지 않는다 */}
+                                <button onClick={() => editSupplyTopic(t)}
+                                  className="text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100">✏️ 편집</button>
                                 <button onClick={() => deleteSupplyTopic(t)}
                                   className="text-xs px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">🗑️ 삭제</button>
                               </>
