@@ -926,6 +926,8 @@ export default function AdminHome() {
   //   step527 진단: 기존 classes.find(c => c.has_api_key)는 전체 목록(created_at 내림차순)에서
   //   임의(대개 최근 가입 교사) 학급 키를 집어, 타 교사 무료 한도를 소모하고 관리자 키 교체가
   //   반영되지 않았음. 본인 학급에 키가 없을 때만 타 학급 키로 폴백(경고 남김).
+  //   step529: 관리자 운영 작업은 서버 SYSTEM 키 우선이라 이 선정은 SYSTEM 키 미설정 시 폴백 힌트.
+  //   그래서 키 학급이 없어도 사전 차단하지 않는다(서버가 키 없음이면 400 메시지로 알림).
   const pickAdminKeyedClass = () => {
     const own = classes.find(c => c.teacher_id === user?.id && c.has_api_key)
     if (own) return own
@@ -938,14 +940,13 @@ export default function AdminHome() {
   const generateSupplyTopic = async () => {
     const keyword = supplyForm.keyword.trim()
     if (!keyword) return alert('키워드를 입력해주세요')
-    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
-    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
+    const keyedClass = pickAdminKeyedClass()   // step529: SYSTEM 키 미설정 시 서버 폴백용 힌트(차단 안 함)
     setSupplyGenerating(true)
     try {
       const result = await callAI('supplyTopic', {
         keyword, supplyType: supplyForm.supplyType,
         gradeBand: supplyForm.gradeBand,
-      }, { classId: keyedClass.id })
+      }, { classId: keyedClass?.id })
       setSupplyDraft({
         title: result?.title || '',
         background: result?.background || '',
@@ -964,11 +965,10 @@ export default function AdminHome() {
 
   // 🆕 step464: 원버튼 시사 — AI가 소재 3개 선정 → 후보 3개 생성(키워드 불필요)
   const generateSupplyBatch = async () => {
-    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
-    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 먼저 키를 등록해주세요.')
+    const keyedClass = pickAdminKeyedClass()   // step529: SYSTEM 키 미설정 시 서버 폴백용 힌트(차단 안 함)
     setSupplyBatchGenerating(true)
     try {
-      const result = await callAI('supplyTopicBatch', { gradeBand: supplyForm.gradeBand }, { classId: keyedClass.id })
+      const result = await callAI('supplyTopicBatch', { gradeBand: supplyForm.gradeBand }, { classId: keyedClass?.id })
       const list = Array.isArray(result?.topics) ? result.topics.slice(0, 3) : []
       if (list.length === 0) throw new Error('후보를 만들지 못했어요. 다시 시도해주세요.')
       setSupplyCandidates(list)
@@ -1802,9 +1802,8 @@ export default function AdminHome() {
     if (target.length === 0) return alert('요약할 의견이 없어요')
     if (target.length < 2) return alert('의견이 너무 적어요 (최소 2개 필요)')
 
-    // 키 서버격리(step153~): 키 등록된 학급의 키로 호출 (admin은 classId 지정 가능)
-    const keyedClass = pickAdminKeyedClass()   // step528: 본인 학급 키 우선(타 교사 키 오용 방지)
-    if (!keyedClass) return alert('API 키가 등록된 학급이 없어요. 선생님이 먼저 키를 등록해야 해요.')
+    // 키 서버격리(step153~): 서버가 SYSTEM 키 우선 사용, 미설정 시 이 classId 학급 키 폴백
+    const keyedClass = pickAdminKeyedClass()   // step529: SYSTEM 키 미설정 시 서버 폴백용 힌트(차단 안 함)
 
     setAiSummarizing(true)
     setAiSummary(null)
@@ -1812,7 +1811,7 @@ export default function AdminHome() {
       // 🔒 프롬프트는 서버(/api/ai)에서 구성
       const result = await callAI('feedbackSummary',
         { feedbacks: target.map(f => f.content) },
-        { classId: keyedClass.id }
+        { classId: keyedClass?.id }
       )
       setAiSummary(result)
     } catch(e) {

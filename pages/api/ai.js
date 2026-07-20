@@ -174,7 +174,10 @@ async function notifyApiKeyInvalid(classId) {
 }
 
 // 호출자 학급의 Gemini 키를 서버에서 조회 (class_secrets 우선 → classes.api_key 폴백)
-async function resolveApiKey({ accessToken, classId: classIdParam }) {
+// step529: allowMissingKey — 관리자 운영 작업이 SYSTEM 키를 쓸 수 있을 때만 true.
+//   true면 학급·키가 없어도 400 대신 { apiKey: null, ... }을 반환해 호출자가 SYSTEM 키로 대체하게 한다.
+//   기본 false — 교사·학생 경로는 기존 동작과 완전 동일.
+async function resolveApiKey({ accessToken, classId: classIdParam, allowMissingKey = false }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !serviceKey) {
@@ -203,6 +206,8 @@ async function resolveApiKey({ accessToken, classId: classIdParam }) {
   // admin은 classId 파라미터 허용, 그 외엔 본인 학급
   const classId = (profile.role === 'admin' && classIdParam) ? classIdParam : profile.class_id
   if (!classId) {
+    // step529: SYSTEM 키 후보가 있으면 학급 없는 관리자도 통과(키 조회만 건너뜀)
+    if (allowMissingKey) return { apiKey: null, userId: userData.user.id, classId: null, role: profile.role }
     return { error: { status: 400, message: '학급 정보가 없어요.' } }
   }
 
@@ -215,10 +220,11 @@ async function resolveApiKey({ accessToken, classId: classIdParam }) {
       .select('api_key').eq('id', classId).maybeSingle()
     apiKey = cls?.api_key || null
   }
-  if (!apiKey) {
+  if (!apiKey && !allowMissingKey) {
     return { error: { status: 400, message: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' } }
   }
-  return { apiKey, userId: userData.user.id, classId }   // step519: classId — 키 무효 시 담임 알림 대상 특정용
+  // step519: classId — 키 무효 시 담임 알림 대상 특정용 / step529: role — admin 운영 type 검증·SYSTEM 키 게이트용
+  return { apiKey, userId: userData.user.id, classId, role: profile.role }
 }
 
 export default async function handler(req, res) {
@@ -234,12 +240,25 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: '앱이 업데이트되었어요. 페이지를 새로고침 해주세요.' })
   }
 
+  // 🆕 step529: 관리자 운영 작업(공급 주제·의견 요약)은 서버 SYSTEM 키 우선 — 교사 학급 키 체계와 비용 경계 분리.
+  //   SYSTEM_GEMINI_API_KEY 미설정이면 기존 학급 키 폴백(기능 불사). 챌린지 검토(lib/showcaseReview.server.js)와 동일 키.
+  //   ⚠️ 교사·학생 경로(채점·맞춤법·챗봇·주제생성·생기부 등)는 계속 학급 키 — 절대 SYSTEM 키로 돌리지 말 것(비용 경계).
+  const ADMIN_OPS_TYPES = ['supplyTopic', 'supplyTopicBatch', 'feedbackSummary']
+  const systemKey = process.env.SYSTEM_GEMINI_API_KEY || null
+  const isAdminOps = ADMIN_OPS_TYPES.includes(type)
+
   // 키 서버 조회 (class_secrets → classes 폴백)
-  const keyResult = await resolveApiKey({ accessToken, classId })
+  const keyResult = await resolveApiKey({ accessToken, classId, allowMissingKey: isAdminOps && !!systemKey })
   if (keyResult.error) {
     return res.status(keyResult.error.status).json({ error: keyResult.error.message })
   }
-  const apiKey = keyResult.apiKey
+  let apiKey = keyResult.apiKey
+  // SYSTEM 키는 서버가 role을 검증한 admin에게만 — 교사가 admin 운영 type을 호출해도 SYSTEM 키가 새지 않게
+  const usingSystemKey = isAdminOps && keyResult.role === 'admin' && !!systemKey
+  if (usingSystemKey) apiKey = systemKey
+  if (!apiKey) {
+    return res.status(400).json({ error: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' })
+  }
   const userId = keyResult.userId || null   // 🆕 요청자 id — C-2 차단 기록 맥락용
 
   try {
@@ -392,6 +411,11 @@ export default async function handler(req, res) {
       mergeEssay = essay
 
     } else if (type === 'feedbackSummary') {
+      // step529: admin 운영 작업으로 명시 — 기존엔 서버 검증이 없어 UI 관례로만 admin 전용이었음.
+      //   호출처는 pages/admin/index.js 한 곳뿐(교사·학생 호출 없음)이라 기존 사용자 영향 없음.
+      if (keyResult.role !== 'admin') {
+        return res.status(403).json({ error: '관리자만 쓸 수 있는 기능이에요' })
+      }
       const { feedbacks } = payload || {}
       if (!Array.isArray(feedbacks) || feedbacks.length < 2) {
         return res.status(400).json({ error: '요약할 의견이 부족해요' })
@@ -414,19 +438,9 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: '키워드를 입력해주세요' })
         }
       }
-      // 관리자 검증 — resolveApiKey는 role을 반환하지 않으므로 여기서 확인(두 타입 공용)
-      try {
-        const adminClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
-          { auth: { autoRefreshToken: false, persistSession: false } }
-        )
-        const { data: requester } = await adminClient.from('profiles')
-          .select('role').eq('id', userId).maybeSingle()
-        if (!requester || requester.role !== 'admin') {
-          return res.status(403).json({ error: '관리자만 공급 주제를 생성할 수 있어요' })
-        }
-      } catch (e) {
-        return res.status(500).json({ error: '권한 확인에 실패했어요' })
+      // 관리자 검증 — step529: resolveApiKey가 role을 반환하므로 profiles 재조회 없이 확인(두 타입 공용)
+      if (keyResult.role !== 'admin') {
+        return res.status(403).json({ error: '관리자만 공급 주제를 생성할 수 있어요' })
       }
       if (type === 'supplyTopicBatch') {
         // 🆕 step525: 1차 뉴스 스카우트(검색 그라운딩, 자유 텍스트) → 소재를 2차 프롬프트에 주입.
@@ -439,8 +453,8 @@ export default async function handler(req, res) {
             { timeoutMs: 30000, models: ['gemini-3.1-flash-lite', 'gemini-3-flash-preview'] })
           if (!supplyNewsMaterials || !String(supplyNewsMaterials).trim()) supplyNewsMaterials = null
         } catch (e) {
-          // step527: 진단 정보 — 실제 사용 키 끝 4자리·판별 학급(전체 키 로그 절대 금지)
-          console.warn(`뉴스 스카우트 실패 → 시기 지식 폴백 [key ..${apiKey.slice(-4)} class ${keyResult?.classId}]: ${e?.message}`)
+          // step527: 진단 정보 — 실제 사용 키 끝 4자리·키 출처(전체 키 로그 절대 금지) / step529: SYSTEM 키 표기
+          console.warn(`뉴스 스카우트 실패 → 시기 지식 폴백 [key ..${apiKey.slice(-4)} ${usingSystemKey ? 'SYSTEM' : `class ${keyResult?.classId}`}]: ${e?.message}`)
           supplyNewsMaterials = null
         }
         prompt = supplyTopicBatchPrompt({ ...(payload || {}), newsMaterials: supplyNewsMaterials })
