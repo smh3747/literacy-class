@@ -279,7 +279,7 @@ export default function StudentHome() {
       if (!uid) { router.push('/student/login'); return }
 
       const tProfile = performance.now()
-      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled)').eq('id', uid).maybeSingle())
+      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)').eq('id', uid).maybeSingle())
       console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
       if (!profile || profile.role !== 'student') {
         await supabase.auth.signOut(); router.push('/student/login'); return
@@ -580,7 +580,15 @@ export default function StudentHome() {
 
   const logout = async () => { await supabase.auth.signOut(); router.push('/') }
 
-  const handlePaste = (type) => {
+  const handlePaste = (e, type) => {
+    // step536: 기본은 붙여넣기 차단. 학급 설정 allow_paste ON일 때만 허용(테스트·특별 수업 목적).
+    //   차단 시엔 본문에 아무것도 안 들어가므로 감지 기록 안 함(억울한 복붙 배지·랭킹 제외 방지).
+    if (!user?.classes?.allow_paste) {
+      e.preventDefault()
+      alert('직접 입력해 주세요 — 붙여넣기는 사용할 수 없어요')
+      return
+    }
+    // 허용 학급은 기존 감지 로직 유지 — 챌린지 랭킹 제외 등 이중 방어
     pasteDetectedRef.current = true
     pasteCountRef.current++
     setPasteWarning(true)
@@ -1557,7 +1565,7 @@ export default function StudentHome() {
                   <textarea
                     value={essay}
                     onChange={e => setEssay(e.target.value)}
-                    onPaste={() => handlePaste('essay')}
+                    onPaste={(e) => handlePaste(e, 'essay')}
                     placeholder={`여기에 글을 써 주세요... (${todayTopic?.min_length || 30}자 이상)`}
                     rows="12"
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed"
@@ -1915,7 +1923,7 @@ export default function StudentHome() {
                       <textarea
                         value={rewriteEssay}
                         onChange={e => setRewriteEssay(e.target.value)}
-                        onPaste={() => handlePaste('rewrite')}
+                        onPaste={(e) => handlePaste(e, 'rewrite')}
                         placeholder={`처음 쓴 글의 발전점을 참고해서 새로 써 보세요... (${todayTopic?.min_length || 30}자 이상)`}
                         className="w-full p-3 border border-gray-200 rounded-lg text-sm leading-relaxed resize-none focus:border-primary focus:outline-none"
                         style={{ height: '500px' }}

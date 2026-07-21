@@ -164,6 +164,21 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
             </p>
           </div>
 
+          {/* 🆕 step536: 학생 붙여넣기 허용 (기본 OFF=차단. 감지·랭킹 제외는 토글과 무관하게 동작) */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={!!classInfo.allow_paste}
+                onChange={e => save({ allow_paste: e.target.checked })}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">📋 학생 붙여넣기 허용</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              테스트나 특별한 수업 목적일 때만 켜세요. 챌린지 공정성을 위해 평소엔 꺼두는 것을 권해요.
+              {!!classInfo.allow_paste && <span className="block mt-1 text-amber-600">현재 켜짐 — 학생이 글쓰기 칸에 붙여넣기를 할 수 있어요.</span>}
+            </p>
+          </div>
+
           {/* 게시판 범위 — 게시판 기능이 아직 미구현이라 화면에서만 숨김 (출시 전 정리). */}
           {false && (
             <div>
