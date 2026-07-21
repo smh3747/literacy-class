@@ -1063,6 +1063,9 @@ export default function AdminHome() {
     }
     const built = buildSupplyRow(supplyDraft, { publishedAt, supplyType: supplyForm.supplyType, gradeBand: supplyForm.gradeBand })
     if (built.error) return alert(built.error)
+    // step531: 예약 주제의 원본 date=공개일 — 마감 판정(date<오늘) 정합.
+    //   생성일(kstYmd)로 두면 공개 첫날부터 마감 처리(순위 조기 동결·학생 잠금). scheduledDate는 이미 KST 날짜(YYYY-MM-DD).
+    if (mode === 'schedule') built.row.date = scheduledDate
     setSupplySaving(true)
     try {
       if (editingSupplyId) {
