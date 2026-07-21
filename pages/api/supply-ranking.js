@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   }
   const { copyIds, allSubs, participants, supplyDate } = loaded
   if (copyIds.length === 0) {
-    return res.status(200).json({ ok: true, locked: false, participants: 0, winners: [], myRank: null })
+    return res.status(200).json({ ok: true, locked: false, participants: 0, winners: [], myRank: null, rankedPool: 0 })
   }
 
   // 학생은 본인 제출 후에만 열람 — 미제출이면 참여 수만
@@ -78,7 +78,8 @@ export default async function handler(req, res) {
         ? (finalRanks.find(r => r.student_id === uid)?.rank ?? null)
         : null
       const frozenWinners = await buildFrozenWinners(admin, supplyId, finalRanks)
-      return res.status(200).json({ ok: true, locked: false, participants, winners: frozenWinners, myRank: frozenRank })
+      // step539: rankedPool = 동의 완료 랭킹 풀 크기(퍼센트 표시 분모). participants는 미동의 포함이라 부정확.
+      return res.status(200).json({ ok: true, locked: false, participants, winners: frozenWinners, myRank: frozenRank, rankedPool: finalRanks.length })
     }
   }
 
@@ -123,5 +124,6 @@ export default async function handler(req, res) {
     })
   }
 
-  return res.status(200).json({ ok: true, locked: false, participants, winners, myRank })
+  // step539: rankedPool = 동의 완료 랭킹 풀 크기(클라 퍼센트 표시 분모 — 집계 로직 무변경, length만 반환)
+  return res.status(200).json({ ok: true, locked: false, participants, winners, myRank, rankedPool: eligible.length })
 }

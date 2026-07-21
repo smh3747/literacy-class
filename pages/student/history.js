@@ -10,6 +10,7 @@ import { findOriginalRange } from '../../lib/koreanRules'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { stampLabel } from '../../lib/stamps'
+import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 당시 순위 구간화 표시
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -105,7 +106,7 @@ export default function StudentHistory() {
   const [grouped, setGrouped] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(null)
-  const [challengeRanks, setChallengeRanks] = useState({}) // step499: { [source_supply_id]: 당시(최종) 순위 }
+  const [challengeRanks, setChallengeRanks] = useState({}) // step499→539: { [source_supply_id]: { rank, total } } 당시(최종) 순위+풀 크기
 
   useEffect(() => { checkAuth() }, [])
 
@@ -174,7 +175,8 @@ export default function StudentHistory() {
         })
         const d = await res.json()
         if (res.ok && d?.ok && !d.locked && d.myRank != null) {
-          setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
+          // step539: 구간화 분모(rankedPool)도 저장 — 표시만 변환, 동결 저장(supply_final_ranks)은 원본 그대로
+          setChallengeRanks(prev => ({ ...prev, [sid]: { rank: d.myRank, total: d.rankedPool ?? null } }))
         }
       } catch (e) { /* 무시 — 순위 없이도 목록은 동작 */ }
     })
@@ -564,11 +566,20 @@ export default function StudentHistory() {
                           {g.source_supply_id && (
                             <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full whitespace-nowrap">🌏 전국 글쓰기 챌린지</span>
                           )}
-                          {g.source_supply_id && challengeRanks[g.source_supply_id] != null && (
-                            <span className={`ml-1 ${challengeRanks[g.source_supply_id] <= 3 ? 'bg-amber-200' : 'bg-amber-100'} text-amber-800 px-2 py-0.5 rounded-full font-semibold`}>
-                              🏅 전국 {challengeRanks[g.source_supply_id]}위
-                            </span>
-                          )}
+                          {g.source_supply_id && (() => {
+                            // step539: 당시 순위도 구간화 — 1~10위 등수 / ~상위 50% 퍼센트 / 하위 50% 격려형(숫자 없음)
+                            const info = challengeRanks[g.source_supply_id]
+                            const fmt = info?.rank ? formatMyRank({ rank: info.rank, total: info.total, seed: cheerSeed(4) }) : null
+                            if (!fmt) return null
+                            if (fmt.band === 'cheer') return (
+                              <span className="ml-1 bg-amber-50 text-amber-800 px-2 py-0.5 rounded-full">{fmt.text}</span>
+                            )
+                            return (
+                              <span className={`ml-1 ${fmt.band === 'exact' && info.rank <= 3 ? 'bg-amber-200' : 'bg-amber-100'} text-amber-800 px-2 py-0.5 rounded-full font-semibold`}>
+                                🏅 전국 {fmt.band === 'exact' ? `${info.rank}위` : fmt.text}
+                              </span>
+                            )
+                          })()}
                         </div>
                       </div>
                       <div className="text-right text-xs ml-3">

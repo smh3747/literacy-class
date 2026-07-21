@@ -17,6 +17,7 @@ import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
@@ -212,7 +213,7 @@ export default function StudentHome() {
   const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
   // 🆕 step492: 전국 글쓰기 챌린지 — 학급 주제와 분리된 오늘의 챌린지 주제들(하루 2개 가능: 공통+학년밴드)
   const [challengeTopics, setChallengeTopics] = useState([])   // 각 항목 {...topic, myMaxAttempt}
-  const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: myRank }
+  const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: { rank, total } } — step539 구조 확장
   const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, myRank }
   // 백업 복원 알림 (null 또는 { type, length })
   const [restoredBackup, setRestoredBackup] = useState(null)
@@ -758,6 +759,7 @@ export default function StudentHome() {
   }
 
   // 🆕 step492: 내 순위 조회(비차단, 실패 무시) — 제출한 챌린지만 호출, null이면 미표시
+  //   step539: {rank, total(rankedPool)} 구조로 저장 — 구간화 표시(formatMyRank) 분모 재료
   const fetchMyRank = async (sid) => {
     if (!sid) return
     try {
@@ -769,9 +771,18 @@ export default function StudentHome() {
       })
       const d = await res.json()
       if (res.ok && d?.ok && !d.locked && d.myRank != null) {
-        setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
+        setChallengeRanks(prev => ({ ...prev, [sid]: { rank: d.myRank, total: d.rankedPool ?? null } }))
       }
     } catch (e) { /* 무시 — 순위 없이도 카드는 동작 */ }
+  }
+
+  // step539: 전국 순위 구간화 한 줄 — 1~10위 등수 그대로 / ~상위 50% 퍼센트 / 하위 50% 격려형(숫자 없음)
+  const challengeRankLine = (info) => {
+    const fmt = info?.rank ? formatMyRank({ rank: info.rank, total: info.total, seed: cheerSeed(3) }) : null
+    if (!fmt) return null
+    if (fmt.band === 'exact') return `🏅 지금 내 순위: 전국 ${info.rank}위`
+    if (fmt.band === 'percent') return `🏅 전국 ${fmt.text}`
+    return fmt.text
   }
 
   // 🆕 step492: 제출한 챌린지의 내 순위 프리페치(카드 표시용)
@@ -810,8 +821,8 @@ export default function StudentHome() {
         alert('먼저 글을 쓰면 친구들 글을 볼 수 있어요!')
         return
       }
-      if (d.myRank != null) setChallengeRanks(prev => ({ ...prev, [sid]: d.myRank }))
-      setShowcaseModal({ loading: false, winners: d.winners || [], myRank: d.myRank ?? null })
+      if (d.myRank != null) setChallengeRanks(prev => ({ ...prev, [sid]: { rank: d.myRank, total: d.rankedPool ?? null } }))
+      setShowcaseModal({ loading: false, winners: d.winners || [], myRank: d.myRank ?? null, rankedPool: d.rankedPool ?? null })
     } catch (e) {
       setShowcaseModal(null)
       alert('상위 글을 불러오지 못했어요. 잠시 후 다시 해봐요.')
@@ -1122,7 +1133,7 @@ export default function StudentHome() {
     .filter(t => t.id !== todayTopic?.id)
     .map(t => {
       const { genreLabel } = parseTopicDescription(t.description)
-      const myRank = challengeRanks[t.source_supply_id]
+      const rankLine = challengeRankLine(challengeRanks[t.source_supply_id])   // step539: 구간화
       return (
         <div key={t.id} className="bg-sky-50 border border-sky-200 rounded-2xl p-4">
           <div className="text-xs text-sky-700 font-semibold mb-1">
@@ -1135,8 +1146,8 @@ export default function StudentHome() {
             )}
           </div>
           <h3 className="font-bold text-sky-900">{t.title}</h3>
-          {t.myMaxAttempt > 0 && myRank != null && (
-            <p className="text-xs text-sky-800 font-semibold mt-1">🏅 지금 내 순위: 전국 {myRank}위</p>
+          {t.myMaxAttempt > 0 && rankLine && (
+            <p className="text-xs text-sky-800 font-semibold mt-1">{rankLine}</p>
           )}
           <div className="flex gap-2 mt-3">
             <button onClick={() => loadTodayTopic(user, t.id)}
@@ -1804,9 +1815,9 @@ export default function StudentHome() {
                   {/* 🆕 step487: 챌린지 상위 글 진입점 — 챌린지 제출 후 (step492: 내 순위 표시) */}
                   {todayTopic?.source_supply_id && (
                     <div className="space-y-1.5">
-                      {challengeRanks[todayTopic.source_supply_id] != null && (
+                      {challengeRankLine(challengeRanks[todayTopic.source_supply_id]) && (
                         <p className="text-center text-sm text-sky-800 font-semibold">
-                          🏅 지금 내 순위: 전국 {challengeRanks[todayTopic.source_supply_id]}위
+                          {challengeRankLine(challengeRanks[todayTopic.source_supply_id])}
                         </p>
                       )}
                       <button onClick={() => openShowcase(todayTopic.source_supply_id)}
@@ -2003,8 +2014,10 @@ export default function StudentHome() {
                 <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
               ) : (
                 <>
-                  {showcaseModal.myRank != null && (
-                    <p className="text-sm text-sky-800 font-semibold mb-3">🏅 지금 내 순위: 전국 {showcaseModal.myRank}위</p>
+                  {challengeRankLine({ rank: showcaseModal.myRank, total: showcaseModal.rankedPool }) && (
+                    <p className="text-sm text-sky-800 font-semibold mb-3">
+                      {challengeRankLine({ rank: showcaseModal.myRank, total: showcaseModal.rankedPool })}
+                    </p>
                   )}
                   {(showcaseModal.winners || []).length === 0 ? (
                     <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐요!</p>

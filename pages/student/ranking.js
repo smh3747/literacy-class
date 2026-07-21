@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { todayStr, daysAgoStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 내 기록 구간화(하위권 숫자 미노출)
 
 export default function StudentRanking() {
   const router = useRouter()
@@ -13,9 +14,9 @@ export default function StudentRanking() {
   const [rankings, setRankings] = useState({ avgScore: [], totalSubs: [], improvement: [] })
   const [period, setPeriod] = useState('week') // week / month / all
   const [loading, setLoading] = useState(true)
+  // step539: 값이 { rank, total, growthText }로 확장 — 구간화 표시(formatMyRank) 재료
   const [myRanks, setMyRanks] = useState({ avgScore: null, totalSubs: null, improvement: null })
   const [myAvgDetail, setMyAvgDetail] = useState(null)  // 🆕 step320: 내 평균 점수 근거(값·주제 수), avgList 재사용
-  const [expandedCards, setExpandedCards] = useState({})  // 🆕 step337: 카드별 "전체 보기" 펼침 상태(기본 top3 압축)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { if (user?.class_id) loadRankings(user, period) }, [period])
@@ -122,19 +123,28 @@ export default function StudentRanking() {
       .filter(x => x.value > 0)
       .sort((a, b) => b.value - a.value)
 
-    // 내 순위
+    // 내 순위 — step539: {rank, total(구간화 분모), growthText(하위 50% 성장형 재료, 양수일 때만)} 구조
     const myAvgRank = avgList.findIndex(x => x.student.id === profile.id) + 1 || null
     const mySubsRank = subsList.findIndex(x => x.student.id === profile.id) + 1 || null
     const myImproveRank = improveList.findIndex(x => x.student.id === profile.id) + 1 || null
-    setMyRanks({ avgScore: myAvgRank, totalSubs: mySubsRank, improvement: myImproveRank })
+    const myCount = stats[profile.id]?.count || 0
+    const myImproveItem = improveList.find(x => x.student.id === profile.id)   // 목록 자체가 양수만 담음
+    setMyRanks({
+      avgScore: myAvgRank ? { rank: myAvgRank, total: avgList.length, growthText: null } : null,   // 평균은 과거 대비 델타 없음 → 격려형
+      totalSubs: mySubsRank ? { rank: mySubsRank, total: subsList.length,
+        growthText: myCount >= 1 ? `이번에 ${myCount}편이나 썼어요! 꾸준함이 최고예요.` : null } : null,
+      improvement: myImproveRank ? { rank: myImproveRank, total: improveList.length,
+        growthText: myImproveItem ? `다시 쓰면서 평균 +${myImproveItem.value}점 올랐어요!` : null } : null,
+    })
     // 🆕 step320: 내 평균 근거 병기용 — 기존 avgList 재사용(재계산 없음)
     const myAvgItem = avgList.find(x => x.student.id === profile.id) || null
     setMyAvgDetail(myAvgItem ? { value: myAvgItem.value, topicCount: myAvgItem.topicCount } : null)
 
+    // step539: 목록은 상위 3명만 저장 — 4위 이하 등수 노출 제거(내 기록 라인이 대신함)
     setRankings({
-      avgScore: avgList.slice(0, 10),
-      totalSubs: subsList.slice(0, 10),
-      improvement: improveList.slice(0, 10)
+      avgScore: avgList.slice(0, 3),
+      totalSubs: subsList.slice(0, 3),
+      improvement: improveList.slice(0, 3)
     })
   }
 
@@ -185,12 +195,11 @@ export default function StudentRanking() {
     )
   }
 
-  const renderRanking = (title, list, unit, myRank, subtitle = null, myDetail = null, cardKey = '') => {
-    // 🆕 step337: 기본 top3만 + 내가 4등↓이면 ···내 줄, "전체 보기"로 펼침(카드별 독립)
-    const isExpanded = !!expandedCards[cardKey]
-    const rows = isExpanded ? list : list.slice(0, 3)
-    const myIdx = user?.id ? list.findIndex(x => x.student.id === user.id) : -1
-    const showMyRow = !isExpanded && myIdx >= 3   // 4등 이하이고 top10 리스트에 있음(1~3등은 이미 위에)
+  const renderRanking = (title, list, unit, myRankInfo, subtitle = null, myDetail = null, cardKey = '') => {
+    // step539: 상위 3명(🥇🥈🥉) 고정 + 하단 "📍 내 기록" 구간화 한 줄.
+    //   step337의 [전체 보기](10위까지)·4등 이하 ··· 내 행 삽입은 제거 — 하위권 구체 등수 노출 방지.
+    const seedOffset = cardKey === 'avgScore' ? 0 : cardKey === 'totalSubs' ? 1 : 2
+    const fmt = myRankInfo ? formatMyRank({ ...myRankInfo, seed: cheerSeed(seedOffset) }) : null
     return (
     <div className="bg-white rounded-2xl p-5 shadow-sm">
       <h3 className={`font-bold ${subtitle ? 'mb-1' : 'mb-3'}`}>{title}</h3>
@@ -200,30 +209,17 @@ export default function StudentRanking() {
       ) : (
         <>
           <div className="space-y-2">
-            {rows.map((item, idx) => renderRankRow(item, idx, unit))}
-            {showMyRow && (
-              <>
-                <div className="text-center text-gray-300 text-sm leading-none py-0.5" aria-hidden="true">···</div>
-                {renderRankRow(list[myIdx], myIdx, unit)}
-              </>
-            )}
+            {list.map((item, idx) => renderRankRow(item, idx, unit))}
           </div>
-          {list.length > 3 && (
-            <button onClick={() => setExpandedCards(p => ({ ...p, [cardKey]: !isExpanded }))}
-              className="w-full mt-2 text-xs text-primary hover:bg-primary-light/50 py-1.5 rounded font-medium">
-              {isExpanded ? '접기' : '전체 보기'}
-            </button>
+          {fmt && (
+            <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
+              📍 내 기록:{' '}
+              {fmt.band === 'cheer'
+                ? <span>{fmt.text}</span>
+                : <strong className="text-primary">{fmt.text}</strong>}
+              {fmt.band === 'exact' && myDetail && <>{' · '}내 평균 {myDetail.value}점 (주제 {myDetail.topicCount}개 기준)</>}
+            </div>
           )}
-          {myDetail ? (
-            <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
-              ⭐ 내 순위: <strong className="text-primary">{myRank}등</strong>
-              {' · '}내 평균 {myDetail.value}점 (주제 {myDetail.topicCount}개 기준)
-            </div>
-          ) : (myRank && myRank > 10 && (
-            <div className="mt-3 pt-3 border-t border-gray-200 text-center text-xs text-gray-600">
-              ⭐ 내 순위: <strong className="text-primary">{myRank}등</strong>
-            </div>
-          ))}
         </>
       )}
     </div>
