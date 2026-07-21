@@ -6,6 +6,7 @@ import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
 import { stampLabel } from '../lib/stamps'
 import { pickStr } from '../lib/pickStr'
 import { escapeHtml } from '../lib/escapeHtml'
+import { calcAddedRanges, emitWithAdded } from '../lib/textDiff'   // step537: 수정 전후 비교(초록) 공용 헬퍼
 
 
 // 🛡️ AI corrections 오탐 필터 + 중복 제거 + 실제 표시 가능한 것만
@@ -71,12 +72,13 @@ export function filterValidCorrections(essayText, corrections) {
 }
 
 // 글에 맞춤법 빨간 밑줄 적용
-export function applyGrammarHighlights(essayText, corrections) {
+// step537: addedRanges(선택) — 직전 글 대비 바뀐 구간 초록 형광펜(lib/textDiff). 미전달이면 기존 출력과 완전 동일.
+export function applyGrammarHighlights(essayText, corrections, addedRanges) {
   if (!essayText) return ''
-  if (!corrections || corrections.length === 0) return escapeHtml(essayText).replace(/\n/g, '<br>')
+  if (!corrections || corrections.length === 0) return emitWithAdded(essayText, 0, addedRanges).replace(/\n/g, '<br>')
 
   const filtered = filterValidCorrections(essayText, corrections)
-  if (filtered.length === 0) return escapeHtml(essayText).replace(/\n/g, '<br>')
+  if (filtered.length === 0) return emitWithAdded(essayText, 0, addedRanges).replace(/\n/g, '<br>')
 
   const matches = []
   filtered.forEach(c => {
@@ -116,12 +118,12 @@ export function applyGrammarHighlights(essayText, corrections) {
   let result = ''
   let lastIdx = 0
   matches.forEach(m => {
-    if (m.start > lastIdx) result += escapeHtml(essayText.slice(lastIdx, m.start))
+    if (m.start > lastIdx) result += emitWithAdded(essayText.slice(lastIdx, m.start), lastIdx, addedRanges)
     const tooltip = m.correction ? `${m.correction}${m.reason ? ' (' + m.reason + ')' : ''}` : (m.reason || '오류')
-    result += `<span class="grammar-error" data-correction="${escapeHtml(tooltip)}">${escapeHtml(m.original)}</span>`
+    result += `<span class="grammar-error" data-correction="${escapeHtml(tooltip)}">${emitWithAdded(m.original, m.start, addedRanges)}</span>`
     lastIdx = m.end
   })
-  if (lastIdx < essayText.length) result += escapeHtml(essayText.slice(lastIdx))
+  if (lastIdx < essayText.length) result += emitWithAdded(essayText.slice(lastIdx), lastIdx, addedRanges)
   return result.replace(/\n/g, '<br>')
 }
 
@@ -131,8 +133,9 @@ export function applyGrammarHighlights(essayText, corrections) {
  * @param {object} topic - 주제 정보
  * @param {string} headerLabel
  * @param {object} previousSub - 이전 시도(첫 글) 비교용 (선택, 수정본일 때)
+ * @param {boolean} showDiffFromPrev - step537: true면 previousSub 대비 바뀐 부분 초록 형광펜 (기본 false — 기존 소비자 표시 불변)
  */
-export default function StudentFeedbackCard({ sub, topic, headerLabel, previousSub }) {
+export default function StudentFeedbackCard({ sub, topic, headerLabel, previousSub, showDiffFromPrev = false }) {
   useGrammarTooltip()
 
   if (!sub) return null
@@ -142,6 +145,9 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
   const reasons = Array.isArray(sub.rubric_reasons) ? sub.rubric_reasons : []
   const improveExamples = Array.isArray(sub.improve_examples) ? sub.improve_examples : []
   const corrections = filterValidCorrections(sub.essay_text, sub.corrections || [])
+  // step537: 관리자 학생 글 탭 등에서 직전 글 대비 바뀐 부분 강조 (미사용 소비자는 undefined → 기존 출력 동일)
+  const addedRanges = showDiffFromPrev && previousSub?.essay_text && sub.essay_text
+    ? calcAddedRanges(previousSub.essay_text, sub.essay_text) : undefined
   const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0) || sub.max_score || 100
 
   // 🆕 점수 향상 계산 (수정본일 때만)
@@ -200,7 +206,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
         <div
           className="bg-gray-50 rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap border border-gray-200"
           style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-          dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections) }}
+          dangerouslySetInnerHTML={{ __html: applyGrammarHighlights(sub.essay_text, corrections, addedRanges) }}
         />
         {sub.paste_detected && (
           <p className="text-xs text-red-600 mt-1">

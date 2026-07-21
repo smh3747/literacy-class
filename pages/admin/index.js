@@ -4864,6 +4864,7 @@ function SubmissionDetail({ sub, onBack }) {
   const [allSubs, setAllSubs] = useState([sub])
   const [topic, setTopic] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showDiff, setShowDiff] = useState(true)   // step537: 지난 글 대비 바뀐 부분 초록 표시(교사 화면과 동일, 기본 ON)
 
   useEffect(() => {
     loadFullData()
@@ -4920,16 +4921,26 @@ function SubmissionDetail({ sub, onBack }) {
         const topTwo = allSubs.slice(-2)
         const older = allSubs.slice(0, -2)
         const labelFor = (s) => s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`
+        // step537: 각 카드의 직전 시도 — 교사 submissions와 동일하게 attempt 순서상 바로 앞 글과 비교
+        const prevOf = (s) => { const i = allSubs.findIndex(x => x.id === s.id); return i > 0 ? allSubs[i - 1] : null }
         return (
           <>
             {topTwo.length >= 2 && (
-              <div className="text-xs text-gray-500 mb-1">
-                ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-gray-500">
+                  ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+                </div>
+                {/* step537: 교사 화면과 동일한 diff 토글 */}
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none flex-shrink-0">
+                  <input type="checkbox" checked={showDiff} onChange={e => setShowDiff(e.target.checked)} className="w-3.5 h-3.5" />
+                  🔍 지난 글에서 바뀐 부분 표시
+                </label>
               </div>
             )}
             <div className={`grid grid-cols-1 gap-4 items-stretch ${topTwo.length >= 2 ? 'lg:grid-cols-2' : ''}`}>
               {topTwo.map(s => (
-                <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)} />
+                <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)}
+                  previousSub={prevOf(s)} showDiffFromPrev={showDiff} />
               ))}
             </div>
 
@@ -4940,7 +4951,8 @@ function SubmissionDetail({ sub, onBack }) {
                 </summary>
                 <div className="space-y-4 mt-3">
                   {[...older].reverse().map(s => (
-                    <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)} />
+                    <StudentFeedbackCard key={s.id} sub={s} topic={topic} headerLabel={labelFor(s)}
+                      previousSub={prevOf(s)} showDiffFromPrev={showDiff} />
                   ))}
                 </div>
               </details>

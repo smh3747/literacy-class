@@ -70,6 +70,9 @@ textarea {
     StudentFeedbackCard를 쓰는 다른 화면(교사 대시보드 맛보기 등)에선 밑줄이 안 보였음.) */
 .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
 
+/* step537: 수정 전후 비교 — 직전 글 대비 바뀐 부분 초록 형광펜 (lib/textDiff, 교사 submissions 인라인 스타일과 동일 값) */
+.diff-added { background: #dcfce7; border-radius: 2px; }
+
 /* 🆕 셋업 체크리스트 → 대상 카드 강조 (빨간 테두리 깜빡임) */
 @keyframes guide-blink {
   0%, 100% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.9); }
