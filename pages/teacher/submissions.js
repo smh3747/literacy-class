@@ -268,6 +268,7 @@ export default function TeacherSubmissions() {
   // 화면 상태를 URL에 반영 — 새로고침해도 같은 화면 유지
   const syncUrl = (topicId = null, studentId = null) => {
     const q = {}
+    if (router.query.as) q.as = router.query.as   // step533: 엿보기(?as=) 보존 — shallow 갱신이 임퍼소네이션을 풀지 않게
     if (topicId) q.topic = topicId
     if (studentId) q.student = studentId
     router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
