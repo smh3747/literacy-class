@@ -66,6 +66,8 @@ export default function TeacherHome() {
   const [settingsSpotlightSignal, setSettingsSpotlightSignal] = useState(0)
   // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정
   const [rewriteRequestCount, setRewriteRequestCount] = useState(0)
+  // 🆕 step532: 가장 최근 미처리 요청의 주제 — 배너를 그 주제 학생 목록으로 직행시키는 용도
+  const [rewriteRequestTopicId, setRewriteRequestTopicId] = useState(null)
   const [supplyJoining, setSupplyJoining] = useState(false)
 
   // 툴바 토글: 같은 버튼 다시 누르면 닫힘 (스크롤 없음 → 깜빡임 제거)
@@ -608,15 +610,19 @@ export default function TeacherHome() {
             .is('deleted_at', null)
           reportCount = count || 0
 
-          // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정(실패 무시)
+          // 🆕 step512→532: 미처리 수정 기회 요청 수 + 가장 최근 요청의 주제(배너 직행용) — 같은 조회 1회(실패 무시)
+          //   주제가 1개뿐이든 여러 개든 목적지는 "가장 최근 요청의 주제"라 최근 1행만 받으면 충분.
           try {
-            const { count: reqCount } = await supabase.from('submissions')
-              .select('id', { count: 'exact', head: true })
+            const { count: reqCount, data: reqRows } = await supabase.from('submissions')
+              .select('topic_id', { count: 'exact' })
               .in('user_id', ids)
               .not('rewrite_requested_at', 'is', null)
               .or('extra_rewrite_allowed.is.null,extra_rewrite_allowed.eq.false')
               .is('deleted_at', null)
+              .order('rewrite_requested_at', { ascending: false })
+              .limit(1)
             setRewriteRequestCount(reqCount || 0)
+            setRewriteRequestTopicId(reqRows?.[0]?.topic_id || null)
           } catch (e) { /* 소지표 실패 무시 */ }
 
           // 오늘 (PT 자정 기준 - Gemini 한도 리셋 시점)
@@ -920,9 +926,9 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 step512: 수정 기회 요청 알림 1줄 — 추후 알림 센터 범용 알림으로 통합 예정 */}
+          {/* 🆕 step512→532: 수정 기회 요청 알림 1줄 — 가장 최근 요청 주제의 학생 목록으로 직행(submissions ?topic= 자동 진입) */}
           {rewriteRequestCount > 0 && (
-            <Link href={withImpersonation('/teacher/submissions')}
+            <Link href={withImpersonation('/teacher/submissions' + (rewriteRequestTopicId ? `?topic=${rewriteRequestTopicId}` : ''))}
               className="block bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-900 font-medium hover:bg-amber-100 transition">
               ✋ 수정 기회 요청 {rewriteRequestCount}건 — 확인하기 →
             </Link>
