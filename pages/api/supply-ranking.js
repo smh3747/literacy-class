@@ -11,11 +11,12 @@
 //           SYSTEM_GEMINI_API_KEY(선택 — 없으면 검토 대기)
 
 import { createClient } from '@supabase/supabase-js'
+import { waitUntil } from '@vercel/functions'   // step538: 응답 후 백그라운드 작업 유지(Fluid Compute)
 import { nicknameFromSeed } from '../../lib/nickname'
 // step502: 집계·검토 코어는 lib/showcaseRanking.server.js로 이전 — supply-showcase-admin(collect)과 공유
 // step504: 마감(원본 date < 오늘) 후에는 supply_final_ranks 확정본으로 응답 — "그날의 순위" 동결
 import {
-  loadSupplySubmissions, aggregateShowcase, WINNER_LIMIT,
+  loadSupplySubmissions, aggregateShowcase, reviewPendings, WINNER_LIMIT,
   isClosed, finalizeRanks, getFinalRanks, buildFrozenWinners,
 } from '../../lib/showcaseRanking.server'
 
@@ -81,8 +82,18 @@ export default async function handler(req, res) {
     }
   }
 
-  // 동의 필터·후보 선정·showcase upsert·AI 검토 (step502: 공용 모듈)
-  const { eligible, candidates, rowBySub, profById, clsById } = await aggregateShowcase(admin, supplyId, allSubs)
+  // 동의 필터·후보 선정·showcase upsert (step502: 공용 모듈)
+  // step538: AI 검토는 응답을 기다리지 않는다(awaitReview: false) — pending은 pending 그대로 즉시 반환
+  //   (학생 화면이 "검토 중" 상태를 이미 처리). 검토는 아래 waitUntil로 응답 후 백그라운드 실행.
+  const { eligible, candidates, rowBySub, profById, clsById, pendings } =
+    await aggregateShowcase(admin, supplyId, allSubs, { awaitReview: false })
+
+  // step538: pending 후보 검토를 응답 후 계속 실행. Vercel 컨텍스트가 없으면(로컬 dev 등)
+  //   waitUntil이 실패해도 이미 시작된 프로미스가 자체 실행된다(fire-and-forget 폴백).
+  if (pendings.length > 0) {
+    const reviewPromise = reviewPendings(admin, pendings, rowBySub, profById).catch(() => {})
+    try { waitUntil(reviewPromise) } catch (e) { /* 컨텍스트 없음 — 폴백 */ }
+  }
 
   // step504: 마감 후 첫 조회면 이번 계산값으로 확정(lazy) — 이후 조회는 위 확정본 경로
   if (closed) await finalizeRanks(admin, supplyId, eligible)
