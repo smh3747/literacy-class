@@ -7,6 +7,7 @@ import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
+import TopicLikeButton from '../../components/TopicLikeButton'   // step547: 좋아요 토글 공용 버튼
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 
 // 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
@@ -2312,8 +2313,9 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
             <div key={`top5-${item.key}`} className="flex items-center gap-2 text-xs">
               {/* step542: 사용 수 숫자 미노출(사용자 확정) — 정렬·TOP 5 선정 기준으로만 사용 */}
               <span className="flex-1 min-w-0 truncate font-medium text-gray-800">{item.title}</span>
+              {/* step547: 표시 전용이던 ❤️ 숫자를 토글로 교체 — 가져오기와 색·간격으로 구분 */}
               {likeCounts !== null && likeCounts !== undefined && (
-                <span className="text-gray-500 flex-shrink-0 whitespace-nowrap">❤️ {item.likes}</span>
+                <TopicLikeButton item={item} onToggle={onToggleLike} className="flex-shrink-0" />
               )}
               <button
                 onClick={() => onSelect?.({
@@ -2321,7 +2323,7 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
                   sourceLogId: item.sourceLogId, sourceIndex: item.sourceIndex,
                 })}
                 disabled={generating}
-                className="flex-shrink-0 text-[11px] bg-orange-100 hover:bg-orange-200 text-orange-800 font-semibold px-2 py-0.5 rounded disabled:opacity-50">
+                className="flex-shrink-0 ml-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 font-semibold px-2 py-1 rounded-lg disabled:opacity-50">
                 가져오기
               </button>
             </div>
@@ -2372,18 +2374,6 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
                     {item.copiedByMe && (
                       <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded flex-shrink-0">✔ 가져옴</span>
                     )}
-                    {/* step541: ❤️ 좋아요 토글 — 카드가 button이라 중첩 button 금지, span+stopPropagation */}
-                    {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
-                      <span role="button" tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) } }}
-                        title={item.likedByMe ? '좋아요 취소' : '좋아요'}
-                        className={`text-[9px] px-1 rounded flex-shrink-0 cursor-pointer select-none ${
-                          item.likedByMe ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-gray-100 text-gray-500 hover:bg-rose-50'
-                        }`}>
-                        {item.likedByMe ? '❤️' : '🤍'} {item.likes}
-                      </span>
-                    )}
                   </div>
                   {item.description && (
                     <div className="text-[11px] text-gray-600 line-clamp-2 leading-snug">
@@ -2398,6 +2388,10 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
                       <span className="text-[10px] text-gray-400 ml-auto">
                         👤 다른 선생님
                       </span>
+                    )}
+                    {/* step547: ❤️ 토글 — 우하단, 눌리는 크기(배지 열 9px에서 이동) */}
+                    {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
+                      <TopicLikeButton item={item} onToggle={onToggleLike} className="flex-shrink-0" />
                     )}
                   </div>
                 </button>

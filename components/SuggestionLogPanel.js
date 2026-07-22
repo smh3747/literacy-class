@@ -7,6 +7,7 @@
 // - 모바일·태블릿은 토글, 데스크탑은 사이드 고정
 // ============================================
 import { useState } from 'react'
+import TopicLikeButton from './TopicLikeButton'   // step547: 좋아요 토글 공용 버튼
 
 const STORAGE_KEY = 'lc-side-log-panel'
 const STORAGE_TAB_KEY = 'lc-side-log-panel-tab'
@@ -268,18 +269,6 @@ export default function SuggestionLogPanel({
                             {item.copiedByMe && (
                               <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">✔ 가져옴</span>
                             )}
-                            {/* 🆕 step541: ❤️ 좋아요 토글 — 카드가 button이라 span+stopPropagation */}
-                            {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
-                              <span role="button" tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) } }}
-                                title={item.likedByMe ? '좋아요 취소' : '좋아요'}
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer select-none ${
-                                  item.likedByMe ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-gray-100 text-gray-500 hover:bg-rose-50'
-                                }`}>
-                                {item.likedByMe ? '❤️' : '🤍'} {item.likes}
-                              </span>
-                            )}
                             {usedLabel && (
                               <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
                                 ✓ {usedLabel} 사용
@@ -309,6 +298,10 @@ export default function SuggestionLogPanel({
                             <span className="text-[10px] text-gray-400 ml-auto">
                               👤 다른 선생님
                             </span>
+                          )}
+                          {/* step547: ❤️ 토글 — 우하단, 눌리는 크기(배지 열 10px에서 이동) */}
+                          {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
+                            <TopicLikeButton item={item} onToggle={onToggleLike} className="flex-shrink-0" />
                           )}
                         </div>
                       </button>
