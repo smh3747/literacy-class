@@ -10,18 +10,59 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { nicknameFromSeed } from '../../lib/nickname'
-import { loadSupplySubmissions, aggregateShowcase } from '../../lib/showcaseRanking.server'
+import { loadSupplySubmissions, aggregateShowcase, isClosed, getFinalRanks } from '../../lib/showcaseRanking.server'
 
-// showcase 행 → 관리자 목록 형태 (list·collect 공용, step502에서 추출 — 형태 무변경)
+// showcase 행 → 관리자 목록 형태 (list·collect 공용, step502에서 추출)
+// step546: 표시 계층 정리 — supply_showcase는 (주제, submission_id) 유니크라 학생이 다시 쓰기로
+//   최고 제출이 바뀌면 새 행이 생기고 구 행이 잔존하며, rank·score는 insert 시점 스냅샷이다
+//   (UPDATE·DELETE 경로 없음 — 설계 주석 "구 행은 잔존" 참조). 학생 랭킹 경로는 현재 최고
+//   제출만 재유도해 무증상이지만 이 목록은 전 행을 그대로 반환해 1위 다수·학생 중복이 생겼다.
+//   → 여기서만 학생별 1행(최고 score, 동률 시 최신)으로 dedup하고, 순위는 라이브면 현재 점수로
+//   재계산·마감이면 동결(supply_final_ranks) 순위로 표시. 저장·동결·검토 게이트는 무접촉.
 async function buildList(admin, supplyId) {
-  const { data: rows, error } = await admin.from('supply_showcase')
-    .select('id, submission_id, student_id, rank, score, review_status, review_reason, hidden, reported_by, created_at')
-    .eq('supply_topic_id', supplyId)
-    .order('rank', { ascending: true })
+  const [{ data: rawRows, error }, { data: supplyRow }] = await Promise.all([
+    admin.from('supply_showcase')
+      .select('id, submission_id, student_id, rank, score, review_status, review_reason, hidden, reported_by, created_at')
+      .eq('supply_topic_id', supplyId),
+    admin.from('topics').select('date').eq('id', supplyId).maybeSingle(),
+  ])
   if (error) throw new Error('조회에 실패했어요: ' + error.message)
 
-  const subIds = (rows || []).map(r => r.submission_id)
-  const studentIds = [...new Set((rows || []).map(r => r.student_id))]
+  // step546 ①: 학생별 1행 — score 최대(동률 시 created_at 최신). 최고 제출 갱신 시 새 행이
+  //   항상 더 높은 점수이므로 "현재 최고 제출 행"과 일치한다.
+  const bestByStudent = {}
+  for (const r of (rawRows || [])) {
+    const cur = bestByStudent[r.student_id]
+    if (!cur || (r.score || 0) > (cur.score || 0)
+      || ((r.score || 0) === (cur.score || 0) && new Date(r.created_at) > new Date(cur.created_at))) {
+      bestByStudent[r.student_id] = r
+    }
+  }
+  let rows = Object.values(bestByStudent)
+
+  // step546 ②: 순위 표시 — 마감이면 동결 순위(supply_final_ranks), 라이브(또는 동결 미존재)면
+  //   현재 점수 내림차순 재계산. 표시용 값만 바꾸고 저장 행(rank 컬럼)은 건드리지 않는다.
+  const closed = isClosed(supplyRow?.date || null)
+  let frozenRankByStudent = null
+  if (closed) {
+    const finalRanks = await getFinalRanks(admin, supplyId)
+    if (finalRanks.length > 0) {
+      frozenRankByStudent = Object.fromEntries(finalRanks.map(f => [f.student_id, f.rank]))
+    }
+  }
+  if (frozenRankByStudent) {
+    rows.forEach(r => { r.displayRank = frozenRankByStudent[r.student_id] ?? null })
+    rows.sort((a, b) => (a.displayRank ?? 9999) - (b.displayRank ?? 9999) || (b.score || 0) - (a.score || 0))
+    // 동결에 없는 학생(지각 제출 등)은 동결 순번 뒤에 점수순으로 이어 번호를 매긴다
+    let next = rows.reduce((m, r) => Math.max(m, r.displayRank || 0), 0)
+    rows.forEach(r => { if (r.displayRank == null) r.displayRank = ++next })
+  } else {
+    rows.sort((a, b) => (b.score || 0) - (a.score || 0))
+    rows.forEach((r, i) => { r.displayRank = i + 1 })
+  }
+
+  const subIds = rows.map(r => r.submission_id)
+  const studentIds = [...new Set(rows.map(r => r.student_id))]
   const [{ data: subs }, { data: profs }] = await Promise.all([
     subIds.length > 0
       ? admin.from('submissions').select('id, essay_text').in('id', subIds)
@@ -33,11 +74,11 @@ async function buildList(admin, supplyId) {
   const subById = Object.fromEntries((subs || []).map(s => [s.id, s]))
   const profById = Object.fromEntries((profs || []).map(p => [p.id, p]))
 
-  return (rows || []).map(r => {
+  return rows.map(r => {
     const p = profById[r.student_id]
     return {
       id: r.id,
-      rank: r.rank,
+      rank: r.displayRank,   // step546: 표시용 순위(라이브=현재 점수 재계산, 마감=동결) — 저장 rank는 불변
       score: r.score,
       nickname: (p?.nickname || '').trim() || nicknameFromSeed(p?.username || r.student_id),
       review_status: r.review_status,
