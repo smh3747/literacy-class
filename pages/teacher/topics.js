@@ -2310,8 +2310,8 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
           <div className="text-xs font-bold text-orange-800">🔥 요즘 선생님들이 많이 가져간 주제</div>
           {top5.map(item => (
             <div key={`top5-${item.key}`} className="flex items-center gap-2 text-xs">
+              {/* step542: 사용 수 숫자 미노출(사용자 확정) — 정렬·TOP 5 선정 기준으로만 사용 */}
               <span className="flex-1 min-w-0 truncate font-medium text-gray-800">{item.title}</span>
-              <span className="text-gray-500 flex-shrink-0 whitespace-nowrap">👥 {item.n}명 사용</span>
               {likeCounts !== null && likeCounts !== undefined && (
                 <span className="text-gray-500 flex-shrink-0 whitespace-nowrap">❤️ {item.likes}</span>
               )}
