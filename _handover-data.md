@@ -110,7 +110,7 @@
 | `mergeCorrections(aiCorr, essay)` | `:731` | 얇은 래퍼 — `mergeCorrectionsDetailed(...).corrections`만 반환(동작 불변). |
 
 - **무의미 교정 필터(step273)** + **불가능형태 필터(step327)**가 mergeCorrectionsDetailed 안에 통합. (문체개입 필터 isStyleChange는 step393 신설→409 최종 제거되어 없음. `dropAnhFalsePositives`도 step430에서 죽은 코드로 제거되어 없음.)
-- **회귀 게이트 현황**: `scripts/gate-korean-rules.js` **71케이스** / `scripts/gate-prompts.js` **67케이스**. CLAUDE.md 절차 유지 중 — `lib/koreanRules.js` 수정 시 gate-korean-rules, `lib/prompts.server.js` 수정 시 gate-prompts를 커밋 전 전체 PASS 필수(규칙을 의도적으로 바꾸면 기대값도 같은 커밋에서 갱신).
+- **회귀 게이트 현황**: `scripts/gate-korean-rules.js` **76케이스**(step542 +5) / `scripts/gate-prompts.js` **67케이스**. CLAUDE.md 절차 유지 중 — `lib/koreanRules.js` 수정 시 gate-korean-rules, `lib/prompts.server.js` 수정 시 gate-prompts를 커밋 전 전체 PASS 필수(규칙을 의도적으로 바꾸면 기대값도 같은 커밋에서 갱신).
 
 ## 3. mergeCorrections 실행 위치 — ★서버로 이전됨(step350)
 - **병합은 서버에서 1회만 수행**: `pages/api/ai.js:278` `mergeCorrectionsDetailed(...)` (import `:18`). corrections 생성 type(grading·rewriteGrading·regrade·grammarOnly·grammarStrict) 응답 반환 직전.
@@ -192,7 +192,9 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **⑧ 관찰(며칠 주기)**: 의심 교정 탭 점수역전·핑퐁 재발(step476 이후 감소 추세) /
   ✅ **step484('않나')·step485(반말→존댓말) 효과 확인 완료 — 종결**(7/16~21 각 0건) /
   **신규 관찰**: step521 총점 하락 시 종합의견 사유 명시 — 다음 대폭 하락 건에서 overall 확인 ·
-  '거→것' 표현 다듬기 1건 재발(7/20 여수송현초, 단발이라 관찰 — 재발 시 규칙 12에 '게→것' 예시 추가) /
+  '거→것' 표현 다듬기 1건 재발(7/20 여수송현초, 단발이라 관찰 — 재발 시 규칙 12에 '게→것' 예시 추가) ·
+  step542 '안 아서' 차단(7/22) — 앞으로 같은 시도는 의심 교정 탭에 '불가능형태' 차단 기록으로 등장.
+  기록이 뜨면 필터가 실제로 막고 있다는 정상 신호 /
   탭 볼륨 추이: 35건(7/14)→19건(7/16)→5건(7/20)→1건(7/21) — 품질 순환 수렴 중 /
   🔥 연속 따라감 교사(임영선·차소연·강병주) 활성 전환 / B문구 답장 축적 → 미정착 처방
   (학생 등록 카드 개선 포함, 전진율 13%) / Vercel 웹훅 누락 2회째 — 재발 시 GitHub 연동 재설치.
@@ -242,7 +244,6 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **RLS 일반교사 격리 확인** — 일반 교사 계정으로 남의 반 데이터가 안 보이는지 앱 차원 점검(관리자 SQL 전체 조회는 정상).
 - **막힌 3종 모달 재노출 정책 검토** — 현재 평생 1회. ✕ 닫은 교사(예: no_class_run)가 다시 막혀도 재안내 불가. 응답 데이터 쌓인 뒤 "N일 후 1회 재노출" 등 검토.
 - **온보딩 응답 기반 후속 처방** — no_students 3버튼 분포 보고 우선순위(명렬표 간소화 vs 동의 안내) 결정.
-- **게이트 스위트 prompts.server.js 케이스 확장** [맞춤법 세션 소관] — step411 게이트는 koreanRules만 커버. 채점 프롬프트 3종의 핵심 지시(문장수 제한·가감표기 금지·규칙 11 등) 포함 여부 스모크를 확장(같은 스크립트 or 별도 파일).
 
 **[방학 본공사 — 대형/별도 설계 세션]**
 - **시사·뉴스 기반 주제** (저작권 주의: 원문 불가, AI가 초등용 재구성). 무료 바구니.
@@ -267,7 +268,10 @@ export const GRAMMAR_NOTICE_TEACHER =
   +529 SYSTEM 키 분리 — §1 사고 기록) / 채택·참여 현황 패널+담임 알림 / 예약 발행 date
   버그(시상식 데이터 SQL 정정 포함) / 요청 배너 직행 / ?as= 유실 수정.
 
-**[종결 2026-07-21 — 대기열 정리(코드 변경 없음)]**
+**[종결 2026-07-21~22 — 대기열 정리(코드 변경 없음)]**
+- ✅ **게이트 스위트 prompts.server.js 케이스 확장 — 종결(이미 완료된 일)**: step431에서
+  scripts/gate-prompts.js 신설, 이후 증분 확장으로 현재 67케이스(BUILD·RULES·RULES12·
+  REWRITE·DATE·TUTOR·TOPICMIX). CLAUDE.md 커밋 전 절차 편입도 완료.
 - ✅ **의심 교정 '글 보기' 버튼 일부 미표시 — 종결**: 차단 기록(submission_id 없음)은 설계상
   버튼 없음이 정상. step459 연결 후 신규 기록은 표시됨. 배포 이전 옛 기록만 해당이라 자연 소멸.
 - ✅ **corrections 비문자열 원본 추적 — 종결**: 원류(step426 정규화)·출구(step429 폴백)·
