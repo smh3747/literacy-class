@@ -49,7 +49,8 @@ export default function NicknameChangeModal({
 
   // 저장
   const save = async () => {
-    const trimmed = nickname.trim()
+    // step549: 연속 공백은 1개로 정규화(자동 닉네임도 공백 1개 형태 — "용감한 코끼리")
+    const trimmed = nickname.trim().replace(/\s+/g, ' ')
     if (!trimmed) {
       setError('닉네임을 입력해주세요')
       return
@@ -58,8 +59,10 @@ export default function NicknameChangeModal({
       setError('닉네임은 2자 이상이어야 해요')
       return
     }
-    if (trimmed.length > 30) {
-      setError('닉네임은 30자 이하로 해주세요')
+    // step549: 30→10자 — 문장형·도발형 닉네임 방어(자동 닉네임 최대 9자와 정합).
+    //   자동 부여 경로(가입·명렬표·일괄)는 이 모달을 안 거치므로 영향 없음.
+    if (trimmed.length > 10) {
+      setError('닉네임은 10자 이하로 해주세요')
       return
     }
     // 부적절한 문자 (이모지는 허용하되, 줄바꿈 등은 차단)
@@ -108,9 +111,10 @@ export default function NicknameChangeModal({
           <p className="font-bold mb-1">💡 닉네임 안내</p>
           <ul className="list-disc pl-4 space-y-0.5">
             <li>친구들에게 본명 대신 보여지는 별명이에요</li>
+            <li>전국 글쓰기 챌린지에서도 이 닉네임이 보여요. 바르고 예쁜 닉네임을 지어 주세요</li>
             <li>같은 반 친구와 같은 닉네임은 쓸 수 없어요</li>
             <li>나쁜 말, 욕설은 쓰지 말아주세요</li>
-            <li>2~30자 이내로 적어주세요</li>
+            <li>2~10자 이내로 적어주세요</li>
           </ul>
         </div>
 
@@ -122,7 +126,7 @@ export default function NicknameChangeModal({
               value={nickname}
               onChange={e => { setNickname(e.target.value); setError('') }}
               placeholder="예: 푸른 토끼, 별빛 고양이"
-              maxLength={30}
+              maxLength={10}
               className="w-full p-3 border border-gray-200 rounded-lg text-sm"
               autoFocus
             />
@@ -131,7 +135,7 @@ export default function NicknameChangeModal({
                 className="text-xs text-purple-600 hover:text-purple-900 underline">
                 🎲 랜덤 추천
               </button>
-              <span className="text-xs text-gray-400">{nickname.length}/30</span>
+              <span className="text-xs text-gray-400">{nickname.length}/10</span>
             </div>
           </div>
 
