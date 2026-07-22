@@ -19,6 +19,7 @@ import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 import { toKST } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
+import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -656,7 +657,8 @@ export default function TeacherHome() {
             setRewriteRequestTopicId(reqRows?.[0]?.topic_id || null)
           } catch (e) { /* 소지표 실패 무시 */ }
 
-          // 오늘 (PT 자정 기준 - Gemini 한도 리셋 시점)
+          // ※ step545: 이 PT 창은 "오늘 AI 사용량" 추정(todayApiCalls) 전용 — Gemini 무료 한도가 PT 자정 리셋이라 PT가 맞다.
+          //   카드의 "오늘 N건 제출"(todaySubmissions)은 여기가 아니라 아래 KST 자정 카운트(step319)를 쓴다. 혼동 주의.
           // PT는 PST/PDT 자동 전환되므로 Intl API로 정확히 계산
           // PT 자정 = 한국 시간 오후 4시 (PDT, 3~11월) / 오후 5시 (PST, 11~3월)
           const getPTMidnightUTC = () => {
@@ -693,9 +695,8 @@ export default function TeacherHome() {
             .is('deleted_at', null)
           // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출 (Gemini 한도 추정 — PT 자정 기준 유지)
           todayApiCalls = (subCount || 0) * 2
-          // 🆕 step319: 카드용 "오늘 제출 수"는 한국(KST) 자정 기준으로 따로 카운트
-          const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
-          const kstMidnightUtc = new Date(kstNow.toISOString().slice(0, 10) + 'T00:00:00+09:00').toISOString()
+          // 🆕 step319: 카드용 "오늘 제출 수"는 한국(KST) 자정 기준으로 따로 카운트 (step545: todayStr 공용화 — 동작 동일)
+          const kstMidnightUtc = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
           const { count: kstSubCount } = await supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids)
