@@ -89,6 +89,11 @@ const MERGE = [
   { name: '상상이 않나→상상이 안 나(통과)', corr: { original: '상상이 않나', correction: '상상이 안 나' }, essay: '도무지 상상이 않나?',  expect: 'kept' },    // step484
   { name: '힘들어하진 않나(정당 않, 차단)', corr: { original: '힘들어하진 않나', correction: '힘들어하진 안 나' }, essay: '친구가 힘들어하진 않나 걱정했다', expect: 'dropped' }, // step484
   { name: '믿기지가 않나(정당 않, 차단)',   corr: { original: '믿기지가 않나', correction: '믿기지가 안 나' }, essay: '정말 믿기지가 않나?', expect: 'dropped' }, // step484
+  { name: '하지 않아서→하지 안 아서(차단)', corr: { original: '하지 않아서', correction: '하지 안 아서' }, essay: '숙제를 하지 않아서 혼났다', expect: 'dropped' }, // step542
+  { name: '않아서→안 아서(차단)',           corr: { original: '않아서',     correction: '안 아서' },     essay: '숙제를 하지 않아서 혼났다', expect: 'dropped' }, // step542
+  { name: '않아도→안 아도(차단)',           corr: { original: '않아도',     correction: '안 아도' },     essay: '먹지 않아도 배부르다',     expect: 'dropped' }, // step542
+  { name: '않아프게→안 아프게(통과 유지)',   corr: { original: '않아프게',   correction: '안 아프게' },   essay: '주사를 않아프게 놔줬다',   expect: 'kept' },    // step542
+  { name: '않아깝다→안 아깝다(통과 유지)',   corr: { original: '않아깝다',   correction: '안 아깝다' },   essay: '하나도 않아깝다',          expect: 'kept' },    // step542
 ]
 
 ;(async () => {
