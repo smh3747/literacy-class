@@ -111,6 +111,8 @@ const { pathToFileURL } = require('url')
       && !base.includes('낮은 점수를 주지 마세요')
       && !base.includes('모순되면 안 됩니다') // step476: 미주입 시 신규 항도 없음 명시 검증
       && !base.includes('점수가 내려갔어요') // step521: 하락 사유 명시 강제 항도 미주입 시 없음
+      && !base.includes('하지 않은 개선을 칭찬') // step550: 관대화 대칭 교정 항도 미주입 시 없음
+      && !base.includes('함부로 깎지도') // step550: 대칭 원칙 선언도 미주입 시 없음
     rec('REWRITE', '이전 맥락 미전달 = 전부 null 동일(하위호환)', aPass,
       aPass ? '출력 동일, 이전 맥락 문구 없음' : (base === withNulls ? '이전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
 
@@ -123,7 +125,12 @@ const { pathToFileURL } = require('url')
       '새로운 감점 사유로 삼지 마세요', // step476: 기존 결함 신규 감점 금지(step442 누락 복원)
       '모순되면 안 됩니다', // step476: 의견·점수 방향 모순 금지
       '점수가 내려갔어요', // step521: 총점 하락 시 종합의견 첫·둘째 문장에 사유 명시 강제
-      '칭찬만 쓰는 것은 금지'] // step521: 사유 언급 없는 칭찬-only overall 금지
+      '칭찬만 쓰는 것은 금지', // step521: 사유 언급 없는 칭찬-only overall 금지
+      '아직 남아 있어요', // step550: 미반영 지적은 종합의견에 솔직 명시
+      '하지 않은 개선을 칭찬', // step550: 하지 않은 개선 칭찬 금지(관대화 실사례 80→95)
+      '인용할 수 있는 변화', // step550: 항목 점수 상승은 인용 가능한 변화 근거 필수
+      '전부 해소됐을 때만', // step550: 지적 잔존 항목 만점 금지
+      '함부로 깎지도, 함부로 올리지도'] // step550: 하락·상승 대칭 원칙 선언
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
