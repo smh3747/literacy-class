@@ -60,6 +60,10 @@ export default function TeacherHome() {
   const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
   // 🆕 step477: 전국 공통 주제 — 자동 받기 OFF 교사용 원클릭 카드 { id, title, joined }
   const [supplyCard, setSupplyCard] = useState(null)
+  // 🆕 step544: 오늘 참여 중인 챌린지 { id, title } — [🏆 전국 랭킹 보기] 진입점용(자동 ON·이미 참여 OFF 모두)
+  const [todaySupply, setTodaySupply] = useState(null)
+  // 🆕 step544: 교사용 전국 랭킹 모달 { loading, winners, participants } — 학생 상위 글 모달 축약판
+  const [teacherShowcase, setTeacherShowcase] = useState(null)
   // 🆕 step505: 챌린지 신기능 안내 배너 닫힘 여부 (교사별 localStorage, step234 방식 lc-..-dismissed:<id>)
   const [challengeIntroDismissed, setChallengeIntroDismissed] = useState(false)
   // 🆕 step506: 배너 → 학급 설정 자동 받기 토글 스포트라이트 신호 (guideToPanel의 openSignal 패턴)
@@ -388,6 +392,8 @@ export default function TeacherHome() {
   }
 
   // 자동 받기 OFF 교사: 오늘 발행 공통 주제 중 미참여분이 있으면 원클릭 카드. 호출부에서 !imp 가드.
+  // step544: 모든 교사 호출로 확장 — 참여 중인 오늘 주제(자동 등록·원클릭 모두 mine에 잡힘)를
+  //   todaySupply로 저장해 [🏆 전국 랭킹 보기] 진입점 재료로 쓴다. 원클릭 카드 노출 조건은 기존 그대로(OFF만).
   const maybeShowSupplyCard = async (profile) => {
     try {
       const { startISO, nowISO } = kstTodayWindow()
@@ -402,9 +408,33 @@ export default function TeacherHome() {
         .select('source_supply_id').eq('teacher_id', profile.id)
         .in('source_supply_id', targets.map(t => t.id))
       const joined = new Set((mine || []).map(m => m.source_supply_id))
+      const participating = targets.find(t => joined.has(t.id))
+      if (participating) setTodaySupply({ id: participating.id, title: participating.title })
+      if (profile.classes?.auto_supply_enabled) return   // step544: ON 학급은 원클릭 카드 없음(기존 노출 조건 유지)
       const first = targets.find(t => !joined.has(t.id))
       if (first) setSupplyCard({ id: first.id, title: first.title, joined: false })
     } catch (e) { console.warn('공통 주제 카드 판정 실패(무시):', e?.message) }
+  }
+
+  // 🆕 step544: 교사용 전국 랭킹 모달 열기 — 학생 openShowcase 축약판(내 순위·신고·잠금 없음)
+  const openTeacherShowcase = async (sid) => {
+    if (!sid || teacherShowcase?.loading) return
+    setTeacherShowcase({ loading: true })
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인이 필요해요')
+      const res = await fetch('/api/supply-ranking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
+      setTeacherShowcase({ loading: false, winners: d.winners || [], participants: d.participants || 0 })
+    } catch (e) {
+      setTeacherShowcase(null)
+      alert('전국 랭킹을 불러오지 못했어요. 잠시 후 다시 해주세요.')
+      console.warn('교사 랭킹 조회 실패:', e?.message)
+    }
   }
 
   // 원클릭 참여 — force: 토글 무관(서버가 교사 role·담임 학급 검증)
@@ -540,8 +570,9 @@ export default function TeacherHome() {
       // 🆕 step477: 전국 글쓰기 챌린지 — lazy 등록·원클릭 카드 판정 (비차단, 실패 무시)
       //   step507: adopt는 토글 무관 상시 호출(OFF면 서버가 청소만 하고 disabled 반환), 원클릭 카드는 OFF일 때만
       if (!imp && profile.role === 'teacher') {
-        maybeSupplyAdopt()
-        if (!profile.classes?.auto_supply_enabled) maybeShowSupplyCard(profile)
+        // step544: adopt 완료 후 판정 — ON 학급의 오늘 자동 등록이 반영된 뒤 참여 중(todaySupply)을 잡는다.
+        //   실패해도 판정은 시도(비차단 체인). 원클릭 카드 노출 조건은 함수 내부에서 기존 그대로 유지.
+        maybeSupplyAdopt().then(() => maybeShowSupplyCard(profile)).catch(() => maybeShowSupplyCard(profile))
       }
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
@@ -974,10 +1005,17 @@ export default function TeacherHome() {
               {supplyCard.joined ? (
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <p className="text-sm font-semibold text-sky-900">✅ 우리 반 주제로 등록했어요. 학생들이 오늘 바로 쓸 수 있어요.</p>
-                  <Link href={withImpersonation('/teacher/topics')}
-                    className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 flex-shrink-0">
-                    주제 관리로 가기
-                  </Link>
+                  <div className="flex gap-2 flex-shrink-0">
+                    {/* step544: 교사용 전국 랭킹 진입점(원클릭 참여 직후) */}
+                    <button onClick={() => openTeacherShowcase(supplyCard.id)}
+                      className="px-3 py-1.5 bg-white border border-sky-300 text-sky-800 rounded-lg text-xs font-semibold hover:bg-sky-100">
+                      🏆 전국 랭킹 보기
+                    </button>
+                    <Link href={withImpersonation('/teacher/topics')}
+                      className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700">
+                      주제 관리로 가기
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -991,6 +1029,19 @@ export default function TeacherHome() {
                   </button>
                 </>
               )}
+            </div>
+          )}
+
+          {/* 🆕 step544: 참여 중 학급용 슬림 진입점 — 원클릭 카드가 없을 때(자동 ON·이미 참여 OFF)만 */}
+          {!isImpersonating && !supplyCard && todaySupply && (
+            <div className="bg-white border border-sky-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm font-semibold text-sky-900 min-w-0 truncate">
+                🌏 오늘의 전국 글쓰기 챌린지 진행 중 — {todaySupply.title}
+              </p>
+              <button onClick={() => openTeacherShowcase(todaySupply.id)}
+                className="px-3 py-1.5 bg-white border border-sky-300 text-sky-800 rounded-lg text-xs font-semibold hover:bg-sky-100 flex-shrink-0">
+                🏆 전국 랭킹 보기
+              </button>
             </div>
           )}
 
@@ -1467,6 +1518,60 @@ export default function TeacherHome() {
                   {setupSaving ? '저장 중...' : '설정 완료'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🆕 step544: 교사용 전국 챌린지 랭킹 모달 — 학생 상위 글 모달 축약판(내 순위·신고·잠금 없음) */}
+        {teacherShowcase && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+            onClick={() => setTeacherShowcase(null)}>
+            <div className="relative bg-white rounded-2xl p-5 max-w-md w-full shadow-xl max-h-[85vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-bold">🏆 오늘의 전국 챌린지 랭킹</h3>
+                <button onClick={() => setTeacherShowcase(null)} aria-label="닫기"
+                  className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
+              {teacherShowcase.loading ? (
+                <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
+              ) : (
+                <>
+                  <p className="text-sm text-sky-800 font-semibold mb-3">지금까지 전국 {teacherShowcase.participants}명 참여</p>
+                  {(teacherShowcase.winners || []).length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐주세요.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {teacherShowcase.winners.map(w => {
+                        const medal = w.rank === 1 ? '🥇' : w.rank === 2 ? '🥈' : '🥉'
+                        const meta = [w.school, w.grade ? `${w.grade}학년` : '', w.className].filter(Boolean).join(' ')
+                        return (
+                          <div key={w.showcaseId} className="border border-gray-200 rounded-xl p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xl">{medal}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-gray-900">{w.nickname}</p>
+                                {meta && <p className="text-[11px] text-gray-500 truncate">{meta}</p>}
+                              </div>
+                              <span className="text-sm font-bold text-sky-700 flex-shrink-0">{w.score}점</span>
+                            </div>
+                            {w.essay ? (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-xs text-sky-700 font-semibold select-none">글 보기</summary>
+                                <p className="mt-2 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-lg p-3">{w.essay}</p>
+                              </details>
+                            ) : (
+                              <p className="mt-2 text-xs text-gray-400">
+                                {w.pending ? '🔍 아직 검토 중인 글이에요' : '확인을 거친 글만 보여요'}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
