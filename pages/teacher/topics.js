@@ -143,6 +143,9 @@ export default function TopicsPage() {
   const [copyCounts, setCopyCounts] = useState({})
   // 🆕 step426: 내가 이미 가져간 공유 주제(topic_copies 본인 기록) — '가져옴' 완료 배지용 표시 전용
   const [myCopiedSet, setMyCopiedSet] = useState(new Set())
+  // 🆕 step541: 좋아요 집계·내가 누른 것 — null이면(테이블 미생성·조회 실패) 좋아요 UI 전체 숨김(비차단)
+  const [likeCounts, setLikeCounts] = useState(null)
+  const [myLikedSet, setMyLikedSet] = useState(new Set())
 
   useEffect(() => { checkAuth() }, [])
 
@@ -598,6 +601,28 @@ export default function TopicsPage() {
             })
             // UNIQUE 중복 등은 무시(같은 교사 재가져오기) — 등록은 정상 완료
             if (copyErr) console.warn('출처 기록 건너뜀(등록은 정상):', copyErr.message)
+            // 🆕 step541: 원작자 인기 알림 — 신규 기록 성공 시에만(재가져오기는 copyErr라 자연 제외).
+            //   도배 방지(같은 주제 하루 1건)는 notify_topic_copied RPC(SECURITY DEFINER)가 서버에서 판정.
+            //   가져간 교사가 누구인지는 어디에도 미포함(익명 원칙). 실패는 등록 흐름을 막지 않음.
+            //   ※ 좋아요(step541)에는 알림 없음 — 소음 위험으로 보류.
+            if (!copyErr) {
+              try {
+                let authorId = null
+                const { data: originLog } = await supabase.from('topic_suggestion_logs')
+                  .select('teacher_id').eq('id', originLogId).maybeSingle()
+                authorId = originLog?.teacher_id
+                  || sharedSuggestionLogs.find(l => l.id === copiedSource.logId)?.teacher_id || null
+                if (authorId && authorId !== user.id) {   // 본인 주제 가져오기는 알림 제외
+                  const nUsers = (copyCounts[`${originLogId}-${copiedSource.index}`] ?? 0) + 1
+                  await supabase.rpc('notify_topic_copied', {
+                    p_recipient: authorId,
+                    p_title: `🔥 선생님의 공유 주제를 다른 선생님이 가져갔어요 — '${r.data?.title || title}'`,
+                    p_body: `지금까지 ${nUsers}명이 이 주제를 사용하고 있어요.`,
+                    p_link: '/teacher/topics',
+                  })
+                }
+              } catch (e) { console.warn('원작자 알림 건너뜀(등록은 정상):', e?.message) }
+            }
           } catch(e) { console.warn('출처 기록 예외(등록은 정상):', e) }
           setCopiedSource(null)
         }
@@ -988,8 +1013,13 @@ export default function TopicsPage() {
       // 🆕 step426: 내가 가져간 기록 — '가져옴' 배지용(실패해도 빈 Set, 비차단)
       const minePromise = supabase.from('topic_copies')
         .select('source_log_id, source_index').eq('copied_by_teacher_id', uid)
+      // 🆕 step541: 좋아요 집계·내 좋아요 — 테이블 미생성(마이그레이션 전)이면 실패 → UI만 숨김(비차단)
+      const likeCountsPromise = supabase.rpc('topic_like_counts')
+      const myLikesPromise = supabase.from('topic_likes')
+        .select('source_log_id, source_index').eq('teacher_id', uid)
 
-      const [ownRes, sharedRes, countsRes, mineRes] = await Promise.all([ownPromise, sharedPromise, countsPromise, minePromise])
+      const [ownRes, sharedRes, countsRes, mineRes, likeCountsRes, myLikesRes] =
+        await Promise.all([ownPromise, sharedPromise, countsPromise, minePromise, likeCountsPromise, myLikesPromise])
       if (ownRes.error) throw ownRes.error
       setSuggestionLogs(ownRes.data || [])
 
@@ -1009,10 +1039,46 @@ export default function TopicsPage() {
       setCopyCounts(cmap)
       // 🆕 step426: 내 가져오기 기록 → Set(인기 배지와 같은 키 공간)
       setMyCopiedSet(new Set((mineRes?.data || []).map(r => `${r.source_log_id}-${r.source_index}`)))
+      // 🆕 step541: 좋아요 — RPC 실패(테이블 미생성 등)면 null 유지 → ❤️ UI 숨김
+      if (!likeCountsRes?.error) {
+        const lmap = {}
+        for (const r of (likeCountsRes?.data || [])) {
+          lmap[`${r.source_log_id}-${r.source_index}`] = Number(r.n_teachers) || 0
+        }
+        setLikeCounts(lmap)
+        setMyLikedSet(new Set((myLikesRes?.data || []).map(r => `${r.source_log_id}-${r.source_index}`)))
+      }
     } catch(e) {
       console.error('로그 로드 실패:', e)
     }
     setLogsLoading(false)
+  }
+
+  // 🆕 step541: 공유 주제 ❤️ 좋아요 토글 — 낙관적 갱신 + 실패 시 원복. UNIQUE(1인 1회)·RLS는 서버가 보장.
+  //   likeCounts가 null(테이블 미생성·조회 실패)이면 UI 자체가 안 떠서 여기 못 들어옴.
+  const toggleLike = async (item) => {
+    if (!user?.id || likeCounts === null) return
+    const key = `${item.sourceLogId}-${item.sourceIndex}`
+    const liked = myLikedSet.has(key)
+    setMyLikedSet(prev => { const s = new Set(prev); liked ? s.delete(key) : s.add(key); return s })
+    setLikeCounts(prev => ({ ...prev, [key]: Math.max(0, (prev?.[key] ?? 0) + (liked ? -1 : 1)) }))
+    try {
+      if (liked) {
+        const { error } = await supabase.from('topic_likes').delete()
+          .eq('source_log_id', item.sourceLogId).eq('source_index', item.sourceIndex).eq('teacher_id', user.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('topic_likes').insert({
+          source_log_id: item.sourceLogId, source_index: item.sourceIndex, teacher_id: user.id,
+        })
+        if (error && error.code !== '23505') throw error   // 23505=이미 눌림(다른 탭 등) — 상태는 이미 ON이라 무시
+      }
+    } catch (e) {
+      // 원복 (조용히 — 좋아요는 부가 기능, alert로 흐름 방해하지 않음)
+      setMyLikedSet(prev => { const s = new Set(prev); liked ? s.add(key) : s.delete(key); return s })
+      setLikeCounts(prev => ({ ...prev, [key]: Math.max(0, (prev?.[key] ?? 0) + (liked ? 1 : -1)) }))
+      console.warn('좋아요 처리 실패:', e?.message)
+    }
   }
 
   // 🆕 본인 추천 카드 공유 토글 (와이프 피드백)
@@ -1390,6 +1456,9 @@ export default function TopicsPage() {
                   generating={generatingRubrics}
                   copyCounts={copyCounts}
                   myCopiedSet={myCopiedSet}
+                  likeCounts={likeCounts}
+                  myLikedSet={myLikedSet}
+                  onToggleLike={toggleLike}
                 />
               )}
 
@@ -2100,6 +2169,9 @@ export default function TopicsPage() {
           disabled={false}
           copyCounts={copyCounts}
           myCopiedSet={myCopiedSet}
+          likeCounts={likeCounts}
+          myLikedSet={myLikedSet}
+          onToggleLike={toggleLike}
         />
       </div>
     </>
@@ -2110,9 +2182,10 @@ export default function TopicsPage() {
 // 🆕 인라인 추천 기록 미리보기 (와이프 피드백)
 // AI 추천 영역 바로 옆에 기록을 미리 보여줘서 추천 전에 빠르게 훑어볼 수 있게
 // ============================================
-// 🆕 공유 주제 평탄화 + 인기순 정렬 (인기 배지·인기 주제 모달 공용)
-// 기존 InlineSuggestionPreview 인라인 로직을 그대로 재현하되, 항목마다 가져간 교사 수 n을 붙이고 n 내림차순 정렬.
-function buildSharedFlat(sharedLogs, copyCounts, myCopiedSet) {
+// 🆕 공유 주제 평탄화 + 정렬 (인기 배지·인기 TOP 5 공용)
+// 기존 InlineSuggestionPreview 인라인 로직을 그대로 재현하되, 항목마다 가져간 교사 수 n을 붙인다.
+// step541: likes·likedByMe·createdAt 추가 + sortMode('popular' 기본: 사용→좋아요→최신 / 'recent': 최신순).
+function buildSharedFlat(sharedLogs, copyCounts, myCopiedSet, likeCounts = null, myLikedSet = null, sortMode = 'popular') {
   const flat = []
   for (const log of sharedLogs || []) {
     const sugs = Array.isArray(log.suggestions) ? log.suggestions : []
@@ -2125,6 +2198,9 @@ function buildSharedFlat(sharedLogs, copyCounts, myCopiedSet) {
         title: s.title, description: s.description, category: s.category,
         usedDate, sourceLogId: log.id, sourceIndex: idx, n,
         copiedByMe: !!myCopiedSet?.has(`${log.id}-${idx}`),  // 🆕 step426: 내가 이미 가져간 주제
+        likes: Number(likeCounts?.[`${log.id}-${idx}`] ?? 0) || 0,        // step541
+        likedByMe: !!myLikedSet?.has(`${log.id}-${idx}`),                 // step541
+        createdAt: log.created_at,                                        // step541: 최신순 정렬용
       })
       seen.add(idx)
     }
@@ -2141,15 +2217,23 @@ function buildSharedFlat(sharedLogs, copyCounts, myCopiedSet) {
       pushItem(idx, s)
     }
   }
-  flat.sort((a, b) => (b.n || 0) - (a.n || 0))
-  // 🆕 인기 배지는 실제로 2명 이상 가져간 상위 3개에만 (너무 많으면 '인기'가 무의미)
-  flat.forEach((item, i) => { item.isPopular = i < 3 && (item.n || 0) >= 2 })
+  // 🆕 인기 배지는 정렬 모드와 무관하게 "사용 수 기준 상위 3 && 2명 이상"(step391 의미 유지)
+  const byPop = [...flat].sort((a, b) => (b.n || 0) - (a.n || 0) || (b.likes || 0) - (a.likes || 0))
+  const popularKeys = new Set(byPop.slice(0, 3).filter(x => (x.n || 0) >= 2).map(x => x.key))
+  flat.forEach(item => { item.isPopular = popularKeys.has(item.key) })
+  if (sortMode === 'recent') {
+    flat.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+  } else {
+    flat.sort((a, b) => (b.n || 0) - (a.n || 0) || (b.likes || 0) - (a.likes || 0)
+      || (new Date(b.createdAt || 0) - new Date(a.createdAt || 0)))
+  }
   return flat
 }
 
-function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, copyCounts, myCopiedSet }) {
+function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, copyCounts, myCopiedSet, likeCounts, myLikedSet, onToggleLike }) {
   const [tab, setTab] = useState('mine')
   const [expanded, setExpanded] = useState(false)  // 접힘/펼침
+  const [sortMode, setSortMode] = useState('popular')  // step541: 공유 탭 정렬 — 기본 인기순(사용→좋아요→최신)
 
   // 평탄화 (사이드 패널과 같은 로직)
   const flatMine = []
@@ -2167,7 +2251,10 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
     })
   }
 
-  const flatShared = buildSharedFlat(sharedLogs, copyCounts, myCopiedSet)
+  const flatShared = buildSharedFlat(sharedLogs, copyCounts, myCopiedSet, likeCounts, myLikedSet, sortMode)
+  // step541: 인기 TOP 5 — 실제로 1명 이상 가져간 주제만, 사용 수 우선·동률 시 좋아요 수
+  const top5 = [...flatShared].filter(x => (x.n || 0) >= 1)
+    .sort((a, b) => (b.n || 0) - (a.n || 0) || (b.likes || 0) - (a.likes || 0)).slice(0, 5)
 
   const list = tab === 'mine' ? flatMine : flatShared
   // 접힘 상태에서는 6개만, 펼치면 다
@@ -2195,12 +2282,52 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
             </button>
           </div>
         </div>
-        <span className="text-[11px] text-purple-700/70">
-          {tab === 'mine'
-            ? '클릭하면 폼에 자동 입력돼요'
-            : '다른 선생님이 등록·공유한 주제'}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* step541: 공유 탭 정렬 토글 — 기본 인기순 */}
+          {tab === 'shared' && (
+            <div className="flex bg-white rounded-lg p-0.5 gap-0.5 text-[11px]">
+              <button onClick={() => setSortMode('popular')}
+                className={`px-2 py-0.5 rounded ${sortMode === 'popular' ? 'bg-orange-100 text-orange-800 font-semibold' : 'text-gray-500'}`}>
+                🔥 인기순
+              </button>
+              <button onClick={() => setSortMode('recent')}
+                className={`px-2 py-0.5 rounded ${sortMode === 'recent' ? 'bg-orange-100 text-orange-800 font-semibold' : 'text-gray-500'}`}>
+                🕒 최신순
+              </button>
+            </div>
+          )}
+          <span className="text-[11px] text-purple-700/70">
+            {tab === 'mine'
+              ? '클릭하면 폼에 자동 입력돼요'
+              : '다른 선생님이 등록·공유한 주제'}
+          </span>
+        </div>
       </div>
+
+      {/* step541: 인기 TOP 5 — 요즘 많이 가져간 주제 (후보 없으면 미표시) */}
+      {tab === 'shared' && top5.length > 0 && (
+        <div className="bg-white/80 border border-orange-200 rounded-lg p-2.5 space-y-1.5">
+          <div className="text-xs font-bold text-orange-800">🔥 요즘 선생님들이 많이 가져간 주제</div>
+          {top5.map(item => (
+            <div key={`top5-${item.key}`} className="flex items-center gap-2 text-xs">
+              <span className="flex-1 min-w-0 truncate font-medium text-gray-800">{item.title}</span>
+              <span className="text-gray-500 flex-shrink-0 whitespace-nowrap">👥 {item.n}명 사용</span>
+              {likeCounts !== null && likeCounts !== undefined && (
+                <span className="text-gray-500 flex-shrink-0 whitespace-nowrap">❤️ {item.likes}</span>
+              )}
+              <button
+                onClick={() => onSelect?.({
+                  title: item.title, description: item.description, category: item.category,
+                  sourceLogId: item.sourceLogId, sourceIndex: item.sourceIndex,
+                })}
+                disabled={generating}
+                className="flex-shrink-0 text-[11px] bg-orange-100 hover:bg-orange-200 text-orange-800 font-semibold px-2 py-0.5 rounded disabled:opacity-50">
+                가져오기
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {list.length === 0 ? (
         <p className="text-xs text-gray-500 py-3 text-center">
@@ -2244,6 +2371,18 @@ function InlineSuggestionPreview({ myLogs, sharedLogs, onSelect, generating, cop
                     )}
                     {item.copiedByMe && (
                       <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded flex-shrink-0">✔ 가져옴</span>
+                    )}
+                    {/* step541: ❤️ 좋아요 토글 — 카드가 button이라 중첩 button 금지, span+stopPropagation */}
+                    {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
+                      <span role="button" tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) } }}
+                        title={item.likedByMe ? '좋아요 취소' : '좋아요'}
+                        className={`text-[9px] px-1 rounded flex-shrink-0 cursor-pointer select-none ${
+                          item.likedByMe ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-gray-100 text-gray-500 hover:bg-rose-50'
+                        }`}>
+                        {item.likedByMe ? '❤️' : '🤍'} {item.likes}
+                      </span>
                     )}
                   </div>
                   {item.description && (

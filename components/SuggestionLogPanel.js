@@ -22,6 +22,9 @@ export default function SuggestionLogPanel({
   disabled,
   copyCounts,     // 🆕 인기 배지·정렬용 (source_log_id-source_index → 교사수)
   myCopiedSet,    // 🆕 step426: 내가 이미 가져간 공유 주제 Set('log_id-index') — '가져옴' 배지용
+  likeCounts,     // 🆕 step541: 좋아요 수 맵 — null이면(테이블 미생성 등) ❤️ UI 숨김
+  myLikedSet,     // 🆕 step541: 내가 누른 좋아요 Set('log_id-index')
+  onToggleLike,   // 🆕 step541: (item) => void — 좋아요 토글(topics.js toggleLike)
 }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -102,6 +105,8 @@ export default function SuggestionLogPanel({
           sourceIndex: log.selected_index,
           n: Number(copyCounts?.[`${log.id}-${log.selected_index}`] ?? 0) || 0,
           copiedByMe: !!myCopiedSet?.has(`${log.id}-${log.selected_index}`),  // 🆕 step426
+          likes: Number(likeCounts?.[`${log.id}-${log.selected_index}`] ?? 0) || 0,   // 🆕 step541
+          likedByMe: !!myLikedSet?.has(`${log.id}-${log.selected_index}`),            // 🆕 step541
         })
         seen.add(log.selected_index)
       }
@@ -122,13 +127,17 @@ export default function SuggestionLogPanel({
         sourceIndex: idx,
         n: Number(copyCounts?.[`${log.id}-${idx}`] ?? 0) || 0,
         copiedByMe: !!myCopiedSet?.has(`${log.id}-${idx}`),  // 🆕 step426
+        likes: Number(likeCounts?.[`${log.id}-${idx}`] ?? 0) || 0,   // 🆕 step541
+        likedByMe: !!myLikedSet?.has(`${log.id}-${idx}`),            // 🆕 step541
       })
       seen.add(idx)
     }
   }
 
   // 🆕 인기순 정렬 + 상위 3개(2명 이상)만 인기 배지 (왼쪽 탭과 동일 규칙)
-  flatShared.sort((a, b) => (b.n || 0) - (a.n || 0))
+  //   step541: 동률 시 좋아요 수 → 최신순 (buildSharedFlat 인기순과 동일 기준)
+  flatShared.sort((a, b) => (b.n || 0) - (a.n || 0) || (b.likes || 0) - (a.likes || 0)
+    || (new Date(b.createdAt || 0) - new Date(a.createdAt || 0)))
   flatShared.forEach((item, i) => { item.isPopular = i < 3 && (item.n || 0) >= 2 })
 
   const currentList = tab === 'mine' ? flatMine : flatShared
@@ -258,6 +267,18 @@ export default function SuggestionLogPanel({
                             )}
                             {item.copiedByMe && (
                               <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">✔ 가져옴</span>
+                            )}
+                            {/* 🆕 step541: ❤️ 좋아요 토글 — 카드가 button이라 span+stopPropagation */}
+                            {tab === 'shared' && likeCounts !== null && likeCounts !== undefined && (
+                              <span role="button" tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onToggleLike?.(item) } }}
+                                title={item.likedByMe ? '좋아요 취소' : '좋아요'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer select-none ${
+                                  item.likedByMe ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-gray-100 text-gray-500 hover:bg-rose-50'
+                                }`}>
+                                {item.likedByMe ? '❤️' : '🤍'} {item.likes}
+                              </span>
                             )}
                             {usedLabel && (
                               <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
