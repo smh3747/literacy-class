@@ -11,6 +11,7 @@ import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 import { todayStr, daysAgoStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 전국 랭킹 모달(step544 공용화)
 
 export default function TeacherRanking() {
   const router = useRouter()
@@ -21,6 +22,11 @@ export default function TeacherRanking() {
   const [allStudents, setAllStudents] = useState([])  // 우리 반 전원(숨김 제외) — "아직 없음" 그룹용
   const [period, setPeriod] = useState('week') // week / month / all
   const [loading, setLoading] = useState(true)
+  // 🆕 step554: 우리 학급이 참여한 전국 챌린지 목록(복사본 topics의 source_supply_id 기준, 최신순) + 모달 supplyId.
+  //   지나간 챌린지의 동결 순위(supply_final_ranks) 열람이 이 탭의 핵심 목적 — 마감 주제는 API가 동결본으로 응답.
+  //   참여 0명 복사본은 전일 청소(step479)로 소멸해 목록에서 빠질 수 있음 — 의도된 동작(제출 있는 이력은 영구 보존).
+  const [challenges, setChallenges] = useState(null)   // null=로딩, []=이력 없음
+  const [showcaseSid, setShowcaseSid] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { if (user?.class_id) loadRankings(user, period) }, [period])
@@ -36,6 +42,30 @@ export default function TeacherRanking() {
     setClassInfo(profile.classes)
     await loadRankings(profile, period)
     setLoading(false)
+    loadChallenges(profile)   // step554: 비차단(기간 토글과 무관, 1회)
+  }
+
+  // 🆕 step554: 참여 챌린지 목록 — 내 복사본(source_supply_id 有) + 주제별 참여 학생 수(제출 학생 distinct)
+  const loadChallenges = async (profile) => {
+    try {
+      const { data: copies } = await supabase.from('topics')
+        .select('id, title, date, source_supply_id')
+        .eq('teacher_id', profile.id).not('source_supply_id', 'is', null)
+        .order('date', { ascending: false }).limit(30)
+      const rows = copies || []
+      if (rows.length === 0) { setChallenges([]); return }
+      const { data: subs } = await supabase.from('submissions')
+        .select('topic_id, user_id')
+        .in('topic_id', rows.map(t => t.id)).is('deleted_at', null)
+      const usersByTopic = {}
+      for (const s of (subs || [])) {
+        (usersByTopic[s.topic_id] = usersByTopic[s.topic_id] || new Set()).add(s.user_id)
+      }
+      setChallenges(rows.map(t => ({ ...t, participants: usersByTopic[t.id]?.size || 0 })))
+    } catch (e) {
+      console.warn('챌린지 목록 로드 실패(무시):', e?.message)
+      setChallenges([])
+    }
   }
 
   const logout = async () => {
@@ -200,6 +230,43 @@ export default function TeacherRanking() {
             {renderRanking('🔥 가장 많이 쓴 학생', rankings.totalSubs, '개')}
             {renderRanking('📈 가장 많이 성장한 학생', rankings.improvement, '점↑')}
           </div>
+
+          {/* 🆕 step554: 전국 챌린지 — 참여 이력 목록 + 전국 랭킹 모달(마감 주제는 동결 순위 열람이 핵심 목적) */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <h3 className="font-bold mb-1">🌏 전국 챌린지</h3>
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+              우리 반이 참여한 전국 글쓰기 챌린지예요. 지나간 챌린지의 그날 순위도 다시 볼 수 있어요.
+            </p>
+            {challenges === null ? (
+              <p className="text-sm text-gray-400 py-3 text-center">불러오는 중...</p>
+            ) : challenges.length === 0 ? (
+              <p className="text-sm text-gray-500 py-3 text-center">
+                아직 참여한 챌린지가 없어요 — 학급 설정에서 자동 받기를 켜면 매일 자동으로 참여할 수 있어요
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                {challenges.map(t => (
+                  <div key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {t.title}
+                        {t.date >= todayStr() && (
+                          <span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold align-middle">진행 중</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500">{t.date} · 우리 반 {t.participants}명 참여</p>
+                    </div>
+                    <button onClick={() => setShowcaseSid(t.source_supply_id)}
+                      className="flex-shrink-0 px-3 py-1.5 bg-white border border-sky-300 text-sky-800 rounded-lg text-xs font-semibold hover:bg-sky-50">
+                      🏆 전국 랭킹
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showcaseSid && <TeacherShowcaseModal supplyId={showcaseSid} onClose={() => setShowcaseSid(null)} />}
         </main>
       </div>
     </>
