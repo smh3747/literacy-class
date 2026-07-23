@@ -67,6 +67,9 @@ export default function TeacherHome() {
   const [teacherShowcase, setTeacherShowcase] = useState(null)
   // 🆕 step505: 챌린지 신기능 안내 배너 닫힘 여부 (교사별 localStorage, step234 방식 lc-..-dismissed:<id>)
   const [challengeIntroDismissed, setChallengeIntroDismissed] = useState(false)
+  // 🆕 step552: 학생 0명 재방문 배너 — 닫으면 그날(KST) 하루만 숨김(localStorage 날짜 키, 기기 단위·DB 불필요).
+  //   기본 true(깜빡임 방지) → user 확정 후 판정. 다음 걸음 no_students 카드(평생 1회)의 매일 재방문 장치.
+  const [noStudentsBannerHiddenToday, setNoStudentsBannerHiddenToday] = useState(true)
   // 🆕 step506: 배너 → 학급 설정 자동 받기 토글 스포트라이트 신호 (guideToPanel의 openSignal 패턴)
   const [settingsSpotlightSignal, setSettingsSpotlightSignal] = useState(0)
   // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정
@@ -501,6 +504,19 @@ export default function TeacherHome() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [nextStepCard])
+
+  // 🆕 step552: 학생 0명 배너 오늘 숨김 판정 — 저장값이 오늘(KST)과 같으면 숨김, 아니면 표시
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      setNoStudentsBannerHiddenToday(localStorage.getItem('lc-no-students-banner:' + user.id) === todayStr())
+    } catch { setNoStudentsBannerHiddenToday(false) }
+  }, [user?.id])
+
+  const dismissNoStudentsBanner = () => {
+    setNoStudentsBannerHiddenToday(true)
+    try { if (user?.id) localStorage.setItem('lc-no-students-banner:' + user.id, todayStr()) } catch {}
+  }
 
   // 다음 걸음 카드 응답 기록 — 한 번의 insert(RLS가 update 차단이라 저장은 1회로 끝). 실패해도 카드만 숨김.
   //   keepOpen: review good 경로처럼 카드를 유지한 채 기록만 할 때 true(닫기는 호출부 책임).
@@ -964,6 +980,24 @@ export default function TeacherHome() {
               className="block bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-900 font-medium hover:bg-amber-100 transition">
               ✋ 수정 기회 요청 {rewriteRequestCount}건 — 확인하기 →
             </Link>
+          )}
+
+          {/* 🆕 step552: 학생 0명 재방문 배너 — 깔때기 병목(학생 등록 11%) 대응. 닫으면 그날 하루 숨김, 다음 날(KST) 재표시.
+              스타일은 step512 요청 배너 관행(amber 1줄) 통일. 배너 전면 우선순위 정리는 §13 백로그 별도. */}
+          {!isImpersonating && !loading && studentCountTotal === 0 && !noStudentsBannerHiddenToday && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3 flex-wrap">
+              <p className="text-sm text-amber-900 font-medium flex-1 min-w-0">
+                👋 아직 학생이 없어요 — 명렬표를 올리면 1분 만에 시작할 수 있어요
+              </p>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link href={withImpersonation('/teacher/students?mode=register')}
+                  className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700">
+                  📋 명렬표 올리러 가기
+                </Link>
+                <button onClick={dismissNoStudentsBanner} aria-label="오늘 하루 닫기"
+                  className="text-amber-400 hover:text-amber-700 text-lg leading-none">✕</button>
+              </div>
+            </div>
           )}
 
           {/* 🆕 step505: 챌린지 신기능 안내 배너 — 교사별 1회 닫기, 자동 받기 켠 학급 미노출, 노출 중엔 원클릭 카드 숨김 */}
@@ -1588,16 +1622,18 @@ export default function TeacherHome() {
 
               {nextStepCard === 'no_students' && (
                 <div>
-                  <h3 className="font-bold text-indigo-900 pr-6">🙋 학생 등록에서 멈추셨네요. 뭐가 걸리세요?</h3>
-                  <p className="text-sm text-gray-600 mt-1">알려주시면 그 부분부터 쉽게 만들게요.</p>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {[['roster_hassle', '명렬표 입력이 번거로워요'], ['consent_burden', '학부모 동의가 부담돼요'], ['just_looking', '아직 둘러보는 중이에요']].map(([v, label]) => (
-                      <button key={v} onClick={() => recordOnboarding('no_students', v)}
-                        className="text-sm px-3.5 py-2 rounded-xl border-2 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition">
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  {/* step552: 설문형 3버튼 → 직행형 교체(깔때기 병목 11% 대응). card_type 'no_students' 불변 —
+                      버튼 클릭은 'clicked'(no_topics·no_class_run과 동일 = 따라감 계측), 닫음은 기존 dismissed. */}
+                  <h3 className="font-bold text-indigo-900 pr-6">학부모 동의 없이도 지금 바로 올릴 수 있어요</h3>
+                  <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                    나이스 명렬표를 그대로 올리면 1분 만에 끝나요. 실명은 동의 전까지 자동으로 잠겨
+                    닉네임으로 표시돼요. 명렬표가 없다면 학급 코드 4자리로 학생들이 스스로 가입하게
+                    할 수도 있어요.
+                  </p>
+                  <button onClick={() => { recordOnboarding('no_students', 'clicked'); router.push(withImpersonation('/teacher/students?mode=register')) }}
+                    className="mt-3 w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">
+                    📋 명렬표 올리러 가기
+                  </button>
                 </div>
               )}
 
