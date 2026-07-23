@@ -15,7 +15,7 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
   grammarOnlyPrompt, grammarStrictPrompt, feedbackSummaryPrompt } from '../../lib/prompts.server'
-import { mergeCorrectionsDetailed } from '../../lib/koreanRules'
+import { mergeCorrectionsDetailed, findRuleBasedErrors } from '../../lib/koreanRules'
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
 import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema, supplyNewsScoutPrompt } from '../../lib/supplyTopicPrompt.server'
 
@@ -294,7 +294,11 @@ export default async function handler(req, res) {
         const rubricSum = rubrics.reduce((s, r) => s + (Number(r?.score) || 0), 0)
         if (rubricSum !== 100) console.warn(`[rubric-sum] 합계 ${rubricSum} — topic 확인 필요`, { userId })
       }
-      prompt = gradingPrompt({ topic, essay, rubrics })
+      // 🆕 step555: 자동 맞춤법 검사(규칙 기반)를 채점 전에 돌려 입력으로 주입 — 검사·채점 자기모순 차단.
+      //   실패하면 null(기존 프롬프트와 완전 동일 — 채점은 항상 계속).
+      let ruleErrors = null
+      try { ruleErrors = findRuleBasedErrors(essay) } catch { /* 채점 계속 */ }
+      prompt = gradingPrompt({ topic, essay, rubrics, ruleErrors })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
       mergeEssay = essay
@@ -313,11 +317,15 @@ export default async function handler(req, res) {
       //   payload의 prev류 값은 절대 쓰지 않음(학생 브라우저의 채점 재료 조작 경로 차단).
       //   직전 제출 없음/조회 실패 → 3인자 전부 null → 기존 프롬프트와 완전 동일(하위호환).
       prevGrading = await fetchPrevGrading({ userId, topicId })
+      // 🆕 step555: 자동 맞춤법 검사(규칙 기반)를 채점 전에 돌려 입력으로 주입 — 검사·채점 자기모순 차단.
+      let ruleErrors = null
+      try { ruleErrors = findRuleBasedErrors(rewriteEssay) } catch { /* 채점 계속 */ }
       prompt = rewriteGradingPrompt({
         topic, rewriteEssay, rubrics,
         prevScore: prevGrading?.total_score ?? null,
         prevCorrections: Array.isArray(prevGrading?.corrections) ? prevGrading.corrections : null,
         prevFeedback: prevGrading?.feedback_overall || null,
+        ruleErrors,
       })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }

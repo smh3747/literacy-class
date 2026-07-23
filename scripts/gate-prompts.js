@@ -155,6 +155,56 @@ const { pathToFileURL } = require('url')
     rec('REWRITE', 'rewriteGradingPrompt 실행', false, `예외: ${e.message}`)
   }
 
+  // ── SELFCHECK: 검사·채점 자기모순 차단 (step555) ──
+  // ① corrections↔점수 일관성 규칙(만점 금지·'완벽' 표현 금지)이 채점 2종에 잔존.
+  // ② ruleErrors(자동 맞춤법 검사 주입) 미전달 시 기존 출력과 완전 동일(하위호환).
+  // ③ 전달 시 [자동 맞춤법 검사] 블록: 총 N건 + 목록 + 상한 10건('외 N건') + 만점 금지 지시.
+  try {
+    const SC_PHRASES = [
+      { name: 'corrections↔점수 일관성 규칙', text: 'corrections와 점수의 일관성' },
+      { name: '만점만 금지(감점 강제 아님)',   text: '만점만 금지이며' },
+      { name: "'오류 없다' 표현 금지",        text: '오류가 없다는 표현' },
+    ]
+    const scPrompts = {
+      gradingPrompt: gradingPrompt({ topic, essay, rubrics }),
+      rewriteGradingPrompt: rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics }),
+    }
+    for (const [pname, s] of Object.entries(scPrompts)) {
+      for (const kp of SC_PHRASES) {
+        const pass = s.includes(kp.text)
+        rec('SELFCHECK', `${pname} · ${kp.name}`, pass, pass ? '포함' : `누락: "${kp.text}"`)
+      }
+    }
+
+    // ② 하위호환: ruleErrors 미전달 = null = 빈 배열, 블록 문구 없음
+    const gBase = scPrompts.gradingPrompt
+    const gNull = gradingPrompt({ topic, essay, rubrics, ruleErrors: null })
+    const gEmpty = gradingPrompt({ topic, essay, rubrics, ruleErrors: [] })
+    const rBase = scPrompts.rewriteGradingPrompt
+    const rNull = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, ruleErrors: null })
+    const cPass = gBase === gNull && gBase === gEmpty && rBase === rNull
+      && !gBase.includes('자동 맞춤법 검사') && !rBase.includes('자동 맞춤법 검사')
+    rec('SELFCHECK', 'ruleErrors 미전달 = null = [] 동일(하위호환)', cPass,
+      cPass ? '출력 동일, 검사 블록 없음' : `grading동일=${gBase === gNull && gBase === gEmpty}, rewrite동일=${rBase === rNull}, 블록없음=${!gBase.includes('자동 맞춤법 검사') && !rBase.includes('자동 맞춤법 검사')}`)
+
+    // ③ 주입: 2건 → 총 2건+목록+지시, 11건 → 10건 표시+'외 1건'
+    const two = [{ original: '어느날', correction: '어느 날' }, { original: '할수있다', correction: '할 수 있다' }]
+    const gTwo = gradingPrompt({ topic, essay, rubrics, ruleErrors: two })
+    const rTwo = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, ruleErrors: two })
+    const dPhrases = ['자동 맞춤법 검사', '총 2건', '어느날 → 어느 날', '만점을 주지 말고', "'맞춤법이 완벽하다'는 표현"]
+    const dMissing = dPhrases.filter(p => !gTwo.includes(p) || !rTwo.includes(p))
+    rec('SELFCHECK', 'ruleErrors 주입 시 검사 블록+만점 금지 지시(채점 2종)', dMissing.length === 0,
+      dMissing.length === 0 ? `${dPhrases.length}문구 모두 포함` : `누락: ${dMissing.join(' / ')}`)
+
+    const eleven = Array.from({ length: 11 }, (_, i) => ({ original: `오류${i + 1}`, correction: `교정${i + 1}` }))
+    const gCap = gradingPrompt({ topic, essay, rubrics, ruleErrors: eleven })
+    const ePass = gCap.includes('총 11건') && gCap.includes('오류10') && !gCap.includes('오류11') && gCap.includes('외 1건')
+    rec('SELFCHECK', 'ruleErrors 상한(10건 표시+외 N건)', ePass,
+      ePass ? "'총 11건'·10건 표시·'외 1건'" : `총11건=${gCap.includes('총 11건')}, 10표시=${gCap.includes('오류10')}, 11제외=${!gCap.includes('오류11')}, 외1건=${gCap.includes('외 1건')}`)
+  } catch (e) {
+    rec('SELFCHECK', 'SELFCHECK 실행', false, `예외: ${e.message}`)
+  }
+
   // ── DATE: 채점 3종 오늘 날짜(KST) 주입 (step441) ──
   // 형식 매칭 + 가드 문구 잔존만 확인. 연도 일치까지는 안 봄(자정 경계·타임존으로 게이트가 취약해지는 것 방지).
   {
