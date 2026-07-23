@@ -20,6 +20,7 @@ import { getEffectiveProfile, withImpersonation, assertWritable } from '../../li
 import { toKST } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
+import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -70,6 +71,10 @@ export default function TeacherHome() {
   // 🆕 step552: 학생 0명 재방문 배너 — 닫으면 그날(KST) 하루만 숨김(localStorage 날짜 키, 기기 단위·DB 불필요).
   //   기본 true(깜빡임 방지) → user 확정 후 판정. 다음 걸음 no_students 카드(평생 1회)의 매일 재방문 장치.
   const [noStudentsBannerHiddenToday, setNoStudentsBannerHiddenToday] = useState(true)
+  // 🆕 step553: "오늘 N건 제출" 펼침 미리보기 — 첫 펼침에 lazy 1회 조회 후 캐시.
+  //   { loading, rows(제출 시각 내림차순, profile 부착), multiTopic, titleById } | null(미조회)
+  const [todayPreviewOpen, setTodayPreviewOpen] = useState(false)
+  const [todayPreview, setTodayPreview] = useState(null)
   // 🆕 step506: 배너 → 학급 설정 자동 받기 토글 스포트라이트 신호 (guideToPanel의 openSignal 패턴)
   const [settingsSpotlightSignal, setSettingsSpotlightSignal] = useState(0)
   // 🆕 step512: 미처리 수정 기회 요청 수 — 추후 알림 센터 범용 알림으로 통합 예정
@@ -504,6 +509,52 @@ export default function TeacherHome() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [nextStepCard])
+
+  // 🆕 step553: 오늘 제출 미리보기 lazy 조회 — count(todaySubmissions)와 동일 필터
+  //   (KST 자정 창·deleted_at null·숨김 학생 제외)로 숫자와 명단이 어긋나지 않게 한다.
+  const toggleTodayPreview = async () => {
+    if (todayPreviewOpen) { setTodayPreviewOpen(false); return }
+    setTodayPreviewOpen(true)
+    if (todayPreview && !todayPreview.loading) return   // 재펼침은 캐시
+    setTodayPreview({ loading: true, rows: [] })
+    try {
+      const { data: studs } = await supabase.from('profiles')
+        .select('id, realname, nickname, username, number, is_hidden')
+        .eq('class_id', classInfo?.id).eq('role', 'student')
+        .or('is_hidden.is.null,is_hidden.eq.false')
+      const ids = (studs || []).map(s => s.id)
+      if (ids.length === 0) { setTodayPreview({ loading: false, rows: [] }); return }
+      const kstMidnightUtc = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
+      const { data: subs } = await supabase.from('submissions')
+        .select('id, user_id, topic_id, created_at, total_score, attempt')
+        .in('user_id', ids).gte('created_at', kstMidnightUtc).is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      const profById = Object.fromEntries((studs || []).map(p => [p.id, p]))
+      const topicIds = [...new Set((subs || []).map(s => s.topic_id).filter(Boolean))]
+      // 주제 제목은 오늘 제출 주제가 2개 이상일 때만 표시(1개면 중복 정보라 생략)
+      let titleById = {}
+      if (topicIds.length >= 2) {
+        const { data: tps } = await supabase.from('topics').select('id, title').in('id', topicIds)
+        titleById = Object.fromEntries((tps || []).map(t => [t.id, t.title]))
+      }
+      setTodayPreview({
+        loading: false,
+        rows: (subs || []).map(s => ({ ...s, profile: profById[s.user_id] })),
+        multiTopic: topicIds.length >= 2,
+        titleById,
+      })
+    } catch (e) {
+      console.warn('오늘 제출 미리보기 조회 실패(무시):', e?.message)
+      setTodayPreview({ loading: false, rows: [] })
+    }
+  }
+
+  // step553: 미리보기 시각 HH:mm (KST)
+  const previewTime = (iso) => {
+    try {
+      return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }).format(new Date(iso))
+    } catch { return '' }
+  }
 
   // 🆕 step552: 학생 0명 배너 오늘 숨김 판정 — 저장값이 오늘(KST)과 같으면 숨김, 아니면 표시
   useEffect(() => {
@@ -1281,7 +1332,51 @@ export default function TeacherHome() {
               {stats.todaySubmissions === 0 ? (
                 <p className="text-sm text-gray-700 mt-1">아직 오늘 제출이 없어요. 학생들에게 오늘 주제를 안내해 보세요.</p>
               ) : (
-                <p className="text-base font-bold text-gray-900 mt-1">오늘 {stats.todaySubmissions}건 제출 · 학생 {stats.students}명</p>
+                <>
+                  {/* step553: 숫자 줄 클릭 → 오늘 제출 학생 미리보기(최근 5명) 펼침 */}
+                  <button onClick={toggleTodayPreview}
+                    className="text-base font-bold text-gray-900 mt-1 text-left hover:text-primary-dark transition">
+                    오늘 {stats.todaySubmissions}건 제출 · 학생 {stats.students}명
+                    <span className="ml-1.5 text-xs font-normal text-gray-400">{todayPreviewOpen ? '▲ 접기' : '▼ 누가 냈는지 보기'}</span>
+                  </button>
+                  {todayPreviewOpen && (
+                    <div className="mt-2 space-y-1">
+                      {(!todayPreview || todayPreview.loading) ? (
+                        <p className="text-xs text-gray-400 py-1">불러오는 중...</p>
+                      ) : todayPreview.rows.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-1">목록을 불러오지 못했어요. 제출 현황에서 확인해 주세요.</p>
+                      ) : (
+                        <>
+                          {todayPreview.rows.slice(0, 5).map(row => {
+                            const t = todayPreview.multiTopic ? (todayPreview.titleById[row.topic_id] || '') : ''
+                            const shortTitle = t ? `「${t.length > 8 ? t.slice(0, 8) + '…' : t}」` : ''
+                            return (
+                              <Link key={row.id}
+                                href={withImpersonation(`/teacher/submissions?topic=${row.topic_id}&student=${row.user_id}`)}
+                                className="flex items-center gap-2 text-sm bg-gray-50 hover:bg-primary-light rounded-lg px-2.5 py-1.5 transition">
+                                <span className="font-medium text-gray-800 min-w-0 truncate">
+                                  {displayStudentName(row.profile)}
+                                  {shortTitle && <span className="ml-1 text-xs font-normal text-gray-500">{shortTitle}</span>}
+                                </span>
+                                <span className="ml-auto text-xs text-gray-400 flex-shrink-0">{previewTime(row.created_at)}</span>
+                                <span className="text-xs font-semibold text-primary flex-shrink-0">
+                                  {row.total_score != null ? `${row.total_score}점` : '채점 중'}
+                                  {(row.attempt || 1) > 1 && <span className="font-normal text-gray-500"> (다시 쓰기)</span>}
+                                </span>
+                              </Link>
+                            )
+                          })}
+                          {todayPreview.rows.length > 5 && (
+                            <Link href={withImpersonation('/teacher/status')}
+                              className="block text-xs text-primary font-medium px-2.5 py-1 hover:underline">
+                              외 {todayPreview.rows.length - 5}명 · 오늘 제출 전체 보기 →
+                            </Link>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
               {stats.reports > 0 && (
                 <p className="text-sm font-semibold text-rose-600 mt-2">🚨 신고된 피드백 {stats.reports}건 확인이 필요해요</p>
