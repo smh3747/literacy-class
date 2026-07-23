@@ -155,10 +155,13 @@ const { pathToFileURL } = require('url')
     rec('REWRITE', 'rewriteGradingPrompt 실행', false, `예외: ${e.message}`)
   }
 
-  // ── SELFCHECK: 검사·채점 자기모순 차단 (step555) ──
+  // ── SELFCHECK: 검사·채점 자기모순 차단 (step555, 요약형 가드 step556) ──
   // ① corrections↔점수 일관성 규칙(만점 금지·'완벽' 표현 금지)이 채점 2종에 잔존.
   // ② ruleErrors(자동 맞춤법 검사 주입) 미전달 시 기존 출력과 완전 동일(하위호환).
-  // ③ 전달 시 [자동 맞춤법 검사] 블록: 총 N건 + 목록 + 상한 10건('외 N건') + 만점 금지 지시.
+  // ③ 전달 시 [자동 맞춤법 검사 요약] 블록: 총 N건 + 대표 예시 상한 3건('외 N건') + 만점 금지
+  //    + 절대 표현 금지 + 다른 항목 번짐 금지(step556 가드).
+  // ④ 실사례 회귀(7/22 바자회 95→100): '쥐죽은듯이' 잔존인데 맞춤법 만점+"완벽" 칭찬 — 재발 방지.
+  // ⑤ step521(하락 사유)·step550(관대화 대칭)·검사 블록이 동시 주입에서 충돌 없이 공존.
   try {
     const SC_PHRASES = [
       { name: 'corrections↔점수 일관성 규칙', text: 'corrections와 점수의 일관성' },
@@ -187,20 +190,45 @@ const { pathToFileURL } = require('url')
     rec('SELFCHECK', 'ruleErrors 미전달 = null = [] 동일(하위호환)', cPass,
       cPass ? '출력 동일, 검사 블록 없음' : `grading동일=${gBase === gNull && gBase === gEmpty}, rewrite동일=${rBase === rNull}, 블록없음=${!gBase.includes('자동 맞춤법 검사') && !rBase.includes('자동 맞춤법 검사')}`)
 
-    // ③ 주입: 2건 → 총 2건+목록+지시, 11건 → 10건 표시+'외 1건'
+    // ③ 주입: 2건 → 총 2건+대표 예시+만점 금지+절대 표현 금지+번짐 금지, 5건 → 3건 표시+'외 2건'
     const two = [{ original: '어느날', correction: '어느 날' }, { original: '할수있다', correction: '할 수 있다' }]
     const gTwo = gradingPrompt({ topic, essay, rubrics, ruleErrors: two })
     const rTwo = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, ruleErrors: two })
-    const dPhrases = ['자동 맞춤법 검사', '총 2건', '어느날 → 어느 날', '만점을 주지 말고', "'맞춤법이 완벽하다'는 표현"]
+    const dPhrases = ['자동 맞춤법 검사', '총 2건', '대표 예시', '어느날 → 어느 날',
+      '만점을 주지 마세요', '만점만 금지이며', // step556: 만점 금지≠감점 강제 블록 내 명시
+      "'맞춤법이 완벽하다', '오류가 하나도 없다'", // step556: 절대 표현 금지 확장
+      '다른 항목의 점수를 이 요약 때문에 깎지 마세요'] // step556: 내용·구성·표현 번짐 금지
     const dMissing = dPhrases.filter(p => !gTwo.includes(p) || !rTwo.includes(p))
-    rec('SELFCHECK', 'ruleErrors 주입 시 검사 블록+만점 금지 지시(채점 2종)', dMissing.length === 0,
+    rec('SELFCHECK', 'ruleErrors 주입 시 요약 블록+만점·절대표현·번짐 금지(채점 2종)', dMissing.length === 0,
       dMissing.length === 0 ? `${dPhrases.length}문구 모두 포함` : `누락: ${dMissing.join(' / ')}`)
 
-    const eleven = Array.from({ length: 11 }, (_, i) => ({ original: `오류${i + 1}`, correction: `교정${i + 1}` }))
-    const gCap = gradingPrompt({ topic, essay, rubrics, ruleErrors: eleven })
-    const ePass = gCap.includes('총 11건') && gCap.includes('오류10') && !gCap.includes('오류11') && gCap.includes('외 1건')
-    rec('SELFCHECK', 'ruleErrors 상한(10건 표시+외 N건)', ePass,
-      ePass ? "'총 11건'·10건 표시·'외 1건'" : `총11건=${gCap.includes('총 11건')}, 10표시=${gCap.includes('오류10')}, 11제외=${!gCap.includes('오류11')}, 외1건=${gCap.includes('외 1건')}`)
+    const five = Array.from({ length: 5 }, (_, i) => ({ original: `오류${i + 1}`, correction: `교정${i + 1}` }))
+    const gCap = gradingPrompt({ topic, essay, rubrics, ruleErrors: five })
+    const ePass = gCap.includes('총 5건') && gCap.includes('오류3') && !gCap.includes('오류4') && gCap.includes('외 2건')
+    rec('SELFCHECK', 'ruleErrors 요약 상한(대표 예시 3건+외 N건)', ePass,
+      ePass ? "'총 5건'·3건 표시·'외 2건'" : `총5건=${gCap.includes('총 5건')}, 3표시=${gCap.includes('오류3')}, 4제외=${!gCap.includes('오류4')}, 외2건=${gCap.includes('외 2건')}`)
+
+    // ④ 실사례 회귀(step556): '쥐죽은듯이' 잔존 + 맞춤법 만점 + "완벽" 칭찬(7/22 바자회 95→100).
+    //    이 오류가 주입되면 만점 금지·절대 표현 금지 지시가 반드시 프롬프트에 실려야 한다.
+    const jwi = [{ original: '쥐죽은듯이', correction: '쥐 죽은 듯이' }]
+    const rJwi = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, ruleErrors: jwi })
+    const fPass = rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이') && rJwi.includes('만점을 주지 마세요')
+      && rJwi.includes("'맞춤법이 완벽하다', '오류가 하나도 없다'")
+    rec('SELFCHECK', "실사례 회귀('쥐죽은듯이' 주입 → 만점·절대표현 금지)", fPass,
+      fPass ? '예시·만점 금지·절대 표현 금지 모두 포함' : `예시=${rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이')}, 만점금지=${rJwi.includes('만점을 주지 마세요')}, 절대표현=${rJwi.includes("'맞춤법이 완벽하다', '오류가 하나도 없다'")}`)
+
+    // ⑤ 공존(step556): prev 3인자 + ruleErrors 동시 주입 시 step521·step550·검사 블록이 전부 존재.
+    const rBoth = rewriteGradingPrompt({
+      topic, rewriteEssay: essay, rubrics,
+      prevScore: 75, prevCorrections: [{ original: '어느날', correction: '어느 날' }], prevFeedback: '문단 구분 필요',
+      ruleErrors: two,
+    })
+    const gPhrases = ['점수가 내려갔어요', '칭찬만 쓰는 것은 금지', // step521
+      '함부로 깎지도, 함부로 올리지도', '하지 않은 개선을 칭찬', // step550
+      '자동 맞춤법 검사', '만점만 금지이며'] // step555·556
+    const gMissing = gPhrases.filter(p => !rBoth.includes(p))
+    rec('SELFCHECK', '동시 주입 시 step521·550·검사 블록 공존', gMissing.length === 0,
+      gMissing.length === 0 ? `${gPhrases.length}문구 모두 공존` : `누락: ${gMissing.join(' / ')}`)
   } catch (e) {
     rec('SELFCHECK', 'SELFCHECK 실행', false, `예외: ${e.message}`)
   }
