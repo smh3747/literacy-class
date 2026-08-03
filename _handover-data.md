@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = 68f17f1 (step556) + step557 문서 커밋)
+# 핸드오버 데이터 (HEAD = 68f17f1 (step556) + step557·558 마감 문서 커밋)
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -23,6 +23,7 @@
 > 💻 컴퓨터 경로 리마인드: 집 PC 워킹디렉토리는 `C:\Users\ddh91\Documents\GitHub\literacy-class` (학교 PC와 폴더 경로 다름 — 세션 시작 시 pwd 확인).
 
 ## 1. 현재 HEAD
+> **[다음 세션 시작 안내 — spell]** spell 백로그 0건, 관찰 모드. 관찰 대상(의심 교정 탭에서 확인): step521 종합의견 사유 / '거→것' 재발 / step542 불가능형태 기록 / step550·555·556 재작성 관대화·자기모순 차단 효과(만점·95점 이상 비율 추이, '완벽'류 표현 소멸). 새 재료 나오면 기존 순환(확인→원류 차단→게이트 편입)대로.
 > ⚠️ **문체 오교정 방어 변천 요약(step393~409)**: 프롬프트 규칙 11(예방)과 koreanRules `isStyleChange`(fail-safe 차단+기록)의 왕복이 있었다. **현재 상태 = 규칙 11은 step403판(4원인 차단)이 단독 전담. isStyleChange 필터는 step409에서 최종 제거됨(함수 자체 없음).** 데이터 분석 결과 필터가 옳은 문체 통일 지적("모여 있다→모여 있어요")과 맞춤법 교정("해결했습다→해결했습니다")까지 오차단해 폐기. 이후 프롬프트 측 방어는 규칙 12(NO_CORRECT_LIST, step443~485)로 확장 — 반말→존댓말 오교정은 step485에서 규칙 12에도 단정 금지로 편입. 아래 개별 항목은 이력이므로 최신 결론만 볼 거면 이 줄과 §7·§13을 보라.
 - **★완료 트랙 step552~556 (2026-07-23, 등록 병목·홈 가시성·채점 신뢰)** — 커밋 단위 요약(전부 push 완료):
   - `353ca6a` step552(메인): 학생 등록 병목 개선 — 다음 걸음 no_students 카드 문구 교체("학부모 동의 없이도 지금 바로"+명렬표 직행 딥링크 /teacher/students?mode=register+자가 가입 대안 한 줄, card_type·계측 불변) + 학생 0명 홈 배너(닫으면 익일 재표시, localStorage KST 날짜 키). **판정 기준: 등록 카드 따라감 11%→25%+, 판정은 개학 주간.**
@@ -45,7 +46,7 @@
   - `49bb736` step548: ❤️ 토글 확대·카드 우하단 재배치 + TOP 5 하트 토글화(TopicLikeButton 공용).
   - `c316a8d` step549: 닉네임 안전장치 — 10자 입력 제한(NicknameChangeModal) + 소개 검토 프롬프트 닉네임 판정(showcaseReview.server.js — prompts.server.js 아님).
   - **검증·사건 기록(7/21~22)**: ✅아침 검증 3종 전부 실데이터 종결 — 청소(7420 복사본 소멸)·순위 동결(시상식 22명, 7/22 08:57 lazy)·🏅 당시 순위. 예약 발행 파이프라인(발행→자동 등록→🌏 알림) 실전 통과. / 사건: 예약 발행 date=생성일 버그(531 수정, 시상식 조기 동결 SQL 복구) · 장난 신고 1건(예솔 글 복구) · 조롱 닉네임 1건(호평초 6-6=배우자 반, 가정 전달로 지도, 글 거절 유지 — step549 안전장치의 계기) · "유령 제출" 신고는 오인(실제 오늘 제출)으로 종결. / 라이브: 시상식 챌린지 실참여 22명(뽀로로반+호평초 6-6), supply-adopt Android UA 다수 — 학생 모바일 사용 확인.
-  - ⚠️ **번호 매핑(spell 세션 병렬 — 해시가 권위)**: 534=`8639539`(핸드오버 소품) / 542=`3c2283b`('안 아서' 교정 누수 차단) / 547=`0edec2b`(핸드오버·게이트 76케이스) / 550=`fafbd55`(재작성 관대화 교정 — 미수정 지적 칭찬·가점 금지, 상승 근거 요구, 게이트 5문구 추가) / 555=`575c4f0`(맞춤법 검사↔채점 모순 차단 — 실오류 요약 주입+ai.js 배선, 만점 게이트 대칭, "완벽" 절대표현 금지) / 556=`68f17f1`(주입 가드 — 지시문의 555=3f4c7f1·556=8e41d02는 오기재, 이 해시들이 정본).
+  - ⚠️ **번호 매핑(spell 세션 병렬 — 해시가 권위)**: 534=`8639539`(핸드오버 소품) / 542=`3c2283b`('안 아서' 교정 누수 차단) / 547=`0edec2b`(핸드오버·게이트 76케이스) / 550=`fafbd55`(재작성 관대화 교정 — 미수정 지적 칭찬·가점 금지, 상승 근거 요구, 게이트 5문구 추가) / 555=`575c4f0`(검사·채점 자기모순 차단 — 채점 전 findRuleBasedErrors 실행해 ruleErrors 주입(ai.js 배선 포함) + corrections↔점수 일관성 규칙, 만점 금지≠감점 강제) / 556=`68f17f1`(주입 요약 3건 제한·'하나도 없다' 절대 표현 금지·다른 항목 번짐 금지 + '쥐죽은듯이' 실사례·step521/550 공존 게이트 — gate-prompts 78케이스. 지시문의 555=3f4c7f1·556=8e41d02는 오기재, 이 해시들이 정본).
 - **★메인 세션 완료 트랙 step523~533 (2026-07-20~21, 공급 운영·키 경계·직행 UX)** — 커밋 단위 요약:
   - `10c9e14` step523: 공급 주제 보관(published_at null)·미공개 행 편집(역파싱).
   - `05c9e4f` step524: 후보 카드 원클릭 보관(buildSupplyRow·candidateToDraft 헬퍼화).
@@ -502,13 +503,18 @@ notifications CHECK 'message' / profiles.last_seen_at / submissions.teacher_scor
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
 ## 워킹트리 상태 (2026-07-23 세션 마감)
-- HEAD=68f17f1(step556, spell) + 이 문서 커밋(step557). 워킹트리 clean. 552~556 트랙
-  마감(§1 최상단 블록). spell 세션 최신은 68f17f1(step556, 주입 가드). 스냅샷 4개
-  재생성 완료(로컬 산출물 — gitignore라 커밋 안 됨): pages 1,381KB·components 208KB·
-  lib 228KB·migrations 133KB, 이번 주 신설(textDiff·rankDisplay·supply-status·
-  step541 마이그레이션·TeacherShowcaseModal·TopicLikeButton) 반영 확인.
-- 번호 경합 이력: 534·542·547(spell 선점, 메인 밀림)·556(메인 불필요 판정 후 spell 사용).
-  해시가 권위, 커밋 직전 git fetch 필수. push 경합 시 pull --rebase 후 재push가 일상 절차.
+- HEAD=68f17f1(step556, spell) + 마감 문서 커밋(메인 step557 + spell step558). 워킹트리 clean.
+  552~556 트랙 마감(§1 최상단 블록). 스냅샷 4개 재생성 완료(로컬 산출물 — gitignore라 커밋 안 됨,
+  step356 정책 유지): pages 1,386KB·components 210KB·lib 230KB·migrations 136KB. 이번 주 신설
+  (textDiff·rankDisplay·supply-status·step541 마이그레이션·TeacherShowcaseModal·TopicLikeButton)
+  반영 + spell 최신 변경(step542 isImpossibleCorrection '안 아서' 패턴·step521 하락 사유 문구·
+  step555/556 자동 검사 주입 블록) 스팟 확인 완료.
+- spell 7/22~23 나간 step: 542('안 아서' 불가능형태 차단, gate-korean-rules 76) · 547(문서) ·
+  550(재작성 관대화 교정) · 555(검사·채점 자기모순 차단, ruleErrors 주입) · 556(요약 3건 제한·
+  번짐 금지·실사례 게이트, gate-prompts 78). 메인 병렬 543~554는 §1 완료 트랙 참조.
+- 번호 경합 이력: 534·542·547(spell 선점, 메인 밀림)·556(메인 불필요 판정 후 spell 사용)·
+  557(메인 마감 문서 선점 — spell 마감 문서는 558). 해시가 권위, 커밋 직전 git fetch 필수.
+  push 경합 시 pull --rebase 후 재push가 일상 절차.
 - spell은 literacy-class-spell 별도 폴더(정상화 완료). 두 세션 force-push 금지·커밋 전
   pull --rebase 유지. ⚠️ step 번호 중복 계속 발생 중(478·484 등 — 해시가 권위, 커밋 직전
   git fetch로 번호 확인). Vercel 웹훅 1회 누락 이력(93fae57 빈 커밋으로 재트리거) — 배포 안
