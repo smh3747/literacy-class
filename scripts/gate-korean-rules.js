@@ -94,12 +94,24 @@ const MERGE = [
   { name: '않아도→안 아도(차단)',           corr: { original: '않아도',     correction: '안 아도' },     essay: '먹지 않아도 배부르다',     expect: 'dropped' }, // step542
   { name: '않아프게→안 아프게(통과 유지)',   corr: { original: '않아프게',   correction: '안 아프게' },   essay: '주사를 않아프게 놔줬다',   expect: 'kept' },    // step542
   { name: '않아깝다→안 아깝다(통과 유지)',   corr: { original: '않아깝다',   correction: '안 아깝다' },   essay: '하나도 않아깝다',          expect: 'kept' },    // step542
+  // step560: 문체역행 필터 — 반말 압도 글(formal ≤ 1 && plain ≥ 3)에서만 반말→존댓말 교정 폐기.
+  { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
+  { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
+  { name: '반말 글 어느날→어느 날(맞춤법 교정 무영향)', corr: { original: '어느날', correction: '어느 날' }, essay: '어느날 학교에 갔다. 친구를 만났다. 같이 놀았다. 재미있었다.', expect: 'kept' }, // step560
+  { name: '반말 글 해결했습다→해결했습니다(오타 교정 보존)', corr: { original: '해결했습다', correction: '해결했습니다' }, essay: '문제가 생겼다. 친구와 고민했다. 방법을 찾았다. 드디어 문제를 해결했습다.', expect: 'kept' }, // step560 (과거 isStyleChange가 죽였던 케이스, step409 재발 금지)
+]
+
+// step560: countSentenceStyles(essay) 직접 테스트 — 문체역행 필터의 발동 조건 판정 헬퍼.
+const STYLE = [
+  { name: '반말 4문장 → formal 0·plain 4', essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', formal: 0, plain: 4 },
+  { name: '섞인 글 → formal 3·plain 1',    essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', formal: 3, plain: 1 },
+  { name: '끝맺음 불명 문장 카운트 제외',   essay: '나의 꿈. 소방관이 되고 싶다. 사람들을 구하고 싶어서', formal: 0, plain: 1 },
 ]
 
 ;(async () => {
   const krPath = path.join(__dirname, '..', 'lib', 'koreanRules.js')
   const kr = await import(pathToFileURL(krPath).href)
-  const { findRuleBasedErrors, mergeCorrectionsDetailed, mergeCorrections } = kr
+  const { findRuleBasedErrors, mergeCorrectionsDetailed, mergeCorrections, countSentenceStyles } = kr
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -132,6 +144,13 @@ const MERGE = [
       detail = drp ? `dropped(${drp.drop_reason})` : (kept ? 'corrections에 남음(폐기 안 됨)' : '사라짐(dropped 아님)')
     }
     rec('MERGE', c.name, pass, detail)
+  }
+
+  // STYLE: countSentenceStyles 직접 테스트 (step560 — 문체역행 필터 발동 조건)
+  for (const c of STYLE) {
+    const r = countSentenceStyles(c.essay)
+    const pass = r.formal === c.formal && r.plain === c.plain
+    rec('STYLE', c.name, pass, pass ? `formal ${r.formal}·plain ${r.plain}` : `기대 formal ${c.formal}·plain ${c.plain}, 실제 formal ${r.formal}·plain ${r.plain}`)
   }
 
   // MERGE(정규화): AI corrections의 비문자열 필드가 병합을 깨거나 살아남지 않는지 (step426)
