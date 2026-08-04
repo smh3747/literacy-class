@@ -113,6 +113,8 @@ const { pathToFileURL } = require('url')
       && !base.includes('점수가 내려갔어요') // step521: 하락 사유 명시 강제 항도 미주입 시 없음
       && !base.includes('하지 않은 개선을 칭찬') // step550: 관대화 대칭 교정 항도 미주입 시 없음
       && !base.includes('함부로 깎지도') // step550: 대칭 원칙 선언도 미주입 시 없음
+      && !base.includes('맞춤법·띄어쓰기 수정만으로는') // step559: 상승 근거 강제(맞춤법 외 항목) 항도 미주입 시 없음
+      && !base.includes('베낄 원문이 아닙니다') // step559: 의견 복붙 방지 항도 미주입 시 없음
     rec('REWRITE', '이전 맥락 미전달 = 전부 null 동일(하위호환)', aPass,
       aPass ? '출력 동일, 이전 맥락 문구 없음' : (base === withNulls ? '이전 맥락 문구가 기본 출력에 섞임' : '미전달과 null 출력 불일치'))
 
@@ -130,10 +132,24 @@ const { pathToFileURL } = require('url')
       '하지 않은 개선을 칭찬', // step550: 하지 않은 개선 칭찬 금지(관대화 실사례 80→95)
       '인용할 수 있는 변화', // step550: 항목 점수 상승은 인용 가능한 변화 근거 필수
       '전부 해소됐을 때만', // step550: 지적 잔존 항목 만점 금지
-      '함부로 깎지도, 함부로 올리지도'] // step550: 하락·상승 대칭 원칙 선언
+      '함부로 깎지도, 함부로 올리지도', // step550: 하락·상승 대칭 원칙 선언
+      '따옴표', // step559: 항목 상승 시 달라진 대목 따옴표 인용 강제(검증형)
+      '맞춤법·띄어쓰기 수정만으로는', // step559: 맞춤법 수정만으로 맞춤법 외 항목 상승 금지
+      '베낄 원문이 아닙니다'] // step559: 종합의견 이전 총평 복붙 방지
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+일관성 규칙 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
+
+    // step559: 상승 근거 강제(검증형)+의견 복붙 방지 — 신규 규칙 3건 개별 존재 확인
+    const b1 = withPrev.includes('따옴표') && withPrev.includes('인용할 수 있는 변화')
+    rec('REWRITE', 'step559 항목 상승 시 달라진 대목 따옴표 인용 강제', b1,
+      b1 ? '따옴표 인용 강제+인용 변화 근거 포함' : `따옴표=${withPrev.includes('따옴표')}, 인용변화=${withPrev.includes('인용할 수 있는 변화')}`)
+    const b2 = withPrev.includes('맞춤법·띄어쓰기 수정만으로는')
+    rec('REWRITE', 'step559 맞춤법 수정만으로 맞춤법 외 항목 상승 금지', b2,
+      b2 ? '포함' : '누락: "맞춤법·띄어쓰기 수정만으로는"')
+    const b3 = withPrev.includes('베낄 원문이 아닙니다')
+    rec('REWRITE', 'step559 종합의견 이전 총평 복붙 방지', b3,
+      b3 ? '포함' : '누락: "베낄 원문이 아닙니다"')
 
     // (c) 상한: corrections 21개 → 20개+'외 1건', 총평 600자 → 500자 절단
     const manyCorr = Array.from({ length: 21 }, (_, i) => ({ original: `오타${i + 1}`, correction: `교정${i + 1}` }))
