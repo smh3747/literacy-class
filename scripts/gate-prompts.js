@@ -57,6 +57,8 @@ const { pathToFileURL } = require('url')
     { name: '규칙 12(표현 다듬기 금지)',    text: "'거→것'" }, // step474
     { name: '규칙 12(구어체 축약형 문어체 변환 금지)', text: "'필요한거지'는 '필요한 거지'로만" }, // step563: 거/게/건 구어체 축약형 예시 명시 — 7/20 여수송현초 단발 사례 기반 선제 강화(8/19 정정: 백석초 재발 사례는 실존하지 않음)
     { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
+    { name: '규칙 12(corrections 판정 원칙)',  text: '유일한 기준' }, // step569: 원칙 승격 — corrections 기준은 "원문이 틀렸는가"뿐
+    { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
@@ -83,6 +85,8 @@ const { pathToFileURL } = require('url')
       { name: '규칙 12(표현 다듬기 금지)',    text: "'거→것'" }, // step474
       { name: '규칙 12(구어체 축약형 문어체 변환 금지)', text: "'필요한거지'는 '필요한 거지'로만" }, // step563: 거/게/건 구어체 축약형 예시 명시 — 7/20 여수송현초 단발 사례 기반 선제 강화(8/19 정정: 백석초 재발 사례는 실존하지 않음)
       { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
+      { name: '규칙 12(corrections 판정 원칙)',  text: '유일한 기준' }, // step569: 원칙 승격 — corrections 기준은 "원문이 틀렸는가"뿐
+      { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
     ]
     const inlinePrompts = {}
     try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
