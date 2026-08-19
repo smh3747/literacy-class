@@ -268,12 +268,13 @@ export default function AdminHome() {
     router.replace({ pathname: router.pathname, query: { ...router.query, tab: t } }, undefined, { shallow: true })
   }
 
-  // 첫 로드 시 URL의 tab 복원
+  // 첫 로드 시 URL의 tab 복원 + step567: 뒤로/앞으로 가기(popstate)에도 동기화 — shallow 라우팅은 리마운트가
+  //   없어 query.tab만 바뀌므로 deps에 포함해야 push된 탭 이동에서 뒤로 가기 시 화면이 따라온다. 정방향은 no-op.
   useEffect(() => {
     if (router.isReady && router.query.tab && router.query.tab !== tab) {
       setTabState(router.query.tab)
     }
-  }, [router.isReady])
+  }, [router.isReady, router.query.tab])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -2532,9 +2533,10 @@ export default function AdminHome() {
                                   🔍 엿보기
                                 </a>
                               )}
-                              {/* 🆕 step431: 학생 글 탭으로 — 이 학급 필터 자동 적용(tab+class 딥링크, 의심 교정 sub 딥링크 패턴) */}
+                              {/* 🆕 step431: 학생 글 탭으로 — 이 학급 필터 자동 적용(tab+class 딥링크, 의심 교정 sub 딥링크 패턴)
+                                  step567: 탭 간 이동은 push(히스토리에 쌓아 뒤로 가기 자연스럽게) */}
                               <button onClick={() => {
-                                  router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', class: c.id } }, undefined, { shallow: true })
+                                  router.push({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', class: c.id } }, undefined, { shallow: true })
                                   setTabState('submissions')
                                 }}
                                 className="text-xs px-3 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
@@ -3312,9 +3314,10 @@ export default function AdminHome() {
             const filtered = suspectFilter === '전체'
               ? groups
               : groups.filter(g => (g.rep.suspect_type || '').startsWith(suspectFilter))
-            // 해당 학생 글로 이동 — 학생 글 탭의 sub 딥링크 재사용 (한 번의 replace로 tab+sub 동시 반영)
+            // 해당 학생 글로 이동 — 학생 글 탭의 sub 딥링크 재사용 (한 번의 push로 tab+sub 동시 반영)
+            // step567: replace→push — replace는 의심 교정 탭 히스토리를 덮어써 뒤로 가기가 홈으로 건너뛰던 문제
             const goToSubmission = (submissionId) => {
-              router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', sub: submissionId } }, undefined, { shallow: true })
+              router.push({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', sub: submissionId } }, undefined, { shallow: true })
               setTabState('submissions')
             }
             return (
@@ -3886,10 +3889,10 @@ export default function AdminHome() {
                     })
                     const coldIds = Object.keys(ignoreByTeacher)
                       .filter(id => ignoreByTeacher[id] >= 2 && !(forwardByTeacher[id] > 0))
-                    // 이름 클릭 → 선생님 탭에 그 교사가 검색된 상태로 이동(기존 탭 전환 패턴)
+                    // 이름 클릭 → 선생님 탭에 그 교사가 검색된 상태로 이동(기존 탭 전환 패턴. step567: 탭 간 이동은 push)
                     const goToTeacher = (name) => {
                       setTeacherSearch(name || '')
-                      router.replace({ pathname: router.pathname, query: { ...router.query, tab: 'overview' } }, undefined, { shallow: true })
+                      router.push({ pathname: router.pathname, query: { ...router.query, tab: 'overview' } }, undefined, { shallow: true })
                       setTabState('overview')
                     }
                     return (
