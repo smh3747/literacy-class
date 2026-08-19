@@ -1,40 +1,35 @@
 // ============================================
 // 선생님 첫 셋업 체크리스트 카드
 // ============================================
-// 신규 선생님이 첫 수업까지 가는 4단계 안내:
+// 신규 선생님이 첫 수업까지 가는 5단계 안내:
 // 1. 학급 만들기 (가입 시 자동)
 // 2. API 키 등록
 // 3. 학생 등록
-// 4. 첫 주제 만들기
+// 4. 학생 로그인 안내 설정
+// 5. 첫 주제 만들기
 //
 // 완료 판정은 전부 실데이터(props: 학급/API키/학생수/주제수/로그인안내)에서 도출 → 계정마다 자동으로 맞게 뜸.
 // "숨김/닫기"만 데이터로 못 푸는 플래그라 localStorage에 저장하되, 키를 교사 user-id로 분리한다.
 //   (전엔 브라우저 공용 키여서 한 계정이 닫으면 같은 브라우저의 다른 계정도 사라지던 버그 — school-banner와 동일 패턴으로 수정)
+// 🆕 step566: 미완료면 필수 안내라 ✕=오늘만 닫기(KST 날짜 저장, 내일 재표시). 영구 닫기('1')는 완료(allDone) 때만.
 // ============================================
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { todayStr } from '../lib/kstDate'
 
 // 교사별 숨김 키 — teacherId 없으면 null(저장/복원 안 함, 항상 표시)
 const hideKeyFor = (teacherId) => teacherId ? `lc-setup-checklist-hidden:${teacherId}` : null
 
 export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint }) {
-  const [hidden, setHidden] = useState(false)
+  // step566: 저장된 원시 값('1'=구 영구 닫기 | 'YYYY-MM-DD'=오늘만 닫기 | null) — 판정은 allDone 계산 뒤에
+  const [hiddenVal, setHiddenVal] = useState(null)
 
-  // teacherId 준비되면 그 교사의 키로 숨김 여부를 읽는다(계정 섞임 방지)
+  // teacherId 준비되면 그 교사의 키로 숨김 값을 읽는다(계정 섞임 방지)
   useEffect(() => {
     const key = hideKeyFor(teacherId)
-    if (!key) { setHidden(false); return }
-    try { setHidden(localStorage.getItem(key) === '1') } catch { setHidden(false) }
+    if (!key) { setHiddenVal(null); return }
+    try { setHiddenVal(localStorage.getItem(key)) } catch { setHiddenVal(null) }
   }, [teacherId])
-
-  // 숨김 처리 — 현재 교사의 키에만 기록
-  const dismiss = () => {
-    setHidden(true)
-    const key = hideKeyFor(teacherId)
-    if (key) { try { localStorage.setItem(key, '1') } catch {} }
-  }
-
-  if (hidden) return null
 
   // 학급이 없으면 아예 안 보임 (그건 더 큰 문제, 다른 안내가 필요)
   if (!classInfo) return null
@@ -67,7 +62,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
       action: {
         type: 'link',
         href: '/teacher/students',
-        text: studentCount > 0 ? '학생 관리' : '👥 지금 등록하기'
+        text: studentCount > 0 ? '학생 관리' : '👥 지금 등록하기 (1분)'
       }
     },
     {
@@ -79,7 +74,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
         : '학생들이 "내 아이디 뭐예요?" 안 묻게 만들기',
       action: {
         type: 'scroll',
-        text: hasLoginHint ? '안내 확인' : '📋 지금 설정하기',
+        text: hasLoginHint ? '안내 확인' : '📋 지금 설정하기 (1분)',
         onClick: onScrollToLoginHint
       }
     },
@@ -91,7 +86,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
       action: {
         type: 'link',
         href: '/teacher/topics',
-        text: topicCount > 0 ? '주제 관리' : '📝 지금 만들기'
+        text: topicCount > 0 ? '주제 관리' : '📝 지금 만들기 (1분)'
       }
     }
   ]
@@ -101,12 +96,25 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
   // 🆕 다음 할 일 하나 = 미완료 중 순서상 첫 단계 (allDone이면 undefined)
   const nextStep = steps.find(s => !s.done)
 
+  // step566: 숨김 처리 — 미완료는 오늘만(날짜 저장), 완료는 영구('1'). 현재 교사의 키에만 기록
+  const dismiss = () => {
+    const v = allDone ? '1' : todayStr()
+    setHiddenVal(v)
+    const key = hideKeyFor(teacherId)
+    if (key) { try { localStorage.setItem(key, v) } catch {} }
+  }
+
+  // step566: 숨김 판정(하위호환 소급) — '1'+완료 → 숨김 유지 / '1'+미완료 → 무시하고 재표시(미완료면 필수) /
+  //   날짜값 → 그날(KST)만 숨김, 내일 재표시 / 값 없음 → 표시
+  const isHidden = hiddenVal === '1' ? allDone : hiddenVal === todayStr()
+  if (isHidden) return null
+
   // 모든 단계 완료되면 작은 축하 카드만 + "닫기"
   if (allDone) {
     return (
       <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h3 className="font-bold text-green-900 text-sm">🎉 첫 셋업 완료!</h3>
+          <h3 className="font-bold text-green-900 text-sm">🎉 준비 끝! 이제 수업만 하면 돼요</h3>
           <p className="text-xs text-green-700 mt-0.5">모든 준비가 끝났어요. 학생들이 글을 쓸 수 있어요.</p>
         </div>
         <button
@@ -119,21 +127,21 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-5 space-y-3">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-indigo-400 shadow-md rounded-2xl p-5 space-y-3">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h3 className="font-bold text-blue-900">🎯 첫 셋업 체크리스트</h3>
+          <h3 className="font-bold text-blue-900 flex items-center gap-2 flex-wrap">
+            🙋 처음이세요? 첫 수업까지 5단계
+            <span className="bg-indigo-600 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">시작 전 필수</span>
+          </h3>
           <p className="text-xs text-blue-700 mt-1">
-            {doneCount} / {steps.length} 단계 완료. 아래 &lsquo;지금 할 일&rsquo;부터 하나씩 하면 돼요.
+            {doneCount} / {steps.length} 단계 완료 · 다 해도 약 10분이면 끝나요. &lsquo;지금 할 일&rsquo;부터 하나씩 하면 돼요.
           </p>
         </div>
         <button
-          onClick={() => {
-            if (!confirm('이 안내를 다시 보지 않을까요?\n(설정에서 다시 켤 수 있어요)')) return
-            dismiss()
-          }}
+          onClick={dismiss}
           className="text-xs text-blue-600 hover:bg-blue-100 px-2 py-1 rounded"
-          title="이 안내 숨기기">
+          title="오늘 하루 닫기" aria-label="오늘 하루 닫기">
           ✖ 닫기
         </button>
       </div>
@@ -148,7 +156,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
 
       {/* ⭐ 다음 할 일 하나 — 크게 강조 */}
       {nextStep && (
-        <div className="bg-white rounded-xl p-4 border-2 border-blue-400 shadow-sm">
+        <div className="bg-white rounded-xl p-4 border-2 border-indigo-300 shadow-sm">
           <div className="text-[11px] font-bold text-blue-600 tracking-wide">👉 지금 할 일</div>
           <div className="font-bold text-lg text-gray-900 mt-1">{nextStep.label}</div>
           {nextStep.detail && (

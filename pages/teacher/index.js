@@ -1159,6 +1159,20 @@ export default function TeacherHome() {
             )}
           </div>
 
+          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김). step566: 미완료자의 홈 주인공 — 환영 바로 아래로 이동 */}
+          {!isImpersonating && !setupDone && (
+            <SetupChecklist
+              classInfo={classInfo}
+              teacherId={user?.id}
+              hasApiKey={hasApiKey}
+              studentCount={studentCountTotal}
+              topicCount={topicCount}
+              hasLoginHint={!!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)}
+              onScrollToApi={scrollToApiKey}
+              onScrollToLoginHint={scrollToLoginHint}
+            />
+          )}
+
           {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달)
               good 응답 후엔 같은 자리에서 사전 신청 이어묻기(reviewFollowup) — 만족 직후가 최적 타이밍 */}
           {!isImpersonating && nextStepCard === 'review' && (
@@ -1391,20 +1405,6 @@ export default function TeacherHome() {
                 )}
               </div>
             </div>
-          )}
-
-          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김) */}
-          {!isImpersonating && !setupDone && (
-            <SetupChecklist
-              classInfo={classInfo}
-              teacherId={user?.id}
-              hasApiKey={hasApiKey}
-              studentCount={studentCountTotal}
-              topicCount={topicCount}
-              hasLoginHint={!!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)}
-              onScrollToApi={scrollToApiKey}
-              onScrollToLoginHint={scrollToLoginHint}
-            />
           )}
 
           {/* 🆕 step280: 신규 교사용 맛보기 — 실제 피드백을 한 번도 못 본 교사에게만(설정 전 가치 체감) */}
