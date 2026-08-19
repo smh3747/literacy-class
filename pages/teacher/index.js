@@ -484,7 +484,7 @@ export default function TeacherHome() {
     }
   }
 
-  // 🆕 다음 걸음 모달(막힌 3종) ESC 닫기 — ✕·오버레이 클릭과 동일하게 dismissed 기록
+  // 🆕 다음 걸음 모달(막힌 3종) ESC 닫기 — ✕와 동일하게 dismissed 기록(의도적 닫기)
   useEffect(() => {
     if (!nextStepCard || nextStepCard === 'review') return
     const onKey = (e) => { if (e.key === 'Escape') recordOnboarding(nextStepCard, 'dismissed') }
@@ -1638,10 +1638,10 @@ export default function TeacherHome() {
         {showcaseSid && <TeacherShowcaseModal supplyId={showcaseSid} onClose={() => setShowcaseSid(null)} />}
 
         {/* 🆕 다음 걸음 모달 — 막힌 분기 3종(no_students·no_topics·no_class_run). '도움'이라 모달 정당(수업 0회라 방해할 작업 없음).
-            ✕·오버레이 클릭·ESC 모두 dismissed 기록(평생 1회). review는 위 인라인 배너. 패턴=PasswordChangeModal */}
+            ✕·ESC만 dismissed 기록. 오버레이 클릭 닫힘 제거(step563) — 실수 클릭이 평생 1회 카드를 소멸시키던 문제.
+            review는 위 인라인 배너. 패턴=PasswordChangeModal */}
         {!isImpersonating && nextStepCard && nextStepCard !== 'review' && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-            onClick={() => recordOnboarding(nextStepCard, 'dismissed')}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
               <button onClick={() => recordOnboarding(nextStepCard, 'dismissed')} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
