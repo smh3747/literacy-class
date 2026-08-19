@@ -64,6 +64,8 @@ export default function TeacherHome() {
   const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
   const [reviewComment, setReviewComment] = useState('')      // review 카드: 한 줄 의견(선택)
   const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
+  // 🆕 step565: 다음 걸음 모달 '다시 보지 않기' 체크박스 — 체크 시에만 dismissed 영구 기록
+  const [nextStepNeverShow, setNextStepNeverShow] = useState(false)
   // 🆕 step477: 전국 공통 주제 — 자동 받기 OFF 교사용 원클릭 카드 { id, title, joined }
   const [supplyCard, setSupplyCard] = useState(null)
   // 🆕 step544: 오늘 참여 중인 챌린지 { id, title } — [🏆 전국 랭킹 보기] 진입점용(자동 ON·이미 참여 OFF 모두)
@@ -483,19 +485,21 @@ export default function TeacherHome() {
         else if ((subs || []).length === 0) type = 'no_class_run'
         // 그 외(수업 1~2회)는 카드 없음
       }
+      // step565: 오늘만 닫기 중이면 표시 안 함(내일 재등장)
+      try { if (type && localStorage.getItem('lc-nextstep-hidden:' + type + ':' + profile.id) === todayStr()) return } catch {}
       if (type && !answered.has(type)) setNextStepCard(type)
     } catch (e) {
       console.warn('다음 걸음 카드 판정 실패(무시):', e?.message)
     }
   }
 
-  // 🆕 다음 걸음 모달(막힌 3종) ESC 닫기 — ✕와 동일하게 dismissed 기록(의도적 닫기)
+  // 🆕 다음 걸음 모달(막힌 3종) ESC 닫기 — ✕와 동일: 오늘만 닫기, '다시 보지 않기' 체크 시에만 dismissed 영구(step565)
   useEffect(() => {
     if (!nextStepCard || nextStepCard === 'review') return
-    const onKey = (e) => { if (e.key === 'Escape') recordOnboarding(nextStepCard, 'dismissed') }
+    const onKey = (e) => { if (e.key === 'Escape') closeNextStepModal() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [nextStepCard])
+  }, [nextStepCard, nextStepNeverShow])
 
   // 🆕 step553: 오늘 제출 미리보기 lazy 조회 — count(todaySubmissions)와 동일 필터
   //   (KST 자정 창·deleted_at null·숨김 학생 제외)로 숫자와 명단이 어긋나지 않게 한다.
@@ -568,6 +572,14 @@ export default function TeacherHome() {
     } catch (e) {
       console.warn('온보딩 응답 저장 실패(무시):', e?.message)
     }
+  }
+
+  // 🆕 step565: 다음 걸음 모달 공통 닫기(✕·ESC) — 기본은 오늘만 숨김(KST 날짜 키, step552 배너 관행).
+  //   '다시 보지 않기' 체크 시에만 dismissed 영구(DB). dismissed 의미가 '실수 포함 닫음'→'명시적 거부'로 변경.
+  const closeNextStepModal = () => {
+    if (nextStepNeverShow) { recordOnboarding(nextStepCard, 'dismissed'); return }
+    setNextStepCard(null)
+    try { if (user?.id) localStorage.setItem('lc-nextstep-hidden:' + nextStepCard + ':' + user.id, todayStr()) } catch {}
   }
 
   const checkAuth = async () => {
@@ -1646,12 +1658,12 @@ export default function TeacherHome() {
         {showcaseSid && <TeacherShowcaseModal supplyId={showcaseSid} onClose={() => setShowcaseSid(null)} />}
 
         {/* 🆕 다음 걸음 모달 — 막힌 분기 3종(no_students·no_topics·no_class_run). '도움'이라 모달 정당(수업 0회라 방해할 작업 없음).
-            ✕·ESC만 dismissed 기록. 오버레이 클릭 닫힘 제거(step563) — 실수 클릭이 평생 1회 카드를 소멸시키던 문제.
-            review는 위 인라인 배너. 패턴=PasswordChangeModal */}
+            오버레이 클릭 닫힘 제거(step563). ✕·ESC=오늘만 닫기. '다시 보지 않기' 체크 시에만 dismissed 영구 — step565.
+            dismissed 의미가 '실수 포함 닫음'→'명시적 거부'로 변경. review는 위 인라인 배너. 패턴=PasswordChangeModal */}
         {!isImpersonating && nextStepCard && nextStepCard !== 'review' && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
-              <button onClick={() => recordOnboarding(nextStepCard, 'dismissed')} aria-label="닫기"
+              <button onClick={closeNextStepModal} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
 
               {nextStepCard === 'no_students' && (
@@ -1698,6 +1710,13 @@ export default function TeacherHome() {
                   </button>
                 </div>
               )}
+
+              {/* step565: 세 카드 공통 — 체크 ON일 때만 ✕·ESC가 dismissed 영구 기록 */}
+              <label className="flex items-center gap-1.5 mt-3 text-xs text-gray-400 cursor-pointer select-none">
+                <input type="checkbox" checked={nextStepNeverShow}
+                  onChange={e => setNextStepNeverShow(e.target.checked)} className="rounded" />
+                다시 보지 않기
+              </label>
             </div>
           </div>
         )}
