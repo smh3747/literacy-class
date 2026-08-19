@@ -124,9 +124,10 @@ export default function TeacherHome() {
   const [showTaste, setShowTaste] = useState(false)
 
   // 맛보기 닫기 — 교사별 영구 숨김 (SetupChecklist 닫기 패턴과 동일, 반드시 teacherId 포함)
+  //   step568: 엿보기는 상태만 닫고 저장 생략(관리자 브라우저에 교사 키 오염 방지)
   const dismissTaste = () => {
     setShowTaste(false)
-    if (typeof window !== 'undefined' && user?.id) {
+    if (typeof window !== 'undefined' && user?.id && !isImpersonating) {
       try { localStorage.setItem('lc-taste-feedback-dismissed:' + user.id, '1') } catch {}
     }
   }
@@ -211,6 +212,7 @@ export default function TeacherHome() {
   // 🆕 step380: 사전 신청 — 교사당 1회. 🆕 step382: 응답 구분('interested'|'not_sure') 기록.
   //   unique 위반(23505)은 이미 응답한 것 — 재조회로 실제 응답을 읽어 표시(다기기에서 다른 버튼 눌렀을 때 정확)
   const submitPreorder = async (response) => {
+    if (isImpersonating) return  // step568: 엿보기 = 기록 없음(버튼은 표시)
     if (preorderSaving || !user?.id) return
     setPreorderSaving(true)
     const { error } = await supabase.from('preorders').insert({ teacher_id: user.id, response })
@@ -230,11 +232,11 @@ export default function TeacherHome() {
   }
   const dismissPreorder = () => {
     setPreorderHidden(true)
-    if (user?.id) { try { localStorage.setItem('lc-founding-preorder-dismissed:' + user.id, '1') } catch {} }
+    if (user?.id && !isImpersonating) { try { localStorage.setItem('lc-founding-preorder-dismissed:' + user.id, '1') } catch {} }
   }
   const reopenPreorder = () => {
     setPreorderHidden(false)
-    if (user?.id) { try { localStorage.removeItem('lc-founding-preorder-dismissed:' + user.id) } catch {} }
+    if (user?.id && !isImpersonating) { try { localStorage.removeItem('lc-founding-preorder-dismissed:' + user.id) } catch {} }
   }
 
   // 🆕 옛 전역 체크리스트 키 1회 청소 (step220 이전 잔재 — 계정 섞임 혼란 유발)
@@ -557,13 +559,14 @@ export default function TeacherHome() {
 
   const dismissNoStudentsBanner = () => {
     setNoStudentsBannerHiddenToday(true)
-    try { if (user?.id) localStorage.setItem('lc-no-students-banner:' + user.id, todayStr()) } catch {}
+    try { if (user?.id && !isImpersonating) localStorage.setItem('lc-no-students-banner:' + user.id, todayStr()) } catch {}
   }
 
   // 다음 걸음 카드 응답 기록 — 한 번의 insert(RLS가 update 차단이라 저장은 1회로 끝). 실패해도 카드만 숨김.
   //   keepOpen: review good 경로처럼 카드를 유지한 채 기록만 할 때 true(닫기는 호출부 책임).
   const recordOnboarding = async (cardType, response, comment, keepOpen = false) => {
     if (!keepOpen) setNextStepCard(null)
+    if (isImpersonating) return  // step568: 엿보기 = 화면만 닫고 기록·alert 없음 (기존 assertWritable은 반환값 미검사라 무방비였음)
     try {
       assertWritable()
       await supabase.from('onboarding_responses').insert({
@@ -579,7 +582,7 @@ export default function TeacherHome() {
   const closeNextStepModal = () => {
     if (nextStepNeverShow) { recordOnboarding(nextStepCard, 'dismissed'); return }
     setNextStepCard(null)
-    try { if (user?.id) localStorage.setItem('lc-nextstep-hidden:' + nextStepCard + ':' + user.id, todayStr()) } catch {}
+    try { if (user?.id && !isImpersonating) localStorage.setItem('lc-nextstep-hidden:' + nextStepCard + ':' + user.id, todayStr()) } catch {}
   }
 
   const checkAuth = async () => {
@@ -632,8 +635,9 @@ export default function TeacherHome() {
           .or('is_hidden.is.null,is_hidden.eq.false').limit(5)
       ])
       setStudentSamples(samples?.data || [])
-      // 🆕 다음 걸음 카드 — 본인 세션(비임퍼소네이션)에서만, 비차단(await 안 함). API키 불필요.
-      if (!imp) maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
+      // 🆕 다음 걸음 카드 — 비차단(await 안 함). API키 불필요.
+      //   step568: 엿보기에서도 호출(조회 전용 함수 — 화면 일치). 쓰기는 recordOnboarding 첫머리 가드가 차단.
+      maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
       // 🆕 step477: 전국 글쓰기 챌린지 — lazy 등록·원클릭 카드 판정 (비차단, 실패 무시)
       //   step507: adopt는 토글 무관 상시 호출(OFF면 서버가 청소만 하고 disabled 반환), 원클릭 카드는 OFF일 때만
       if (!imp && profile.role === 'teacher') {
@@ -655,8 +659,9 @@ export default function TeacherHome() {
         setStudentCountTotal(studentIds?.length || 0)
 
         // 🆕 step280: 맛보기(샘플 피드백) 노출 판정
-        //   임퍼소네이션 아님 + 안 닫음 + 아직 실제 AI 피드백 0건(feedback_overall 존재하는 제출 없음)
-        if (!imp) {
+        //   안 닫음 + 아직 실제 AI 피드백 0건(feedback_overall 존재하는 제출 없음)
+        //   step568: 엿보기에서도 판정(읽기 1회 — 화면 일치). 닫기의 localStorage 기록만 엿보기 시 생략.
+        {
           const tasteDismissed = typeof window !== 'undefined' &&
             localStorage.getItem('lc-taste-feedback-dismissed:' + profile.id) === '1'
           if (tasteDismissed) {
@@ -677,8 +682,6 @@ export default function TeacherHome() {
             } catch { seenFeedback = false }
             setShowTaste(!seenFeedback)
           }
-        } else {
-          setShowTaste(false)
         }
 
         // 🆕 셋업 체크리스트용 주제 수
@@ -844,6 +847,11 @@ export default function TeacherHome() {
     studentCountTotal > 0 &&
     topicCount > 0 &&
     !!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)
+
+  // 🆕 step568: 엿보기 표식 — 화면 일치 모드로 새로 보이게 된 온보딩 UI 상단에 공통 삽입(엿보기 중에만)
+  const peekNote = isImpersonating ? (
+    <div className="text-[11px] text-gray-400 mb-1">👁 엿보기 표시 — 조작해도 기록되지 않아요</div>
+  ) : null
 
   // 🆕 step335: 순서 재배치용 — 심의/동의 배너·메뉴 grid만 const로 추출(내부 로직·props 불변). setupDone에 따라 위치만 다름.
   const bannersBlock = (
@@ -1034,8 +1042,10 @@ export default function TeacherHome() {
 
           {/* 🆕 step552: 학생 0명 재방문 배너 — 깔때기 병목(학생 등록 11%) 대응. 닫으면 그날 하루 숨김, 다음 날(KST) 재표시.
               스타일은 step512 요청 배너 관행(amber 1줄) 통일. 배너 전면 우선순위 정리는 §13 백로그 별도. */}
-          {!isImpersonating && !loading && studentCountTotal === 0 && !noStudentsBannerHiddenToday && (
+          {/* step568: 엿보기에도 표시(화면 일치) — 닫기는 dismissNoStudentsBanner가 엿보기 시 저장 생략 */}
+          {!loading && studentCountTotal === 0 && !noStudentsBannerHiddenToday && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3 flex-wrap">
+              {peekNote && <div className="w-full">{peekNote}</div>}
               <p className="text-sm text-amber-900 font-medium flex-1 min-w-0">
                 👋 아직 학생이 없어요 — 명렬표를 올리면 1분 만에 시작할 수 있어요
               </p>
@@ -1052,17 +1062,19 @@ export default function TeacherHome() {
 
           {/* 🆕 step505: 챌린지 신기능 안내 배너 — 교사별 1회 닫기, 자동 받기 켠 학급 미노출, 노출 중엔 원클릭 카드 숨김 */}
           {/* 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564. !loading은 step552 배너의 깜빡임 방지 관행 */}
+          {/* step568: 엿보기에도 표시(화면 일치) — 닫기의 localStorage 저장만 엿보기 시 생략 */}
           {(() => {
-            const showChallengeIntro = !isImpersonating && user?.role === 'teacher' &&
+            const showChallengeIntro = user?.role === 'teacher' &&
               !challengeIntroDismissed && classInfo && !classInfo.auto_supply_enabled &&
               !loading && studentCountTotal > 0
             const dismissChallengeIntro = () => {
               setChallengeIntroDismissed(true)
-              try { if (user?.id) localStorage.setItem('lc-challenge-intro-dismissed:' + user.id, '1') } catch {}
+              try { if (user?.id && !isImpersonating) localStorage.setItem('lc-challenge-intro-dismissed:' + user.id, '1') } catch {}
             }
             if (!showChallengeIntro) return null
             return (
               <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5">
+                {peekNote}
                 <h3 className="font-bold text-sky-900">🌏 새 기능: 전국 글쓰기 챌린지가 열렸어요!</h3>
                 <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
                   매일 시사·계절 주제가 발행되고, 전국 학생들이 같은 주제로 글을 써요.
@@ -1159,8 +1171,9 @@ export default function TeacherHome() {
             )}
           </div>
 
-          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김). step566: 미완료자의 홈 주인공 — 환영 바로 아래로 이동 */}
-          {!isImpersonating && !setupDone && (
+          {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김). step566: 미완료자의 홈 주인공 — 환영 바로 아래로 이동
+              step568: 엿보기에도 표시(화면 일치) — readOnly로 닫기 저장만 생략 */}
+          {!setupDone && (
             <SetupChecklist
               classInfo={classInfo}
               teacherId={user?.id}
@@ -1170,13 +1183,16 @@ export default function TeacherHome() {
               hasLoginHint={!!(classInfo?.login_hint_enabled && classInfo?.login_username_prefix)}
               onScrollToApi={scrollToApiKey}
               onScrollToLoginHint={scrollToLoginHint}
+              readOnly={isImpersonating}
             />
           )}
 
           {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달)
               good 응답 후엔 같은 자리에서 사전 신청 이어묻기(reviewFollowup) — 만족 직후가 최적 타이밍 */}
-          {!isImpersonating && nextStepCard === 'review' && (
+          {/* step568: 엿보기에도 표시(화면 일치) — recordOnboarding·submitPreorder가 엿보기 시 기록 없이 종료 */}
+          {nextStepCard === 'review' && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
+              {peekNote}
               {reviewFollowup === 'thanks' ? (
                 <p className="text-sm font-semibold text-indigo-900">🙏 감사해요! 준비되면 가장 먼저 안내드릴게요.</p>
               ) : reviewFollowup === 'ask' ? (
@@ -1288,18 +1304,18 @@ export default function TeacherHome() {
                     미리 신청해 주시는 선생님께는 가장 좋은 조건(파운딩 멤버 혜택)으로 먼저 안내드려요.
                     결제가 아니라 관심 등록이에요.
                   </p>
-                  {!isImpersonating && (
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => submitPreorder('interested')} disabled={preorderSaving}
-                        className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
-                        {preorderSaving ? '처리 중...' : '관심 있어요'}
-                      </button>
-                      <button onClick={() => submitPreorder('not_sure')} disabled={preorderSaving}
-                        className="bg-gray-100 text-gray-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">
-                        아직 잘 모르겠어요
-                      </button>
-                    </div>
-                  )}
+                  {/* step568: 엿보기에도 버튼 표시(화면 일치) — submitPreorder가 엿보기 시 기록 없이 종료 */}
+                  {peekNote}
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => submitPreorder('interested')} disabled={preorderSaving}
+                      className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
+                      {preorderSaving ? '처리 중...' : '관심 있어요'}
+                    </button>
+                    <button onClick={() => submitPreorder('not_sure')} disabled={preorderSaving}
+                      className="bg-gray-100 text-gray-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">
+                      아직 잘 모르겠어요
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -1409,8 +1425,10 @@ export default function TeacherHome() {
 
           {/* 🆕 step280: 신규 교사용 맛보기 — 실제 피드백을 한 번도 못 본 교사에게만(설정 전 가치 체감) */}
           {/* step281: 점선 프레임 + "예시" 뱃지로 실제 데이터 카드와 시각적으로 명확히 구분 */}
-          {!isImpersonating && showTaste && (
+          {/* step568: 엿보기에도 표시(화면 일치) — 닫기는 dismissTaste가 엿보기 시 저장 생략 */}
+          {showTaste && (
             <div className="rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/60 p-3 sm:p-4 space-y-2">
+              {peekNote}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
                   👀 예시 미리보기
@@ -1660,9 +1678,11 @@ export default function TeacherHome() {
         {/* 🆕 다음 걸음 모달 — 막힌 분기 3종(no_students·no_topics·no_class_run). '도움'이라 모달 정당(수업 0회라 방해할 작업 없음).
             오버레이 클릭 닫힘 제거(step563). ✕·ESC=오늘만 닫기. '다시 보지 않기' 체크 시에만 dismissed 영구 — step565.
             dismissed 의미가 '실수 포함 닫음'→'명시적 거부'로 변경. review는 위 인라인 배너. 패턴=PasswordChangeModal */}
-        {!isImpersonating && nextStepCard && nextStepCard !== 'review' && (
+        {/* step568: 엿보기에도 표시(화면 일치) — recordOnboarding·closeNextStepModal이 엿보기 시 기록 없이 닫기만 */}
+        {nextStepCard && nextStepCard !== 'review' && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="relative bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+              {peekNote}
               <button onClick={closeNextStepModal} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
 
@@ -1689,7 +1709,7 @@ export default function TeacherHome() {
                 <div>
                   <h3 className="font-bold text-indigo-900 pr-6">✏️ 무슨 주제로 시작할지 고민되시죠?</h3>
                   <p className="text-sm text-gray-600 mt-1">다른 선생님들이 검증한 추천 주제로 1분 만에 등록할 수 있어요.</p>
-                  <button onClick={() => { recordOnboarding('no_topics', 'clicked'); router.push('/teacher/topics') }}
+                  <button onClick={() => { recordOnboarding('no_topics', 'clicked'); router.push(withImpersonation('/teacher/topics')) }}
                     className="mt-3 text-sm bg-indigo-600 text-white font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition">
                     ✨ 추천 주제로 바로 시작하기
                   </button>

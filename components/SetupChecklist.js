@@ -16,11 +16,13 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { todayStr } from '../lib/kstDate'
+import { withImpersonation } from '../lib/impersonation'
 
 // 교사별 숨김 키 — teacherId 없으면 null(저장/복원 안 함, 항상 표시)
 const hideKeyFor = (teacherId) => teacherId ? `lc-setup-checklist-hidden:${teacherId}` : null
 
-export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint }) {
+// step568: readOnly = 관리자 엿보기(화면 일치 모드) — 표시는 교사와 동일, 닫기의 localStorage 저장만 생략
+export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studentCount, topicCount, hasLoginHint, onScrollToApi, onScrollToLoginHint, readOnly = false }) {
   // step566: 저장된 원시 값('1'=구 영구 닫기 | 'YYYY-MM-DD'=오늘만 닫기 | null) — 판정은 allDone 계산 뒤에
   const [hiddenVal, setHiddenVal] = useState(null)
 
@@ -51,8 +53,8 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
       // 등록 완료: 기존대로 대시보드 카드로 스크롤(관리) + help 유지
       action: hasApiKey
         ? { type: 'scroll', text: '관리하기', onClick: onScrollToApi }
-        : { type: 'link', href: '/api-key-guide', text: '🔑 키 발급받고 등록하기 (5분)' },
-      help: hasApiKey ? { href: '/api-key-guide', text: '발급 방법 보기' } : null
+        : { type: 'link', href: withImpersonation('/api-key-guide'), text: '🔑 키 발급받고 등록하기 (5분)' },
+      help: hasApiKey ? { href: withImpersonation('/api-key-guide'), text: '발급 방법 보기' } : null
     },
     {
       id: 'students',
@@ -61,7 +63,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
       detail: studentCount > 0 ? `${studentCount}명 등록됨` : '나이스 명렬표 엑셀로 한 번에',
       action: {
         type: 'link',
-        href: '/teacher/students',
+        href: withImpersonation('/teacher/students'),
         text: studentCount > 0 ? '학생 관리' : '👥 지금 등록하기 (1분)'
       }
     },
@@ -85,7 +87,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
       detail: topicCount > 0 ? `${topicCount}개 주제 생성됨` : 'AI 추천으로 빠르게 만들 수 있어요',
       action: {
         type: 'link',
-        href: '/teacher/topics',
+        href: withImpersonation('/teacher/topics'),
         text: topicCount > 0 ? '주제 관리' : '📝 지금 만들기 (1분)'
       }
     }
@@ -97,9 +99,11 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
   const nextStep = steps.find(s => !s.done)
 
   // step566: 숨김 처리 — 미완료는 오늘만(날짜 저장), 완료는 영구('1'). 현재 교사의 키에만 기록
+  // step568: readOnly(엿보기)면 상태만 닫고 저장 생략(관리자 브라우저에 교사 키 오염 방지)
   const dismiss = () => {
     const v = allDone ? '1' : todayStr()
     setHiddenVal(v)
+    if (readOnly) return
     const key = hideKeyFor(teacherId)
     if (key) { try { localStorage.setItem(key, v) } catch {} }
   }
@@ -128,6 +132,7 @@ export default function SetupChecklist({ classInfo, teacherId, hasApiKey, studen
 
   return (
     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-indigo-400 shadow-md rounded-2xl p-5 space-y-3">
+      {readOnly && <div className="text-[11px] text-gray-400">👁 엿보기 표시 — 조작해도 기록되지 않아요</div>}
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-bold text-blue-900 flex items-center gap-2 flex-wrap">
