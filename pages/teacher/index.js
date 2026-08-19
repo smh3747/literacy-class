@@ -56,6 +56,9 @@ export default function TeacherHome() {
   const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
   const [preorderHidden, setPreorderHidden] = useState(true)  // 깜빡임 방지 기본 숨김, localStorage로 복원
   const [preorderSaving, setPreorderSaving] = useState(false)
+  // 🆕 step564: 수업 3회+(채점완료 주제 3개+) 경험 여부 — 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564.
+  //   maybeShowNextStepCard의 기존 계산 재사용(새 쿼리 없음). review 카드 응답 이력도 과거 3회+의 확정 증거로 인정.
+  const [hasThreeClassRuns, setHasThreeClassRuns] = useState(false)
   // 🆕 다음 걸음 카드 — 막힌 지점별 온보딩 설문·안내 (card_type별 평생 1회, 브리핑과 별개 state)
   const [nextStepCard, setNextStepCard] = useState(null)      // 'review'|'no_students'|'no_topics'|'no_class_run'|null
   const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
@@ -457,6 +460,8 @@ export default function TeacherHome() {
         .select('card_type').eq('teacher_id', profile.id)
       if (error) return  // 테이블 미생성 등 — 카드 자체를 포기
       const answered = new Set((resp || []).map(r => r.card_type))
+      // step564: review 카드에 응답한 적 있다 = 그 시점에 채점완료 주제 3개+였다 — 문턱 통과 확정
+      if (answered.has('review')) setHasThreeClassRuns(true)
       if (answered.size >= 4) return
 
       let type = null
@@ -473,7 +478,7 @@ export default function TeacherHome() {
           .select('topic_id, total_score').in('topic_id', ids)
           .is('deleted_at', null).limit(1000)
         const gradedTopics = new Set((subs || []).filter(x => x.total_score != null).map(x => x.topic_id))
-        if (gradedTopics.size >= 3) type = 'review'                    // 채점완료 주제 3개 이상 → 후기
+        if (gradedTopics.size >= 3) { type = 'review'; setHasThreeClassRuns(true) }  // 채점완료 주제 3개 이상 → 후기 + step564 문턱 통과
         else if (students === 0) type = 'no_students'
         else if ((subs || []).length === 0) type = 'no_class_run'
         // 그 외(수업 1~2회)는 카드 없음
@@ -1034,9 +1039,11 @@ export default function TeacherHome() {
           )}
 
           {/* 🆕 step505: 챌린지 신기능 안내 배너 — 교사별 1회 닫기, 자동 받기 켠 학급 미노출, 노출 중엔 원클릭 카드 숨김 */}
+          {/* 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564. !loading은 step552 배너의 깜빡임 방지 관행 */}
           {(() => {
             const showChallengeIntro = !isImpersonating && user?.role === 'teacher' &&
-              !challengeIntroDismissed && classInfo && !classInfo.auto_supply_enabled
+              !challengeIntroDismissed && classInfo && !classInfo.auto_supply_enabled &&
+              !loading && studentCountTotal > 0
             const dismissChallengeIntro = () => {
               setChallengeIntroDismissed(true)
               try { if (user?.id) localStorage.setItem('lc-challenge-intro-dismissed:' + user.id, '1') } catch {}
@@ -1236,7 +1243,8 @@ export default function TeacherHome() {
           )}
 
           {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 — 🆕 step382: 가격 없는 관심 등록 + 2버튼 응답 */}
-          {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (
+          {/* 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564. 이미 응답(done)한 교사는 문턱 무관 유지 */}
+          {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (preorder.done || hasThreeClassRuns) && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
               <button onClick={dismissPreorder} aria-label="닫기"
                 className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
@@ -1521,8 +1529,8 @@ export default function TeacherHome() {
           {/* 메뉴 (원래 위치: 페이지 하단, 항상 표시) */}
           {menuGrid}
 
-          {/* 🆕 step380: 사전 신청 카드 재진입 링크 — 닫은 경우에만 하단 한 줄 (과한 노출 없음) */}
-          {user?.role === 'teacher' && preorder.loaded && preorderHidden && (
+          {/* 🆕 step380: 사전 신청 카드 재진입 링크 — 닫은 경우에만 하단 한 줄 (과한 노출 없음). step564: 카드와 같은 문턱 */}
+          {user?.role === 'teacher' && preorder.loaded && preorderHidden && (preorder.done || hasThreeClassRuns) && (
             <div className="text-center">
               <button onClick={reopenPreorder}
                 className="text-xs text-gray-400 hover:text-gray-600 underline transition">
