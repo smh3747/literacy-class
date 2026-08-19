@@ -1650,15 +1650,17 @@ export default function TeacherHome() {
                 <div>
                   {/* step552: 설문형 3버튼 → 직행형 교체(깔때기 병목 11% 대응). card_type 'no_students' 불변 —
                       버튼 클릭은 'clicked'(no_topics·no_class_run과 동일 = 따라감 계측), 닫음은 기존 dismissed. */}
-                  <h3 className="font-bold text-indigo-900 pr-6">학부모 동의 없이도 지금 바로 올릴 수 있어요</h3>
-                  <p className="text-sm text-gray-600 mt-2 leading-relaxed">
-                    나이스 명렬표를 그대로 올리면 1분 만에 끝나요. 실명은 동의 전까지 자동으로 잠겨
-                    닉네임으로 표시돼요. 명렬표가 없다면 학급 코드 4자리로 학생들이 스스로 가입하게
-                    할 수도 있어요.
+                  <h3 className="font-bold text-indigo-900 pr-6">학생 등록, 딱 2단계면 끝나요</h3>
+                  <div className="text-sm text-gray-600 mt-2 leading-relaxed">
+                    <p>① 나이스에서 학급명렬표(엑셀) 내려받기</p>
+                    <p>② 그대로 올리기 — 아이디 자동 생성, 첫 비밀번호는 모두 123456</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                    동의서는 나중에 천천히 받으셔도 돼요. 그 전까지 학생은 닉네임으로 모든 기능을 써요.
                   </p>
                   <button onClick={() => { recordOnboarding('no_students', 'clicked'); router.push(withImpersonation('/teacher/students?mode=register')) }}
                     className="mt-3 w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">
-                    📋 명렬표 올리러 가기
+                    📋 명렬표 올리러 가기 (1분)
                   </button>
                 </div>
               )}
