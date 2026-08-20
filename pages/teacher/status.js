@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { displayStudentName } from '../../lib/displayName'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 
 export default function SubmissionStatus() {
   const router = useRouter()
@@ -18,16 +20,18 @@ export default function SubmissionStatus() {
   const [loading, setLoading] = useState(true)
   const [topicFilter, setTopicFilter] = useState('all') // step494: all / class / challenge(source_supply_id 유무)
   const [weeklyChallengeCount, setWeeklyChallengeCount] = useState(null) // step494: 이번 주 챌린지 참여 학생 수(필터 무관)
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
-    if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, school)').eq('id', au.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step569: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, school)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -126,7 +130,10 @@ export default function SubmissionStatus() {
       .catch(() => prompt('아래 내용을 복사해주세요:', text))
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -178,10 +185,11 @@ export default function SubmissionStatus() {
     <>
       <Head><title>제출 현황 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">📋 제출 현황</h1>
           </div>
 
@@ -225,7 +233,7 @@ export default function SubmissionStatus() {
           {students.length === 0 ? (
             <div className="bg-white rounded-2xl p-10 text-center text-gray-500">
               <p className="text-sm">학급에 학생이 없어요</p>
-              <Link href="/teacher/students" className="text-xs text-primary underline mt-2 inline-block">
+              <Link href={withImpersonation('/teacher/students')} className="text-xs text-primary underline mt-2 inline-block">
                 학생 관리로 이동 →
               </Link>
             </div>
@@ -317,7 +325,7 @@ export default function SubmissionStatus() {
                     {needHelp.sort(sortByNumber).map(s => {
                       const best = bestSubByUser[s.id]
                       return (
-                        <Link key={s.id} href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                        <Link key={s.id} href={withImpersonation(`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`)}
                           className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm flex items-center justify-between hover:bg-rose-100 hover:border-rose-300 transition-colors">
                           <span>
                             {s.number && <span className="text-xs text-rose-700 mr-1.5">{s.number}번</span>}
@@ -339,14 +347,14 @@ export default function SubmissionStatus() {
                       💬 코멘트 기다리는 학생 ({needComment.length}명)
                       <span className="text-xs font-normal text-gray-400 ml-2">최신 글에 담임 코멘트가 아직 없어요</span>
                     </h3>
-                    <Link href={`/teacher/submissions?topic=${selectedTopicId}`}
+                    <Link href={withImpersonation(`/teacher/submissions?topic=${selectedTopicId}`)}
                       className="text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 px-3 py-1.5 rounded-full">
                       ✏️ 코멘트 쓰러 가기
                     </Link>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                     {needComment.sort(sortByNumber).map(s => (
-                      <Link key={s.id} href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                      <Link key={s.id} href={withImpersonation(`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`)}
                         className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm hover:bg-blue-100 hover:border-blue-300 transition-colors block">
                         {s.number && <span className="text-xs text-blue-700 mr-1.5">{s.number}번</span>}
                         <span className="font-medium">{displayStudentName(s)}</span>
@@ -374,7 +382,7 @@ export default function SubmissionStatus() {
                         return (
                           <Link
                             key={s.id}
-                            href={`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`}
+                            href={withImpersonation(`/teacher/submissions?topic=${selectedTopicId}&student=${s.id}`)}
                             className="flex items-center justify-between p-2 rounded hover:bg-blue-50 text-sm cursor-pointer transition group"
                           >
                             <div className="flex items-center gap-2">
@@ -410,7 +418,7 @@ export default function SubmissionStatus() {
               </div>
 
               <div className="text-center pt-2">
-                <Link href={`/teacher/submissions?topic=${selectedTopicId}`} className="text-sm text-primary hover:underline">
+                <Link href={withImpersonation(`/teacher/submissions?topic=${selectedTopicId}`)} className="text-sm text-primary hover:underline">
                   → 전체 학생 글 보기
                 </Link>
               </div>

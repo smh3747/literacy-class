@@ -7,6 +7,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 
 export default function TeacherTrash() {
   const router = useRouter()
@@ -15,18 +17,18 @@ export default function TeacherTrash() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles')
-      .select('*, classes:class_id(id, name, code, trash_retention_days)')
-      .eq('id', authUser.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step569: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, trash_retention_days)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
     await loadTrash(profile.classes?.id)
@@ -56,10 +58,14 @@ export default function TeacherTrash() {
     setItems(enriched)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   // 복원
   const restore = async (subId, studentName) => {
+    if (!assertWritable()) return  // step569: 엿보기 쓰기 차단
     if (!confirm(`"${studentName}" 학생의 글을 복원할까요?\n다시 학생/통계/랭킹에 보이게 됩니다.`)) return
     setBusyId(subId)
     try {
@@ -79,6 +85,7 @@ export default function TeacherTrash() {
 
   // 영구 삭제
   const permaDelete = async (subId, studentName) => {
+    if (!assertWritable()) return  // step569: 엿보기 쓰기 차단
     if (!confirm(`⚠️ "${studentName}" 학생의 글을 영구 삭제할까요?\n\n· 이 작업은 되돌릴 수 없어요\n· DB에서 완전히 사라집니다\n· 다시 확인해주세요!`)) return
     if (!confirm(`정말로 영구 삭제하시겠습니까? 마지막 확인입니다.`)) return
     setBusyId(subId)
@@ -95,6 +102,7 @@ export default function TeacherTrash() {
 
   // 자동 삭제 기간 변경
   const updateRetention = async (days) => {
+    if (!assertWritable()) return  // step569: 엿보기 쓰기 차단(확인창 없는 버튼이라 최우선)
     if (!classInfo) return
     const { error } = await supabase.from('classes')
       .update({ trash_retention_days: days })
@@ -122,12 +130,20 @@ export default function TeacherTrash() {
     <>
       <Head><title>쓰레기통 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">🗑️ 쓰레기통</h1>
           </div>
+
+          {/* step569: 엿보기 읽기 전용 안내 (students.js 관행) */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              📖 읽기 전용입니다. 복원, 영구 삭제, 자동 삭제 기간 변경은 차단되어 있어요.
+            </div>
+          )}
 
           {/* 자동 삭제 기간 설정 */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -139,7 +155,8 @@ export default function TeacherTrash() {
               {[7, 30, 60, 90, 180].map(d => (
                 <button key={d}
                   onClick={() => updateRetention(d)}
-                  className={`px-3 py-1.5 rounded text-xs font-medium ${
+                  disabled={isImpersonating}
+                  className={`px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 ${
                     retentionDays === d
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -207,14 +224,14 @@ export default function TeacherTrash() {
                       <div className="flex gap-2 pt-1">
                         <button
                           onClick={() => restore(s.id, s.student?.realname || '학생')}
-                          disabled={busyId === s.id}
+                          disabled={busyId === s.id || isImpersonating}
                           className="flex-1 py-1.5 bg-blue-100 text-blue-700 rounded text-xs font-medium hover:bg-blue-200 disabled:opacity-50"
                         >
                           ↻ 복원
                         </button>
                         <button
                           onClick={() => permaDelete(s.id, s.student?.realname || '학생')}
-                          disabled={busyId === s.id}
+                          disabled={busyId === s.id || isImpersonating}
                           className="flex-1 py-1.5 bg-red-100 text-red-700 rounded text-xs font-medium hover:bg-red-200 disabled:opacity-50"
                         >
                           🗑️ 영구 삭제

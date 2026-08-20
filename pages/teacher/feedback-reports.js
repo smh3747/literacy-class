@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { toKST } from '../../lib/timeFormat'
 import { displayStudentName } from '../../lib/displayName'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 
 export default function FeedbackReports() {
   const router = useRouter()
@@ -13,16 +15,18 @@ export default function FeedbackReports() {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('open') // open / all
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
-    if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name)').eq('id', au.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step569: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     await loadReports(profile)
     setLoading(false)
@@ -55,6 +59,7 @@ export default function FeedbackReports() {
   }
 
   const dismissReport = async (subId) => {
+    if (!assertWritable()) return  // step569: 엿보기 쓰기 차단
     if (!confirm('이 신고를 해제(닫기)할까요?\n학생 화면에서는 다시 신고 버튼이 보이지 않습니다.')) return
     try {
       const { error } = await supabase.from('submissions').update({
@@ -69,7 +74,10 @@ export default function FeedbackReports() {
     }
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -77,12 +85,20 @@ export default function FeedbackReports() {
     <>
       <Head><title>피드백 신고함 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">🚨 AI 피드백 신고함</h1>
           </div>
+
+          {/* step569: 엿보기 읽기 전용 안내 (students.js 관행) */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              📖 읽기 전용입니다. 신고 확인 완료 처리는 차단되어 있어요.
+            </div>
+          )}
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
             학생이 "이 피드백 이상해요" 버튼을 누르면 여기에 모입니다.<br/>
@@ -110,8 +126,8 @@ export default function FeedbackReports() {
                         주제: {r.topic_title || '?'} · 신고일: {toKST(r.reported_at)}
                       </div>
                     </div>
-                    <button onClick={() => dismissReport(r.id)}
-                      className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded">
+                    <button onClick={() => dismissReport(r.id)} disabled={isImpersonating}
+                      className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded disabled:opacity-50">
                       ✓ 확인 완료
                     </button>
                   </div>

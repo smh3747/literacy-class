@@ -4,6 +4,8 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
@@ -20,6 +22,7 @@ export default function StudentGrowth() {
   const [selectedStudent, setSelectedStudent] = useState('all')
   const [sortMode, setSortMode] = useState('growth')  // 'growth'(성장순) | 'number'(번호순)
   const [gradeAvg, setGradeAvg] = useState(null)  // 🆕 step345: 우리 학년 전체 평균(참조선), RPC 비차단
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
   const sortedCardsRef = useRef([])  // 🆕 step343: 키보드 넘기기용 최신 정렬 목록
 
   useEffect(() => { check() }, [])
@@ -54,12 +57,13 @@ export default function StudentGrowth() {
   }, [selectedStudent])
 
   const check = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
-    if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, school, grade)').eq('id', au.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step569: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, school, grade)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -77,7 +81,10 @@ export default function StudentGrowth() {
     setLoading(false)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   // 학급 평균 그래프 데이터
   const getClassAvgChart = () => {
@@ -264,10 +271,11 @@ export default function StudentGrowth() {
     <>
       <Head><title>학생 성장 그래프 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">📊 학생 성장 그래프</h1>
           </div>
 
