@@ -35,7 +35,7 @@ export default function TeacherRanking() {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, ranking_enabled)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -70,7 +70,7 @@ export default function TeacherRanking() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   const loadRankings = async (profile, periodKey) => {

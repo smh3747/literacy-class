@@ -55,7 +55,7 @@ export default function StudentsPage() {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade, login_username_prefix)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -104,7 +104,7 @@ export default function StudentsPage() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   // 🆕 step234: 닉네임 전환 공지 배너 영구 닫기 — 교사별 localStorage에 기록

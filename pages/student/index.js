@@ -369,7 +369,7 @@ export default function StudentHome() {
       const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)').eq('id', uid).maybeSingle())
       console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
       if (!profile || profile.role !== 'student') {
-        await supabase.auth.signOut(); router.push('/student/login'); return
+        await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
       }
       setUser(profile)
       setClassInfo(profile.classes)
@@ -676,7 +676,7 @@ export default function StudentHome() {
    }
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 
   const handlePaste = (e, type) => {
     // step536: 기본은 붙여넣기 차단. 학급 설정 allow_paste ON일 때만 허용(테스트·특별 수업 목적).

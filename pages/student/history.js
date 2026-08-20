@@ -132,7 +132,7 @@ export default function StudentHistory() {
     if (!au) { router.push('/student/login'); return }
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
-      await supabase.auth.signOut(); router.push('/student/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
     setUser(profile)
     
@@ -182,7 +182,7 @@ export default function StudentHistory() {
     })
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 
   // step514: 상세 진입/복귀를 URL에 반영(shallow) — 새로고침 유지, step513 syncTopicUrl 패턴
   const syncGroupUrl = (key) => {

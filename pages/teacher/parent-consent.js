@@ -41,7 +41,7 @@ export default function ParentConsent() {
     setLoading(false)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
   const printDoc = () => window.print()
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>

@@ -29,7 +29,7 @@ export default function StudentRanking() {
     const { data: profile } = await supabase.from('profiles')
       .select('*, classes:class_id(id, name, ranking_enabled)').eq('id', au.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
-      await supabase.auth.signOut(); router.push('/student/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
     setUser(profile)
     setClassInfo(profile.classes)
@@ -148,7 +148,7 @@ export default function StudentRanking() {
     })
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 

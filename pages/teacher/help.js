@@ -30,7 +30,7 @@ export default function TeacherHelp() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   const sections = [

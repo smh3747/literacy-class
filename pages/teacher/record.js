@@ -74,7 +74,7 @@ export default function RecordPage() {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade, school)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -128,7 +128,7 @@ export default function RecordPage() {
   // step570: logout 신설 — 기존엔 Header에 onLogout 미전달로 로그아웃 클릭 시 TypeError 나던 버그 수리
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }  // 엿보기 중 로그아웃 = 관리자 복귀
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   // 체크박스 토글

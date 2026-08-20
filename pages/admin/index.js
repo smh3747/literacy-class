@@ -524,7 +524,7 @@ export default function AdminHome() {
     }
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 
   // 🔍 step359: 의심 교정 목록 — 탭 열 때 1회만 로드 (첫 로딩 무게 안 늘림)
   // 🆕 step369: supabase-js는 실패해도 throw하지 않아 error를 직접 확인해야 함(기존엔 무시되어

@@ -112,7 +112,7 @@ export default function StudentLogin() {
       const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
       const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
       if (noAutoLogin && !sessionActive) {
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: 'local' })
         setCheckingAuth(false)
         return
       }
@@ -199,18 +199,18 @@ export default function StudentLogin() {
         const { data: profile } = await supabase.from('profiles').select('role, realname').eq('id', loginData.user.id).maybeSingle()
         
         if (!profile) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           // step206: '가입을 먼저' 유도 제거 — 명렬표 학급에서 잘못된 새 계정(유령) 생성을 부추기지 않도록.
           throw new Error('회원 정보를 찾을 수 없어요. 아이디 오타가 아닌지 확인하거나 선생님께 문의해주세요.')
         }
         
         if (profile.role === 'teacher' || profile.role === 'admin') {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error(`이 계정은 선생님 계정이에요!\n\n${profile.realname || ''}님, "👩‍🏫 선생님이에요" 버튼으로 다시 들어가주세요.`)
         }
         
         if (profile.role !== 'student') {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error('학생 권한이 없는 계정이에요.')
         }
         

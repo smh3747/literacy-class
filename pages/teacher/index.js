@@ -592,7 +592,7 @@ export default function TeacherHome() {
     )
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -782,7 +782,7 @@ export default function TeacherHome() {
   const logout = async () => {
     // 임퍼소네이션 중에는 로그아웃 대신 관리자 페이지로 (실제 로그아웃 방지)
     if (isImpersonating) { router.push('/admin'); return }
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   const regenerateClassCode = async () => {

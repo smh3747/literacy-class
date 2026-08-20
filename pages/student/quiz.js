@@ -47,7 +47,7 @@ export default function StudentQuiz() {
     if (!au) { router.push('/student/login'); return }
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
     if (!profile || profile.role !== 'student') {
-      await supabase.auth.signOut(); router.push('/student/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
     setUser(profile)
 
@@ -101,7 +101,7 @@ export default function StudentQuiz() {
     setPicked(null)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 

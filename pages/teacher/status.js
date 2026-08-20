@@ -29,7 +29,7 @@ export default function SubmissionStatus() {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, school)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -132,7 +132,7 @@ export default function SubmissionStatus() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>

@@ -46,7 +46,7 @@ export default function ResetPassword() {
 
   // 🆕 step386: 아이디만 확인하고 나가기 (recovery 세션 정리 후 로그인으로)
   const exitToLogin = async () => {
-    try { await supabase.auth.signOut() } catch {}
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
     window.location.href = '/teacher/login'
   }
 
@@ -62,7 +62,8 @@ export default function ResetPassword() {
       setError('비밀번호를 바꾸지 못했어요. 이전과 다른 비밀번호로 다시 시도해주세요.')
       return
     }
-    await supabase.auth.signOut()
+    // step572: 비밀번호 재설정 완료는 보안 이벤트 — 전 기기 로그아웃(global)이 옳다. 유일한 global 유지 지점(+ 삭제 계정 강제 종료).
+    await supabase.auth.signOut({ scope: 'global' })
     setPhase('done')
   }
 

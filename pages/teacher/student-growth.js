@@ -83,7 +83,7 @@ export default function StudentGrowth() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   // 학급 평균 그래프 데이터

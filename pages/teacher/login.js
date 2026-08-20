@@ -205,7 +205,7 @@ export default function TeacherLogin() {
         const noAutoLogin = localStorage.getItem(NO_AUTO_LOGIN_KEY) === 'true'
         const sessionActive = sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true'
         if (noAutoLogin && !sessionActive) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           setCheckingAuth(false)
           return
         }
@@ -219,14 +219,14 @@ export default function TeacherLogin() {
         // 🆕 자동 복구: 세션은 있는데 profile이 없거나 조회 실패 → 깨끗하게 로그아웃
         if (profileErr || !profile) {
           console.warn('[auto-recovery] 세션은 있지만 profile 없음 → 정리:', profileErr?.message)
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           setCheckingAuth(false)
           return
         }
 
         // 🆕 삭제된 계정은 강제 로그아웃
         if (profile.deleted_at) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           setError('이 계정은 관리자에 의해 삭제되었어요.\n관리자에게 문의해주세요.')
           setCheckingAuth(false)
           return
@@ -239,11 +239,11 @@ export default function TeacherLogin() {
         }
         // 그 외 (student 등) → signOut 후 로그인 폼
         console.warn('[auto-recovery] role 불일치 → 정리:', profile.role)
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: 'local' })
       }
     } catch (e) {
       console.error('checkSession 오류 → 깨끗한 상태로 복구:', e)
-      try { await supabase.auth.signOut() } catch(_) {}
+      try { await supabase.auth.signOut({ scope: 'local' }) } catch(_) {}
     }
     setCheckingAuth(false)
   }
@@ -426,22 +426,22 @@ export default function TeacherLogin() {
         const { data: profile } = await supabase.from('profiles').select('role, realname, is_banned').eq('id', loginData.user.id).maybeSingle()
         
         if (!profile) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error('회원 정보를 찾을 수 없어요. 가입을 먼저 해주세요.')
         }
         
         if (profile.is_banned) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error('이 계정은 관리자에 의해 차단되었어요. 문의: 사이트 운영자')
         }
         
         if (profile.role === 'student') {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error(`이 계정은 학생 계정이에요!\n\n${profile.realname}님, "🎒 학생이에요" 버튼으로 다시 들어가주세요.`)
         }
         
         if (profile.role !== 'teacher' && profile.role !== 'admin') {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           throw new Error('선생님/관리자 권한이 없는 계정이에요.')
         }
         

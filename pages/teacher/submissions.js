@@ -162,7 +162,7 @@ export default function TeacherSubmissions() {
     const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await supabase.auth.signOut(); router.push('/teacher/login'); return
+      await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)
     setUser(profile)
@@ -233,7 +233,7 @@ export default function TeacherSubmissions() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }
-    await supabase.auth.signOut(); router.push('/')
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
   // 화면 상태를 URL에 반영 — 새로고침해도 같은 화면 유지
