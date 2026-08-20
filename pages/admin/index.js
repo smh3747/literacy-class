@@ -4876,12 +4876,14 @@ function SubmissionDetail({ sub, onBack }) {
   const loadFullData = async () => {
     setLoading(true)
     try {
-      // 1. 같은 학생 + 같은 주제의 모든 attempt 가져오기 (첫 글 + 수정본들)
+      // 1. 같은 학생 + 같은 주제의 모든 시도 가져오기 (첫 글 + 수정본들)
+      //    step579: attempt순 → created_at순 + 휴지통 제외 — attempt 중복행(578 사고)에도 화면이 자기모순 없게
       const { data: subs } = await supabase.from('submissions')
         .select('*')
         .eq('user_id', sub.user_id)
         .eq('topic_id', sub.topic_id)
-        .order('attempt', { ascending: true })
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
 
       if (subs && subs.length > 0) setAllSubs(subs)
 
@@ -4920,18 +4922,19 @@ function SubmissionDetail({ sub, onBack }) {
       ) : allSubs.length === 0 ? (
         <p className="text-sm text-gray-500 py-8 text-center">제출된 글이 없어요</p>
       ) : (() => {
-        // allSubs는 attempt 오름차순. 최신 2개를 병렬, 그 이전 글은 아래로
+        // allSubs는 created_at 오름차순(step579 — 시간순 단일 기준). 최신 2개를 병렬, 그 이전 글은 아래로
         const topTwo = allSubs.slice(-2)
         const older = allSubs.slice(0, -2)
-        const labelFor = (s) => s.attempt === 1 ? '✏️ 첫 글' : `🔄 수정본 ${s.attempt - 1}차`
-        // step537: 각 카드의 직전 시도 — 교사 submissions와 동일하게 attempt 순서상 바로 앞 글과 비교
+        // step579: 라벨을 attempt 값 대신 시간순 서수로 — attempt=1 중복행이 있어도 "첫 글"은 하나
+        const labelFor = (s) => { const i = allSubs.findIndex(x => x.id === s.id); return i === 0 ? '✏️ 첫 글' : `🔄 수정본 ${i}차` }
+        // step537: 각 카드의 직전 시도(시간순 바로 앞 글)와 비교 — 점수 배지·diff 공용 기준
         const prevOf = (s) => { const i = allSubs.findIndex(x => x.id === s.id); return i > 0 ? allSubs[i - 1] : null }
         return (
           <>
             {topTwo.length >= 2 && (
               <div className="flex items-center justify-between mb-1">
                 <div className="text-xs text-gray-500">
-                  ← 직전 글과 가장 최근 글을 나란히 비교하세요. 더 이전 글은 아래에 있어요.
+                  🔍 나란히 비교: [{labelFor(topTwo[0])}] ↔ [{labelFor(topTwo[1])}] · 더 이전 글은 아래에 있어요.
                 </div>
                 {/* step537: 교사 화면과 동일한 diff 토글 */}
                 <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none flex-shrink-0">

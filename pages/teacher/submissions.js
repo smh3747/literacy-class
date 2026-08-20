@@ -203,6 +203,7 @@ export default function TeacherSubmissions() {
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
 
     const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
+      .order('created_at', { ascending: true })   // step579: 시간순 단일 기준(attempt 중복행 대비)
 
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
@@ -257,7 +258,8 @@ export default function TeacherSubmissions() {
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
     
     const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
-    
+      .order('created_at', { ascending: true })   // step579: 시간순 단일 기준(attempt 중복행 대비)
+
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
     ;(subs || []).forEach(s => {
@@ -1075,8 +1077,8 @@ export default function TeacherSubmissions() {
                       )
                     }
 
-                    // 제출 학생
-                    const sorted = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+                    // 제출 학생 — step579: attempt순 → 시간순(중복 attempt 행이 있어도 첫/최종이 자기모순 없게)
+                    const sorted = [...g.items].sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
                     const first = sorted[0]
                     const last = sorted[sorted.length - 1]
                     const isImproved = first.id !== last.id
@@ -1292,17 +1294,19 @@ export default function TeacherSubmissions() {
 
               {/* 🆕 최신 2개를 위에 병렬(직전=왼쪽, 최신=오른쪽), 그 이전 글은 아래로 */}
               {(() => {
-                const ordered = [...selectedStudent.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+                // step579: attempt순 → 시간순 단일 기준 — attempt=1 중복행(578 사고)에도 직전/최신이 시간 역전 없게
+                const ordered = [...selectedStudent.items].sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
                 const topTwo = ordered.slice(-2)   // 최신 2개 (직전, 최신)
                 const older = ordered.slice(0, -2)  // 그 이전 글들
 
+                // step579: 라벨도 시간순 서수 — 중복행이 있어도 "첫 번째 글"은 하나
                 const labelFor = (s) => {
-                  const a = s.attempt || 1
-                  return a === 1 ? '📝 첫 번째 글' : a === 2 ? '✨ 수정본 (1차)' : `✨ 수정본 ${a - 1}차`
+                  const i = ordered.findIndex(x => x.id === s.id)
+                  return i === 0 ? '📝 첫 번째 글' : i === 1 ? '✨ 수정본 (1차)' : `✨ 수정본 ${i}차`
                 }
 
                 const renderCard = (s, idxInOrdered) => {
-                  const isLast = (s.attempt || 1) === (ordered[ordered.length - 1].attempt || 1)
+                  const isLast = s.id === ordered[ordered.length - 1].id   // step579: attempt 값 비교 → id 비교(동률 4장 전부 isLast 되던 문제)
                   const showAllowBtn = isLast && (s.attempt||1) >= 2 && !s.extra_rewrite_allowed
                   const prevSub = ordered[idxInOrdered - 1]
                   const isRewrite = (s.attempt || 1) >= 2 && !!prevSub  // 🆕 step474: 수정본 + 직전 글 존재
