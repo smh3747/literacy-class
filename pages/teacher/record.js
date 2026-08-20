@@ -6,6 +6,8 @@ import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import { displayStudentName } from '../../lib/displayName'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, assertWritable } from '../../lib/impersonation'
 
 async function loadSummaries(studentId) {
   const { data } = await supabase.from('submissions')
@@ -63,18 +65,18 @@ export default function RecordPage() {
   const [generating, setGenerating] = useState(false)
   const [single, setSingle] = useState(null)
   const [error, setError] = useState('')
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step570: 엿보기 지원
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles')
-      .select('*, classes:class_id(id, name, code, grade, school)')
-      .eq('id', authUser.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step570: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade, school)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
     // 키 서버격리(step153~): 키 등록 여부만 확인. AI 호출은 서버가 학급 키 조회.
@@ -123,6 +125,12 @@ export default function RecordPage() {
     setLoading(false)
   }
 
+  // step570: logout 신설 — 기존엔 Header에 onLogout 미전달로 로그아웃 클릭 시 TypeError 나던 버그 수리
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
+
   // 체크박스 토글
   const toggleStudent = (id) => {
     setSelectedIds(prev => {
@@ -137,6 +145,8 @@ export default function RecordPage() {
   }
 
   const runBatch = async () => {
+    // step570: 엿보기 AI 호출 차단 — 관리자 본인 키로 남의 반 학생 글이 전송되는 사고 방지 + upsert 차단
+    if (!assertWritable()) return
     if (!hasApiKey) { alert('학급 API 키가 설정되어 있지 않아요. 설정에서 등록해주세요.'); return }
     const targets = students.filter(s => selectedIds.has(s.id))
     if (targets.length === 0) { alert('평어를 만들 학생을 먼저 선택해주세요.'); return }
@@ -190,6 +200,7 @@ export default function RecordPage() {
   }
 
   const genSingle = async () => {
+    if (!assertWritable()) return  // step570: 엿보기 AI 호출 차단(관리자 키 소비 방지)
     setError(''); setSingle(null)
     if (subs.length === 0) { setError('이 학생의 글 기록이 없어요.'); return }
     if (!hasApiKey) { setError('학급 API 키가 설정되어 있지 않아요.'); return }
@@ -217,8 +228,15 @@ export default function RecordPage() {
     <>
       <Head><title>생기부 평어 도우미 · 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
-        <Header user={user} />
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
+        <Header user={user} onLogout={logout} />
         <main className={`mx-auto px-4 py-6 sm:py-8 transition-all ${batchResults.length > 0 ? 'max-w-6xl' : 'max-w-3xl'}`}>
+          {/* step570: 엿보기 읽기 전용 안내 */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 mb-4">
+              📖 읽기 전용입니다. AI 평어 생성은 엿보기에서 실행할 수 없어요.
+            </div>
+          )}
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">📝 생기부 평어 도우미</h1>
             <p className="text-sm text-gray-600 mt-1">
@@ -240,7 +258,7 @@ export default function RecordPage() {
             />
             <button
               onClick={runBatch}
-              disabled={batchRunning || selectedIds.size === 0}
+              disabled={batchRunning || selectedIds.size === 0 || isImpersonating}
               className="mt-3 w-full sm:w-auto bg-primary text-white px-6 py-3 rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
             >
               {batchRunning
@@ -354,7 +372,7 @@ export default function RecordPage() {
                     <option value="보통">보통</option>
                     <option value="노력요함">노력요함</option>
                   </select>
-                  <button onClick={genSingle} disabled={generating} className="bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-semibold disabled:opacity-50">
+                  <button onClick={genSingle} disabled={generating || isImpersonating} className="bg-primary text-white px-4 py-1.5 rounded-lg text-sm font-semibold disabled:opacity-50">
                     {generating ? '작성 중...' : '평어 만들기'}
                   </button>
                 </div>

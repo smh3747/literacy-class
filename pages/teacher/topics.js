@@ -9,6 +9,8 @@ import Header from '../../components/Header'
 import SuggestionLogPanel from '../../components/SuggestionLogPanel'
 import TopicLikeButton from '../../components/TopicLikeButton'   // step547: 좋아요 토글 공용 버튼
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'   // step570: 엿보기 지원
 
 // 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
 function AiLoadingBlock({ title, sub }) {
@@ -147,16 +149,18 @@ export default function TopicsPage() {
   // 🆕 step541: 좋아요 집계·내가 누른 것 — null이면(테이블 미생성·조회 실패) 좋아요 UI 전체 숨김(비차단)
   const [likeCounts, setLikeCounts] = useState(null)
   const [myLikedSet, setMyLikedSet] = useState(new Set())
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step570: 엿보기 지원
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name, code, grade)').eq('id', authUser.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step570: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -241,7 +245,10 @@ export default function TopicsPage() {
     setTopics(enriched)
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step570: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   // 루브릭 조작
   const updateRubric = (i, key, val) => {
@@ -274,6 +281,7 @@ export default function TopicsPage() {
 
   // 📅 기간 일괄 AI 주제 생성 (미리보기)
   const generateBatchTopics = async () => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출 = 관리자 키 소비 방지)
     if (!batchStartDate || !batchEndDate) return alert('시작/종료 날짜를 모두 선택해주세요')
     if (new Date(batchStartDate) > new Date(batchEndDate)) return alert('종료일이 시작일보다 빠를 수 없어요')
 
@@ -353,6 +361,7 @@ export default function TopicsPage() {
   // 📅 개별 항목 재추천 (그 날짜 하나만 AI 새로 받아옴)
   const [regeneratingIdx, setRegeneratingIdx] = useState(null)
   const regenerateSingle = async (idx) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출)
     const item = batchPreview[idx]
     if (!item) return
 
@@ -391,6 +400,7 @@ export default function TopicsPage() {
 
   // 📅 일괄 저장 (DB에 한 번에 등록)
   const saveBatchTopics = async () => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(topics.insert)
     if (!batchPreview || batchPreview.length === 0) return
 
     // 빈 주제 검증
@@ -482,6 +492,9 @@ export default function TopicsPage() {
   }
 
   const saveTopic = async () => {
+    // step570: 엿보기 차단 — topics.insert/update + topic_copies.insert + rpc('notify_topic_copied')
+    //   (rpc는 supabase Proxy가 못 막아 원작자에게 실제 알림이 가는 경로 — 담임 몰래 원칙 위반 방지)
+    if (!assertWritable()) return
     if (!date || !title.trim()) return alert('날짜와 주제를 입력해주세요')
     if (rubrics.length === 0) return alert('평가 기준을 1개 이상 추가해주세요')
 
@@ -674,6 +687,7 @@ export default function TopicsPage() {
   }
 
   const deleteTopic = async (id) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(topics.delete)
     if (!confirm('이 주제를 삭제할까요? (학생 글은 유지됨)')) return
     const { error } = await supabase.from('topics').delete().eq('id', id)
     if (error) return alert('삭제 실패: ' + error.message)
@@ -682,6 +696,7 @@ export default function TopicsPage() {
 
   // AI 주제 추천 — 3개 받아서 와이프가 고름 (와이프 피드백)
   const suggestTopic = async () => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출 + 추천 로그 insert)
     if (!hasApiKey) {
       alert('Gemini API 키를 먼저 등록해주세요! (선생님 메인 화면에서 등록 가능)')
       return
@@ -805,6 +820,7 @@ export default function TopicsPage() {
 
   // 🆕 카드 1개만 다시 추천 (다른 2개는 그대로 유지)
   const refreshSingleSuggestion = async (idx, overrideCategory = null) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출 + 로그 insert)
     if (!aiPicker || !aiPicker.suggestions[idx]) return
     if (!hasApiKey) return alert('Gemini API 키를 먼저 등록해주세요!')
 
@@ -879,6 +895,7 @@ export default function TopicsPage() {
   }
   // 🆕 사이드 패널에서 과거 추천 항목을 바로 적용 (와이프 피드백)
   const applyFromLog = async (sug) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출)
     if (!sug || !sug.title) return
     setTitle(sug.title)
     setDesc(sug.description || '')
@@ -925,6 +942,7 @@ export default function TopicsPage() {
   }
 
   const applySuggestion = async (idx) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(로그 update + AI 호출)
     if (!aiPicker || !aiPicker.suggestions[idx]) return
     const picked = aiPicker.suggestions[idx]
 
@@ -1058,6 +1076,7 @@ export default function TopicsPage() {
   // 🆕 step541: 공유 주제 ❤️ 좋아요 토글 — 낙관적 갱신 + 실패 시 원복. UNIQUE(1인 1회)·RLS는 서버가 보장.
   //   likeCounts가 null(테이블 미생성·조회 실패)이면 UI 자체가 안 떠서 여기 못 들어옴.
   const toggleLike = async (item) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(topic_likes insert/delete)
     if (!user?.id || likeCounts === null) return
     const key = `${item.sourceLogId}-${item.sourceIndex}`
     const liked = myLikedSet.has(key)
@@ -1085,6 +1104,7 @@ export default function TopicsPage() {
   // 🆕 본인 추천 카드 공유 토글 (와이프 피드백)
   // 🆕 개별 추천 공유 토글 (카드 단위 — 묶음 전체가 아님)
   const toggleShareSuggestion = async (logId, suggestionIdx, share) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(로그 update)
     if (!logId || suggestionIdx === undefined || suggestionIdx === null) return
     try {
       // 현재 로그의 shared_indexes 가져와서 추가/제거
@@ -1113,6 +1133,7 @@ export default function TopicsPage() {
   //   가져간 추적이 연쇄삭제됨). resulting_topic_id=null로 무력화 → 추적·FK 보존.
   // - 손제작/AI 구분 없이 resulting_topic_id로 공유 중인 주제면 동일하게 취소 가능.
   const cancelTopicShare = async (topicId) => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(로그 update)
     if (!topicId || !user?.id) return
     if (!confirm('이 주제를 추천 풀에서 내릴까요? 이미 가져간 선생님 자료는 그대로예요.')) return
     try {
@@ -1127,6 +1148,7 @@ export default function TopicsPage() {
 
   // 역방향 기능: 선생님이 주제만 입력 → AI가 설명 + 평가기준 자동 생성
   const generateFromTopic = async () => {
+    if (!assertWritable()) return  // step570: 엿보기 차단(AI 호출 2건 — 설명·평가기준 생성)
     if (!title.trim()) {
       alert('먼저 주제를 입력해주세요!')
       return
@@ -1186,12 +1208,20 @@ export default function TopicsPage() {
     <>
       <Head><title>주제 관리 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">주제 관리</h1>
           </div>
+
+          {/* step570: 엿보기 읽기 전용 안내 */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              📖 읽기 전용입니다. 주제 등록·수정·삭제, AI 추천·생성, 공유·좋아요는 차단되어 있어요.
+            </div>
+          )}
 
           {/* 모드 전환 탭 */}
           <div className="bg-white rounded-2xl p-1 shadow-sm flex gap-1">
@@ -1272,7 +1302,7 @@ export default function TopicsPage() {
                     )
                   })()}
 
-                  <button onClick={generateBatchTopics} disabled={batchGenerating}
+                  <button onClick={generateBatchTopics} disabled={batchGenerating || isImpersonating}
                     className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-purple-700">
                     {batchGenerating ? '🤖 AI가 주제 만드는 중...' : '✨ AI로 주제 일괄 생성'}
                   </button>
@@ -1365,7 +1395,7 @@ export default function TopicsPage() {
                     className="w-full p-2 border border-gray-200 rounded-lg" />
                 </div>
                 <div className="sm:col-span-2 flex items-end gap-2">
-                  <button onClick={suggestTopic} disabled={aiSuggesting || generatingRubrics}
+                  <button onClick={suggestTopic} disabled={aiSuggesting || generatingRubrics || isImpersonating}
                     className="flex-1 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200 disabled:opacity-50">
                     {aiSuggesting ? '추천 중...' : generatingRubrics ? '평가기준 만드는 중...' : `✨ AI 주제 추천 (${aiCount}개)`}
                   </button>
@@ -1884,6 +1914,7 @@ export default function TopicsPage() {
                 <div className="flex flex-col gap-2">
                   <button
                     onClick={async () => {
+                      if (!assertWritable()) return  // step570: 엿보기 차단(인라인 insert — 함수 밖 쓰기)
                       try {
                         const { error: shareErr } = await supabase.from('topic_suggestion_logs').insert({
                           teacher_id: user.id,
@@ -2017,7 +2048,7 @@ export default function TopicsPage() {
                           </button>
                         )}
                         <Link
-                          href={`/teacher/submissions?topic=${t.id}`}
+                          href={withImpersonation(`/teacher/submissions?topic=${t.id}`)}
                           className="text-xs text-primary hover:bg-primary-light px-2 py-1 rounded"
                         >
                           학생글

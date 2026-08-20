@@ -7,6 +7,8 @@ import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
 import { displayStudentName } from '../../lib/displayName'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
 
 export default function GrammarBackfill() {
   const router = useRouter()
@@ -21,17 +23,19 @@ export default function GrammarBackfill() {
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '', errors: [] })
   const [logs, setLogs] = useState([])
+  const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step570: 엿보기 지원
   const cancelRef = useRef(false)
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
-    if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*, classes:class_id(id, name)').eq('id', au.id).maybeSingle()
-    if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+    // step570: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name)')
+    if (!profile) { router.push('/teacher/login'); return }
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut(); router.push('/teacher/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -105,6 +109,9 @@ export default function GrammarBackfill() {
 
   // 맞춤법 일괄 적용
   const runBackfill = async () => {
+    // step570: 엿보기 차단 최우선 — AI 호출(관리자 키 소비) + submissions.update + rpc('create_notification')
+    //   (rpc는 supabase Proxy가 못 막아 대상 교사에게 실제 알림이 꽂힐 수 있는 경로)
+    if (!assertWritable()) return
     const targets = submissions.filter(s => selectedIds.has(s.id))
     if (targets.length === 0) return alert('선택된 글이 없어요')
 
@@ -211,7 +218,10 @@ export default function GrammarBackfill() {
     addLog('🛑 사용자가 중단 요청')
   }
 
-  const logout = async () => { await supabase.auth.signOut(); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }  // step570: 엿보기 중 로그아웃 = 관리자 복귀
+    await supabase.auth.signOut(); router.push('/')
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -222,12 +232,20 @@ export default function GrammarBackfill() {
     <>
       <Head><title>맞춤법 일괄 적용 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner targetName={user?.realname} targetSchool={user?.school} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Link href="/teacher" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/teacher')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">📝 맞춤법 피드백 일괄 적용</h1>
           </div>
+
+          {/* step570: 엿보기 읽기 전용 안내 */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              📖 읽기 전용입니다. 맞춤법 일괄 적용(AI 호출·글 수정)은 엿보기에서 실행할 수 없어요.
+            </div>
+          )}
 
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
             <p className="font-medium mb-1">💡 이 기능은 무엇인가요?</p>
@@ -361,7 +379,7 @@ export default function GrammarBackfill() {
                   </>
                 ) : (
                   <button onClick={runBackfill}
-                    disabled={selectedIds.size === 0}
+                    disabled={selectedIds.size === 0 || isImpersonating}
                     className="w-full py-3 bg-primary text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed">
                     {selectedIds.size > 0
                       ? `🚀 ${selectedIds.size}개 글에 맞춤법 피드백 적용`
