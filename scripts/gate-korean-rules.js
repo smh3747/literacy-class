@@ -42,6 +42,17 @@ const DETECT = [
   { name: "때(살때)",          text: '서른 살때가 되면',    original: '살때',      correction: '살 때' },      // step475
   { name: "때(할때)",          text: '할때 조심',          original: '할때',      correction: '할 때' },      // step475
   { name: '숫자+만원',         text: '150만원을 드렸다',    original: '150만원',   correction: '150만 원' },   // step475
+  // step575: 미검출 전수조사 편입(DB 빈도 상위 고정 패턴)
+  { name: '시각(6시30분)',      text: '6시30분에 일어났다',  original: '6시30분',   correction: '6시 30분' },   // step575
+  { name: '날짜(6월5일)',       text: '6월5일에 갔다',       original: '6월5일',    correction: '6월 5일' },    // step575
+  { name: "때(고통스러울때)",   text: '고통스러울때 참았다',  original: '울때',      correction: '울 때' },      // step575(기존 규칙 커버 확인)
+  { name: "때(그럴때마다)",     text: '그럴때마다 웃었다',    original: '럴때',      correction: '럴 때' },      // step575(기존 규칙 커버 확인)
+  { name: '한번하기',          text: '한번하기로 했다',     original: '한번하기',  correction: '한 번 하기' }, // step575
+  { name: '한번씩',            text: '한번씩 해봤다',       original: '한번씩',    correction: '한 번씩' },    // step575
+  { name: '우리반',            text: '우리반을 사랑해',     original: '우리반',    correction: '우리 반' },    // step575
+  { name: '그리고나서',        text: '그리고나서 밥을 먹었다', original: '그리고나서', correction: '그러고 나서' }, // step575('그리고 나서'도 틀린 형태라 표준형으로)
+  { name: '이로인해',          text: '이로인해 문제가 생겼다', original: '이로인해',  correction: '이로 인해' },  // step575
+  { name: '안된다고',          text: '이러면 안된다고 했다',  original: '안된다',    correction: '안 된다' },    // step575
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -73,6 +84,17 @@ const NO_FALSE_POSITIVE = [
   { name: "'제때'(합성어)",          text: '제때 왔다' },                 // step475
   { name: "'오만원권'(한글 수사)",   text: '오만원권 지폐' },             // step475
   { name: "'물때'(한 단어)",         text: '물때가 끼었다' },             // step475
+  // step575: 신규 규칙 오탐 가드
+  { name: "'3시간30분'(시간+분)",    text: '3시간30분 동안 걸었다' },     // step575: '시' 뒤가 '간'이라 제외
+  { name: "'6시 30분'(정상 띄움)",   text: '6시 30분에 만났다' },         // step575
+  { name: "'3개월20일'(개월+일)",    text: '3개월20일이 지났다' },        // step575: '월' 앞이 '개'라 제외
+  { name: "'한번 가볼까'(부사 한번)", text: '한번 가볼까?' },             // step575
+  { name: "'한번쯤'(미대상)",        text: '한번쯤 생각했다' },           // step575
+  { name: "'우리반짝'(우연 결합)",   text: '우리반짝반짝 빛났다' },       // step575
+  { name: "'제안된다'(접미사 되다)", text: '새 방법이 제안된다' },        // step575: 앞글자 가드
+  { name: "'고안되면'(접미사 되다)", text: '새 장치가 고안되면 좋겠다' }, // step575: 앞글자 가드
+  { name: "'참 안됐다'(형용사)",     text: '그 친구가 참 안됐다' },       // step575: '됐'이라 제외
+  { name: "'안타깝다'(무관 단어)",   text: '정말 안타깝다' },             // step575
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
