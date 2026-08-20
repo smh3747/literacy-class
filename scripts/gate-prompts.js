@@ -59,6 +59,7 @@ const { pathToFileURL } = require('url')
     { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
     { name: '규칙 12(corrections 판정 원칙)',  text: '유일한 기준' }, // step569: 원칙 승격 — corrections 기준은 "원문이 틀렸는가"뿐
     { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
+    { name: "규칙 12('밖에' 핑퐁 금지)",       text: "'밖에'는 교정하지 마세요" }, // step576: 조사 '밖에'(붙임)/명사구 '밖에'(띄움) 양방향 교정 5:4 공존(전수조사)
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
@@ -87,6 +88,7 @@ const { pathToFileURL } = require('url')
       { name: '규칙 12(반말 글 존댓말 교정 금지)', text: '반말체는 글쓰기에서 완전히 올바른 문체' }, // step485
       { name: '규칙 12(corrections 판정 원칙)',  text: '유일한 기준' }, // step569: 원칙 승격 — corrections 기준은 "원문이 틀렸는가"뿐
       { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
+      { name: "규칙 12('밖에' 핑퐁 금지)",       text: "'밖에'는 교정하지 마세요" }, // step576: 조사 '밖에'(붙임)/명사구 '밖에'(띄움) 양방향 교정 5:4 공존(전수조사)
     ]
     const inlinePrompts = {}
     try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
