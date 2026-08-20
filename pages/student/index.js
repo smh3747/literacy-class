@@ -17,6 +17,7 @@ import { GRAMMAR_NOTICE_STUDENT } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
+import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(HH:MM) 표시
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
@@ -34,6 +35,80 @@ function parseTopicDescription(desc) {
     rest = rest.slice(0, gi)
   }
   return { genreLabel, body: rest.trim(), guide }
+}
+
+// ============================================
+// 🆕 step571: 로컬 초안 금고 — 공유 크롬북에서 다른 기기 로그아웃(세션 사망)으로 작성 글이
+//   유실되던 사고(8/20) 대응. 값은 { text, savedAt }만 저장(개인정보 최소화 — 이름 등 금지).
+//   키: draft:{topicId}:{userId}:{phase} (phase = 'write' 첫 글 | 'rewrite' 수정본)
+//   구 essay_backup_* 키는 readDraft 폴백으로 1회 이관 후 삭제.
+// ============================================
+const DRAFT_KEEP_PER_STUDENT = 4  // 용량 방어: 학생당 최근 초안 4개(주제 2개 × 첫글/수정본)만 유지
+
+const draftKey = (topicId, userId, phase) => `draft:${topicId}:${userId}:${phase}`
+const legacyBackupKey = (topicId, userId, phase) => `essay_backup_${userId}_${topicId}_${phase}`
+
+// 학생의 오래된 초안 정리 — savedAt 내림차순으로 최근 keep개만 남김
+function pruneDrafts(userId, keep = DRAFT_KEEP_PER_STUDENT) {
+  try {
+    const mine = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('draft:') && k.includes(`:${userId}:`)) {
+        let savedAt = ''
+        try { savedAt = JSON.parse(localStorage.getItem(k))?.savedAt || '' } catch (e) {}
+        mine.push({ k, savedAt })
+      }
+    }
+    mine.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
+    mine.slice(keep).forEach(({ k }) => { try { localStorage.removeItem(k) } catch (e) {} })
+  } catch (e) {}
+}
+
+function saveDraft(topicId, userId, phase, text) {
+  const value = JSON.stringify({ text, savedAt: new Date().toISOString() })
+  try {
+    localStorage.setItem(draftKey(topicId, userId, phase), value)
+  } catch (e) {
+    // 용량 초과 등 — 오래된 초안 정리 후 1회 재시도(그래도 실패면 조용히 포기)
+    try { pruneDrafts(userId, 1); localStorage.setItem(draftKey(topicId, userId, phase), value) } catch (e2) {}
+  }
+  pruneDrafts(userId)
+}
+
+// 새 형식(JSON) 우선, 없으면 구 essay_backup_* 문자열 폴백 → { text, savedAt|null } 또는 null
+function readDraft(topicId, userId, phase) {
+  try {
+    const raw = localStorage.getItem(draftKey(topicId, userId, phase))
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed.text === 'string' && parsed.text.trim()) {
+        return { text: parsed.text, savedAt: parsed.savedAt || null }
+      }
+    }
+  } catch (e) {}
+  try {
+    const legacy = localStorage.getItem(legacyBackupKey(topicId, userId, phase))
+    if (legacy && legacy.trim()) return { text: legacy, savedAt: null }
+  } catch (e) {}
+  return null
+}
+
+// 구 키에서 읽힌 초안을 새 키로 이관(savedAt은 모르므로 null 유지) 후 구 키 삭제
+function migrateLegacyDraft(topicId, userId, phase, d) {
+  if (!d || d.savedAt !== null) return
+  try { localStorage.setItem(draftKey(topicId, userId, phase), JSON.stringify({ text: d.text, savedAt: null })) } catch (e) {}
+  try { localStorage.removeItem(legacyBackupKey(topicId, userId, phase)) } catch (e) {}
+}
+
+function removeDraft(topicId, userId, phase) {
+  try { localStorage.removeItem(draftKey(topicId, userId, phase)) } catch (e) {}
+  try { localStorage.removeItem(legacyBackupKey(topicId, userId, phase)) } catch (e) {}
+}
+
+// 구 백업의 고아 키(feedback/done — 키 오염 버그로 쌓이던, 아무도 안 읽는 키) 정리
+function cleanupLegacyOrphans(topicId, userId) {
+  ['feedback', 'done'].forEach(p => { try { localStorage.removeItem(legacyBackupKey(topicId, userId, p)) } catch (e) {} })
 }
 
 // 현재 시간이 락 시간대 안에 있는지 검사
@@ -215,8 +290,8 @@ export default function StudentHome() {
   const [challengeTopics, setChallengeTopics] = useState([])   // 각 항목 {...topic, myMaxAttempt}
   const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: { rank, total } } — step539 구조 확장
   const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, myRank }
-  // 백업 복원 알림 (null 또는 { type, length })
-  const [restoredBackup, setRestoredBackup] = useState(null)
+  // step571: 초안 복원 제안 배너 (null 또는 { phase: 'write'|'rewrite', text, savedAt }) — 확인 후 주입(opt-in)
+  const [draftPrompt, setDraftPrompt] = useState(null)
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
   // 🆕 step516: 수정 허용 알림(action=rewrite) 직행 — 다시 쓰기 버튼 스크롤·강조
@@ -248,18 +323,29 @@ export default function StudentHome() {
     try { resultTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
   }, [step])
   
-  // 자동 백업 (5초마다)
+  // step571: 초안 자동 저장 — 1.5초 디바운스(기존 5초는 계속 타이핑하면 한 번도 저장 안 되던 문제),
+  //   write/rewrite 단계에서만(기존 키 오염 버그: feedback/done 고아 키 수리)
   useEffect(() => {
     if (!todayTopic || !user) return
-    const key = `essay_backup_${user.id}_${todayTopic.id}_${step}`
+    if (step !== 'write' && step !== 'rewrite') return
     if (backupTimerRef.current) clearTimeout(backupTimerRef.current)
     backupTimerRef.current = setTimeout(() => {
       const text = step === 'write' ? essay : rewriteEssay
-      if (text && text.length > 0) {
-        try { localStorage.setItem(key, text) } catch(e) {}
-      }
-    }, 5000)
+      if (text && text.length > 0) saveDraft(todayTopic.id, user.id, step, text)
+    }, 1500)
     return () => { if (backupTimerRef.current) clearTimeout(backupTimerRef.current) }
+  }, [essay, rewriteEssay, step, todayTopic, user])
+
+  // step571: 탭 닫힘·이탈 시 즉시 저장(디바운스 미발화분 방어) — pagehide는 모바일 사파리 포함 가장 넓게 잡힘
+  useEffect(() => {
+    const flush = () => {
+      if (!todayTopic || !user) return
+      if (step !== 'write' && step !== 'rewrite') return
+      const text = step === 'write' ? essay : rewriteEssay
+      if (text && text.length > 0) saveDraft(todayTopic.id, user.id, step, text)
+    }
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
   }, [essay, rewriteEssay, step, todayTopic, user])
 
   // 🆕 step327: 어떤 조회든 무한 대기 방지 — 10초 타임아웃
@@ -482,6 +568,7 @@ export default function StudentHome() {
     setExampleText('')
     setCurrentSub(null)
     setStep('write')
+    setDraftPrompt(null)  // step571: 주제 전환 시 이전 주제의 초안 배너 잔존 방지
 
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
@@ -534,28 +621,38 @@ export default function StudentHome() {
           setStep('done')
         }
       }
-    } else {
-      // 새 주제 → 백업 복원 시도
-      try {
-        const backupKey = `essay_backup_${profile.id}_${topic.id}_write`
-        const backup = localStorage.getItem(backupKey)
-        if (backup && backup.trim().length > 0) {
-          setEssay(backup)
-          // 복원 알림 띄우기 (1초 후, 화면 그려진 다음에)
-          setTimeout(() => {
-            setRestoredBackup({
-              type: 'write',
-              length: backup.length
-            })
-          }, 800)
-        }
 
-        // 수정본 백업도 있으면 미리 채워둠 (수정 모드 들어가면 보임)
-        const rewriteBackupKey = `essay_backup_${profile.id}_${topic.id}_rewrite`
-        const rewriteBackup = localStorage.getItem(rewriteBackupKey)
-        if (rewriteBackup && rewriteBackup.trim().length > 0) {
-          setRewriteEssay(rewriteBackup)
+      // step571: 수정본 초안 복원 갭 수리 — 기존엔 제출 이력이 있으면 rewrite 백업을 읽는 경로 자체가
+      //   없어서(수정본 작성 중 이탈 = 이번 사고 시나리오) 초안이 있어도 유실됐다. 다시 쓸 수 있는
+      //   상태(첫 글만 있음 또는 추가 수정 허용)일 때만 배너 제안.
+      try {
+        cleanupLegacyOrphans(topic.id, profile.id)
+        const sorted2 = [...existing].sort((a, b) => (b.attempt || 1) - (a.attempt || 1))
+        const last2 = sorted2[0]
+        const canRewrite = (last2.attempt || 1) === 1 || !!last2.extra_rewrite_allowed
+        if (canRewrite) {
+          const d = readDraft(topic.id, profile.id, 'rewrite')
+          if (d) {
+            migrateLegacyDraft(topic.id, profile.id, 'rewrite', d)
+            if (d.text.trim() !== (last2.essay_text || '').trim()) {
+              setTimeout(() => setDraftPrompt({ phase: 'rewrite', text: d.text, savedAt: d.savedAt }), 800)
+            }
+          }
         }
+      } catch(e) {}
+    } else {
+      // step571: 새 주제 → 초안 확인. 자동 주입 대신 배너로 물어보고 주입(opt-in).
+      //   구 essay_backup_* 키는 readDraft 폴백으로 읽고 새 키로 이관.
+      try {
+        cleanupLegacyOrphans(topic.id, profile.id)
+        const d = readDraft(topic.id, profile.id, 'write')
+        if (d) {
+          migrateLegacyDraft(topic.id, profile.id, 'write', d)
+          setTimeout(() => setDraftPrompt({ phase: 'write', text: d.text, savedAt: d.savedAt }), 800)
+        }
+        // 수정본 구 백업이 남아 있으면 새 키로 이관만(제출 0건이라 수정 단계 아님 — 주입 안 함)
+        const dr = readDraft(topic.id, profile.id, 'rewrite')
+        if (dr) migrateLegacyDraft(topic.id, profile.id, 'rewrite', dr)
       } catch(e) {}
     }
 
@@ -693,8 +790,8 @@ export default function StudentHome() {
 
       if (error) throw error
 
-      // 백업 정리
-      try { localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_write`) } catch(e) {}
+      // step571: 초안 정리 (새 키 + 구 백업 키)
+      removeDraft(todayTopic.id, user.id, 'write')
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -1083,7 +1180,7 @@ export default function StudentHome() {
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
 
-      try { localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`) } catch(e) {}
+      removeDraft(todayTopic.id, user.id, 'rewrite')  // step571: 초안 정리 (새 키 + 구 백업 키)
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -1236,41 +1333,36 @@ export default function StudentHome() {
           step === 'rewrite' ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'
         }`}>
 
-          {/* 백업 복원 알림 배너 */}
-          {restoredBackup && (
+          {/* step571: 초안 복원 제안 배너 — 자동 주입 대신 확인 후 주입. '나중에'는 배너만 닫고
+              초안은 유지(실수 삭제 방지 — 제출 성공·오래된 초안 자동 정리로 소멸) */}
+          {draftPrompt && (
             <div className="bg-green-50 border-2 border-green-300 rounded-2xl p-4 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="text-2xl flex-shrink-0">💾</div>
+                <div className="text-2xl flex-shrink-0">✍️</div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-green-900 text-sm">저장된 글을 불러왔어요!</h3>
+                  <h3 className="font-bold text-green-900 text-sm">
+                    {draftPrompt.phase === 'rewrite' ? '다시 쓰던 수정본이 있어요' : '작성하던 글이 있어요'}
+                    {draftPrompt.savedAt ? ` (${toKST(draftPrompt.savedAt).slice(11)} 저장)` : ''}. 복원할까요?
+                  </h3>
                   <p className="text-xs text-green-800 mt-1">
-                    이전에 쓰던 글({restoredBackup.length}자)이 자동으로 불러와졌어요.
-                    이어서 쓰거나 새로 시작할 수 있어요.
+                    저장된 글은 {draftPrompt.text.length}자예요. 복원하면 이어서 쓸 수 있어요.
                   </p>
                   <div className="flex gap-2 mt-2">
                     <button
-                      onClick={() => setRestoredBackup(null)}
+                      onClick={() => {
+                        if (draftPrompt.phase === 'rewrite') setRewriteEssay(draftPrompt.text)
+                        else setEssay(draftPrompt.text)
+                        setDraftPrompt(null)
+                      }}
                       className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
                     >
-                      ✓ 이어서 쓸게요
+                      ✓ 복원하기
                     </button>
                     <button
-                      onClick={() => {
-                        if (confirm('정말 새로 쓰시겠어요?\n이전 글은 사라져요.')) {
-                          setEssay('')
-                          setRewriteEssay('')
-                          if (user && todayTopic) {
-                            try {
-                              localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_write`)
-                              localStorage.removeItem(`essay_backup_${user.id}_${todayTopic.id}_rewrite`)
-                            } catch(e) {}
-                          }
-                          setRestoredBackup(null)
-                        }
-                      }}
+                      onClick={() => setDraftPrompt(null)}
                       className="text-xs bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50"
                     >
-                      🗑️ 새로 쓰기
+                      나중에
                     </button>
                   </div>
                 </div>
