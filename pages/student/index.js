@@ -572,10 +572,13 @@ export default function StudentHome() {
 
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
-    const { data: existing } = await withTimeout(supabase.from('submissions')
+    const { data: existing, error: existingErr } = await withTimeout(supabase.from('submissions')
       .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at')
       .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null))
+    // step575: 조회 실패(401/5xx)를 "제출 없음"으로 오판해 이미 제출한 학생에게 빈 글쓰기 폼을
+    //   보여주던 경로 차단 — throw하면 기존 catch가 재시도 화면(loadError)으로 안내
+    if (existingErr) throw existingErr
     console.log(`[perf] existing 제출 조회: ${Math.round(performance.now() - tExisting)}ms, rows=${(existing || []).length}`)
 
     if (existing && existing.length > 0) {
@@ -717,6 +720,29 @@ export default function StudentHome() {
 
     submittingRef.current = true  // 🆕 step283: 첫 await 전 동기 잠금(연타 중복 방지)
     setSubmitting(true)
+
+    // 🆕 step575: insert 전 존재 확인 — attempt=1 중복행 사고(두 기기 동시 제출·AI 대기 중 이탈 후
+    //   재제출·응답 유실 후 재시도) 차단. submittingRef는 마운트 로컬이라 이 검사가 유일한 교차 방어.
+    //   조회 자체가 실패하면(401/네트워크) "없다"고 추측하지 않고 제출을 중단한다.
+    try {
+      const { data: dupCheck, error: dupErr } = await withTimeout(supabase.from('submissions')
+        .select('id').eq('user_id', user.id).eq('topic_id', todayTopic.id)
+        .is('deleted_at', null).limit(1))
+      if (dupErr) throw dupErr
+      if (dupCheck && dupCheck.length > 0) {
+        submittingRef.current = false
+        setSubmitting(false)
+        alert('이 주제에는 이미 제출한 글이 있어요. 화면을 새로 불러올게요.')
+        await loadTodayTopic(user, todayTopic.id)
+        return
+      }
+    } catch (e) {
+      submittingRef.current = false
+      setSubmitting(false)
+      alert('연결이 불안정해서 제출을 잠시 멈췄어요. 잠시 후 다시 눌러주세요.\n📝 쓴 글은 이 기기에 저장돼 있어요.')
+      return
+    }
+
     try {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
@@ -792,6 +818,8 @@ export default function StudentHome() {
 
       // step571: 초안 정리 (새 키 + 구 백업 키)
       removeDraft(todayTopic.id, user.id, 'write')
+      // step575: 지난 글 목록에서 제거 — 제출한 주제가 "안 쓴 글" 목록에 남아 재제출을 유인하던 문제
+      setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -1075,9 +1103,14 @@ export default function StudentHome() {
     submittingRef.current = true
 
     // 추가 수정 권한 체크
-    const { data: existingSubs } = await supabase.from('submissions')
+    const { data: existingSubs, error: existingSubsErr } = await supabase.from('submissions')
       .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
       .is('deleted_at', null)
+    // step575: 조회 실패 시 attempt=2로 추측 insert하던 경로 차단(중복행 방지)
+    if (existingSubsErr) {
+      submittingRef.current = false
+      return alert('연결이 불안정해서 제출을 잠시 멈췄어요. 잠시 후 다시 눌러주세요.\n📝 쓴 글은 이 기기에 저장돼 있어요.')
+    }
 
     // max_rewrites: 0이면 수정 불가, N이면 attempt=N+1까지 가능
     const maxRewrites = todayTopic?.max_rewrites !== undefined && todayTopic?.max_rewrites !== null
@@ -1093,8 +1126,9 @@ export default function StudentHome() {
       nextAttempt = maxAtt + 1
       // maxAtt가 이미 (1 + maxRewrites)면 한도 도달
       if (maxAtt >= 1 + maxRewrites) {
-        const latest = existingSubs.find(s => s.attempt === maxAtt)
-        if (!latest || !latest.extra_rewrite_allowed) {
+        // step575: 동률(attempt 중복행) 안전 — 담임이 어느 행에 허가를 줬든 인정(find는 첫 행만 봐서 오반려)
+        const allowed = existingSubs.filter(s => (s.attempt || 1) === maxAtt).some(s => s.extra_rewrite_allowed)
+        if (!allowed) {
           submittingRef.current = false  // 🆕 잠금 해제 후 종료
           return alert(
             `수정 횟수를 모두 사용했어요 (${maxRewrites}회).\n` +
