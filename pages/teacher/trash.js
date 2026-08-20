@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
+import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'   // step574: 실명 잠금 관행 적용
 
 export default function TeacherTrash() {
   const router = useRouter()
@@ -39,7 +40,7 @@ export default function TeacherTrash() {
     if (!classId) return
     // 학급 학생들의 쓰레기통 글
     const { data: students } = await supabase.from('profiles')
-      .select('id, realname, number').eq('class_id', classId).eq('role', 'student')
+      .select('id, realname, nickname, username, number').eq('class_id', classId).eq('role', 'student')   // step574: displayStudentName 폴백용 nickname·username 추가
     const studentMap = {}
     ;(students || []).forEach(s => { studentMap[s.id] = s })
     const studentIds = (students || []).map(s => s.id)
@@ -189,7 +190,7 @@ export default function TeacherTrash() {
                       <div className="flex items-start justify-between flex-wrap gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm">
-                            {s.student?.number ? `${s.student.number}. ` : ''}{s.student?.realname || '(알 수 없음)'}
+                            {displayStudentNameWithNumber(s.student)}
                             <span className="ml-2 text-xs text-gray-500">
                               {(s.attempt||1) === 1 ? '📝 첫 글' : `✨ 수정본 ${s.attempt}`}
                             </span>
@@ -223,14 +224,14 @@ export default function TeacherTrash() {
                       {/* 액션 */}
                       <div className="flex gap-2 pt-1">
                         <button
-                          onClick={() => restore(s.id, s.student?.realname || '학생')}
+                          onClick={() => restore(s.id, displayStudentName(s.student))}
                           disabled={busyId === s.id || isImpersonating}
                           className="flex-1 py-1.5 bg-blue-100 text-blue-700 rounded text-xs font-medium hover:bg-blue-200 disabled:opacity-50"
                         >
                           ↻ 복원
                         </button>
                         <button
-                          onClick={() => permaDelete(s.id, s.student?.realname || '학생')}
+                          onClick={() => permaDelete(s.id, displayStudentName(s.student))}
                           disabled={busyId === s.id || isImpersonating}
                           className="flex-1 py-1.5 bg-red-100 text-red-700 rounded text-xs font-medium hover:bg-red-200 disabled:opacity-50"
                         >

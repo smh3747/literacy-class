@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { toKST } from '../lib/timeFormat'
+import { isImpersonatingNow } from '../lib/impersonation'   // step574: 엿보기 중 읽음 처리 조용히 생략
 
 // 알림 종류별 아이콘(이모지)·색 원. Tabler 웹폰트 미사용이라 이모지로 구분.
 const TYPE_META = {
@@ -107,9 +108,10 @@ export default function NotificationBell({ user }) {
   }
 
   // 항목 클릭: 안읽음이면 읽음 처리 후 링크 이동
+  // step574: 엿보기(?as=) 중엔 읽음 처리를 조용히 생략(alert 없음 — 자동 동작이라 소음 방지). 이동은 그대로.
   const onItemClick = async (n) => {
     setOpen(false)
-    if (!n.read_at) {
+    if (!n.read_at && !isImpersonatingNow()) {
       try {
         const now = new Date().toISOString()
         await supabase.from('notifications').update({ read_at: now }).eq('id', n.id)
@@ -124,6 +126,7 @@ export default function NotificationBell({ user }) {
 
   // 모두 읽음
   const markAllRead = async () => {
+    if (isImpersonatingNow()) return  // step574: 엿보기 중 조용히 생략
     try {
       const now = new Date().toISOString()
       await supabase.from('notifications').update({ read_at: now })
@@ -141,6 +144,7 @@ export default function NotificationBell({ user }) {
     const wasUnread = !n.read_at
     setItems((prev) => prev.filter((x) => x.id !== n.id))
     if (wasUnread) setUnread((u) => Math.max(0, u - 1))
+    if (isImpersonatingNow()) return  // step574: 화면 반응만 하고 DB 기록은 조용히 생략
     try {
       await supabase.from('notifications')
         .update({ dismissed_at: new Date().toISOString() }).eq('id', n.id)
