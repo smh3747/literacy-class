@@ -51,19 +51,13 @@ export default function TeacherHome() {
   const [setupEmail, setSetupEmail] = useState('')
   const [setupSaving, setSetupSaving] = useState(false)
   const [setupError, setSetupError] = useState('')
-  // 🆕 step380: 파운딩 멤버 사전 신청 (결제 아님, 관심 등록만). loaded=조회 성공(테이블 미생성이면 false→카드 숨김)
-  // 🆕 step382: response('interested'|'not_sure') 응답 구분 추가
-  const [preorder, setPreorder] = useState({ loaded: false, done: false, response: null })
-  const [preorderHidden, setPreorderHidden] = useState(true)  // 깜빡임 방지 기본 숨김, localStorage로 복원
-  const [preorderSaving, setPreorderSaving] = useState(false)
-  // 🆕 step564: 수업 3회+(채점완료 주제 3개+) 경험 여부 — 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564.
-  //   maybeShowNextStepCard의 기존 계산 재사용(새 쿼리 없음). review 카드 응답 이력도 과거 3회+의 확정 증거로 인정.
-  const [hasThreeClassRuns, setHasThreeClassRuns] = useState(false)
+  // step581: 유료 사전 신청 UI 전면 제거(step380·382·564 카드·이어묻기·재진입 링크) — 공과금형 전환으로 제품 내 수익화 메시지 0.
+  //   preorders 테이블·기존 응답 데이터·admin 명단 화면은 보존. 이미 응답한 교사에게 한 '가장 좋은 조건(파운딩 멤버 혜택) 우선 안내' 약속은 유료화 공지 시 이행할 것.
   // 🆕 다음 걸음 카드 — 막힌 지점별 온보딩 설문·안내 (card_type별 평생 1회, 브리핑과 별개 state)
   const [nextStepCard, setNextStepCard] = useState(null)      // 'review'|'no_students'|'no_topics'|'no_class_run'|null
   const [reviewPick, setReviewPick] = useState(null)          // review 카드: 선택한 이모지(good|soso|bad)
   const [reviewComment, setReviewComment] = useState('')      // review 카드: 한 줄 의견(선택)
-  const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'ask'(사전신청 이어묻기) | 'thanks'
+  const [reviewFollowup, setReviewFollowup] = useState(null)  // review 후속: null | 'thanks' (step581: 'ask' 사전신청 이어묻기 제거)
   // 🆕 step565: 다음 걸음 모달 '다시 보지 않기' 체크박스 — 체크 시에만 dismissed 영구 기록
   const [nextStepNeverShow, setNextStepNeverShow] = useState(false)
   // 🆕 step477: 전국 공통 주제 — 자동 받기 OFF 교사용 원클릭 카드 { id, title, joined }
@@ -198,46 +192,8 @@ export default function TeacherHome() {
     setSetupSaving(false)
   }
 
-  // 🆕 step380: 사전 신청 상태 조회 — 테이블·컬럼 미생성(SQL 미실행)이면 loaded=false 유지로 카드 자체 숨김
-  useEffect(() => {
-    if (!user?.id || user.role !== 'teacher') return
-    try { setPreorderHidden(!!localStorage.getItem('lc-founding-preorder-dismissed:' + user.id)) } catch { setPreorderHidden(false) }
-    ;(async () => {
-      const { data, error } = await supabase.from('preorders').select('id, response').eq('teacher_id', user.id).maybeSingle()
-      if (error) return
-      setPreorder({ loaded: true, done: !!data, response: data?.response || null })
-    })()
-  }, [user?.id])
-
-  // 🆕 step380: 사전 신청 — 교사당 1회. 🆕 step382: 응답 구분('interested'|'not_sure') 기록.
-  //   unique 위반(23505)은 이미 응답한 것 — 재조회로 실제 응답을 읽어 표시(다기기에서 다른 버튼 눌렀을 때 정확)
-  const submitPreorder = async (response) => {
-    if (isImpersonating) return  // step568: 엿보기 = 기록 없음(버튼은 표시)
-    if (preorderSaving || !user?.id) return
-    setPreorderSaving(true)
-    const { error } = await supabase.from('preorders').insert({ teacher_id: user.id, response })
-    if (!error) {
-      setPreorderSaving(false)
-      setPreorder({ loaded: true, done: true, response })
-      return
-    }
-    if (error.code === '23505') {
-      const { data } = await supabase.from('preorders').select('response').eq('teacher_id', user.id).maybeSingle()
-      setPreorderSaving(false)
-      setPreorder({ loaded: true, done: true, response: data?.response || response })
-      return
-    }
-    setPreorderSaving(false)
-    alert('신청 처리에 문제가 생겼어요. 잠시 후 다시 시도해주세요.')
-  }
-  const dismissPreorder = () => {
-    setPreorderHidden(true)
-    if (user?.id && !isImpersonating) { try { localStorage.setItem('lc-founding-preorder-dismissed:' + user.id, '1') } catch {} }
-  }
-  const reopenPreorder = () => {
-    setPreorderHidden(false)
-    if (user?.id && !isImpersonating) { try { localStorage.removeItem('lc-founding-preorder-dismissed:' + user.id) } catch {} }
-  }
+  // step581: 사전 신청 조회·submitPreorder·닫기/재열기 제거 — preorders 테이블 접근은 이제 admin 화면만 남음.
+  //   (교사별 localStorage 키 lc-founding-preorder-dismissed:<id>는 잔재로 남지만 무해 — 청소 안 함.)
 
   // 🆕 옛 전역 체크리스트 키 1회 청소 (step220 이전 잔재 — 계정 섞임 혼란 유발)
   //   ⚠️ 정확히 이 키만 제거. 교사별 키(lc-setup-checklist-hidden:<id>)는 절대 건드리지 않음.
@@ -464,8 +420,6 @@ export default function TeacherHome() {
         .select('card_type').eq('teacher_id', profile.id)
       if (error) return  // 테이블 미생성 등 — 카드 자체를 포기
       const answered = new Set((resp || []).map(r => r.card_type))
-      // step564: review 카드에 응답한 적 있다 = 그 시점에 채점완료 주제 3개+였다 — 문턱 통과 확정
-      if (answered.has('review')) setHasThreeClassRuns(true)
       if (answered.size >= 4) return
 
       let type = null
@@ -482,7 +436,7 @@ export default function TeacherHome() {
           .select('topic_id, total_score').in('topic_id', ids)
           .is('deleted_at', null).limit(1000)
         const gradedTopics = new Set((subs || []).filter(x => x.total_score != null).map(x => x.topic_id))
-        if (gradedTopics.size >= 3) { type = 'review'; setHasThreeClassRuns(true) }  // 채점완료 주제 3개 이상 → 후기 + step564 문턱 통과
+        if (gradedTopics.size >= 3) type = 'review'  // 채점완료 주제 3개 이상 → 후기 (step581: step564 유료 카드 문턱 hasThreeClassRuns는 카드 제거로 소멸)
         else if (students === 0) type = 'no_students'
         else if ((subs || []).length === 0) type = 'no_class_run'
         // 그 외(수업 1~2회)는 카드 없음
@@ -1188,35 +1142,13 @@ export default function TeacherHome() {
           )}
 
           {/* 🆕 다음 걸음 카드(review만 인라인 배너 — '부탁'이라 모달 반감 방지. 막힌 3종은 하단 모달)
-              good 응답 후엔 같은 자리에서 사전 신청 이어묻기(reviewFollowup) — 만족 직후가 최적 타이밍 */}
-          {/* step568: 엿보기에도 표시(화면 일치) — recordOnboarding·submitPreorder가 엿보기 시 기록 없이 종료 */}
+              step581: good 응답 후 사전 신청 이어묻기('ask') 제거 — 바로 감사 문구('thanks')로 */}
+          {/* step568: 엿보기에도 표시(화면 일치) — recordOnboarding이 엿보기 시 기록 없이 종료 */}
           {nextStepCard === 'review' && (
             <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
               {peekNote}
               {reviewFollowup === 'thanks' ? (
-                <p className="text-sm font-semibold text-indigo-900">🙏 감사해요! 준비되면 가장 먼저 안내드릴게요.</p>
-              ) : reviewFollowup === 'ask' ? (
-                <>
-                  {/* 후속만 건너뛰는 ✕ — review 기록은 이미 저장돼 재노출 없음, preorders 기록 없음 */}
-                  <button onClick={() => setNextStepCard(null)} aria-label="닫기"
-                    className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
-                  <h3 className="font-bold text-indigo-900 pr-6">좋게 봐주셔서 감사해요! 🎟 정식 출시 전 사전 신청도 관심 있으세요?</h3>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {[['interested', '관심 있어요'], ['not_sure', '아직 잘 모르겠어요']].map(([v, label]) => (
-                      <button key={v} disabled={preorderSaving}
-                        onClick={async () => {
-                          await submitPreorder(v)
-                          setReviewFollowup('thanks')
-                          setTimeout(() => setNextStepCard(null), 2500)
-                        }}
-                        className={`text-sm px-3.5 py-2 rounded-xl font-semibold transition disabled:opacity-50 ${v === 'interested'
-                          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                          : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </>
+                <p className="text-sm font-semibold text-indigo-900">🙏 감사해요! 남겨주신 의견이 큰 힘이 돼요.</p>
               ) : (
                 <>
                   <button onClick={() => recordOnboarding('review', 'dismissed')} aria-label="닫기"
@@ -1242,12 +1174,8 @@ export default function TeacherHome() {
                           const comment = reviewComment.trim()
                           if (reviewPick === 'good') {
                             recordOnboarding('review', 'good', comment, true)   // 카드 유지한 채 기록
-                            if (preorder.loaded && preorder.done) {             // 이미 사전신청 응답함 → 감사만
-                              setReviewFollowup('thanks')
-                              setTimeout(() => setNextStepCard(null), 2500)
-                            } else {
-                              setReviewFollowup('ask')                          // 사전신청 이어묻기
-                            }
+                            setReviewFollowup('thanks')                         // step581: 이어묻기 없이 바로 감사
+                            setTimeout(() => setNextStepCard(null), 2500)
                           } else {
                             recordOnboarding('review', reviewPick, comment)     // soso/bad: 후속 없이 닫힘
                           }
@@ -1284,42 +1212,8 @@ export default function TeacherHome() {
             </div>
           )}
 
-          {/* 🆕 step380: 파운딩 멤버 사전 신청 카드 — 🆕 step382: 가격 없는 관심 등록 + 2버튼 응답 */}
-          {/* 신규(가치 체감 전)에게 유료·챌린지 노출 제외 — step564. 이미 응답(done)한 교사는 문턱 무관 유지 */}
-          {user?.role === 'teacher' && preorder.loaded && !preorderHidden && (preorder.done || hasThreeClassRuns) && (
-            <div className="relative bg-white border-2 border-indigo-200 rounded-2xl p-5">
-              <button onClick={dismissPreorder} aria-label="닫기"
-                className="absolute top-3 right-3 text-gray-300 hover:text-gray-500 transition text-lg leading-none">✕</button>
-              {preorder.done ? (
-                <h3 className="font-bold text-indigo-900 pr-6">
-                  {preorder.response === 'not_sure'
-                    ? '💬 알려주셔서 고마워요. 더 좋아진 모습으로 다시 안내드릴게요'
-                    : '✅ 등록 완료! 준비되면 가장 먼저 안내드릴게요'}
-                </h3>
-              ) : (
-                <>
-                  <h3 className="font-bold text-indigo-900 mb-1 pr-6">2학기, 다온클래스 유료 플랜을 준비하고 있어요</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed break-keep mb-3">
-                    다온클래스를 안정적으로 오래 운영하기 위해 2학기부터 유료 플랜을 준비 중이에요.
-                    미리 신청해 주시는 선생님께는 가장 좋은 조건(파운딩 멤버 혜택)으로 먼저 안내드려요.
-                    결제가 아니라 관심 등록이에요.
-                  </p>
-                  {/* step568: 엿보기에도 버튼 표시(화면 일치) — submitPreorder가 엿보기 시 기록 없이 종료 */}
-                  {peekNote}
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => submitPreorder('interested')} disabled={preorderSaving}
-                      className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50">
-                      {preorderSaving ? '처리 중...' : '관심 있어요'}
-                    </button>
-                    <button onClick={() => submitPreorder('not_sure')} disabled={preorderSaving}
-                      className="bg-gray-100 text-gray-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">
-                      아직 잘 모르겠어요
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          {/* step581: 유료 사전 신청 카드(step380·382·564) 제거 — 공과금형 전환, 제품 내 수익화 메시지 0.
+              preorders 데이터·admin 명단은 보존. 이미 응답한 교사 '가장 좋은 조건 우선 안내' 약속은 유료화 공지 시 이행. */}
 
           {/* 학급 정보 카드 */}
           {classInfo && (
@@ -1559,15 +1453,7 @@ export default function TeacherHome() {
           {/* 메뉴 (원래 위치: 페이지 하단, 항상 표시) */}
           {menuGrid}
 
-          {/* 🆕 step380: 사전 신청 카드 재진입 링크 — 닫은 경우에만 하단 한 줄 (과한 노출 없음). step564: 카드와 같은 문턱 */}
-          {user?.role === 'teacher' && preorder.loaded && preorderHidden && (preorder.done || hasThreeClassRuns) && (
-            <div className="text-center">
-              <button onClick={reopenPreorder}
-                className="text-xs text-gray-400 hover:text-gray-600 underline transition">
-                파운딩 멤버 사전 신청 안내 다시 보기
-              </button>
-            </div>
-          )}
+          {/* step581: 사전 신청 재진입 링크 제거(카드와 함께 소멸) */}
         </main>
 
         {/* 🆕 step291: 우측 세로 툴바 (데스크탑 lg+ 전용) — 아이콘+라벨. 모바일은 위 인라인 패널/메뉴 유지 */}
