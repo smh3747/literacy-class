@@ -20,6 +20,27 @@ import {
   isClosed, finalizeRanks, getFinalRanks, buildFrozenWinners,
 } from '../../lib/showcaseRanking.server'
 
+// step583: 담임 실명 주석 — winners의 showcaseId(=supply_showcase.id)로 student_id를 찾아,
+//   요청자 학급 소속 + realname 존재(=학부모 동의 완료, 앱 전역 규칙)인 수상자에게만 realname 부착.
+//   viewerClassId가 null(학생 등)이면 조회 0회·입력 배열 그대로 반환 — 학생 응답 바이트 불변.
+//   저장 데이터(동결본·showcase)는 불변: SELECT만, 응답 시점 주석.
+async function annotateHomeroomRealnames(admin, winners, viewerClassId) {
+  if (!viewerClassId || !winners?.length) return winners
+  const ids = winners.map(w => w.showcaseId).filter(Boolean)
+  if (!ids.length) return winners
+  const { data: rows } = await admin.from('supply_showcase').select('id, student_id').in('id', ids)
+  const stuByShow = Object.fromEntries((rows || []).map(r => [r.id, r.student_id]))
+  const stuIds = [...new Set(Object.values(stuByShow).filter(Boolean))]
+  if (!stuIds.length) return winners
+  const { data: profs } = await admin.from('profiles')
+    .select('id, realname').in('id', stuIds).eq('class_id', viewerClassId)
+  const nameById = {}
+  for (const p of profs || []) { const n = (p.realname || '').trim(); if (n) nameById[p.id] = n }
+  return winners.map(w => nameById[stuByShow[w.showcaseId]]
+    ? { ...w, realname: nameById[stuByShow[w.showcaseId]] }
+    : w)
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -54,6 +75,17 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: '학생·교사만 볼 수 있어요' })
   }
 
+  // step583: 담임 실명 주석 대상 학급 — 교사=본인 학급. admin은 엿보기 대상(asTeacherId)이 있을 때만
+  //   그 담임의 학급(화면 일치, step568). asTeacherId는 admin 외 무시 — 교사·학생이 타 학급 실명 조회 불가.
+  let viewerClassId = null
+  if (profile.role === 'teacher') {
+    viewerClassId = profile.class_id || null
+  } else if (profile.role === 'admin' && req.body?.asTeacherId) {
+    const { data: t } = await admin.from('profiles')
+      .select('role, class_id').eq('id', req.body.asTeacherId).maybeSingle()
+    if (t?.role === 'teacher') viewerClassId = t.class_id || null
+  }
+
   // 이 공급 주제의 전국 복사본 제출 (step502: 공용 모듈)
   let loaded
   try {
@@ -81,7 +113,7 @@ export default async function handler(req, res) {
         : null
       const frozenWinners = await buildFrozenWinners(admin, supplyId, finalRanks)
       // step539: rankedPool = 동의 완료 랭킹 풀 크기(퍼센트 표시 분모). participants는 미동의 포함이라 부정확.
-      return res.status(200).json({ ok: true, locked: false, participants, winners: frozenWinners, myRank: frozenRank, rankedPool: finalRanks.length })
+      return res.status(200).json({ ok: true, locked: false, participants, winners: await annotateHomeroomRealnames(admin, frozenWinners, viewerClassId), myRank: frozenRank, rankedPool: finalRanks.length })
     }
   }
 
@@ -133,5 +165,5 @@ export default async function handler(req, res) {
   }
 
   // step539: rankedPool = 동의 완료 랭킹 풀 크기(클라 퍼센트 표시 분모 — 집계 로직 무변경, length만 반환)
-  return res.status(200).json({ ok: true, locked: false, participants, winners, myRank, rankedPool: eligible.length })
+  return res.status(200).json({ ok: true, locked: false, participants, winners: await annotateHomeroomRealnames(admin, winners, viewerClassId), myRank, rankedPool: eligible.length })
 }

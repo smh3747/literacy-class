@@ -17,9 +17,13 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.access_token) throw new Error('로그인이 필요해요')
+        // step583: 엿보기(?as=)면 대상 담임 id 전달 — 서버가 admin 요청에서만 해석해 그 반 실명 주석(화면 일치).
+        //   lib/impersonation.js와 동일한 URL 파싱 패턴(전용 getter 미제공). 교사·학생 요청에선 서버가 무시.
+        const asTeacherId = (typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('as') : null) || undefined
         const res = await fetch('/api/supply-ranking', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: session.access_token, supplyId }),
+          body: JSON.stringify({ accessToken: session.access_token, supplyId, asTeacherId }),
         })
         status = res.status
         const d = await res.json()
@@ -72,7 +76,8 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
                       <div className="flex items-center gap-2">
                         <span className="text-xl">{medal}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-gray-900">{w.nickname}</p>
+                          {/* step583: 우리 반 동의 완료 학생만 서버가 realname을 붙여줌 — "실명 (닉네임)"로 대조 표시 */}
+                          <p className="text-sm font-bold text-gray-900">{w.realname ? `${w.realname} (${w.nickname})` : w.nickname}</p>
                           {meta && <p className="text-[11px] text-gray-500 truncate">{meta}</p>}
                         </div>
                         <span className="text-sm font-bold text-sky-700 flex-shrink-0">{w.score}점</span>
