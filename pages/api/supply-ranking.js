@@ -48,7 +48,9 @@ export default async function handler(req, res) {
 
   const { data: profile } = await admin.from('profiles')
     .select('role, class_id').eq('id', uid).maybeSingle()
-  if (!profile || (profile.role !== 'student' && profile.role !== 'teacher')) {
+  // step582: admin 허용 추가 — 엿보기(?as=)는 관리자 토큰으로 호출되어 403이 나던 step554 회귀 수리.
+  //   admin은 아래에서 동결본(읽기 전용) 경로만 통과한다(라이브 집계 경로 진입 전 차단).
+  if (!profile || (profile.role !== 'student' && profile.role !== 'teacher' && profile.role !== 'admin')) {
     return res.status(403).json({ error: '학생·교사만 볼 수 있어요' })
   }
 
@@ -81,6 +83,12 @@ export default async function handler(req, res) {
       // step539: rankedPool = 동의 완료 랭킹 풀 크기(퍼센트 표시 분모). participants는 미동의 포함이라 부정확.
       return res.status(200).json({ ok: true, locked: false, participants, winners: frozenWinners, myRank: frozenRank, rankedPool: finalRanks.length })
     }
+  }
+
+  // step582: admin(엿보기)은 여기까지 — 라이브 집계는 쓰기(showcase INSERT·순위 lazy 동결·AI 검토 키 소비)라
+  //   엿보기 읽기 전용 원칙(step568~570)대로 진입 차단. 동결본이 있으면 위에서 이미 반환됐다.
+  if (profile.role === 'admin') {
+    return res.status(200).json({ ok: true, locked: false, participants, winners: [], myRank: null, rankedPool: 0, adminPreFreeze: true })
   }
 
   // 동의 필터·후보 선정·showcase upsert (step502: 공용 모듈)

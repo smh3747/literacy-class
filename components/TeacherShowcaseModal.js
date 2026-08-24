@@ -5,6 +5,7 @@
 //   마감된 챌린지는 API가 동결본(supply_final_ranks)으로 응답 — 지나간 순위 열람이 랭킹 탭의 핵심 목적.
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { logError } from '../lib/errorLog'
 
 export default function TeacherShowcaseModal({ supplyId, onClose }) {
   const [data, setData] = useState({ loading: true })
@@ -12,6 +13,7 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
   useEffect(() => {
     let alive = true
     const load = async () => {
+      let status = null   // step582: 실패 로그에 남길 HTTP status (fetch 전 실패면 null)
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.access_token) throw new Error('로그인이 필요해요')
@@ -19,15 +21,20 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accessToken: session.access_token, supplyId }),
         })
+        status = res.status
         const d = await res.json()
         if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
-        if (alive) setData({ loading: false, winners: d.winners || [], participants: d.participants || 0 })
+        // step582: adminPreFreeze = 엿보기(admin)인데 아직 동결본이 없는 챌린지 — 정직한 안내로 렌더
+        if (alive) setData(d.adminPreFreeze
+          ? { loading: false, adminPreFreeze: true, participants: d.participants || 0 }
+          : { loading: false, winners: d.winners || [], participants: d.participants || 0 })
       } catch (e) {
         console.warn('교사 랭킹 조회 실패:', e?.message)
-        if (alive) {
-          alert('전국 랭킹을 불러오지 못했어요. 잠시 후 다시 해주세요.')
-          onClose?.()
-        }
+        // step582: 오류 수집 사각지대 해소 — error_logs 적재(role은 logError가 세션에서 자동 첨부,
+        //   admin/엿보기 실패는 role 라벨로 구분됨. 60초 중복 억제 내장).
+        logError({ page: 'TeacherShowcaseModal', errorType: 'supply_ranking', message: e?.message, context: { supplyId, status } })
+        // step582: alert·자동 닫힘 대신 인플레이스 실패 문구 — 로딩 고착 구조 취약점 해소(✕·배경 클릭으로 닫기)
+        if (alive) setData({ loading: false, error: true })
       }
     }
     if (supplyId) load()
@@ -46,6 +53,10 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
         </div>
         {data.loading ? (
           <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
+        ) : data.error ? (
+          <p className="text-sm text-gray-500 py-6 text-center break-keep">전국 랭킹을 불러오지 못했어요. 잠시 후 다시 해주세요.</p>
+        ) : data.adminPreFreeze ? (
+          <p className="text-sm text-gray-500 py-6 text-center break-keep">아직 순위가 확정되지 않은 챌린지예요. 엿보기 화면에서는 확정된 순위만 볼 수 있어요.</p>
         ) : (
           <>
             <p className="text-sm text-sky-800 font-semibold mb-3">지금까지 전국 {data.participants}명 참여</p>
