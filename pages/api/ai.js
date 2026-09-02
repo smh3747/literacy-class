@@ -24,7 +24,9 @@ export const config = {
 }
 
 // 서버 측 에러 기록(step155): service_role로 error_logs에 직접 INSERT. 절대 throw하지 않음.
-async function logServerError({ accessToken, type, message }) {
+// step586: upstream — 상류(Gemini) 실패의 status·메시지 앞부분·타임아웃 여부를 context에 동봉.
+//   학생 글 본문·API 키 값은 절대 넣지 않는다(오류 메시지 발췌만, key= 파라미터 마스킹).
+async function logServerError({ accessToken, type, message, upstream }) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -51,7 +53,9 @@ async function logServerError({ accessToken, type, message }) {
       role, user_id: userId, class_id: classId,
       page: 'api/ai', error_type: 'api_error',
       message: (message == null ? '' : String(message)).slice(0, 500),
-      context: type ? { aiType: type } : null,
+      context: (type || upstream)
+        ? { ...(type ? { aiType: type } : {}), ...(upstream ? { upstream } : {}) }
+        : null,
     })
   } catch (_) { /* 로깅 실패는 무시 */ }
 }
@@ -530,7 +534,18 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error('AI proxy error:', e?.message || e)
     // 서버 측 에러 기록 (개인정보 없는 원본 메시지만)
-    await logServerError({ accessToken, type, message: e?.message || e })
+    // step586: 상류(Gemini) 실패 원인 동봉 — "AI가 응답하지 않습니다..." 일반 메시지에 가려진
+    //   status·오류 메시지 앞부분(200자)·타임아웃 여부를 context.upstream에 기록.
+    //   글 본문·키 값 금지: 오류 메시지 발췌만 쓰고 key= 파라미터는 마스킹.
+    const sanitizeUpstream = (s) =>
+      String(s == null ? '' : s).replace(/key=[\w-]+/gi, 'key=***').slice(0, 200)
+    const rawUpstreamMsg = e?.upstreamMessage ?? e?.message
+    const upstream = {
+      status: e?.upstreamStatus ?? e?.status ?? null,
+      message: sanitizeUpstream(rawUpstreamMsg),
+      timeout: !!e?.upstreamTimeout || /TIMEOUT/i.test(String(rawUpstreamMsg || '')),
+    }
+    await logServerError({ accessToken, type, message: e?.message || e, upstream })
     // 🔔 step519: 키 무효면 담임에게 즉시 알림(fire-and-forget, 1일 1회) — getFriendlyErrorMessage와 동일 판정 문자열
     const errMsg = String(e?.message || '')
     if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid')) {

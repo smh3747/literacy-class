@@ -3165,13 +3165,17 @@ export default function AdminHome() {
               return map[t] || 'bg-gray-100 text-gray-600'
             }
             // 🆕 표시 시점 원인 분류 (저장구조 불변). 순서 중요: prepayment를 429보다 먼저.
-            const classifyError = (msg) => {
-              const m = msg || ''
+            // step586: context.upstream(서버가 동봉한 상류 실패 정보)도 판정 텍스트에 합침 —
+            //   "AI가 응답하지 않습니다..." 일반 메시지 뒤의 503/한도/타임아웃이 기존 라벨로 잡히게.
+            const classifyError = (msg, ctx) => {
+              const up = ctx?.upstream
+              const m = [msg, up?.message, up?.status, up?.timeout ? 'TIMEOUT' : '']
+                .filter(v => v !== null && v !== undefined && v !== '').join(' ')
               if (/prepayment|credits are depleted|billing#prepay/i.test(m))
                 return { color: 'bg-rose-100 text-rose-700', label: '🔴 유료키 소진', summary: '유료키 잔액 소진 · 무료키로 교체 필요' }
               if (/503|high demand|overloaded|UNAVAILABLE/i.test(m))
                 return { color: 'bg-yellow-100 text-yellow-700', label: '🟡 구글 혼잡', summary: '구글 AI 서버 혼잡 · 곧 풀림(조치 불필요)' }
-              if (/429|per day|PerDay|quota|exceeded/i.test(m))
+              if (/429|per day|PerDay|quota|exceeded|RESOURCE_EXHAUSTED/i.test(m))
                 return { color: 'bg-orange-100 text-orange-700', label: '🟠 한도 소진', summary: '무료 한도 소진 · 오후 리셋' }
               if (/401|인증 정보가 유효|UNAUTHENTICATED/i.test(m))
                 return { color: 'bg-gray-100 text-gray-600', label: '⚪ 세션 만료', summary: '학생 세션 만료 · 다시 로그인하면 됨(정상)' }
@@ -3187,10 +3191,10 @@ export default function AdminHome() {
             }
             // 🆕 분류 라벨 → 심각도 (무시 가능 라벨만 명시, 그 외 = 조치 필요). 라벨 문자열 기준 상수.
             const IGNORE_LABELS = new Set(['🟡 구글 혼잡', '⚪ 세션 만료', '⚪ 네트워크', '🟡 응답지연', '⚫ 확장노이즈', '⚪ 외부 스크립트'])
-            const severityOf = (msg) => IGNORE_LABELS.has(classifyError(msg).label) ? 'ignore' : 'action'
+            const severityOf = (msg, ctx) => IGNORE_LABELS.has(classifyError(msg, ctx).label) ? 'ignore' : 'action'
             // 🆕 필터 적용(이미 받아온 grouped에 클라 필터) — 심각도 + 종류
             const matchErr = (e) =>
-              (errSeverity === 'all' || severityOf(e.message) === errSeverity) &&
+              (errSeverity === 'all' || severityOf(e.message, e.context) === errSeverity) &&
               (errType === 'all' || e.error_type === errType)
             const filteredGrouped = grouped.filter(matchErr)
             // 🆕 종류 토글 후보(받아온 로그에 존재하는 error_type만)
@@ -3257,7 +3261,7 @@ export default function AdminHome() {
                 ) : (
                   <div className="space-y-2">
                     {filteredGrouped.map((e, i) => {
-                      const c = classifyError(e.message)
+                      const c = classifyError(e.message, e.context)
                       return (
                       <div key={e.id || i} className="border border-gray-100 rounded-lg p-3 text-sm">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
