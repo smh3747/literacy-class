@@ -124,7 +124,9 @@ async function fetchPrevGrading({ userId, topicId }) {
 }
 
 // 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지). 지적을 고쳤는데(교정 수 감소) 총점이 떨어진 케이스.
-async function logScoreReversal({ userId, prev, newTotal, newCorrCount }) {
+//   step588: 총점 하락이면 모두 기록(AND 조건 해제 — 준수율 분모를 '모든 하락'으로). dropReason(score_drop_reason)이
+//   비면 reason 앞에 [no_reason], 있으면 [has_reason] 마커 — 관리자 의심 교정 탭에서 준수율 관찰용.
+async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReason = '' }) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -139,7 +141,9 @@ async function logScoreReversal({ userId, prev, newTotal, newCorrCount }) {
       submission_id: prev.id || null,
       original: `직전 ${prev.total_score}점 → 이번 ${newTotal}점`,
       correction: `교정 ${prevCorrCount}건 → ${newCorrCount}건`,
-      reason: '수정본 점수 역전(지적 건수 감소 + 총점 하락) — B-2 이월 배관 감시 기록 (글 보기=직전 제출)',
+      reason: dropReason
+        ? `[has_reason] 수정본 점수 하락 — 감시 기록 (글 보기=직전 제출) · 사유: "${String(dropReason).slice(0, 120)}"`
+        : '[no_reason] 수정본 점수 하락인데 score_drop_reason이 비어 있음 — 감시 기록 (글 보기=직전 제출)',
       suspect_type: '점수역전',
       submission_created_at: new Date().toISOString(),
       blocked_user_id: userId || null,
@@ -331,7 +335,7 @@ export default async function handler(req, res) {
         prevFeedback: prevGrading?.feedback_overall || null,
         ruleErrors,
       })
-      schema = SCHEMAS.essayFeedback
+      schema = SCHEMAS.rewriteFeedback  // step588: essayFeedback + score_drop_reason(하락 사유 그릇)
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
       mergeEssay = rewriteEssay
 
@@ -512,16 +516,33 @@ export default async function handler(req, res) {
     }
 
     // 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지).
-    //   "지적 건수는 줄었는데(고쳤는데) 총점은 하락" 케이스를 correction_alerts에 남긴다. fire-and-forget.
-    if (type === 'rewriteGrading' && prevGrading && result) {
+    //   step588: 총점 하락이면 모두 기록(AND 조건 해제) + score_drop_reason 연동.
+    //   - 하락 + 사유 있음 → 종합의견(overall) 앞에 사유 한 문장 결합(이미 들어 있으면 생략) → feedback_overall로 저장돼
+    //     학생 화면(채점 결과·내 기록·피드백 카드) 모두에서 보인다. 별도 컬럼 없음.
+    //   - 하락 + 사유 없음 → 감시 기록에 [no_reason] 마커(관리자 의심 교정 탭 '점수역전' 칩에서 준수율 관찰).
+    //   - 하락 아님 + 사유 있음(모델 오작동) → 사유를 비운다(학생에게 모순 노출 방지, overall 불변).
+    if (type === 'rewriteGrading' && result) {
       try {
+        const reasonText = typeof result.score_drop_reason === 'string' ? result.score_drop_reason.trim() : ''
         const newTotal = Array.isArray(result.scores)
           ? result.scores.reduce((s, x) => s + (Number(x) || 0), 0) : null
-        const newCorrCount = Array.isArray(result.corrections) ? result.corrections.length : 0
-        const prevCorrCount = Array.isArray(prevGrading.corrections) ? prevGrading.corrections.length : 0
-        if (newTotal != null && prevGrading.total_score != null
-            && newTotal < prevGrading.total_score && newCorrCount < prevCorrCount) {
-          logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount })  // await 안 함
+        const dropped = !!prevGrading && newTotal != null && prevGrading.total_score != null
+          && newTotal < prevGrading.total_score
+        if (dropped) {
+          if (reasonText) {
+            const norm = (s) => String(s || '').replace(/\s+/g, '').replace(/[.!?。]+$/, '')
+            const overall = typeof result.overall === 'string' ? result.overall : ''
+            if (!norm(overall).includes(norm(reasonText))) {
+              result.overall = overall ? `${reasonText} ${overall}` : reasonText
+            }
+          }
+          const newCorrCount = Array.isArray(result.corrections) ? result.corrections.length : 0
+          logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount, dropReason: reasonText })  // await 안 함
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[score_drop] ${prevGrading.total_score} → ${newTotal}, 사유 ${reasonText ? '있음' : '없음(no_reason)'}`)
+          }
+        } else if (reasonText) {
+          result.score_drop_reason = ''
         }
       } catch (e) { console.warn('역전 감시 실패(무시):', e?.message) }
     }

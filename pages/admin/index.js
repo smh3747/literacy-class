@@ -3302,6 +3302,7 @@ export default function AdminHome() {
                 '불가능형태': 'bg-red-100 text-red-700',
                 '문체개입': 'bg-orange-100 text-orange-700',
                 '과도한변형': 'bg-yellow-100 text-yellow-700',
+                '점수역전': 'bg-blue-100 text-blue-700',  // step588: 수정본 점수 하락 감시(reason의 [no_reason]/[has_reason] 마커로 준수율 관찰)
               }
               // '(차단됨)' 접미 변형도 같은 색 — prefix 매칭
               const key = Object.keys(map).find(k => (t || '').startsWith(k))
@@ -3316,7 +3317,7 @@ export default function AdminHome() {
               else { gmap[key] = { rep: a, ids: [a.id] }; groups.push(gmap[key]) }
             })
             // 🆕 유형 필터 칩 — prefix 매칭('(차단됨)' 무관), 클라이언트 필터만
-            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형']
+            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전']  // step588: 점수역전 칩 추가
             const filtered = suspectFilter === '전체'
               ? groups
               : groups.filter(g => (g.rep.suspect_type || '').startsWith(suspectFilter))
