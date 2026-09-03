@@ -38,6 +38,16 @@ function normalizeRubrics(rubrics) {
   return cleaned
 }
 
+// step589: 주제 카테고리 단일 상수 — 4묶음(optgroup). 랜덤 풀·▼옵션 select·카드별 select가 모두 이것만 참조.
+//   문자열이 categoryText로 AI에 그대로 전달되므로 괄호 힌트가 곧 AI 지시. (최유라 교사 피드백: 묶음 선택 + 친구 관계 강화)
+const TOPIC_CATEGORY_GROUPS = [
+  { group: '일상', items: ['일상 경험', '학교 생활', '음식과 추억', '취미와 관심사', '계절과 자연', '재미있는 발견'] },
+  { group: '관계·마음', items: ['친구 관계 (우정·다툼·화해·새 친구)', '가족 (부모님·형제·조부모)', '감정과 마음', '동물 친구'] },
+  { group: '상상', items: ['상상력 (만약에~)', '시간 여행', '미래의 나', '신비한 일', '여행과 모험', '꿈과 미래'] },
+  { group: '생각·사회', items: ['시사와 요즘 이야기 (뉴스·계절 이슈)', '주장하는 글 (찬반 토론)', '사회와 환경', '책과 영화', '교과 연계 (국어/사회/과학)'] },
+]
+const TOPIC_CATEGORIES = TOPIC_CATEGORY_GROUPS.flatMap(g => g.items)   // 평면 목록 (21개)
+
 const DEFAULT_RUBRICS = [
   { name: '주제에 맞는 내용', hint: '주제에서 벗어나지 않고 핵심을 잘 표현', score: 25 },
   { name: '글의 짜임새', hint: '처음-가운데-끝의 흐름이 자연스러운가', score: 25 },
@@ -705,15 +715,8 @@ export default function TopicsPage() {
     setAiSuggesting(true)
     setAiPicker(null)  // 기존 카드 닫음 (다시 추천하는 경우)
     try {
-      // 카테고리 풀
-      const categories = [
-        '일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화',
-        '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음',
-        '상상력', '시간 여행', '미래의 나',
-        '신비한 일', '재미있는 발견', '동물 친구',
-        '시사와 요즘 이야기', '주장하는 글',   // step489: 교사 요청 — 시사·논설 글감
-        '사회와 환경', '교과 연계'
-      ]
+      // 카테고리 풀 — step589: 단일 상수 TOPIC_CATEGORIES 참조
+      const categories = TOPIC_CATEGORIES
       // 골고루 모드면 → 모델한테 N개 서로 다른 카테고리 지시
       // 카테고리 지정 모드면 → 지정된 1개 카테고리로 통일
       // 둘 다 아니면 → 단일 카테고리 (랜덤)
@@ -721,9 +724,14 @@ export default function TopicsPage() {
       const useCategorySpread = diverseMode && !aiCategory && aiCount >= 2
       let cat, recentTitles
       if (useCategorySpread) {
-        // aiCount개 무작위 카테고리
-        const shuffled = [...categories].sort(() => Math.random() - 0.5)
-        cat = shuffled.slice(0, aiCount).join(' / ')
+        // step589: 서로 다른 묶음에서 하나씩 (N ≤ 묶음 수). 초과분은 평면 셔플로 보충
+        const groups = [...TOPIC_CATEGORY_GROUPS].sort(() => Math.random() - 0.5)
+        const picked = groups.slice(0, aiCount).map(g => g.items[Math.floor(Math.random() * g.items.length)])
+        if (picked.length < aiCount) {
+          const rest = categories.filter(c => !picked.includes(c)).sort(() => Math.random() - 0.5)
+          picked.push(...rest.slice(0, aiCount - picked.length))
+        }
+        cat = picked.join(' / ')
       } else {
         cat = aiCategory || categories[Math.floor(Math.random() * categories.length)]
       }
@@ -826,14 +834,7 @@ export default function TopicsPage() {
 
     setRefreshingIdx(idx)
     try {
-      const categories = [
-        '일상 경험', '계절과 자연', '가족과 친구', '꿈과 미래', '책과 영화',
-        '학교 생활', '취미와 관심사', '음식과 추억', '여행과 모험', '감정과 마음',
-        '상상력', '시간 여행', '미래의 나',
-        '신비한 일', '재미있는 발견', '동물 친구',
-        '시사와 요즘 이야기', '주장하는 글',   // step489: 교사 요청 — 시사·논설 글감
-        '사회와 환경', '교과 연계'
-      ]
+      const categories = TOPIC_CATEGORIES   // step589: 단일 상수 참조
       // 카테고리 결정: 명시적 override > 현재 카드의 카테고리 > 랜덤
       const currentCat = aiPicker.suggestions[idx]?.category
       const cat = overrideCategory || currentCat || categories[Math.floor(Math.random() * categories.length)]
@@ -1393,6 +1394,8 @@ export default function TopicsPage() {
                   <label className="block text-sm font-medium mb-1">날짜</label>
                   <input type="date" value={date} onChange={e => setDate(e.target.value)}
                     className="w-full p-2 border border-gray-200 rounded-lg" />
+                  {/* step589: 복수 주제 등록 발견성 안내 */}
+                  <p className="text-xs text-gray-500 mt-1">💡 같은 날짜에 주제를 2~3개 등록하면 학생 화면에 선택 목록이 떠요</p>
                 </div>
                 <div className="sm:col-span-2 flex items-end gap-2">
                   <button onClick={suggestTopic} disabled={aiSuggesting || generatingRubrics || isImpersonating}
@@ -1446,24 +1449,12 @@ export default function TopicsPage() {
                     <select value={aiCategory} onChange={e => setAiCategory(e.target.value)}
                       className="w-full p-2 border border-purple-200 rounded-lg text-sm bg-white">
                       <option value="">랜덤</option>
-                      <option value="일상 경험">일상 경험</option>
-                      <option value="가족과 친구">가족과 친구</option>
-                      <option value="학교 생활">학교 생활</option>
-                      <option value="감정과 마음">감정과 마음</option>
-                      <option value="꿈과 미래">꿈과 미래</option>
-                      <option value="상상력">상상력 (만약에~)</option>
-                      <option value="시간 여행">시간 여행</option>
-                      <option value="내가 만든 세상">내가 만든 세상</option>
-                      <option value="동물 친구">동물 친구</option>
-                      <option value="음식과 추억">음식과 추억</option>
-                      <option value="여행과 모험">여행과 모험</option>
-                      <option value="계절과 자연">계절과 자연</option>
-                      <option value="책과 영화">책과 영화</option>
-                      <option value="취미와 관심사">취미와 관심사</option>
-                      <option value="시사와 요즘 이야기">시사와 요즘 이야기 (뉴스·계절 이슈)</option>
-                      <option value="주장하는 글">주장하는 글 (찬반 토론)</option>
-                      <option value="사회와 환경">사회와 환경</option>
-                      <option value="교과 연계">교과 연계 (국어/사회/과학)</option>
+                      {/* step589: 4묶음 optgroup — 단일 상수 참조 */}
+                      {TOPIC_CATEGORY_GROUPS.map(g => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.items.map(c => <option key={c} value={c}>{c}</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1592,14 +1583,12 @@ export default function TopicsPage() {
                               title="다른 카테고리로 이 카드만 교체"
                             >
                               <option value="">카테고리 바꾸기...</option>
-                              {[
-                                '일상 경험','계절과 자연','가족과 친구','꿈과 미래','책과 영화',
-                                '학교 생활','취미와 관심사','음식과 추억','여행과 모험','감정과 마음',
-                                '상상력','시간 여행','미래의 나',
-                                '신비한 일','재미있는 발견','동물 친구',
-                                '시사와 요즘 이야기','주장하는 글',
-                                '사회와 환경','교과 연계'
-                              ].map(c => <option key={c} value={c}>{c}</option>)}
+                              {/* step589: 4묶음 optgroup — 단일 상수 참조 */}
+                              {TOPIC_CATEGORY_GROUPS.map(g => (
+                                <optgroup key={g.group} label={g.group}>
+                                  {g.items.map(c => <option key={c} value={c}>{c}</option>)}
+                                </optgroup>
+                              ))}
                             </select>
                             <button
                               onClick={() => refreshSingleSuggestion(idx)}
