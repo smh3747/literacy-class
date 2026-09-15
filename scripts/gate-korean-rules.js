@@ -53,6 +53,14 @@ const DETECT = [
   { name: '그리고나서',        text: '그리고나서 밥을 먹었다', original: '그리고나서', correction: '그러고 나서' }, // step575('그리고 나서'도 틀린 형태라 표준형으로)
   { name: '이로인해',          text: '이로인해 문제가 생겼다', original: '이로인해',  correction: '이로 인해' },  // step575
   { name: '안된다고',          text: '이러면 안된다고 했다',  original: '안된다',    correction: '안 된다' },    // step575
+  // step590: 8/28 실사례 편입(가고싶은·가고싶다·어떤곳·여행지 라는 0건 검출 → AI 단독 채점 널뛰기)
+  { name: '고싶다',            text: '나는 이탈리아에 가고싶다.', original: '가고싶다',   correction: '가고 싶다' },     // step590
+  { name: '고싶은',            text: '가고싶은 곳이 많다',      original: '가고싶은',   correction: '가고 싶은' },     // step590
+  { name: '고싶어서',          text: '먹고싶어서 샀다',         original: '먹고싶어서', correction: '먹고 싶어서' },   // step590
+  { name: '고싶습니다',        text: '하고싶습니다',            original: '하고싶습니다', correction: '하고 싶습니다' }, // step590
+  { name: '어떤곳',            text: '어떤곳으로 갈까?',        original: '어떤곳',     correction: '어떤 곳' },       // step590
+  { name: '여러곳',            text: '여러곳을 다녔다',         original: '여러곳',     correction: '여러 곳' },       // step590
+  { name: "라는(띄어짐)",      text: '여행지 라는 말',          original: '여행지 라는', correction: '여행지라는' },   // step590
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -95,6 +103,12 @@ const NO_FALSE_POSITIVE = [
   { name: "'고안되면'(접미사 되다)", text: '새 장치가 고안되면 좋겠다' }, // step575: 앞글자 가드
   { name: "'참 안됐다'(형용사)",     text: '그 친구가 참 안됐다' },       // step575: '됐'이라 제외
   { name: "'안타깝다'(무관 단어)",   text: '정말 안타깝다' },             // step575
+  // step590: 신규 규칙 오탐 가드
+  { name: "'가고 싶다'(정상 띄움)",  text: '나는 바다에 가고 싶다' },      // step590
+  { name: "'어떤 곳'(정상 띄움)",    text: '어떤 곳에 갔다' },             // step590
+  { name: "'하라는 대로'(어미 라는)", text: '하라는 대로 했다' },           // step590: 앞이 붙어 있어 제외
+  { name: "'그러라는'(어미 라는)",    text: '그러라는 말을 들었다' },       // step590
+  { name: "'책 라는'(받침 가드)",     text: '책 라는 제목' },               // step590: 바른 형태는 '책이라는'이라 붙이지 않음
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
