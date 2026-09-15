@@ -111,7 +111,7 @@ async function fetchPrevGrading({ userId, topicId }) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
     const { data: prev } = await admin.from('submissions')
-      .select('id, total_score, max_score, scores, corrections, feedback_overall, created_at')  // step458: id — 역전 기록 글 보기용
+      .select('id, total_score, max_score, scores, corrections, feedback_overall, feedback_improve, improve_examples, created_at')  // step458: id — 역전 기록 글 보기용 / step593: 첫 글 조언 2컬럼(계약 배관)
       .eq('user_id', userId).eq('topic_id', topicId)
       .is('deleted_at', null).not('total_score', 'is', null)
       .order('created_at', { ascending: false })
@@ -347,6 +347,9 @@ export default async function handler(req, res) {
         prevScore: prevGrading?.total_score ?? null,
         prevCorrections: Array.isArray(prevGrading?.corrections) ? prevGrading.corrections : null,
         prevFeedback: prevGrading?.feedback_overall || null,
+        // step593: 첫 글 조언(조언 이행 계약, spell step591 신규 2인자). 직전 없음·null이면 null → 프롬프트가 총평 폴백.
+        prevImprove: prevGrading?.feedback_improve || null,
+        prevImproveExamples: Array.isArray(prevGrading?.improve_examples) ? prevGrading.improve_examples : null,
         ruleErrors,
       })
       schema = SCHEMAS.rewriteFeedback  // step588: essayFeedback + score_drop_reason(하락 사유 그릇)
