@@ -61,6 +61,7 @@ const DETECT = [
   { name: '어떤곳',            text: '어떤곳으로 갈까?',        original: '어떤곳',     correction: '어떤 곳' },       // step590
   { name: '여러곳',            text: '여러곳을 다녔다',         original: '여러곳',     correction: '여러 곳' },       // step590
   { name: "라는(띄어짐)",      text: '여행지 라는 말',          original: '여행지 라는', correction: '여행지라는' },   // step590
+  { name: "잘 않나(문맥 포함 생성)", text: '이런 것은 기억이 잘 않나기 때문이다.', original: '잘 않나', correction: '잘 안 나' }, // step592: 9/1 인천산곡초 ×4
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -130,6 +131,10 @@ const MERGE = [
   { name: '않아도→안 아도(차단)',           corr: { original: '않아도',     correction: '안 아도' },     essay: '먹지 않아도 배부르다',     expect: 'dropped' }, // step542
   { name: '않아프게→안 아프게(통과 유지)',   corr: { original: '않아프게',   correction: '안 아프게' },   essay: '주사를 않아프게 놔줬다',   expect: 'kept' },    // step542
   { name: '않아깝다→안 아깝다(통과 유지)',   corr: { original: '않아깝다',   correction: '안 아깝다' },   essay: '하나도 않아깝다',          expect: 'kept' },    // step542
+  // step592: 부사 '잘' + 않나 → '잘 안 나' 통과(9/1 인천산곡초 "기억이 잘 않나기" ×4 과차단). '않아→안 아'·'믿기지가 않나' 차단은 유지.
+  { name: '잘 않나→잘 안 나(통과)',         corr: { original: '잘 않나',   correction: '잘 안 나' },   essay: '이런 것은 기억이 잘 않나기 때문이다.', expect: 'kept' },    // step592 (AI 경로)
+  { name: '잘 않나기→잘 안 나기(통과)',     corr: { original: '잘 않나기', correction: '잘 안 나기' }, essay: '이런 것은 기억이 잘 않나기 때문이다.', expect: 'kept' },    // step592
+  { name: '잘 않아서→잘 안 아서(여전히 차단)', corr: { original: '잘 않아서', correction: '잘 안 아서' }, essay: '숙제를 잘 않아서 혼났다',               expect: 'dropped' }, // step592: '잘' 예외는 않나에만
   // step560: 문체역행 필터 — 반말 압도 글(formal ≤ 1 && plain ≥ 3)에서만 반말→존댓말 교정 폐기.
   { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
