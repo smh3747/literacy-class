@@ -124,8 +124,11 @@ async function fetchPrevGrading({ userId, topicId }) {
 }
 
 // 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지). 지적을 고쳤는데(교정 수 감소) 총점이 떨어진 케이스.
-//   step588: 총점 하락이면 모두 기록(AND 조건 해제 — 준수율 분모를 '모든 하락'으로). dropReason(score_drop_reason)이
-//   비면 reason 앞에 [no_reason], 있으면 [has_reason] 마커 — 관리자 의심 교정 탭에서 준수율 관찰용.
+//   step588: 총점 하락이면 모두 기록(AND 조건 해제 — 준수율 분모를 '모든 하락'으로).
+//   step590: 관리자가 읽는 문구로 한글화(개발자 마커 제거) + 표시 정책.
+//     - 사유 없음 → suspect_type '점수역전(사유 없음)' (필터 칩 '사유 없음만'이 이 접미로 식별), 미해결 유지
+//     - 사유 있음 + 하락 5점 이하 → 정상 작동 사례로 보고 resolved=true로 저장(행은 보존, 탭·건수에는 안 뜸)
+//     - 사유 있음 + 하락 6점 이상 → 미해결 유지
 async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReason = '' }) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -135,16 +138,20 @@ async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReas
       auth: { autoRefreshToken: false, persistSession: false }
     })
     const prevCorrCount = Array.isArray(prev.corrections) ? prev.corrections.length : 0
+    const hasReason = !!dropReason
+    const drop = (Number(prev.total_score) || 0) - (Number(newTotal) || 0)
+    const autoResolve = hasReason && drop <= 5
     await admin.from('correction_alerts').insert({
       // step458: 직전 제출 id 기록 — '글 보기' 버튼 표시용. 새 수정본은 이 시점에 아직 저장 전(클라 insert)이라
       //   비교 기준이 된 직전 글을 연결한다.
       submission_id: prev.id || null,
       original: `직전 ${prev.total_score}점 → 이번 ${newTotal}점`,
       correction: `교정 ${prevCorrCount}건 → ${newCorrCount}건`,
-      reason: dropReason
-        ? `[has_reason] 수정본 점수 하락 — 감시 기록 (글 보기=직전 제출) · 사유: "${String(dropReason).slice(0, 120)}"`
-        : '[no_reason] 수정본 점수 하락인데 score_drop_reason이 비어 있음 — 감시 기록 (글 보기=직전 제출)',
-      suspect_type: '점수역전',
+      reason: hasReason
+        ? `점수가 내려간 이유: "${String(dropReason).slice(0, 120)}"`
+        : '수정본 점수가 내려갔는데 AI가 이유를 적지 않았어요',
+      suspect_type: hasReason ? '점수역전' : '점수역전(사유 없음)',
+      resolved: autoResolve,
       submission_created_at: new Date().toISOString(),
       blocked_user_id: userId || null,
     })
@@ -519,7 +526,7 @@ export default async function handler(req, res) {
     //   step588: 총점 하락이면 모두 기록(AND 조건 해제) + score_drop_reason 연동.
     //   - 하락 + 사유 있음 → 종합의견(overall) 앞에 사유 한 문장 결합(이미 들어 있으면 생략) → feedback_overall로 저장돼
     //     학생 화면(채점 결과·내 기록·피드백 카드) 모두에서 보인다. 별도 컬럼 없음.
-    //   - 하락 + 사유 없음 → 감시 기록에 [no_reason] 마커(관리자 의심 교정 탭 '점수역전' 칩에서 준수율 관찰).
+    //   - 하락 + 사유 없음 → 감시 기록 suspect_type '점수역전(사유 없음)'(관리자 의심 교정 탭 '사유 없음만' 칩에서 준수율 관찰).
     //   - 하락 아님 + 사유 있음(모델 오작동) → 사유를 비운다(학생에게 모순 노출 방지, overall 불변).
     if (type === 'rewriteGrading' && result) {
       try {
@@ -539,7 +546,7 @@ export default async function handler(req, res) {
           const newCorrCount = Array.isArray(result.corrections) ? result.corrections.length : 0
           logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount, dropReason: reasonText })  // await 안 함
           if (process.env.NODE_ENV !== 'production') {
-            console.log(`[score_drop] ${prevGrading.total_score} → ${newTotal}, 사유 ${reasonText ? '있음' : '없음(no_reason)'}`)
+            console.log(`[score_drop] ${prevGrading.total_score} → ${newTotal}, 사유 ${reasonText ? '있음' : '없음'}`)
           }
         } else if (reasonText) {
           result.score_drop_reason = ''

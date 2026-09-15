@@ -3302,7 +3302,8 @@ export default function AdminHome() {
                 '불가능형태': 'bg-red-100 text-red-700',
                 '문체개입': 'bg-orange-100 text-orange-700',
                 '과도한변형': 'bg-yellow-100 text-yellow-700',
-                '점수역전': 'bg-blue-100 text-blue-700',  // step588: 수정본 점수 하락 감시(reason의 [no_reason]/[has_reason] 마커로 준수율 관찰)
+                '점수역전(사유 없음)': 'bg-blue-600 text-white',  // step590: 사유 없는 하락은 진하게(prefix 검색이라 긴 키를 먼저)
+                '점수역전': 'bg-blue-100 text-blue-700',  // step588: 수정본 점수 하락 감시
               }
               // '(차단됨)' 접미 변형도 같은 색 — prefix 매칭
               const key = Object.keys(map).find(k => (t || '').startsWith(k))
@@ -3317,10 +3318,16 @@ export default function AdminHome() {
               else { gmap[key] = { rep: a, ids: [a.id] }; groups.push(gmap[key]) }
             })
             // 🆕 유형 필터 칩 — prefix 매칭('(차단됨)' 무관), 클라이언트 필터만
-            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전']  // step588: 점수역전 칩 추가
+            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전', '사유 없음만']  // step588: 점수역전 칩 / step590: 사유 없음만 칩
+            // step590: '사유 없음만' — 점수역전 중 AI가 하락 사유를 안 적은 건만. 새 행은 suspect_type 접미로,
+            //   구판 행(step588~589 적체)은 reason의 [no_reason] 마커로 식별(리셋 전까지 호환).
+            const isNoReason = (a) => (a.suspect_type || '').startsWith('점수역전(사유 없음)')
+              || /^\[no_reason\]/.test(a.reason || '')
             const filtered = suspectFilter === '전체'
               ? groups
-              : groups.filter(g => (g.rep.suspect_type || '').startsWith(suspectFilter))
+              : suspectFilter === '사유 없음만'
+                ? groups.filter(g => isNoReason(g.rep))
+                : groups.filter(g => (g.rep.suspect_type || '').startsWith(suspectFilter))
             // 해당 학생 글로 이동 — 학생 글 탭의 sub 딥링크 재사용 (한 번의 push로 tab+sub 동시 반영)
             // step567: replace→push — replace는 의심 교정 탭 히스토리를 덮어써 뒤로 가기가 홈으로 건너뛰던 문제
             const goToSubmission = (submissionId) => {
@@ -3429,7 +3436,8 @@ export default function AdminHome() {
                                 {a.submission_id && (
                                   <button onClick={() => goToSubmission(a.submission_id)}
                                     className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition">
-                                    📝 글 보기
+                                    {/* step590: 점수역전은 비교 기준인 직전 제출을 여는 버튼이라 라벨로 알린다(동작 불변) */}
+                                    📝 {(a.suspect_type || '').startsWith('점수역전') ? '직전 글 보기' : '글 보기'}
                                   </button>
                                 )}
                               </div>
