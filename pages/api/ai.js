@@ -129,7 +129,11 @@ async function fetchPrevGrading({ userId, topicId }) {
 //     - 사유 없음 → suspect_type '점수역전(사유 없음)' (필터 칩 '사유 없음만'이 이 접미로 식별), 미해결 유지
 //     - 사유 있음 + 하락 5점 이하 → 정상 작동 사례로 보고 resolved=true로 저장(행은 보존, 탭·건수에는 안 뜸)
 //     - 사유 있음 + 하락 6점 이상 → 미해결 유지
-async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReason = '' }) {
+//   step591: 준수율 원인 분리 — 모델이 쓴 total(aiTotal)과 서버가 scores로 더한 합(newTotal)이 어긋나면
+//     모델은 "하락 아님"으로 보고 사유를 비울 수 있다. 두 값(직전 쪽도)을 reason 끝 '합계 확인:' 절에 남긴다.
+//     correction_alerts에 JSON 컬럼이 없고 새 컬럼은 수동 SQL 미적용 시 insert 전체가 실패하므로 텍스트 절로.
+//     관리자 카드는 이 절을 분리해 불일치일 때만 작게 보여준다(pages/admin/index.js splitSumCheck).
+async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReason = '', aiTotal = null }) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -141,15 +145,18 @@ async function logScoreReversal({ userId, prev, newTotal, newCorrCount, dropReas
     const hasReason = !!dropReason
     const drop = (Number(prev.total_score) || 0) - (Number(newTotal) || 0)
     const autoResolve = hasReason && drop <= 5
+    const prevSum = Array.isArray(prev.scores)
+      ? prev.scores.reduce((s, x) => s + (Number(x) || 0), 0) : null
+    const sumCheck = ` · 합계 확인: 이번 AI ${aiTotal ?? '없음'} / 실제 ${newTotal}, 직전 AI ${prev.total_score} / 실제 ${prevSum ?? '없음'}`
     await admin.from('correction_alerts').insert({
       // step458: 직전 제출 id 기록 — '글 보기' 버튼 표시용. 새 수정본은 이 시점에 아직 저장 전(클라 insert)이라
       //   비교 기준이 된 직전 글을 연결한다.
       submission_id: prev.id || null,
       original: `직전 ${prev.total_score}점 → 이번 ${newTotal}점`,
       correction: `교정 ${prevCorrCount}건 → ${newCorrCount}건`,
-      reason: hasReason
+      reason: (hasReason
         ? `점수가 내려간 이유: "${String(dropReason).slice(0, 120)}"`
-        : '수정본 점수가 내려갔는데 AI가 이유를 적지 않았어요',
+        : '수정본 점수가 내려갔는데 AI가 이유를 적지 않았어요') + sumCheck,
       suspect_type: hasReason ? '점수역전' : '점수역전(사유 없음)',
       resolved: autoResolve,
       submission_created_at: new Date().toISOString(),
@@ -544,9 +551,11 @@ export default async function handler(req, res) {
             }
           }
           const newCorrCount = Array.isArray(result.corrections) ? result.corrections.length : 0
-          logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount, dropReason: reasonText })  // await 안 함
+          // step591: 모델이 쓴 total도 함께 기록(scores 합과 어긋나는지 관찰용). 값은 바꾸지 않는다.
+          const aiTotal = typeof result.total === 'number' ? result.total : null
+          logScoreReversal({ userId, prev: prevGrading, newTotal, newCorrCount, dropReason: reasonText, aiTotal })  // await 안 함
           if (process.env.NODE_ENV !== 'production') {
-            console.log(`[score_drop] ${prevGrading.total_score} → ${newTotal}, 사유 ${reasonText ? '있음' : '없음'}`)
+            console.log(`[score_drop] ${prevGrading.total_score} → ${newTotal}, 사유 ${reasonText ? '있음' : '없음'}, AI 합계 ${aiTotal ?? '없음'} / 실제 합계 ${newTotal}`)
           }
         } else if (reasonText) {
           result.score_drop_reason = ''

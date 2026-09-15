@@ -131,6 +131,24 @@ function extractContext(body, original) {
 // 🆕 step371: 알림 1건의 맥락 상태 계산. 글 없음/삭제=gone, 본문에 original 없음=notfound, 찾음=ok(+before/match/after).
 //   🆕 step398 후속: submission_id 없어도 차단 기록(C-2)이 저장해둔 blocked_essay_excerpt가 있으면 맥락으로 표시.
 //   발췌 안에서 original을 찾으면 ok(하이라이트), 못 찾으면 excerpt(발췌 원문 그대로). 둘 다 없으면 skip.
+// 🆕 step591: 점수역전 reason 끝의 ' · 합계 확인: 이번 AI N / 실제 M, 직전 AI P / 실제 Q' 절 분리(서버 ai.js logScoreReversal 서식).
+//   AI가 쓴 총점과 scores 합이 다른 쪽만 mismatches로 돌려 카드에 작게 표시. 절이 없거나 못 읽으면 reason 그대로.
+function splitSumCheck(reason) {
+  const text = String(reason || '')
+  const idx = text.indexOf(' · 합계 확인: ')
+  if (idx === -1) return { main: text, mismatches: [] }
+  const main = text.slice(0, idx)
+  const tail = text.slice(idx)
+  const mismatches = []
+  const re = /(이번|직전) AI ([^\s/]+) \/ 실제 ([^\s,]+)/g
+  let m
+  while ((m = re.exec(tail)) !== null) {
+    const ai = m[2], real = m[3]
+    if (ai !== real) mismatches.push({ label: m[1], ai, real })
+  }
+  return { main, mismatches }
+}
+
 function buildContext(a, subMap) {
   if (!a.submission_id) {
     const ex = a.blocked_essay_excerpt
@@ -3421,8 +3439,20 @@ export default function AdminHome() {
                                 </div>
                               )
                             })()}
-                            {/* 4행: 판단 이유 */}
-                            {a.reason && <div className="text-xs text-gray-500 mt-1.5">💬 {a.reason}</div>}
+                            {/* 4행: 판단 이유 — step591: 점수역전 행의 '합계 확인:' 절은 분리해 불일치일 때만 작게 표시 */}
+                            {a.reason && (() => {
+                              const { main, mismatches } = splitSumCheck(a.reason)
+                              return (
+                                <>
+                                  <div className="text-xs text-gray-500 mt-1.5">💬 {main}</div>
+                                  {mismatches.length > 0 && (
+                                    <div className="text-[11px] text-red-600 mt-1">
+                                      🧮 {mismatches.map(m => `${m.label} AI 합계 ${m.ai} / 실제 합계 ${m.real}`).join(' · ')}
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
                             {/* 5행: 작성 학생 정보(step371) + 글 보기(submission_id 있을 때만, 기존 조건 그대로) */}
                             {(suspectMeta[a.id]?.student || a.submission_id) && (
                               <div className="flex items-center gap-2 flex-wrap mt-2">
