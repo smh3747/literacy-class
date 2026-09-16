@@ -111,7 +111,7 @@ async function fetchPrevGrading({ userId, topicId }) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
     const { data: prev } = await admin.from('submissions')
-      .select('id, total_score, max_score, scores, corrections, feedback_overall, feedback_improve, improve_examples, created_at')  // step458: id — 역전 기록 글 보기용 / step593: 첫 글 조언 2컬럼(계약 배관)
+      .select('id, total_score, max_score, scores, corrections, feedback_overall, feedback_improve, improve_examples, essay_text, created_at')  // step458: id — 역전 기록 글 보기용 / step593: 첫 글 조언 2컬럼(계약 배관) / step595: essay_text — 직전 본문·변경 사실 계산용
       .eq('user_id', userId).eq('topic_id', topicId)
       .is('deleted_at', null).not('total_score', 'is', null)
       .order('created_at', { ascending: false })
@@ -119,6 +119,43 @@ async function fetchPrevGrading({ userId, topicId }) {
     return prev || null
   } catch (e) {
     console.warn('직전 제출 조회 실패(무시):', e?.message)
+    return null
+  }
+}
+
+// 🆕 step595: 수정본 vs 직전 글 변경 사실 계산(서버 측 사실 — 모델이 "분량이 줄었다"를 지어내지 못하게).
+//   - prevChars·curChars: 공백 제외 글자 수, deltaPct: 증감 %(직전 0자면 null)
+//   - added/removed: 문장 단위(줄바꿈·./!/? 기준, 공백 압축 후 완전 일치) 비교. 수정본에만/직전에만 있는 문장.
+//     각 최대 5개, 각 120자 상한. 순수 함수, 실패하면 null(채점은 항상 계속).
+//   프롬프트가 인자로 받아 쓰는 것은 spell 세션 몫(lib/prompts.server.js). 여기선 계산·전달만.
+const CHANGE_FACTS_MAX_SENTENCES = 5
+const CHANGE_FACTS_SENTENCE_CHARS = 120
+function computeChangeFacts(prevText, curText) {
+  try {
+    if (typeof prevText !== 'string' || typeof curText !== 'string') return null
+    if (!prevText.trim() || !curText.trim()) return null
+    const countChars = (s) => s.replace(/\s/g, '').length
+    const splitSentences = (s) => s
+      .replace(/([.!?])\s*/g, '$1\n')
+      .split('\n')
+      .map(x => x.trim().replace(/\s+/g, ' '))
+      .filter(Boolean)
+    const prevChars = countChars(prevText)
+    const curChars = countChars(curText)
+    const deltaPct = prevChars > 0 ? Math.round((curChars - prevChars) / prevChars * 100) : null
+    const prevSet = new Set(splitSentences(prevText))
+    const curSet = new Set(splitSentences(curText))
+    const pick = (from, notIn) => [...from]
+      .filter(x => !notIn.has(x))
+      .slice(0, CHANGE_FACTS_MAX_SENTENCES)
+      .map(x => x.slice(0, CHANGE_FACTS_SENTENCE_CHARS))
+    return {
+      prevChars, curChars, deltaPct,
+      added: pick(curSet, prevSet),
+      removed: pick(prevSet, curSet),
+    }
+  } catch (e) {
+    console.warn('변경 사실 계산 실패(무시):', e?.message)
     return null
   }
 }
@@ -342,6 +379,18 @@ export default async function handler(req, res) {
       // 🆕 step555: 자동 맞춤법 검사(규칙 기반)를 채점 전에 돌려 입력으로 주입 — 검사·채점 자기모순 차단.
       let ruleErrors = null
       try { ruleErrors = findRuleBasedErrors(rewriteEssay) } catch { /* 채점 계속 */ }
+      // 🆕 step595: 직전 글 본문(2000자 상한) + 직전 항목별 점수(JSONB 배열) + 서버 계산 변경 사실.
+      //   직전 행 없음·essay_text null이면 셋 다 null(프롬프트 폴백 경로). 변경 사실 계산은 절단 전 원문 전체로.
+      //   프롬프트 시그니처가 아직 이 3인자를 안 받으면 구조분해에서 무시된다(하위호환) — 활성화는 spell 세션 몫.
+      const prevEssayRaw = (typeof prevGrading?.essay_text === 'string' && prevGrading.essay_text.trim())
+        ? prevGrading.essay_text : null
+      const prevEssay = prevEssayRaw
+        ? (prevEssayRaw.length > 2000 ? prevEssayRaw.slice(0, 2000) + '…(이하 생략)' : prevEssayRaw)
+        : null
+      const prevScores = Array.isArray(prevGrading?.scores) ? prevGrading.scores : null
+      const changeFacts = prevEssayRaw ? computeChangeFacts(prevEssayRaw, rewriteEssay) : null
+      // 배관 확인용(Vercel 로그) — 글자 수·개수만. 본문·문장 내용은 절대 출력하지 않는다.
+      console.log(`[rewrite-facts] prevEssay ${prevEssayRaw ? prevEssayRaw.length + '자' : '없음'}, prevScores ${prevScores ? prevScores.length + '항목' : '없음'}, facts ${changeFacts ? `prev ${changeFacts.prevChars}/cur ${changeFacts.curChars}/Δ${changeFacts.deltaPct}%/added ${changeFacts.added.length}/removed ${changeFacts.removed.length}` : '없음'}`, { userId })
       prompt = rewriteGradingPrompt({
         topic, rewriteEssay, rubrics,
         prevScore: prevGrading?.total_score ?? null,
@@ -350,6 +399,8 @@ export default async function handler(req, res) {
         // step593: 첫 글 조언(조언 이행 계약, spell step591 신규 2인자). 직전 없음·null이면 null → 프롬프트가 총평 폴백.
         prevImprove: prevGrading?.feedback_improve || null,
         prevImproveExamples: Array.isArray(prevGrading?.improve_examples) ? prevGrading.improve_examples : null,
+        // step595: 직전 본문·직전 항목 점수·변경 사실(spell이 인자 받도록 별도 작업)
+        prevEssay, prevScores, changeFacts,
         ruleErrors,
       })
       schema = SCHEMAS.rewriteFeedback  // step588: essayFeedback + score_drop_reason(하락 사유 그릇)
