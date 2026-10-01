@@ -62,6 +62,12 @@ const DETECT = [
   { name: '여러곳',            text: '여러곳을 다녔다',         original: '여러곳',     correction: '여러 곳' },       // step590
   { name: "라는(띄어짐)",      text: '여행지 라는 말',          original: '여행지 라는', correction: '여행지라는' },   // step590
   { name: "잘 않나(문맥 포함 생성)", text: '이런 것은 기억이 잘 않나기 때문이다.', original: '잘 않나', correction: '잘 안 나' }, // step592: 9/1 인천산곡초 ×4
+  // step598: '않나' + 용언(나오다·나가다·나다) — 뒤 문맥을 실어 생성(9/30 동북초 "매연이 않나오면" ×5 과차단)
+  { name: '않나오면(나오다)',    text: '자동차에서 매연이 않나오면 공기가 좋아진다.', original: '않나오면', correction: '안 나오면' }, // step598
+  { name: '않나갔다(나가다)',    text: '주말에는 밖에 않나갔다.',   original: '않나갔다', correction: '안 나갔다' },   // step598
+  { name: '않나서(나다)',        text: '화가 않나서 웃었다.',       original: '않나서',   correction: '안 나서' },     // step598
+  { name: '이/가 + 않나요',      text: '슬픈데 눈물이 않나요.',     original: '않나요',   correction: '안 나요' },     // step598
+  { name: '이/가 + 않나(문맥 포함)', text: '아직도 실감이 않나 😂', original: '실감이 않나', correction: '실감이 안 나' }, // step598
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -135,6 +141,22 @@ const MERGE = [
   { name: '잘 않나→잘 안 나(통과)',         corr: { original: '잘 않나',   correction: '잘 안 나' },   essay: '이런 것은 기억이 잘 않나기 때문이다.', expect: 'kept' },    // step592 (AI 경로)
   { name: '잘 않나기→잘 안 나기(통과)',     corr: { original: '잘 않나기', correction: '잘 안 나기' }, essay: '이런 것은 기억이 잘 않나기 때문이다.', expect: 'kept' },    // step592
   { name: '잘 않아서→잘 안 아서(여전히 차단)', corr: { original: '잘 않아서', correction: '잘 안 아서' }, essay: '숙제를 잘 않아서 혼났다',               expect: 'dropped' }, // step592: '잘' 예외는 않나에만
+  // step598: '않→안' 방향은 일괄 차단이 아니다. 용언 앞 부정 부사 자리는 통과, '-지 않나(요)' 보조용언은 차단.
+  { name: '않나오면→안 나오면(통과)',           corr: { original: '않나오면', correction: '안 나오면' },               essay: '자동차에서 매연이 않나오면 공기가 좋아진다.', expect: 'kept' },    // step598 (AI 어절 경로)
+  { name: '매연이 않나오면→매연이 안 나오면(통과)', corr: { original: '매연이 않나오면', correction: '매연이 안 나오면' }, essay: '자동차에서 매연이 않나오면 공기가 좋아진다.', expect: 'kept' },    // step598 (AI 구 경로)
+  { name: '않나→안 나(문맥 없는 조각, 여전히 차단)', corr: { original: '않나', correction: '안 나' },                   essay: '친구가 힘들지는 않나 걱정했다',               expect: 'dropped' }, // step598
+  { name: '먹지 않나요→먹지 안 나요(차단)',      corr: { original: '먹지 않나요', correction: '먹지 안 나요' },         essay: '너도 같이 먹지 않나요?',                     expect: 'dropped' }, // step598: "안 나요" 2글자 면제 누수 차단
+  { name: '힘들지는 않나요→안 나요(차단)',       corr: { original: '힘들지는 않나요', correction: '힘들지는 안 나요' }, essay: '많이 힘들지는 않나요?',                      expect: 'dropped' }, // step598
+  { name: '편지 않나왔다→편지 안 나왔다(통과)',  corr: { original: '편지 않나왔다', correction: '편지 안 나왔다' },     essay: '기다리던 편지 않나왔다',                     expect: 'kept' },    // step598: '지'로 끝나는 명사 뒤 용언은 통과
+  // step598: 무의미 교정 정규화 — 눈에 같은 쌍은 조용히 제거(dropped에도 안 남음), 실제 띄어쓰기 교정은 유지.
+  { name: '무의미(NBSP) 여름 방학→여름 방학',     corr: { original: '여름 방학', correction: '여름 방학' },  essay: '나는 여름 방학에 갔다',  expect: 'gone' }, // step598
+  { name: '무의미(전각 공백)',                    corr: { original: '여름　방학', correction: '여름 방학' },  essay: '나는 여름　방학에 갔다',  expect: 'gone' }, // step598
+  { name: '무의미(zero-width)',                   corr: { original: '여름​ 방학', correction: '여름 방학' }, essay: '나는 여름​ 방학에 갔다', expect: 'gone' }, // step598
+  { name: '무의미(연속 공백)',                    corr: { original: '여름  방학', correction: '여름 방학' },      essay: '나는 여름  방학에 갔다',      expect: 'gone' }, // step598
+  { name: '무의미(자모 분리 NFD)',                corr: { original: '여름 방학'.normalize('NFD'), correction: '여름 방학' }, essay: '나는 여름 방학에 갔다', expect: 'gone' }, // step598
+  { name: '무의미(앞뒤 공백만 다름)',             corr: { original: '여름 방학', correction: ' 여름 방학 ' },     essay: '나는 여름 방학에 갔다',       expect: 'gone' }, // step598 (기존 trim 동작 유지)
+  { name: '제 4조→제4조(실제 띄어쓰기 교정 유지)', corr: { original: '제 4조', correction: '제4조' },             essay: '제 4조에 따라 정했다',        expect: 'kept' }, // step598
+  { name: '여름방학→여름 방학(실제 교정 유지)',    corr: { original: '여름방학', correction: '여름 방학' },        essay: '나는 여름방학에 갔다',        expect: 'kept' }, // step598
   // step560: 문체역행 필터 — 반말 압도 글(formal ≤ 1 && plain ≥ 3)에서만 반말→존댓말 교정 폐기.
   { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
@@ -180,6 +202,9 @@ const STYLE = [
     if (c.expect === 'kept') {
       pass = kept && !drp
       detail = kept ? 'corrections에 남음' : `안 남음(dropped=${drp ? drp.drop_reason : '없음'})`
+    } else if (c.expect === 'gone') { // step598: 무의미 교정 — 조용히 제거(감시 기록에도 안 남음)
+      pass = !kept && !drp
+      detail = pass ? '조용히 제거됨' : (kept ? 'corrections에 남음(제거 안 됨)' : `dropped에 기록됨(${drp.drop_reason})`)
     } else { // dropped
       pass = !kept && !!drp
       detail = drp ? `dropped(${drp.drop_reason})` : (kept ? 'corrections에 남음(폐기 안 됨)' : '사라짐(dropped 아님)')
