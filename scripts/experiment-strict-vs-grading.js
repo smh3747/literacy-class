@@ -6,8 +6,16 @@
 //   --no-ai        AI 호출 없이 저장 건수·규칙 엔진 단독 건수만(키가 없을 때 자동으로 이 모드)
 //   --sample=<id앞8자>  저장 교정 샘플 10개를 볼 글(기본 8c13de95)
 //   --ids=a,b,c    대상 submission id 앞 8자리 목록 교체
+//   --model=<이름>  strict 호출 모델을 고정(기본: 현재 grading 체인 그대로). 실행 전에 ListModels로 존재 여부를 확인하고,
+//                  없으면 비슷한 이름 후보를 보고하고 중단한다. (step598 추가)
+//   --list-models[=<부분문자열>]  generateContent 가능한 모델 이름만 출력하고 종료(기본 필터 'gemini-3'). 키 필요.
 //
 // 필요한 값: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SYSTEM_GEMINI_API_KEY(AI 비교용).
+//
+// '다듬기 의심' 열(step598): 표현 다듬기 오교정(프롬프트 규칙 11 ②, "있어서→있기 때문에"처럼 뜻을 바꾸지 않고
+//   표현만 고치는 것)을 기계적으로 추정한 값. 공백을 뺀 original/correction의 편집거리가 3 이상이면 의심으로 센다.
+//   띄어쓰기만 고친 것(공백 제외 동일)과 한두 글자 맞춤법 교정(됬→됐, 않→안)은 0~2라 제외된다.
+//   어림값이다 — 목록에 [의심] 표시를 붙여 두므로 눈으로 판정한다.
 //
 // 조건을 실제 파이프라인(pages/api/ai.js type 'grammarStrict')과 같게 맞춘다:
 //   grammarStrictPrompt → callGeminiStructured(SCHEMAS.grammarOnly, { taskType: 'grading', maxTokens: 4000, temperature: 0 })
@@ -34,6 +42,50 @@ const NO_AI_FLAG = args.includes('--no-ai')
 const SAMPLE_ID = argVal('sample') || '8c13de95'
 const IDS = (argVal('ids') || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 const TARGET_IDS = IDS.length ? IDS : DEFAULT_IDS
+const MODEL = argVal('model') || null                       // step598: strict 호출 모델 고정(없으면 기본 체인)
+const LIST_MODELS = args.some(x => x === '--list-models' || x.startsWith('--list-models='))
+const LIST_FILTER = argVal('list-models') || 'gemini-3'
+
+// step598: ListModels(v1beta)로 generateContent 가능한 모델 이름 목록을 받는다. 키 노출 없음(쿼리에만 사용).
+async function listGenerateModels(apiKey) {
+  const names = []
+  let pageToken = null
+  do {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`
+      + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`ListModels ${res.status}: ${(await res.text()).slice(0, 200).replace(/key=[^&\s"]+/g, 'key=***')}`)
+    const json = await res.json()
+    for (const m of json.models || []) {
+      if ((m.supportedGenerationMethods || []).includes('generateContent')) names.push(String(m.name || '').replace(/^models\//, ''))
+    }
+    pageToken = json.nextPageToken || null
+  } while (pageToken)
+  return names
+}
+
+// step598: 표현 다듬기 의심 — 공백 제외 편집거리(Levenshtein) ≥ 3. 어림값(헤더 설명 참고).
+function editDistance(a, b) {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+const REWORD_MIN_DISTANCE = 3
+const isRewordSuspect = (c) => {
+  const o = String(c.original == null ? '' : c.original).replace(/\s+/g, '')
+  const k = String(c.correction == null ? '' : c.correction).replace(/\s+/g, '')
+  if (!o || !k || o === k) return false  // 띄어쓰기만 고친 것은 제외
+  return editDistance(o, k) >= REWORD_MIN_DISTANCE
+}
 
 // .env.local 간이 파서(scripts/load-schools.mjs와 같은 방식). 이미 셸에 있는 환경변수는 덮어쓰지 않음.
 function loadEnv(file) {
@@ -90,6 +142,29 @@ const pad = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat
     console.warn('⚠️ SYSTEM_GEMINI_API_KEY가 없어 AI 비교를 건너뜁니다(저장 건수·규칙 엔진 단독 건수만 출력).')
   }
 
+  // step598: 모델 목록만 보고 종료
+  if (LIST_MODELS) {
+    if (!GEMINI_KEY) { console.error('--list-models에는 SYSTEM_GEMINI_API_KEY가 필요해요.'); process.exitCode = 1; return }
+    const names = await listGenerateModels(GEMINI_KEY)
+    const hit = names.filter(n => n.includes(LIST_FILTER))
+    console.log(`generateContent 가능 모델 ${names.length}개 중 '${LIST_FILTER}' 포함 ${hit.length}개:`)
+    for (const n of hit) console.log(`  · ${n}`)
+    return
+  }
+  // step598: --model 지정 시 존재 확인(없으면 후보 보고 후 중단). 키가 없으면 확인 불가 → AI 비교도 없으므로 경고만.
+  if (MODEL && useAI) {
+    const names = await listGenerateModels(GEMINI_KEY)
+    if (!names.includes(MODEL)) {
+      const stem = MODEL.split('-').slice(0, 2).join('-')  // 예: 'gemini-3'
+      const cands = names.filter(n => n.includes(stem))
+      console.error(`❌ 모델 '${MODEL}'이 이 키의 ListModels에 없어요. 가능한 이름(${stem} 포함 ${cands.length}개):`)
+      for (const n of cands) console.error(`  · ${n}`)
+      process.exitCode = 2
+      return
+    }
+  }
+  console.log(`strict 호출 모델: ${MODEL ? MODEL + ' (고정)' : '기본 grading 체인'}${useAI ? '' : ' — AI 비교 생략'}`)
+
   registerExtensionlessHook()
   const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href)
   const { findRuleBasedErrors, mergeCorrectionsDetailed } = await imp('lib/koreanRules.js')
@@ -125,7 +200,7 @@ const pad = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat
     if (useAI && essay.trim()) {
       try {
         const res = await callGeminiStructured(GEMINI_KEY, grammarStrictPrompt({ essay }), SCHEMAS.grammarOnly,
-          { taskType: 'grading', maxTokens: 4000, temperature: 0 })
+          { taskType: 'grading', maxTokens: 4000, temperature: 0, ...(MODEL ? { model: MODEL } : {}) })  // step598: --model이면 단일 모델 고정(폴백 없음)
         strict = mergeCorrectionsDetailed(Array.isArray(res?.corrections) ? res.corrections : [], essay).corrections
       } catch (e) {
         aiError = e?.message || String(e)
@@ -139,19 +214,31 @@ const pad = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat
     results.push({ p: r.p, chars: essay.replace(/\s/g, '').length, saved, strict, strictOnly, union, ruleOnly, ruleKeys, aiError })
   }
 
-  // 3) 비교표
-  console.log(`${pad('id', 10)}${pad('글자', 7)}${pad('저장', 6)}${pad('strict', 8)}${pad('합집합', 8)}${pad('strict만', 9)}규칙단독`)
+  // 3) 비교표 (step598: 다듬기 의심 열 — 저장/strict 각각)
+  const rewordCount = (arr) => (arr || []).filter(isRewordSuspect).length
+  console.log(`${pad('id', 10)}${pad('글자', 7)}${pad('저장', 6)}${pad('strict', 8)}${pad('합집합', 8)}${pad('strict만', 9)}${pad('규칙단독', 9)}${pad('저장다듬', 9)}strict다듬`)
   for (const x of results) {
     console.log(`${pad(x.p, 10)}${pad(x.chars, 7)}${pad(x.saved.length, 6)}${pad(x.strict ? x.strict.length : (x.aiError ? '실패' : '-'), 8)}`
-      + `${pad(x.union ?? '-', 8)}${pad(x.strict ? x.strictOnly.length : '-', 9)}${x.ruleOnly.length}`)
+      + `${pad(x.union ?? '-', 8)}${pad(x.strict ? x.strictOnly.length : '-', 9)}${pad(x.ruleOnly.length, 9)}`
+      + `${pad(rewordCount(x.saved), 9)}${x.strict ? rewordCount(x.strict) : '-'}`)
   }
-  console.log('\nstrict만 새로 찾은 항목 ([규칙] = 지금 규칙 엔진이 단독으로도 잡는 것, 표시 없음 = AI가 찾은 것):')
+  console.log('\nstrict만 새로 찾은 항목 ([규칙] = 지금 규칙 엔진이 단독으로도 잡는 것, 표시 없음 = AI가 찾은 것, [의심] = 표현 다듬기 의심):')
   for (const x of results) {
     if (x.aiError) { console.log(`  ${x.p}: 호출 실패 — ${x.aiError}`); continue }
     if (!x.strict) continue
     if (!x.strictOnly.length) { console.log(`  ${x.p}: 없음`); continue }
     console.log(`  ${x.p}:`)
-    for (const c of x.strictOnly) console.log(`    · ${x.ruleKeys.has(norm(c.original)) ? '[규칙] ' : ''}${fmt(c)}`)
+    for (const c of x.strictOnly) console.log(`    · ${x.ruleKeys.has(norm(c.original)) ? '[규칙] ' : ''}${isRewordSuspect(c) ? '[의심] ' : ''}${fmt(c)}`)
+  }
+  // step598: 다듬기 의심 전체 목록(저장·strict) — 눈으로 판정하기 위한 재료
+  console.log('\n표현 다듬기 의심 목록(공백 제외 편집거리 ≥ 3, 어림값):')
+  for (const x of results) {
+    const s1 = x.saved.filter(isRewordSuspect)
+    const s2 = (x.strict || []).filter(isRewordSuspect)
+    if (!s1.length && !s2.length) continue
+    console.log(`  ${x.p}:`)
+    for (const c of s1) console.log(`    [저장]   ${fmt(c)}`)
+    for (const c of s2) console.log(`    [strict] ${fmt(c)}`)
   }
 
   // 4) 합계(AI 비교는 호출 성공한 글만)
@@ -167,6 +254,7 @@ const pad = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat
     const pct = (a, b) => b > 0 ? `${a >= b ? '+' : ''}${Math.round((a - b) / b * 100)}%` : 'n/a'
     console.log(`합계(AI 비교 성공 ${ok.length}건): 저장 ${sSaved} vs strict ${sStrict} (${pct(sStrict, sSaved)}) vs 합집합 ${sUnion} (저장 대비 ${pct(sUnion, sSaved)})`)
     console.log(`  strict만 새로 찾은 ${sNew}건 = 규칙 ${sNewRule}건 + AI ${sNew - sNewRule}건`)
+    console.log(`  표현 다듬기 의심(어림): 저장 ${sum(ok, x => rewordCount(x.saved))}건 vs strict ${sum(ok, x => rewordCount(x.strict))}건${MODEL ? `  [모델 ${MODEL}]` : ''}`)
   } else {
     console.log('합계(AI 비교): 실행 안 됨')
   }
