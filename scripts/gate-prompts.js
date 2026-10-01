@@ -104,11 +104,12 @@ const { pathToFileURL } = require('url')
   }
 
   // ── REWRITE: rewriteGradingPrompt의 첫 글 채점 맥락 (step442 3인자 → step591 5인자: +prevImprove·prevImproveExamples) ──
-  // 전부 미전달/null이면 기존 출력과 완전 동일(하위호환), 하나라도 있으면 [첫 글 채점 정보] 블록+조언 이행 계약(규칙 11).
+  // 전부 미전달/null이면 기존 출력과 완전 동일(하위호환), 하나라도 있으면 [직전 글 채점 정보] 블록+조언 이행 계약(규칙 11).
   // step591: 정책 전환("엄격화"→"조언 이행 계약") — 442·455·456·473·476·521·550·559 누적 문구는 계약 (가)~(차)로 대체.
+  // step596: 계약 2.0 — 호칭 "첫 글"→"직전 글", (마) 기계적 오류로 축소, (바) 4종 열거→인용 기반 "하락 근거 규칙". 신규 3인자(prevEssay·prevScores·changeFacts)는 아래 FACTS 그룹.
   try {
     const base = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics })
-    const withNulls = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: null, prevCorrections: null, prevFeedback: null, prevImprove: null, prevImproveExamples: null })
+    const withNulls = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: null, prevCorrections: null, prevFeedback: null, prevImprove: null, prevImproveExamples: null, prevEssay: null, prevScores: null, changeFacts: null })
     const withPrev = rewriteGradingPrompt({
       topic, rewriteEssay: essay, rubrics,
       prevScore: 75,
@@ -118,7 +119,7 @@ const { pathToFileURL } = require('url')
 
     // (a) 하위호환: 미전달 === 전부 null, 첫 글 맥락 문구(계약 규칙) 없음
     // ('조언 이행 계약' 단독은 기본부 ⚖️ 줄("점수 처리는 조언 이행 계약을 따릅니다")에도 있어 규칙 11 표제로 검사)
-    const CONTRACT_ONLY = ['[첫 글 채점 정보]', '11. **조언 이행 계약', '하락 허용 사유', '반드시 올리세요', '아직 남아 있어요',
+    const CONTRACT_ONLY = ['[직전 글 채점 정보]', '11. **조언 이행 계약', '하락 근거 규칙', '[직전 글 본문]', '[변경 사실', '[직전 항목 점수]', '반드시 올리세요', '아직 남아 있어요',
       '칭찬으로 시작하는 것은 금지', '하지 않은 개선을 칭찬', '베낄 원문이 아닙니다', '모순되면 안 됩니다']
     const aLeak = CONTRACT_ONLY.filter(p => base.includes(p))
     const aPass = base === withNulls && aLeak.length === 0
@@ -126,24 +127,28 @@ const { pathToFileURL } = require('url')
       aPass ? '출력 동일, 계약 문구 없음' : (base === withNulls ? `계약 문구가 기본 출력에 섞임: ${aLeak.join(' / ')}` : '미전달과 null 출력 불일치'))
 
     // (b) 전체 주입: 블록 표제·기준선 점수·지적 목록·총평 + 계약 (가)~(차) 대표 문구
-    const bPhrases = ['[첫 글 채점 정보]', '75점 (기준선)', '어느날 → 어느 날', '문단 구분 필요',
+    const bPhrases = ['[직전 글 채점 정보]', '75점 (기준선)', '어느날 → 어느 날', '문단 구분 필요',
       '조언 이행 계약', '다른 어떤 원칙보다 우선', // 규칙 11 표제·우선 선언
-      '같은 기준·같은 엄격도', '첫 글 점수 75점이 이번 채점의 기준선', // (가) 기준선
-      "'반영 / 부분 반영 / 미반영'", '따옴표', // (나) 반영 확인 의무(559 인용 강제 대체)
+      '같은 기준·같은 엄격도', '직전 글 점수 75점이 이번 채점의 기준선', // (가) 기준선
+      "'반영 / 부분 반영 / 미반영'", '수정본에서 달라진 대목을 따옴표', // (나) 반영 확인 의무(559 인용 강제 대체) — 변경 사실 없을 때의 폴백 근거
       '반드시 올리세요', '오르지 않는 일은 없어야', // (다) 반영 → 상승
-      '첫 글 점수를 그대로 유지', '아직 남아 있어요', '하지 않은 개선을 칭찬', '인용할 수 있는 실제 변화', // (라) 미반영 → 유지
-      '신규 오류 감점 금지', '새로 생긴 맞춤법 오류 포함', '같은 상태면 같은 점수', // (마)
-      '하락 허용 사유(이 넷뿐)', '분량이 크게 줄었을 때', '주제에서 벗어났을 때', '다른 글을 베껴 붙였을 때', '삭제됐을 때', '애매하면 낮추지 마세요', // (바)
-      'score_drop_reason에 위 ①~④', '첫 문장을 그 이유로 시작', '칭찬으로 시작하는 것은 금지', // (사)
+      '직전 글 점수를 그대로 유지', '아직 남아 있어요', '하지 않은 개선을 칭찬', '인용할 수 있는 실제 변화', // (라) 미반영 → 유지
+      '신규 기계적 오류 감점 금지', '맞춤법·띄어쓰기·문장부호 오류', '새로 생긴 맞춤법 오류 포함', '같은 상태면 같은 점수', // (마) step596 축소
+      '내용을 해치는 추가', '감점할 수 있습니다', '그 문장을 그대로 인용해야 합니다', // (마) 단서: 내용 훼손 추가는 인용하면 감점 가능
+      '하락 근거 규칙', '수정본에서 문제가 되는 문장을 따옴표("")로 그대로 인용', '인용할 문장이 없으면 총점을 낮출 수 없습니다', '애매하면 낮추지 마세요', // (바) step596 — 변경 사실 없을 때의 폴백
+      "직전 글과 견주어야 알 수 있는 사유는 금지", // (바) 폴백: 비교 사유 금지
+      'score_drop_reason에 (바)에서 인용한 문장을 넣은 한 문장', '첫 문장을 그 이유로 시작', '칭찬으로 시작하는 것은 금지', // (사)
       '표준 표기가 확실한지 다시 확인', // (아) step456 유지
       '베낄 원문이 아닙니다', // (자) step559 유지
-      '모순되면 안 됩니다'] // (차) step476 유지
+      '모순되면 안 됩니다', // (차) step476 유지
+      "'직전 글' 대신 '지난 글'"] // (카) step596 학생 대면 호칭
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
     rec('REWRITE', '전체 주입 시 블록+조언 이행 계약 (가)~(차) 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
 
     // step591: 폐기된 옛 규칙 문구가 되살아나지 않았는지(하락 억제·대칭 원칙·수정본 자체 완성도 채점)
-    const RETIRED = ['수정본 자체의 완성도로 평가', '함부로 깎지도, 함부로 올리지도', '맞춤법·띄어쓰기 수정만으로는', '뚜렷이 초과해야', '[이전 채점 정보]']
+    const RETIRED = ['수정본 자체의 완성도로 평가', '함부로 깎지도, 함부로 올리지도', '맞춤법·띄어쓰기 수정만으로는', '뚜렷이 초과해야', '[이전 채점 정보]',
+      '하락 허용 사유(이 넷뿐)', '이 네 가지에 해당하지 않으면', 'score_drop_reason에 위 ①~④'] // step596 폐기: 4종 열거(거짓 사유를 고르게 만든 원인)
     const bBack = RETIRED.filter(p => withPrev.includes(p))
     rec('REWRITE', 'step591 폐기 문구(엄격화 체제) 부재', bBack.length === 0,
       bBack.length === 0 ? `${RETIRED.length}문구 모두 부재` : `되살아남: ${bBack.join(' / ')}`)
@@ -164,12 +169,12 @@ const { pathToFileURL } = require('url')
     // (d) 부분 주입: prevScore만 → 블록은 있되 조언·지적·총평 줄 없음 + 조언 목록 없을 때의 폴백(총평 조언 판정) 문장 존재
     // (규칙 (아)·폴백 문장에도 '첫 글에서 지적한 맞춤법·표현'·'첫 글 총평 요약'이 있어 블록 줄 표제(콜론 포함)로 정밀 검사)
     const scoreOnly = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 88 })
-    const dPass = scoreOnly.includes('[첫 글 채점 정보]') && scoreOnly.includes('88점 (기준선)')
-      && !scoreOnly.includes('- 첫 글에서 준 조언(improve):') && !scoreOnly.includes('- 첫 글에서 보여 준 고쳐 쓰기 예시:')
-      && !scoreOnly.includes('- 첫 글에서 지적한 맞춤법·표현:') && !scoreOnly.includes('- 첫 글 총평 요약:')
+    const dPass = scoreOnly.includes('[직전 글 채점 정보]') && scoreOnly.includes('88점 (기준선)')
+      && !scoreOnly.includes('- 직전 글에서 준 조언(improve):') && !scoreOnly.includes('- 직전 글에서 보여 준 고쳐 쓰기 예시:')
+      && !scoreOnly.includes('- 직전 글에서 지적한 맞춤법·표현:') && !scoreOnly.includes('- 직전 글 총평 요약:')
       && scoreOnly.includes('조언 목록이 따로 없으면')
     rec('REWRITE', '부분 주입(prevScore만) 시 점수 줄만 + 총평 조언 폴백', dPass,
-      dPass ? '점수 줄만 포함, 폴백 문장 있음' : `블록=${scoreOnly.includes('[첫 글 채점 정보]')}, 88점=${scoreOnly.includes('88점 (기준선)')}, 조언줄없음=${!scoreOnly.includes('- 첫 글에서 준 조언(improve):')}, 지적줄없음=${!scoreOnly.includes('- 첫 글에서 지적한 맞춤법·표현:')}, 총평줄없음=${!scoreOnly.includes('- 첫 글 총평 요약:')}, 폴백=${scoreOnly.includes('조언 목록이 따로 없으면')}`)
+      dPass ? '점수 줄만 포함, 폴백 문장 있음' : `블록=${scoreOnly.includes('[직전 글 채점 정보]')}, 88점=${scoreOnly.includes('88점 (기준선)')}, 조언줄없음=${!scoreOnly.includes('- 직전 글에서 준 조언(improve):')}, 지적줄없음=${!scoreOnly.includes('- 직전 글에서 지적한 맞춤법·표현:')}, 총평줄없음=${!scoreOnly.includes('- 직전 글 총평 요약:')}, 폴백=${scoreOnly.includes('조언 목록이 따로 없으면')}`)
 
     // (e) score_drop_reason 응답 형식 지시(step588 그릇에 대한 지시 — 588은 스키마만 있었음): 기본·주입 모두 존재, total과 overall 사이(스키마 propertyOrdering 일치)
     const ePos = (s) => ({ t: s.indexOf('▶ total'), d: s.indexOf('▶ score_drop_reason'), o: s.indexOf('▶ overall') })
@@ -200,14 +205,15 @@ const { pathToFileURL } = require('url')
       aMiss.length === 0 ? `${aNeed.length}문구 모두 포함(조언·예시 주입 확인)` : `누락: ${aMiss.join(' / ')}`)
 
     // (b) 미반영+동일 → 정체+이유: 유지·솔직 명시·하지 않은 개선 칭찬 금지
-    const bNeed = ['첫 글 점수를 그대로 유지', '아직 남아 있어요', '하지 않은 개선을 칭찬하는 문장', '글이 사실상 그대로면 첫 글 점수 유지가 기본']
+    const bNeed = ['직전 글 점수를 그대로 유지', '아직 남아 있어요', '하지 않은 개선을 칭찬하는 문장', '글이 사실상 그대로면 직전 글 점수 유지가 기본']
     const bMiss = bNeed.filter(p => !applied.includes(p))
     rec('CONTRACT', '(b) 미반영+동일 → 유지+이유 지시', bMiss.length === 0,
       bMiss.length === 0 ? `${bNeed.length}문구 모두 포함` : `누락: ${bMiss.join(' / ')}`)
 
     // (c) 주제 이탈 → 하락 허용 + score_drop_reason 필수 + overall 첫 문장 = 사유(칭찬 시작 금지)
-    const cNeed = ['② 주제에서 벗어났을 때', 'score_drop_reason에 위 ①~④ 중 무엇 때문인지 한 문장으로 반드시', '첫 문장을 그 이유로 시작', '칭찬으로 시작하는 것은 금지',
-      '첫 문장: 총점이 첫 글보다 낮으면 그 이유']
+    // step596: 4종 열거 폐기 → 인용 기반 하락 근거 규칙(주제 이탈 예시 문구는 FACTS (e)에서 검사)
+    const cNeed = ['하락 근거 규칙', 'score_drop_reason에 (바)에서 인용한 문장을 넣은 한 문장을 반드시', '첫 문장을 그 이유로 시작', '칭찬으로 시작하는 것은 금지',
+      '첫 문장: 총점이 직전 글보다 낮으면 그 이유']
     const cMiss = cNeed.filter(p => !applied.includes(p))
     rec('CONTRACT', '(c) 주제 이탈 → 하락 허용+사유 필수+첫 문장 사유', cMiss.length === 0,
       cMiss.length === 0 ? `${cNeed.length}문구 모두 포함` : `누락: ${cMiss.join(' / ')}`)
@@ -216,13 +222,96 @@ const { pathToFileURL } = require('url')
     const newErr = [{ original: '가고싶다', correction: '가고 싶다' }]
     const dPrompt = rewriteGradingPrompt({ topic, rewriteEssay: '나는 이탈리아에 가고싶다.', rubrics, prevScore: 80, prevImprove, ruleErrors: newErr })
     const dNeed = ['가고싶다 → 가고 싶다', '이 오류들은 점수를 깎는 근거가 아닙니다', "improve에서 '다음엔 ~하면 ~해져요'로만 안내",
-      "'맞춤법이 완벽하다', '오류가 하나도 없다'", '자기모순', '신규 오류 감점 금지', '새로 생긴 맞춤법 오류 포함']
+      "'맞춤법이 완벽하다', '오류가 하나도 없다'", '자기모순', '신규 기계적 오류 감점 금지', '새로 생긴 맞춤법 오류 포함']
     const dMiss = dNeed.filter(p => !dPrompt.includes(p))
     const dNoPenalty = !dPrompt.includes('만점을 주지 마세요') && !dPrompt.includes('만점만 금지이며')
     rec('CONTRACT', '(d) 신규 띄어쓰기 오류만 → 감점 없음+안내(만점 금지 부재)', dMiss.length === 0 && dNoPenalty,
       dMiss.length === 0 && dNoPenalty ? `${dNeed.length}문구 포함, 만점 금지 지시 부재` : `누락: ${dMiss.join(' / ')}; 만점금지부재=${dNoPenalty}`)
   } catch (e) {
     rec('CONTRACT', 'CONTRACT 실행', false, `예외: ${e.message}`)
+  }
+
+  // ── FACTS: 계약 2.0 — 직전 본문·직전 항목 점수·서버 계산 변경 사실 (step596) ──
+  // 배경: 9/16 실사례 — 장난 줄 추가에 −10 하락, 사유는 "대화의 양이 줄었다"(거짓), 장난 줄 언급 0.
+  // 게이트는 프롬프트 텍스트 스모크: 각 상황에서 모델에 실리는 사실·지시가 존재하는지 고정. 실제 거동은 배포 후 실검증.
+  try {
+    const prevEssay = '주말에 가족과 바다에 갔다. 동생이 "누나, 파도가 와!" 하고 소리쳤다. 정말 재미있었다.'
+    const prankLine = 'ㅋㅋㅋㅋ 몰라 몰라 아무거나'
+    const prevArgs = { prevScore: 80, prevScores: [40, 40], prevEssay, prevImprove: '- 장면으로 보여주면 생생해져요.', prevFeedback: '장면을 보여 주면 좋아요' }
+
+    // (e) 장난 줄 추가 → 그 줄이 [변경 사실]에 인용돼 실리고, 내용 훼손 감점 허용+인용 의무+하락 근거 규칙 존재
+    const prank = rewriteGradingPrompt({
+      topic, rewriteEssay: `${prevEssay} ${prankLine}`, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 56, deltaPct: 30, added: [prankLine], removed: [] },
+    })
+    const eNeed = ['[직전 글 본문]', prevEssay, '[변경 사실 — 서버 계산, 사실로 취급]', `  · "${prankLine}"`,
+      '내용을 해치는 추가(뜻 없는 글자 나열, 장난으로 넣은 문장, 주제와 상관없는 문장)는 감점할 수 있습니다', '그 문장을 그대로 인용해야 합니다',
+      '[변경 사실]의 추가된 문장이나 삭제된 문장 가운데 근거가 되는 문장을 따옴표("")로 그대로 인용', '주제에서 벗어난 문장이 들어갔을 때', '이것은 예시일 뿐',
+      'score_drop_reason에 (바)에서 인용한 문장을 넣은 한 문장', '칭찬으로 시작하는 것은 금지',
+      '판정 근거는 [변경 사실]의 추가된 문장에서 따옴표("")로 인용', '추가된 문장에 없는 변화를 지어내지 마세요']
+    const eMiss = eNeed.filter(p => !prank.includes(p))
+    const eNoChangeLeak = prank.includes('**변경 없음**')
+    rec('FACTS', '(e) 장난 줄 추가 → 그 줄 인용 실림+내용 훼손 감점 허용+하락은 인용 필수', eMiss.length === 0 && !eNoChangeLeak,
+      eMiss.length === 0 && !eNoChangeLeak ? `${eNeed.length}문구 모두 포함, 변경 없음 문구 부재` : `누락: ${eMiss.join(' / ')}; 변경없음누수=${eNoChangeLeak}`)
+
+    // (f) 글자 수 증가+삭제 0 → 사실(글자 수·삭제 없음) 표기 + '분량 감소' 사유 금지 + 인용 없으면 하락 불가
+    const fNeed = ['- 글자 수(공백 제외): 43자 → 56자 (+30%)', '- 삭제된 문장(직전 글에만 있음, 최대 5개): 없음',
+      '[변경 사실]과 모순되는 사유는 금지', "글자 수가 늘었는데 '분량이 줄었다'", "삭제된 문장이 없는데 '내용이 빠졌다'",
+      '인용할 문장이 없으면 총점을 낮출 수 없습니다', '추측하지 말고 이 값을 그대로 믿으세요']
+    const fMiss = fNeed.filter(p => !prank.includes(p))
+    rec('FACTS', "(f) 글자 수 증가+삭제 0 → '분량 감소' 사유 금지", fMiss.length === 0,
+      fMiss.length === 0 ? `${fNeed.length}문구 모두 포함` : `누락: ${fMiss.join(' / ')}`)
+
+    // (g) 변경 없음(추가·삭제 0, 글자 수 동일) → 직전 항목 점수와 동일 점수 + '지난 글과 같아요'
+    const same = rewriteGradingPrompt({
+      topic, rewriteEssay: prevEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, added: [], removed: [] },
+    })
+    const gNeed = ['**변경 없음**', '모든 항목에 [직전 항목 점수]와 똑같은 점수를 주고', "'지난 글과 같아요'라고 알려 주세요",
+      '- 추가된 문장(수정본에만 있음, 최대 5개): 없음', '- 삭제된 문장(직전 글에만 있음, 최대 5개): 없음', '(0%)']
+    const gMiss = gNeed.filter(p => !same.includes(p))
+    // 항목 점수가 없으면 총점 기준 문구로 대체 / 문장 집합은 같아도 글자 수가 다르면(순서 바꾸기·반복) 변경 없음 아님
+    const sameNoItems = rewriteGradingPrompt({ topic, rewriteEssay: prevEssay, rubrics, prevScore: 80, prevEssay,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, added: [], removed: [] } })
+    const dupOnly = rewriteGradingPrompt({ topic, rewriteEssay: prevEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 50, deltaPct: 16, added: [], removed: [] } })
+    const gPass = gMiss.length === 0 && sameNoItems.includes('직전 글 점수와 똑같은 총점을 주고') && !dupOnly.includes('**변경 없음**')
+    rec('FACTS', "(g) 변경 없음 → 직전과 동일 점수+'지난 글과 같아요'", gPass,
+      gPass ? `${gNeed.length}문구 포함, 총점 대체 문구·글자 수 불일치 제외 확인` : `누락: ${gMiss.join(' / ')}; 총점대체=${sameNoItems.includes('직전 글 점수와 똑같은 총점을 주고')}, 글자수불일치제외=${!dupOnly.includes('**변경 없음**')}`)
+
+    // (h) 2차 이상 수정본에서 틀린 호칭 '첫 글'이 어떤 주입 조합에서도 나오지 않음 + 학생 대면 호칭 '지난 글'
+    const hOutputs = {
+      기본: rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics }),
+      '점수만': rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 88 }),
+      '전체 주입': rewriteGradingPrompt({
+        topic, rewriteEssay: essay, rubrics, ...prevArgs,
+        prevCorrections: [{ original: '어느날', correction: '어느 날' }],
+        prevImproveExamples: [{ original: '정말 재미있었다.', suggested: '파도가 발등을 간질였다.', reason: '장면으로' }],
+        changeFacts: { prevChars: 43, curChars: 56, deltaPct: 30, added: [prankLine], removed: [] },
+        ruleErrors: [{ original: '어느날', correction: '어느 날' }],
+      }),
+      '검사 블록만': rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, ruleErrors: [{ original: '어느날', correction: '어느 날' }] }),
+    }
+    const hLeak = Object.entries(hOutputs).filter(([, s]) => s.includes('첫 글') || s.includes('처음 글')).map(([k]) => k)
+    const hStudent = hOutputs['전체 주입'].includes("'직전 글' 대신 '지난 글'") && hOutputs['기본'].includes("'지난 글보다'로 말하기")
+    rec('FACTS', "(h) 수정본 프롬프트에 '첫 글' 호칭 부재+학생 대면 '지난 글'", hLeak.length === 0 && hStudent,
+      hLeak.length === 0 && hStudent ? `${Object.keys(hOutputs).length}개 조합 모두 부재, '지난 글' 지시 있음` : `'첫 글' 잔존: ${hLeak.join(', ')}; 지난글지시=${hStudent}`)
+
+    // (i) 항목 점수 출발점 + 방어(형식 불일치면 그 블록만 생략, 기존 폴백 유지)
+    const iStart = prank.includes('- [직전 항목 점수] (평가 기준 순서대로):') && prank.includes('  · 내용: 40/50') && prank.includes('  · 표현: 40/50')
+      && prank.includes('각 항목 점수의 출발점은 [직전 항목 점수]의 해당 항목 점수입니다') && prank.includes('나머지 항목은 그 점수 그대로 둡니다')
+    const badScores = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 80, prevScores: [40, 30, 10] }) // 루브릭 2개인데 점수 3개
+    const nanScores = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 80, prevScores: [40, '40'] })
+    const essayOnly = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevEssay })                             // 변경 사실 없음 → 폴백 하락 규칙
+    const badFacts = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 80, changeFacts: { added: ['x'] } }) // 글자 수 없음 → 생략
+    const iGuard = !badScores.includes('[직전 항목 점수]') && !nanScores.includes('[직전 항목 점수]')
+      && essayOnly.includes('[직전 글 본문]') && !essayOnly.includes('[변경 사실 —') && !essayOnly.includes('[직전 글 채점 정보]')
+      && essayOnly.includes('수정본에서 문제가 되는 문장을 따옴표("")로 그대로 인용')
+      && !badFacts.includes('[변경 사실 —') && badFacts.includes('수정본에서 달라진 대목을 따옴표')
+    rec('FACTS', '(i) 항목 점수 출발점 표기+형식 불일치 시 블록 생략·폴백', iStart && iGuard,
+      iStart && iGuard ? '항목 점수 2줄·출발점 지시 포함, 불일치 4종 생략 확인' : `출발점=${iStart}, 방어=${iGuard}`)
+  } catch (e) {
+    rec('FACTS', 'FACTS 실행', false, `예외: ${e.message}`)
   }
 
   // ── GRADING: 첫 글 채점 원칙 11 — 수정본 기준선 선언·만점 억제 이전 (step591) ──
@@ -258,7 +347,7 @@ const { pathToFileURL } = require('url')
       gradingPrompt: [{ name: '만점만 금지(감점 강제 아님)', text: '만점만 금지이며' }],
       rewriteGradingPrompt: [
         { name: '점수 처리는 계약 위임',          text: '점수 처리는 조언 이행 계약을 따릅니다' }, // step591
-        { name: '지적 오류 잔존 → 첫 글 점수 초과 금지', text: '첫 글 점수를 넘지 못하고' },       // step591
+        { name: '지적 오류 잔존 → 첫 글 점수 초과 금지', text: '직전 글 점수를 넘지 못하고' },     // step591 (step596 호칭 변경)
         { name: '새 오류 → 감점 근거 아님',        text: '새 오류는 감점 근거가 아닙니다' },      // step591
       ],
     }
@@ -296,7 +385,7 @@ const { pathToFileURL } = require('url')
     const dGrading = ['만점을 주지 마세요', '만점만 금지이며', // step556: 만점 금지≠감점 강제 블록 내 명시
       '다른 항목의 점수를 이 요약 때문에 깎지 마세요'] // step556: 내용·구성·표현 번짐 금지
     const dRewrite = ['이 오류들은 점수를 깎는 근거가 아닙니다', "improve에서 '다음엔 ~하면 ~해져요'로만 안내", // step591: 신규 오류 안내만
-      '첫 글 점수를 넘길 수 없습니다', '다른 항목에 번지게 하지 마세요'] // step591: 지적 잔존 상한·번짐 금지
+      '직전 글 점수를 넘길 수 없습니다', '다른 항목에 번지게 하지 마세요'] // step591: 지적 잔존 상한·번짐 금지
     const dMissing = [...dCommon.filter(p => !gTwo.includes(p) || !rTwo.includes(p)),
       ...dGrading.filter(p => !gTwo.includes(p)).map(p => `grading:${p}`),
       ...dRewrite.filter(p => !rTwo.includes(p)).map(p => `rewrite:${p}`)]
@@ -314,10 +403,10 @@ const { pathToFileURL } = require('url')
     //    step591 계약 체제에서는 "완벽" 절대 표현 금지 + (첫 글 지적 잔존이면) 첫 글 점수 초과 금지 + 상승은 반영 조언 항목에만.
     const jwi = [{ original: '쥐죽은듯이', correction: '쥐 죽은 듯이' }]
     const rJwi = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 95, prevCorrections: jwi, ruleErrors: jwi })
-    const fPass = rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이') && rJwi.includes('첫 글 점수를 넘길 수 없습니다')
+    const fPass = rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이') && rJwi.includes('직전 글 점수를 넘길 수 없습니다')
       && rJwi.includes("'맞춤법이 완벽하다', '오류가 하나도 없다'") && rJwi.includes('인용할 수 있는 실제 변화가 있는 항목에만')
     rec('SELFCHECK', "실사례 회귀('쥐죽은듯이' 잔존 → 완벽 금지·첫 글 점수 초과 금지)", fPass,
-      fPass ? '예시·초과 금지·절대 표현 금지·상승 근거 모두 포함' : `예시=${rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이')}, 초과금지=${rJwi.includes('첫 글 점수를 넘길 수 없습니다')}, 절대표현=${rJwi.includes("'맞춤법이 완벽하다', '오류가 하나도 없다'")}, 상승근거=${rJwi.includes('인용할 수 있는 실제 변화가 있는 항목에만')}`)
+      fPass ? '예시·초과 금지·절대 표현 금지·상승 근거 모두 포함' : `예시=${rJwi.includes('쥐죽은듯이 → 쥐 죽은 듯이')}, 초과금지=${rJwi.includes('직전 글 점수를 넘길 수 없습니다')}, 절대표현=${rJwi.includes("'맞춤법이 완벽하다', '오류가 하나도 없다'")}, 상승근거=${rJwi.includes('인용할 수 있는 실제 변화가 있는 항목에만')}`)
 
     // ⑤ 공존(step556→591): prev 인자 + ruleErrors 동시 주입 시 계약 규칙·검사 블록(수정본 모드)이 전부 존재.
     const rBoth = rewriteGradingPrompt({
@@ -325,7 +414,7 @@ const { pathToFileURL } = require('url')
       prevScore: 75, prevCorrections: [{ original: '어느날', correction: '어느 날' }], prevFeedback: '문단 구분 필요',
       ruleErrors: two,
     })
-    const gPhrases = ['조언 이행 계약', '칭찬으로 시작하는 것은 금지', '하락 허용 사유(이 넷뿐)', // step591 (사)(바)
+    const gPhrases = ['조언 이행 계약', '칭찬으로 시작하는 것은 금지', '하락 근거 규칙', // step591 (사) · step596 (바)
       '하지 않은 개선을 칭찬', // (라) step550 계승
       '자동 맞춤법 검사', '이 오류들은 점수를 깎는 근거가 아닙니다'] // step555·556 수정본 모드
     const gMissing = gPhrases.filter(p => !rBoth.includes(p))
