@@ -1375,6 +1375,12 @@ export default function TeacherSubmissions() {
                         맞춤법/띄어쓰기 {s.corrections.length}개
                       </span>
                     )}
+                    {/* step601: 첫 글 전용 맞춤법 검사가 피크로 보류된 글 — 표시만(폴링 없음). 밑줄이 적어 보이는 이유 설명용 */}
+                    {s.strict_status === 'pending' && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full inline-block ml-1" title="제출이 몰려 맞춤법 전용 검사를 잠시 뒤로 미뤘어요. 학생 화면이 열려 있으면 몇 분 안에, 아니면 다음 날 새벽에 보완돼요.">
+                        ⏳ 맞춤법 보완 대기
+                      </span>
+                    )}
                     {/* 🆕 맞춤법 AI 보조 안내 + 다시 검사(재평가) 배너 — 기존 regradeOne 재사용 */}
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2 flex-wrap">
                       <p className="text-sm text-amber-800 leading-snug flex-1 min-w-[140px]">{GRAMMAR_NOTICE_TEACHER}</p>

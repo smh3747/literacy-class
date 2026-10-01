@@ -10,6 +10,7 @@ import PasswordChangeModal from '../../components/PasswordChangeModal'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import StudentTutorial from '../../components/StudentTutorial'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
+import StrictPendingBadge from '../../components/StrictPendingBadge'  // step601: 맞춤법 보완 대기 배지(폴링 겸)
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
@@ -294,6 +295,9 @@ export default function StudentHome() {
   const [draftPrompt, setDraftPrompt] = useState(null)
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
+  // step601: 첫 글 제출 진행 2단계 표시 — 'spell'(맞춤법 확인) → 6초 뒤 'grade'(글 평가). 시간 기반 근사(서버가 단계 신호를 주지 않음).
+  const [gradingStage, setGradingStage] = useState(null)
+  const gradingStageTimerRef = useRef(null)
   // 🆕 step516: 수정 허용 알림(action=rewrite) 직행 — 다시 쓰기 버튼 스크롤·강조
   const [rewriteSpotlight, setRewriteSpotlight] = useState(false)
   const rewriteBtnRef = useRef(null)
@@ -588,6 +592,11 @@ export default function StudentHome() {
       
       if (maxAttempt === 1) {
         // 첫 글만 있음 → 피드백 화면 + 다시쓰기 가능
+        // step601: 보완 대기 배지용 strict_status는 별도 보조 조회(step600 SQL 미적용이면 조용히 실패 → 배지 없음, 화면 정상)
+        try {
+          const { data: st } = await supabase.from('submissions').select('strict_status').eq('id', last.id).maybeSingle()
+          if (st && st.strict_status) last.strict_status = st.strict_status
+        } catch (_) { /* 컬럼 없음 등 — 배지만 생략 */ }
         setCurrentSub(last)
         setEssay(last.essay_text)
         if (last.example_text) setExampleText(last.example_text)
@@ -746,6 +755,10 @@ export default function StudentHome() {
     try {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
+      // step601: 진행 2단계 표시 — 전용 맞춤법 검사(평균 수 초) 동안 '맞춤법 확인', 6초 뒤 '글 평가'로 전환(시간 근사)
+      setGradingStage('spell')
+      if (gradingStageTimerRef.current) clearTimeout(gradingStageTimerRef.current)
+      gradingStageTimerRef.current = setTimeout(() => setGradingStage('grade'), 6000)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러를 반환 → catch에서 안내
       const result = await callAI('grading', {
@@ -865,6 +878,9 @@ export default function StudentHome() {
     }
     submittingRef.current = false
     setSubmitting(false); setRetryMessage(null)
+    // step601: 진행 단계 표시 정리
+    if (gradingStageTimerRef.current) { clearTimeout(gradingStageTimerRef.current); gradingStageTimerRef.current = null }
+    setGradingStage(null)
   }
 
   // 예시 작품 생성 (subId 명시 — 첫 글·수정본 공용, step368)
@@ -1728,7 +1744,9 @@ export default function StudentHome() {
                   </div>
                   <button onClick={submitEssay} disabled={submitting}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                    {submitting ? '🤖 AI가 검토 중...' : '제출하고 피드백 받기 →'}
+                    {submitting
+                      ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…' : '📝 글을 평가하고 있어요…')
+                      : '제출하고 피드백 받기 →'}
                   </button>
                   {submitting && retryMessage && (
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
@@ -1809,6 +1827,18 @@ export default function StudentHome() {
                         )}
                       />
                       <div className="mt-2">
+                        {/* step601: 피크로 전용 맞춤법 검사가 보류된 글 — 배지 + 30초 폴링, done이면 밑줄 갱신·배지 제거 */}
+                        {step === 'feedback' && currentSub?.id && (
+                          <StrictPendingBadge
+                            submissionId={currentSub.id}
+                            status={currentSub.strict_status}
+                            className="mb-2"
+                            onUpdated={(corrs, status) => {
+                              setCurrentSub(prev => prev ? { ...prev, strict_status: status, ...(corrs ? { corrections: corrs } : {}) } : prev)
+                              if (corrs) setFeedbackResult(prev => prev ? { ...prev, corrections: corrs } : prev)
+                            }}
+                          />
+                        )}
                         <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                           dangerouslySetInnerHTML={{__html: applyGrammarHighlights(essay, feedbackResult.corrections)}} />
                         {feedbackResult.corrections?.length > 0 && (

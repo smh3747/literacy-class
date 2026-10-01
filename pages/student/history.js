@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import StrictPendingBadge from '../../components/StrictPendingBadge'  // step601: 맞춤법 보완 대기 배지(폴링 겸)
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { findOriginalRange } from '../../lib/koreanRules'
@@ -193,6 +194,15 @@ export default function StudentHistory() {
       router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
     } catch (e) { /* URL 반영 실패 무시 */ }
   }
+  // step601: 보완 검사가 끝난 글의 상태·corrections를 목록 상태에 반영(배지 제거 + 밑줄 갱신)
+  const patchSub = (id, patch) => {
+    setGrouped(prev => prev.map(g => ({ ...g, items: (g.items || []).map(s => s.id === id ? { ...s, ...patch } : s) })))
+  }
+  const onStrictUpdated = (sub) => (corrs, status) => {
+    if (!sub?.id) return
+    patchSub(sub.id, { strict_status: status, ...(corrs ? { corrections: corrs } : {}) })
+  }
+
   const openGroup = (idx, key) => { setSelectedIdx(idx); syncGroupUrl(key) }
   const closeGroup = () => { setSelectedIdx(null); syncGroupUrl(null) }
 
@@ -310,6 +320,8 @@ export default function StudentHistory() {
                 )}
               />
               <div className="mt-3 space-y-2">
+                {/* step601: 첫 글 전용 맞춤법 검사 보류(pending) 배지 — 폴링으로 done이면 밑줄 갱신 */}
+                <StrictPendingBadge submissionId={lastSub?.id} status={lastSub?.strict_status} onUpdated={onStrictUpdated(lastSub)} />
                 <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{__html: applyGrammar(lastSub?.essay_text, lastSub?.corrections)}} />
                 {lastSub?.corrections?.length > 0 && (
@@ -441,6 +453,8 @@ export default function StudentHistory() {
                         <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">맞춤법 {origSub.corrections.length}개</span>
                       )}
                     </div>
+                    {/* step601: 원문(첫 글)이 보류 상태면 배지 — 수정본 카드에는 없음(수정본 채점은 이중 호출 대상 아님) */}
+                    <StrictPendingBadge submissionId={origSub?.id} status={origSub?.strict_status} onUpdated={onStrictUpdated(origSub)} />
                     <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                       dangerouslySetInnerHTML={{__html: applyGrammar(origSub?.essay_text, origSub?.corrections)}} />
                     {origSub?.teacher_comment && (
