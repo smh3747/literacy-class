@@ -3,6 +3,7 @@
 // 각 학급의 trash_retention_days 기간 지난 글 영구 삭제
 
 import { createClient } from '@supabase/supabase-js'
+import { sweepPending } from '../../lib/strictCheck.server'  // step600: 맞춤법 보완 대기(pending) 일일 스윕
 
 export default async function handler(req, res) {
   // Vercel Cron만 호출 가능 (인증) — CRON_SECRET 미설정 시 무조건 거부
@@ -77,10 +78,22 @@ export default async function handler(req, res) {
       }
     }
 
+    // 🆕 step600: 맞춤법 보완 대기(pending) 스윕 — Hobby 플랜(2분 크론 불가) 대안.
+    //   학생 화면 폴링이 못 끝낸 pending(10분 이상)을 오래된 순으로 교사당 4건·총 30건·50초 예산 안에서 보완.
+    //   삭제 로직과 독립(실패해도 위 결과는 그대로 응답).
+    let strictBackfill = null
+    try {
+      strictBackfill = await sweepPending(supabase, { olderThanMin: 10, maxTotal: 30, perTeacher: 4, budgetMs: 50000 })
+    } catch (e) {
+      console.warn('strict 스윕 실패(무시):', e?.message || e)
+      strictBackfill = { error: String(e?.message || e).slice(0, 200) }
+    }
+
     res.status(200).json({
       success: true,
       totalDeleted,
       perClass,
+      strictBackfill,
       runAt: new Date().toISOString()
     })
   } catch (e) {

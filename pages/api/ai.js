@@ -18,6 +18,9 @@ import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
 import { mergeCorrectionsDetailed, findRuleBasedErrors } from '../../lib/koreanRules'
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
 import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema, supplyNewsScoutPrompt } from '../../lib/supplyTopicPrompt.server'
+// step600: 첫 채점 이중 호출(전용 맞춤법 검사 선행·주입) 공용 모듈
+import { ensureStrictColumn, getClassTeacherId, countRecentGradings, runStrictCheck, unionCorrections,
+  GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -325,6 +328,8 @@ export default async function handler(req, res) {
     let mergeEssay = null   // 🆕 맞춤법 규칙 병합용 원문(corrections 생성 type만 대입 → 응답 직전 서버 병합)
     let prevGrading = null  // 🆕 step443: rewriteGrading 직전 제출 원시 행 — 3인자 전달·역전 감시에 사용
     let supplyNewsMaterials = null   // 🆕 step525: supplyTopicBatch 1차 뉴스 스카우트 결과(성공 시 텍스트) — 응답 grounded 플래그용
+    let strictCorrections = null     // 🆕 step600: 첫 채점 인라인 전용 검사 결과(병합 완료) — 채점 corrections와 합칠 때 우선
+    let strictStatus = null          // 🆕 step600: 'done'|'pending'|'skipped' — 응답 __strictStatus로 클라이언트가 저장(컬럼 없으면 null 유지)
 
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
@@ -357,6 +362,41 @@ export default async function handler(req, res) {
       //   실패하면 null(기존 프롬프트와 완전 동일 — 채점은 항상 계속).
       let ruleErrors = null
       try { ruleErrors = findRuleBasedErrors(essay) } catch { /* 채점 계속 */ }
+      // 🆕 step600: 이중 호출 — 전용 맞춤법 검사(grammarStrict 조건, 같은 학급 키·3.1 풀)를 먼저 돌려 그 결과를
+      //   ruleErrors 자리에 주입(buildRuleErrorBlock 재사용)하고, 채점 뒤 corrections에 합친다(아래 병합 블록).
+      //   - 교사 60초 가드: 이 교사 학급들의 최근 60초 저장 건수 N > GUARD_MAX(5)면 건너뛰고 pending(폴링·스윕이 보완).
+      //   - 429·타임아웃(8초) → pending, 일반 실패 → skipped + error_logs. 어떤 경우에도 채점은 현행대로 계속.
+      //   - step600 SQL(strict_status 컬럼) 미적용이면 전체 비활성(플래그도 없음) — 배포 순서 안전.
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        const admin = (supabaseUrl && serviceKey)
+          ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+          : null
+        if (admin && await ensureStrictColumn(admin)) {
+          const t0 = Date.now()
+          const teacherId = await getClassTeacherId(admin, keyResult.classId)
+          const recent = await countRecentGradings(admin, teacherId)
+          if (recent <= GUARD_MAX) {
+            const r = await runStrictCheck({ apiKey, essay, timeoutMs: INLINE_TIMEOUT_MS })
+            if (r.ok) {
+              strictCorrections = r.corrections
+              ruleErrors = r.corrections   // 규칙 항목까지 병합된 목록 → 프롬프트 '자동 맞춤법 검사 요약'에 주입
+              strictStatus = 'done'
+            } else {
+              strictStatus = r.kind
+              if (r.kind === 'skipped') logServerError({ accessToken, type: 'strict_inline', message: r.message })  // await 안 함
+            }
+          } else {
+            strictStatus = 'pending'
+          }
+          // Vercel 로그 1줄(본문 금지): 가드 N·상태·소요·건수
+          console.log(`[strict-inline] N=${recent} status=${strictStatus} ms=${Date.now() - t0} n=${strictCorrections ? strictCorrections.length : '-'}`)
+        }
+      } catch (e) {
+        // 컬럼 확인·가드 집계 단계에서 던져지면 strictStatus는 null 그대로 → 플래그 없음(종전과 동일 저장)
+        console.warn('strict 인라인 실패(채점 계속):', e?.message)
+      }
       prompt = gradingPrompt({ topic, essay, rubrics, ruleErrors })
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
@@ -559,8 +599,12 @@ export default async function handler(req, res) {
     //    AI corrections가 없어도 규칙 오류를 추가하므로 항상 배열 산출(빈 배열 입력 유의미).
     if (mergeEssay && result) {
       try {
-        const merged = mergeCorrectionsDetailed(
-          Array.isArray(result.corrections) ? result.corrections : [], mergeEssay)
+        // step600: 첫 채점에 인라인 전용 검사 결과가 있으면 original 기준으로 합친다(전용 검사 우선 — 오교정 1/6).
+        //   합친 목록을 다시 병합에 넣어 규칙 보강·필터를 한 번 더 통과(멱등). strict가 없으면 종전과 동일.
+        const aiList = Array.isArray(result.corrections) ? result.corrections : []
+        const mergeInput = (type === 'grading' && Array.isArray(strictCorrections))
+          ? unionCorrections(strictCorrections, aiList) : aiList
+        const merged = mergeCorrectionsDetailed(mergeInput, mergeEssay)
         result.corrections = merged.corrections
         // 🔍 C-2: 차단된 오교정 시도를 감시 테이블에 기록 (부가 기능 — 실패해도 채점은 계속)
         if (merged.dropped && merged.dropped.length > 0) {
@@ -619,6 +663,11 @@ export default async function handler(req, res) {
     // 🆕 step525: 실뉴스 반영 여부 플래그 — 관리자 검수 화면 배지용(supplyTopicBatch만)
     if (type === 'supplyTopicBatch' && result && typeof result === 'object') {
       result.grounded = !!supplyNewsMaterials
+    }
+    // 🆕 step600: 첫 채점 전용 검사 상태 — 클라이언트가 submissions.strict_status/strict_at에 저장(__usedModel과 같은 방식).
+    //   컬럼 미적용·이중 호출 미실행이면 null → 플래그를 싣지 않아 클라이언트도 두 필드를 넣지 않는다.
+    if (type === 'grading' && strictStatus && result && typeof result === 'object') {
+      result.__strictStatus = strictStatus
     }
     return res.status(200).json({ result })
 

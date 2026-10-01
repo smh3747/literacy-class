@@ -811,7 +811,12 @@ export default function StudentHome() {
         is_fallback_graded: isFallback,
         paste_detected: pasteDetectedRef.current,
         paste_count: pasteCountRef.current,
-        is_final: false
+        is_final: false,
+        // step600: 전용 맞춤법 검사 상태(서버 플래그가 있을 때만 — 컬럼 미적용 배포에서도 저장이 깨지지 않게)
+        ...(result.__strictStatus ? {
+          strict_status: result.__strictStatus,
+          strict_at: result.__strictStatus === 'done' ? new Date().toISOString() : null
+        } : {})
       }).select().single()
 
       if (error) throw error
