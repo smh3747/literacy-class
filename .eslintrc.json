@@ -1,0 +1,10 @@
+{
+  "root": true,
+  "extends": ["next"],
+  "env": { "es2022": true, "browser": true, "node": true },
+  "rules": {
+    "no-undef": "error",
+    "react/no-unescaped-entities": "warn"
+  },
+  "ignorePatterns": ["node_modules/", ".next/", "out/", "_snapshot/"]
+}

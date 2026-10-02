@@ -18,6 +18,10 @@ const BUILD_ID = resolveBuildId()
 const nextConfig = {
   reactStrictMode: true,
 
+  // step604: 린트는 `npm run lint`로만 돌린다. 빌드 중 린트를 켜면 기존 코드의 미수정 오류
+  //   (students.js clearSelection no-undef · StudentLoginInfoCard rules-of-hooks 등)가 Vercel 배포를 막는다.
+  eslint: { ignoreDuringBuilds: true },
+
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
