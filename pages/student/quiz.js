@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { pickStr } from '../../lib/pickStr'  // step598: 로컬 복제본 → 공용 헬퍼(step427, 동일 로직)
+import { logError } from '../../lib/errorLog'  // step603: 재료 구성 실패 기록
 import { mergeCorrectionsDetailed, findRuleBasedErrors, findOriginalRange } from '../../lib/koreanRules'
 
 const QUIZ_SIZE = 5
@@ -56,6 +57,7 @@ export default function StudentQuiz() {
   const [picked, setPicked] = useState(null)     // 'original' | 'correction' | null
   const [score, setScore] = useState(0)
   const [finished, setFinished] = useState(false)
+  const [loadError, setLoadError] = useState(false)  // step603: 재료 구성 실패 → 안내 화면
 
   useEffect(() => { checkAuth() }, [])
 
@@ -70,6 +72,8 @@ export default function StudentQuiz() {
     }
     setUser(profile)
 
+    // step603: 퀴즈 재료 구성 전체를 try/catch로 감싼다 — 어떤 예외든 빈 화면·무한 로딩 대신 안내 문구 + error_logs 기록.
+    try {
     // 내 글 최근 100건, 삭제 제외 (반드시 본인 것만). step598: 문맥 표시·필터 재적용을 위해 id·essay_text 추가.
     const { data } = await supabase.from('submissions')
       .select('id, corrections, essay_text')
@@ -145,12 +149,23 @@ export default function StudentQuiz() {
         const range = findOriginalRange(essay, original)
         if (!range || range.ambiguous) return
         seen.add(key)
-        nextPool.push({ original, correction, reason, ruleVerified: ruleKeys.has(key), context: buildContext(essay, range) })
+        // step603 핫픽스: step598에서 ruleKeys→isRuleVerified로 바꾸며 이 줄의 참조를 못 고쳐 "ruleKeys is not defined"로
+        //   퀴즈 전체가 죽었음(10/1~10/2, 3개 학교). 우선순위 판정은 보조 기능이라 실패해도 출제는 계속(fail-open).
+        let ruleVerified = false
+        try { ruleVerified = isRuleVerified(original, correction) } catch { ruleVerified = false }
+        nextPool.push({ original, correction, reason, ruleVerified, context: buildContext(essay, range) })
       })
     })
     setPool(nextPool)
     if (nextPool.length >= QUIZ_SIZE) startQuiz(nextPool)
-    setLoading(false)
+    } catch (e) {
+      // step603: 재료 구성 실패 — 안내 화면으로 전환 + 기록(학생 글 본문은 넣지 않음)
+      console.error('퀴즈 재료 구성 실패:', e?.message || e)
+      setLoadError(true)
+      logError({ page: 'student/quiz', errorType: 'js_error', message: 'quiz pool build failed: ' + (e?.message || String(e)) })
+    } finally {
+      setLoading(false)
+    }
   }
 
   // 새 판 시작: 무작위 5개 + 문제마다 버튼 좌우 무작위
@@ -201,8 +216,24 @@ export default function StudentQuiz() {
             <h1 className="text-lg font-bold text-gray-900">🧩 맞춤법 퀴즈</h1>
           </div>
 
-          {/* 기록 부족: 안내만 */}
-          {pool.length < QUIZ_SIZE ? (
+          {/* step603: 재료 구성 실패 안내 — 빈 화면·무한 로딩 금지 */}
+          {loadError ? (
+            <div className="bg-white rounded-2xl p-6 shadow-sm text-center space-y-3">
+              <div className="text-4xl">😥</div>
+              <p className="font-bold text-gray-800">지금은 퀴즈를 불러오지 못했어요.</p>
+              <p className="text-sm text-gray-600">잠시 뒤 다시 해주세요.</p>
+              <div className="flex justify-center gap-2 pt-1">
+                <button onClick={() => router.reload()}
+                  className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-xl hover:opacity-90 transition">
+                  🔄 다시 시도
+                </button>
+                <Link href="/student" className="text-sm text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition">
+                  🏠 홈으로
+                </Link>
+              </div>
+            </div>
+          ) : pool.length < QUIZ_SIZE ? (
+          /* 기록 부족: 안내만 */
             <div className="bg-white rounded-2xl p-6 shadow-sm text-center space-y-3">
               <div className="text-4xl">🌱</div>
               <p className="font-bold text-gray-800">아직 퀴즈를 만들 기록이 부족해요.</p>
