@@ -68,6 +68,18 @@ const DETECT = [
   { name: '않나서(나다)',        text: '화가 않나서 웃었다.',       original: '않나서',   correction: '안 나서' },     // step598
   { name: '이/가 + 않나요',      text: '슬픈데 눈물이 않나요.',     original: '않나요',   correction: '안 나요' },     // step598
   { name: '이/가 + 않나(문맥 포함)', text: '아직도 실감이 않나 😂', original: '실감이 않나', correction: '실감이 안 나' }, // step598
+  // step605: 10/1 전수 실험 편입 — ㄹ 수 있/없 · 이였 · 방학때 · 안/않 조사 확장(은/는/도)
+  { name: 'ㄹ수 있(있을수 있다)',   text: '실수가 있을수 있다',        original: '을수 있',   correction: '을 수 있' },     // step605
+  { name: 'ㄹ수는(될수는 없다)',    text: '왕이 될수는 없다',          original: '될수는',    correction: '될 수는' },      // step605
+  { name: 'ㄹ수 없(어쩔수 없이)',   text: '어쩔수 없이 갔다',          original: '쩔수 없',   correction: '쩔 수 없' },     // step605
+  { name: 'ㄹ수밖에(할수밖에 없)',  text: '할수밖에 없었다',           original: '할수밖에',  correction: '할 수밖에' },    // step605
+  { name: '이였(경험이였다)',       text: '소중한 경험이였다',         original: '경험이였다', correction: '경험이었다' },  // step605
+  { name: '이였(느낌이였습니다)',   text: '이상한 느낌이였습니다',     original: '느낌이였습니다', correction: '느낌이었습니다' }, // step605
+  { name: '아니였다',               text: '내 잘못이 아니였다',        original: '아니였다',  correction: '아니었다' },     // step605
+  { name: '방학때',                 text: '방학때 놀러 갔다',          original: '방학때',    correction: '방학 때' },      // step605
+  { name: '여름방학때',             text: '여름방학때 바다에 갔다',    original: '방학때',    correction: '방학 때' },      // step605
+  { name: '은 + 않나(문맥 포함)',   text: '아무리 해도 기억은 않나.',  original: '기억은 않나', correction: '기억은 안 나' }, // step605
+  { name: '도 + 않나요',            text: '슬픈데 눈물도 않나요.',     original: '않나요',    correction: '안 나요' },      // step605
 ]
 
 // findRuleBasedErrors(text)가 아무 교정도 만들면 안 되는 케이스(과거 오탐 방지).
@@ -116,6 +128,23 @@ const NO_FALSE_POSITIVE = [
   { name: "'하라는 대로'(어미 라는)", text: '하라는 대로 했다' },           // step590: 앞이 붙어 있어 제외
   { name: "'그러라는'(어미 라는)",    text: '그러라는 말을 들었다' },       // step590
   { name: "'책 라는'(받침 가드)",     text: '책 라는 제목' },               // step590: 바른 형태는 '책이라는'이라 붙이지 않음
+  // step605: 신규 규칙 오탐 가드
+  { name: "'갈수록'(어미)",           text: '갈수록 어려워진다' },          // step605: '수' 뒤가 '록'이라 제외
+  { name: "'일수가'(날수, 있/없 없음)", text: '출석 일수가 모자랐다' },     // step605: 조사 뒤에 있/없이 없어 제외
+  { name: "'실수가 있었다'(명사)",    text: '작은 실수가 있었다' },         // step605: 앞 글자 가드
+  { name: "'철수는 없었다'(이름)",    text: '철수는 없었다' },              // step605: 앞 글자 가드
+  { name: "'별수 없이'(한 단어)",     text: '별수 없이 돌아왔다' },         // step605: 앞 글자 가드
+  { name: "'민준이였다'(이름+였다)",  text: '내 짝은 민준이였다' },         // step605: '이였' 전면 치환 금지
+  { name: "'종이였다'(명사+였다)",    text: '그것은 하얀 종이였다' },       // step605
+  { name: "'어머니였다'(아니 아님)",  text: '그분은 어머니였다' },          // step605
+  { name: "'점심때'(합성어)",         text: '점심때 만났다' },              // step605: 사전 등재 합성어 6종 — 절대 미포함
+  { name: "'저녁때'(합성어)",         text: '저녁때 비가 왔다' },           // step605
+  { name: "'그때'(합성어, 605)",      text: '그때 정말 놀랐다' },           // step605
+  { name: "'이때'(합성어)",           text: '이때 문이 열렸다' },           // step605
+  { name: "'한때'(합성어, 605)",      text: '한때 인기가 많았다' },         // step605
+  { name: "'제때'(합성어, 605)",      text: '제때 도착했다' },              // step605
+  { name: "'힘들지는 않나요'(보조용언)", text: '많이 힘들지는 않나요?' },   // step605: 조각도 생성 안 함
+  { name: "'쉽지만은 않나'(보조용언)",   text: '생각보다 쉽지만은 않나?' }, // step605
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
@@ -148,6 +177,12 @@ const MERGE = [
   { name: '먹지 않나요→먹지 안 나요(차단)',      corr: { original: '먹지 않나요', correction: '먹지 안 나요' },         essay: '너도 같이 먹지 않나요?',                     expect: 'dropped' }, // step598: "안 나요" 2글자 면제 누수 차단
   { name: '힘들지는 않나요→안 나요(차단)',       corr: { original: '힘들지는 않나요', correction: '힘들지는 안 나요' }, essay: '많이 힘들지는 않나요?',                      expect: 'dropped' }, // step598
   { name: '편지 않나왔다→편지 안 나왔다(통과)',  corr: { original: '편지 않나왔다', correction: '편지 안 나왔다' },     essay: '기다리던 편지 않나왔다',                     expect: 'kept' },    // step598: '지'로 끝나는 명사 뒤 용언은 통과
+  // step605: 조사 확장(은/는/도) — 묶은 original이 화이트리스트를 통과(kept), '-지/-치 + 보조사' 뒤는 계속 차단.
+  { name: '기억은 않나→기억은 안 나(통과)',     corr: { original: '기억은 않나', correction: '기억은 안 나' },     essay: '아무리 해도 기억은 않나.',      expect: 'kept' },    // step605
+  { name: '눈물도 않나→눈물도 안 나(통과)',     corr: { original: '눈물도 않나', correction: '눈물도 안 나' },     essay: '슬픈데 눈물도 않나',            expect: 'kept' },    // step605
+  { name: '매연이 않나→매연이 안 나(통과 유지)', corr: { original: '매연이 않나', correction: '매연이 안 나' },     essay: '이제 공장에서 매연이 않나',     expect: 'kept' },    // step605 (이/가 기존 동작 확인)
+  { name: '쉽지만은 않나→쉽지만은 안 나(차단)', corr: { original: '쉽지만은 않나', correction: '쉽지만은 안 나' }, essay: '생각보다 쉽지만은 않나?',       expect: 'dropped' }, // step605
+  { name: '먹지도 않나→먹지도 안 나(차단)',     corr: { original: '먹지도 않나', correction: '먹지도 안 나' },     essay: '밥을 먹지도 않나 보다',         expect: 'dropped' }, // step605
   // step598: 무의미 교정 정규화 — 눈에 같은 쌍은 조용히 제거(dropped에도 안 남음), 실제 띄어쓰기 교정은 유지.
   { name: '무의미(NBSP) 여름 방학→여름 방학',     corr: { original: '여름 방학', correction: '여름 방학' },  essay: '나는 여름 방학에 갔다',  expect: 'gone' }, // step598
   { name: '무의미(전각 공백)',                    corr: { original: '여름　방학', correction: '여름 방학' },  essay: '나는 여름　방학에 갔다',  expect: 'gone' }, // step598
