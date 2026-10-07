@@ -680,12 +680,18 @@ export default async function handler(req, res) {
     const sanitizeUpstream = (s) =>
       String(s == null ? '' : s).replace(/key=[\w-]+/gi, 'key=***').slice(0, 200)
     const rawUpstreamMsg = e?.upstreamMessage ?? e?.message
+    // 🟣 step606: 안전 필터 차단 — 전용 code를 응답에 실어 클라이언트가 "점수 없이 저장" 경로로 간다.
+    const blocked = e?.code === 'AI_SAFETY_BLOCKED'
     const upstream = {
       status: e?.upstreamStatus ?? e?.status ?? null,
       message: sanitizeUpstream(rawUpstreamMsg),
       timeout: !!e?.upstreamTimeout || /TIMEOUT/i.test(String(rawUpstreamMsg || '')),
+      ...(blocked ? { blockReason: e?.blockReason ?? null } : {}),
     }
     await logServerError({ accessToken, type, message: e?.message || e, upstream })
+    if (blocked) {
+      return res.status(422).json({ error: e?.message || 'AI 안전 필터가 이 글의 평가를 거절했어요', code: 'AI_SAFETY_BLOCKED', blockReason: e?.blockReason ?? null })
+    }
     // 🔔 step519: 키 무효면 담임에게 즉시 알림(fire-and-forget, 1일 1회) — getFriendlyErrorMessage와 동일 판정 문자열
     const errMsg = String(e?.message || '')
     if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid')) {

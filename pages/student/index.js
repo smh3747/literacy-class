@@ -20,6 +20,8 @@ import { escapeHtml } from '../../lib/escapeHtml'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(HH:MM) 표시
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
+// step606: AI 안전 필터 차단 → 점수 없이 저장·학생 안내·담임 알림 (헬퍼·문구는 lib/safetyBlock.js)
+import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
@@ -577,7 +579,7 @@ export default function StudentHome() {
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
     const { data: existing, error: existingErr } = await withTimeout(supabase.from('submissions')
-      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at')
+      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model')   // step606: graded_with_model — 안전 필터 차단 표식 판정용
       .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null))
     // step575: 조회 실패(401/5xx)를 "제출 없음"으로 오판해 이미 제출한 학생에게 빈 글쓰기 폼을
@@ -761,11 +763,19 @@ export default function StudentHome() {
       gradingStageTimerRef.current = setTimeout(() => setGradingStage('grade'), 6000)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러를 반환 → catch에서 안내
-      const result = await callAI('grading', {
-        topic: { title: todayTopic.title, description: todayTopic.description },
-        essay,
-        rubrics,
-      })
+      let result
+      try {
+        result = await callAI('grading', {
+          topic: { title: todayTopic.title, description: todayTopic.description },
+          essay,
+          rubrics,
+        })
+      } catch (aiErr) {
+        if (!isSafetyBlockedErr(aiErr)) throw aiErr
+        // 🟣 step606: 안전 필터 차단 — 같은 글은 다시 막히므로 재시도 없이 점수 없이 저장하고 끝(정리는 finally)
+        await saveBlockedSubmission({ essayText: essay, totalMax, attempt: 1, isRewrite: false })
+        return
+      }
 
       // 점수 검증
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
@@ -866,21 +876,27 @@ export default function StudentHome() {
       const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
       // step519: 키 무효는 원인이 학생에게 전달되게(담임에게는 서버가 종 알림)
       const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
+      // step606: 안전 필터 차단인데 점수 없이 저장까지 실패한 경우(컬럼 제약 등) — 재시도 권유 없이 선생님께
+      const isBlocked = isSafetyBlockedErr(e)
       setErrorModal({
-        title: '🚨 글 제출에 문제가 생겼어요',
-        message: isKeyInvalid
+        title: isBlocked ? '🟣 AI가 이 글을 평가하지 못했어요' : '🚨 글 제출에 문제가 생겼어요',
+        message: isBlocked
+          ? STUDENT_BLOCKED_MESSAGE + '\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 선생님께 말씀드려 주세요.'
+          : isKeyInvalid
           ? '🔑 선생님의 API 키 확인이 필요해요. 선생님께 말씀드려 주세요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.'
           : isPrepayment
             ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.'
             : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.',
         showReload: isAuthExpired
       })
+    } finally {
+      // step606: 차단 분기의 early return에서도 정리가 빠지지 않게 finally로 이동(내용 불변)
+      submittingRef.current = false
+      setSubmitting(false); setRetryMessage(null)
+      // step601: 진행 단계 표시 정리
+      if (gradingStageTimerRef.current) { clearTimeout(gradingStageTimerRef.current); gradingStageTimerRef.current = null }
+      setGradingStage(null)
     }
-    submittingRef.current = false
-    setSubmitting(false); setRetryMessage(null)
-    // step601: 진행 단계 표시 정리
-    if (gradingStageTimerRef.current) { clearTimeout(gradingStageTimerRef.current); gradingStageTimerRef.current = null }
-    setGradingStage(null)
   }
 
   // 예시 작품 생성 (subId 명시 — 첫 글·수정본 공용, step368)
@@ -1013,6 +1029,54 @@ export default function StudentHome() {
       alert('요청에 실패했어요. 잠시 후 다시 해봐요.')
       console.warn('수정 기회 요청 실패:', e?.message)
     }
+  }
+
+  // 🟣 step606: AI 안전 필터 차단 → 글을 점수 없이 저장(표식 graded_with_model='safety_blocked') + 담임 알림.
+  //   채점 성공 경로와 분리된 별도 insert. 저장 실패면 code를 유지한 에러를 throw → 호출처 catch가 전용 모달(기기 초안 유지).
+  const saveBlockedSubmission = async ({ essayText, totalMax, attempt, isRewrite }) => {
+    const { data: sub, error } = await supabase.from('submissions').insert({
+      user_id: user.id,
+      topic_id: todayTopic.id,
+      topic_title: todayTopic.title,
+      topic_description: todayTopic.description,
+      attempt,
+      essay_text: essayText,
+      ...blockedRowFields(totalMax),
+      paste_detected: pasteDetectedRef.current,
+      paste_count: pasteCountRef.current,
+      is_final: !!isRewrite,
+      ...(isRewrite ? { extra_rewrite_allowed: false } : {})
+    }).select().single()
+    if (error) {
+      const err = new Error(error.message || '저장 실패')
+      err.code = SAFETY_BLOCK_CODE
+      err.saveFailed = true
+      throw err
+    }
+    if (isRewrite) {
+      await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
+        .eq('user_id', user.id).eq('topic_id', todayTopic.id)
+    }
+    removeDraft(todayTopic.id, user.id, isRewrite ? 'rewrite' : 'write')
+    if (!isRewrite) setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
+    pasteDetectedRef.current = false
+    pasteCountRef.current = 0
+    if (isRewrite) { setEssay(essayText); setExampleText('') }
+    setCurrentSub(sub)
+    setFeedbackResult({ blocked: true, scores: null, total: null, overall: '', good: '', improve: '', corrections: [] })
+    scrollToResultRef.current = true
+    setStep(isRewrite ? 'done' : 'feedback')
+    if (todayTopic.source_supply_id) {
+      setChallengeTopics(prev => prev.map(t =>
+        t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, attempt) } : t))
+    }
+    // 🔔 담임 알림(비차단, 실명 금지·번호만). 링크는 교사 제출물 페이지의 그 학생 글.
+    try {
+      const args = blockedNotificationArgs({
+        teacherId: user?.classes?.teacher_id, number: user?.number, topicId: todayTopic.id, userId: user.id
+      })
+      if (args) await supabase.rpc('create_notification', args)
+    } catch (e) { console.warn('차단 알림 생성 실패:', e?.message) }
   }
 
   // 다시 쓰기 시작
@@ -1164,12 +1228,20 @@ export default function StudentHome() {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
-      const result = await callAI('rewriteGrading', {
-        topic: { title: todayTopic.title, description: todayTopic.description },
-        rewriteEssay,
-        rubrics,
-        topicId: todayTopic.id,  // 🆕 step442: 서버가 직전 채점 요약을 조회하는 식별자(요약 자체는 서버 생성)
-      })
+      let result
+      try {
+        result = await callAI('rewriteGrading', {
+          topic: { title: todayTopic.title, description: todayTopic.description },
+          rewriteEssay,
+          rubrics,
+          topicId: todayTopic.id,  // 🆕 step442: 서버가 직전 채점 요약을 조회하는 식별자(요약 자체는 서버 생성)
+        })
+      } catch (aiErr) {
+        if (!isSafetyBlockedErr(aiErr)) throw aiErr
+        // 🟣 step606: 안전 필터 차단 — 수정본도 점수 없이 저장(최종 처리), 점수 alert 없음(정리는 finally)
+        await saveBlockedSubmission({ essayText: rewriteEssay, totalMax, attempt: nextAttempt, isRewrite: true })
+        return
+      }
 
       if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
       // 각 점수 만점 캡 + 음수 방지
@@ -1266,18 +1338,24 @@ export default function StudentHome() {
       const isPrepayment = rawMsg.includes('prepayment') || rawMsg.includes('credits are depleted') || rawMsg.includes('billing#prepay')
       // step519: 키 무효는 원인이 학생에게 전달되게(담임에게는 서버가 종 알림)
       const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
+      // step606: 안전 필터 차단인데 저장까지 실패한 경우 — 재시도 권유 없이 선생님께
+      const isBlocked = isSafetyBlockedErr(e)
       setErrorModal({
-        title: '🚨 수정본 제출에 문제가 생겼어요',
-        message: isKeyInvalid
+        title: isBlocked ? '🟣 AI가 이 글을 평가하지 못했어요' : '🚨 수정본 제출에 문제가 생겼어요',
+        message: isBlocked
+          ? STUDENT_BLOCKED_MESSAGE + '\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 선생님께 말씀드려 주세요.'
+          : isKeyInvalid
           ? '🔑 선생님의 API 키 확인이 필요해요. 선생님께 말씀드려 주세요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.'
           : isPrepayment
             ? '⏳ 지금 AI 사용에 문제가 생겼어요. 선생님께 알려주시면 금방 해결돼요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.'
             : '⏳ 지금은 채점이 잘 안 돼요. 잠시 후 다시 해보고, 계속 안 되면 선생님께 말씀드려요.\n\n📝 쓴 글은 이 기기에 저장돼 있어요. 다시 로그인하면 복원할 수 있어요.',
         showReload: isAuthExpired
       })
+    } finally {
+      // step606: 차단 분기의 early return에서도 정리가 빠지지 않게 finally로 이동(내용 불변)
+      submittingRef.current = false
+      setRewriting(false); setRetryMessage(null)
     }
-    submittingRef.current = false
-    setRewriting(false); setRetryMessage(null)
   }
 
   // 🆕 step492: 전국 글쓰기 챌린지 카드 — 학급 주제 카드와 분리, 지금 쓰는 중인 챌린지는 숨김(중복 방지)
@@ -1352,6 +1430,9 @@ export default function StudentHome() {
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
+
+  // 🟣 step606: 지금 보고 있는 글이 AI 안전 필터 차단으로 점수 없이 저장된 글인지(제출 직후·재진입 모두 currentSub 기준)
+  const feedbackBlocked = isBlockedSubmission(currentSub) || !!feedbackResult?.blocked
 
   // 🆕 step327: 진입 실패/타임아웃 시 무한 스피너 대신 재시도 화면
   if (loadError) return (
@@ -1763,13 +1844,34 @@ export default function StudentHome() {
                     <div ref={resultTopRef} className="bg-green-50 border border-green-300 rounded-2xl p-4 text-center scroll-mt-16">
                       <div className="text-3xl mb-1">🎉</div>
                       <div className="font-bold text-green-900">수정본 제출 완료!</div>
-                      <div className="text-sm text-green-800 mt-1">최종 점수: {feedbackResult.total}/{currentSub?.max_score}점</div>
+                      {feedbackBlocked ? (
+                        <div className="text-sm text-green-800 mt-1">선생님께서 직접 봐주실 거예요.</div>
+                      ) : (
+                        <div className="text-sm text-green-800 mt-1">최종 점수: {feedbackResult.total}/{currentSub?.max_score}점</div>
+                      )}
                     </div>
                   )}
 
                   {/* 피드백 결과 */}
                   <div ref={step === 'feedback' ? resultTopRef : null}
                     className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 overflow-hidden scroll-mt-16">
+                    {/* 🟣 step606: AI 안전 필터 차단 글 — 점수·피드백 대신 안내 카드 1개 + 내 글(밑줄 없음). 재시도 유도 없음 */}
+                    {feedbackBlocked ? (
+                      <div className="space-y-3">
+                        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
+                          <h3 className="text-sm font-bold text-purple-900 mb-1.5 flex items-center gap-1.5">
+                            <span>🟣</span> AI가 이 글을 평가하지 못했어요
+                          </h3>
+                          <p className="text-sm text-purple-900 break-keep leading-relaxed">{STUDENT_BLOCKED_MESSAGE}</p>
+                          <p className="text-xs text-purple-700 mt-2 break-keep">내 글은 잘 저장됐어요. 점수는 없지만 글이 사라진 건 아니에요.</p>
+                        </div>
+                        <details className="group" open>
+                          <CollapseSummary title={<h4 className="text-sm font-bold flex-shrink-0">📝 내 글 보기</h4>} />
+                          <div className="mt-2 bg-gray-50 rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap break-keep">{essay}</div>
+                        </details>
+                      </div>
+                    ) : (
+                    <>
                     <div className="flex justify-between items-center gap-2">
                       <h3 className="font-bold text-base">📊 피드백 결과</h3>
                       <span className="text-base sm:text-lg font-bold flex-shrink-0">{feedbackResult.total}/{currentSub?.max_score || todayTopic.rubrics.reduce((s,r)=>s+r.score,0)}점</span>
@@ -1949,6 +2051,8 @@ export default function StudentHome() {
                         {currentSub?.reported ? '🙏 신고 완료' : '🚨 이 피드백 이상해요'}
                       </button>
                     </div>
+                    </>
+                    )}
                   </div>
 
                   {/* ⑧ 예시 작품 (피드백/완료 단계 모두 표시) — step365: 기본 접힘 */}
@@ -1988,8 +2092,8 @@ export default function StudentHome() {
                     </div>
                   )}
 
-                  {/* 다시 쓰기 버튼 (feedback 단계에서만) — step516: 알림 직행 강조 대상 */}
-                  {step === 'feedback' && (
+                  {/* 다시 쓰기 버튼 (feedback 단계에서만) — step516: 알림 직행 강조 대상. step606: 차단 글은 숨김(같은 글 재제출 유도 방지) */}
+                  {step === 'feedback' && !feedbackBlocked && (
                     <button ref={rewriteBtnRef} onClick={startRewrite}
                       className={`w-full py-3 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary-light transition-all ${
                         rewriteSpotlight ? 'ring-4 ring-amber-300 animate-pulse' : ''

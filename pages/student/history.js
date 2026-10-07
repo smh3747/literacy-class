@@ -12,6 +12,7 @@ import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { stampLabel } from '../../lib/stamps'
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 당시 순위 구간화 표시
+import { STUDENT_BLOCKED_MESSAGE } from '../../lib/safetyBlock'   // step606: AI 안전 필터 차단 글(점수 null) 안내 문구
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -241,15 +242,23 @@ export default function StudentHistory() {
             <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
               <div className="bg-gradient-to-br from-primary-light to-white border-2 border-primary/20 rounded-xl p-4 text-center">
                 {/* 🆕 step436: 선생님 조정 점수 있으면 대표로, AI 점수는 작게 병기(병기형) */}
+                {/* 🟣 step606: AI 안전 필터 차단 글(점수 null)은 "0점"이 아니라 안내 문구로 */}
+                {lastSub?.teacher_score == null && lastSub?.total_score == null ? (
+                  <div>
+                    <div className="text-xl font-bold text-purple-800">🟣 AI 평가 없음</div>
+                    <p className="text-xs text-purple-700 mt-1.5 break-keep leading-relaxed">{STUDENT_BLOCKED_MESSAGE}</p>
+                  </div>
+                ) : (
                 <div className="text-3xl font-bold text-gray-900">
                   {lastSub?.teacher_score ?? lastSub?.total_score ?? 0} <span className="text-lg font-semibold text-gray-500">/ {lastSub?.max_score ?? 100}점</span>
                 </div>
+                )}
                 {lastSub?.teacher_score != null && (
                   <div className="mt-1.5">
                     <span className="inline-flex items-center gap-1 bg-white text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-blue-200">
                       ✔ 선생님이 확인한 점수
                     </span>
-                    <div className="text-[11px] text-gray-400 mt-1">AI 채점 {lastSub?.total_score ?? 0}점</div>
+                    <div className="text-[11px] text-gray-400 mt-1">{lastSub?.total_score == null ? 'AI 평가 없음' : `AI 채점 ${lastSub.total_score}점`}</div>
                   </div>
                 )}
                 {scoreDelta > 0 && (
@@ -597,15 +606,18 @@ export default function StudentHistory() {
                         </div>
                       </div>
                       <div className="text-right text-xs ml-3">
+                        {/* step606: 점수 null(안전 필터 차단) 행은 "AI 평가 없음" */}
                         {isImproved ? (
                           <>
-                            <div className="text-gray-500">첫 글 {first.total_score}점</div>
-                            <div className="font-bold">최종 {last.total_score}/{last.max_score}점
-                              {last.total_score > first.total_score && <span className="text-green-600 ml-1">↑{last.total_score - first.total_score}</span>}
+                            <div className="text-gray-500">첫 글 {first.total_score == null ? 'AI 평가 없음' : `${first.total_score}점`}</div>
+                            <div className="font-bold">최종 {last.total_score == null ? <span className="text-purple-700">AI 평가 없음</span> : `${last.total_score}/${last.max_score}점`}
+                              {typeof last.total_score === 'number' && typeof first.total_score === 'number' && last.total_score > first.total_score && <span className="text-green-600 ml-1">↑{last.total_score - first.total_score}</span>}
                             </div>
                           </>
                         ) : (
-                          <div className="font-bold">{first.total_score}/{first.max_score}점</div>
+                          first.total_score == null
+                            ? <div className="font-bold text-purple-700">🟣 AI 평가 없음</div>
+                            : <div className="font-bold">{first.total_score}/{first.max_score}점</div>
                         )}
                       </div>
                     </div>

@@ -9,6 +9,7 @@ import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
+import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -3182,34 +3183,8 @@ export default function AdminHome() {
               }
               return map[t] || 'bg-gray-100 text-gray-600'
             }
-            // 🆕 표시 시점 원인 분류 (저장구조 불변). 순서 중요: prepayment를 429보다 먼저.
-            // step586: context.upstream(서버가 동봉한 상류 실패 정보)도 판정 텍스트에 합침 —
-            //   "AI가 응답하지 않습니다..." 일반 메시지 뒤의 503/한도/타임아웃이 기존 라벨로 잡히게.
-            const classifyError = (msg, ctx) => {
-              const up = ctx?.upstream
-              const m = [msg, up?.message, up?.status, up?.timeout ? 'TIMEOUT' : '']
-                .filter(v => v !== null && v !== undefined && v !== '').join(' ')
-              if (/prepayment|credits are depleted|billing#prepay/i.test(m))
-                return { color: 'bg-rose-100 text-rose-700', label: '🔴 유료키 소진', summary: '유료키 잔액 소진 · 무료키로 교체 필요' }
-              if (/503|high demand|overloaded|UNAVAILABLE/i.test(m))
-                return { color: 'bg-yellow-100 text-yellow-700', label: '🟡 구글 혼잡', summary: '구글 AI 서버 혼잡 · 곧 풀림(조치 불필요)' }
-              if (/429|per day|PerDay|quota|exceeded|RESOURCE_EXHAUSTED/i.test(m))
-                return { color: 'bg-orange-100 text-orange-700', label: '🟠 한도 소진', summary: '무료 한도 소진 · 오후 리셋' }
-              if (/401|인증 정보가 유효|UNAUTHENTICATED/i.test(m))
-                return { color: 'bg-gray-100 text-gray-600', label: '⚪ 세션 만료', summary: '학생 세션 만료 · 다시 로그인하면 됨(정상)' }
-              if (/Failed to fetch|NetworkError|Load failed/i.test(m))
-                return { color: 'bg-gray-100 text-gray-600', label: '⚪ 네트워크', summary: '네트워크 일시 끊김 · 보통 일시적' }
-              if (/504|파싱 실패|JSON|TIMEOUT/i.test(m))
-                return { color: 'bg-yellow-100 text-yellow-700', label: '🟡 응답지연', summary: '응답 지연/파싱 실패 · 보통 일시적' }
-              if (/MetaMask|Invariant|extension|ethereum/i.test(m))
-                return { color: 'bg-gray-200 text-gray-500', label: '⚫ 확장노이즈', summary: '브라우저 확장 노이즈 · 무시 가능' }
-              if (/Script error/i.test(m))
-                return { color: 'bg-gray-100 text-gray-600', label: '⚪ 외부 스크립트', summary: '교차출처 스크립트 오류(내용 숨김) · 무시 가능' }
-              return { color: 'bg-gray-100 text-gray-600', label: '⚪ 기타', summary: '기타' }
-            }
-            // 🆕 분류 라벨 → 심각도 (무시 가능 라벨만 명시, 그 외 = 조치 필요). 라벨 문자열 기준 상수.
-            const IGNORE_LABELS = new Set(['🟡 구글 혼잡', '⚪ 세션 만료', '⚪ 네트워크', '🟡 응답지연', '⚫ 확장노이즈', '⚪ 외부 스크립트'])
-            const severityOf = (msg, ctx) => IGNORE_LABELS.has(classifyError(msg, ctx).label) ? 'ignore' : 'action'
+            // 🆕 표시 시점 원인 분류 (저장구조 불변) — step606: lib/errorClassify.js로 추출(게이트 검증 가능).
+            //   classifyError·IGNORE_LABELS·severityOf 로직 불변 + '🟣 AI 안전 필터'(무시 가능) 라벨 추가.
             // 🆕 필터 적용(이미 받아온 grouped에 클라 필터) — 심각도 + 종류
             const matchErr = (e) =>
               (errSeverity === 'all' || severityOf(e.message, e.context) === errSeverity) &&
