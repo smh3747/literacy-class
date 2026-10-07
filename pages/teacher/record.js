@@ -14,6 +14,7 @@ async function loadSummaries(studentId) {
     .select('id, topic_title, total_score, max_score, feedback_overall, feedback_good, feedback_improve, attempt, created_at, topic_id')
     .eq('user_id', studentId)
     .is('deleted_at', null)
+    .not('total_score', 'is', null)   // step607: AI 안전 필터 차단(점수 없음) 글은 생기부 평균·AI 요약 입력에서 제외
     .order('created_at', { ascending: true })
   const byTopic = {}
   ;(data || []).forEach(s => {

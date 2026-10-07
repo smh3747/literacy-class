@@ -163,9 +163,10 @@ export default function SubmissionStatus() {
   })
 
   // 💡 도움이 필요한 학생: 최고 점수가 만점의 60% 미만
+  //   step607: 점수 null(AI 안전 필터 차단)만 있는 학생은 판정 제외 — 0점으로 '도움 필요'에 오분류되지 않게
   const needHelp = submitted.filter(s => {
     const best = bestSubByUser[s.id]
-    if (!best) return false
+    if (!best || best.total_score == null) return false
     const max = best.max_score || 100
     return (best.total_score || 0) / max < 0.6
   })
@@ -403,9 +404,11 @@ export default function SubmissionStatus() {
                             </div>
                             <div className="flex items-center gap-2">
                               {best && (
-                                <span className="text-xs font-mono text-gray-600">
-                                  {best.total_score}/{best.max_score}
-                                </span>
+                                best.total_score == null
+                                  ? <span className="text-xs text-purple-700" title="AI 안전 필터가 평가를 거절해 점수 없이 저장된 글이에요. 직접 읽고 코멘트를 남겨주세요.">🟣 AI 평가 없음</span>
+                                  : <span className="text-xs font-mono text-gray-600">
+                                      {best.total_score}/{best.max_score}
+                                    </span>
                               )}
                               <span className="text-gray-400 group-hover:text-primary">→</span>
                             </div>

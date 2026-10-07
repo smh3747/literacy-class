@@ -517,7 +517,14 @@ export default function StudentHistory() {
   // 그래프 데이터 준비 (시간순으로 최종본 점수)
   const chartData = (() => {
     if (grouped.length === 0) return null
+    // step607: 최종본 점수가 null(AI 안전 필터 차단)인 주제는 그래프에서 제외(0점으로 그려지지 않게)
     const sorted = [...grouped].sort((a,b) => new Date(a.date) - new Date(b.date))
+      .filter(g => {
+        const sortedItems = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))
+        const last = sortedItems[sortedItems.length - 1]
+        return typeof last?.total_score === 'number' && last.max_score
+      })
+    if (sorted.length === 0) return null
     const labels = sorted.map(g => g.date?.slice(5) || '')
     const finals = sorted.map(g => {
       const sortedItems = [...g.items].sort((a,b) => (a.attempt||1) - (b.attempt||1))

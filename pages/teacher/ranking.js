@@ -95,6 +95,7 @@ export default function TeacherRanking() {
       .select('user_id, total_score, max_score, created_at, attempt, topic_id')
       .in('user_id', studentIds)
       .is('deleted_at', null)
+      .not('total_score', 'is', null)   // step607: AI 안전 필터 차단(점수 없음) 글은 랭킹에서 제외(전국 랭킹 showcaseRanking과 동일 기준)
     if (dateFilter) q = q.gte('created_at', dateFilter)
     const { data: allSubs } = await q
 

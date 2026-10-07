@@ -74,7 +74,8 @@ export default function StudentGrowth() {
 
       const studentIds = visibleStudents.map(s => s.id)
       if (studentIds.length > 0) {
-        const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).is('deleted_at', null).order('created_at')
+        // step607: AI 안전 필터 차단(점수 없음) 글은 성장 그래프·학급 평균에서 제외(0점으로 왜곡되지 않게)
+        const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).is('deleted_at', null).not('total_score', 'is', null).order('created_at')
         setAllSubmissions(subs || [])
       }
     }

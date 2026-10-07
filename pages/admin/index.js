@@ -4787,8 +4787,10 @@ function AdminSubmissionsInner() {
             const isExpanded = expandedGroups.has(g.key)
             // 그룹 통계
             const total = g.items.length
-            const avgScore = total > 0
-              ? Math.round(g.items.reduce((sum, s) => sum + (s.total_score || 0), 0) / total * 10) / 10
+            // step607: 점수 null(AI 안전 필터 차단) 행은 평균에서 제외(0점으로 평균을 끌어내리지 않게)
+            const scored = g.items.filter(s => typeof s.total_score === 'number')
+            const avgScore = scored.length > 0
+              ? Math.round(scored.reduce((sum, s) => sum + s.total_score, 0) / scored.length * 10) / 10
               : 0
             const fallbackCount = g.items.filter(s => s.is_fallback_graded).length
             const pasteCount = g.items.filter(s => s.paste_detected).length
@@ -4841,8 +4843,10 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
   const cls = classMap?.[s.profiles?.class_id]
   // 학급명은 칩으로 강조, 학교·담임은 보조 회색
   const sub = [cls?.teacher_school, cls?.teacher_name && '담임 ' + cls.teacher_name].filter(Boolean).join(' · ')
-  const pct = s.max_score ? s.total_score / s.max_score : 0
-  const scoreColor = pct >= 0.8 ? 'text-green-600' : pct >= 0.6 ? 'text-amber-600' : 'text-rose-600'
+  // step607: 점수 null(AI 안전 필터 차단) 행은 보라 'AI 평가 없음'으로 — 0점(빨강)으로 보이지 않게
+  const noScore = s.total_score == null
+  const pct = (s.max_score && !noScore) ? s.total_score / s.max_score : 0
+  const scoreColor = noScore ? 'text-purple-700' : pct >= 0.8 ? 'text-green-600' : pct >= 0.6 ? 'text-amber-600' : 'text-rose-600'
   // 🆕 step286: 휴지통(soft delete) 행 — 반투명 + 사유 뱃지. step284 중복정리는 통일 표기.
   const trashed = !!s.deleted_at
   const reasonLabel = s.delete_reason
@@ -4878,7 +4882,7 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
           </span>
         </div>
       </div>
-      <div className={`text-sm font-bold ml-3 flex-shrink-0 ${scoreColor}`}>{s.total_score}/{s.max_score}</div>
+      <div className={`text-sm font-bold ml-3 flex-shrink-0 ${scoreColor}`}>{noScore ? '🟣 AI 평가 없음' : `${s.total_score}/${s.max_score}`}</div>
     </button>
   )
 }
