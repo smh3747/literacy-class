@@ -258,7 +258,7 @@ const { pathToFileURL } = require('url')
       eMiss.length === 0 && !eNoChangeLeak ? `${eNeed.length}문구 모두 포함, 변경 없음 문구 부재` : `누락: ${eMiss.join(' / ')}; 변경없음누수=${eNoChangeLeak}`)
 
     // (f) 글자 수 증가+삭제 0 → 사실(글자 수·삭제 없음) 표기 + '분량 감소' 사유 금지 + 인용 없으면 하락 불가
-    const fNeed = ['- 글자 수(공백 제외): 43자 → 56자 (+30%)', '- 삭제된 문장(직전 글에만 있음, 최대 5개): 없음',
+    const fNeed = ['- 글자 수(공백 제외): 43자 → 56자 (+30%)', '- 추가된 문장 1개(수정본에만 있음):', '- 삭제된 문장 0개(직전 글에만 있음): 없음', // step610: 개수 필드 없으면 목록 길이
       '[변경 사실]과 모순되는 사유는 금지', "글자 수가 늘었는데 '분량이 줄었다'", "삭제된 문장이 없는데 '내용이 빠졌다'",
       '인용할 문장이 없으면 총점을 낮출 수 없습니다', '추측하지 말고 이 값을 그대로 믿으세요']
     const fMiss = fNeed.filter(p => !prank.includes(p))
@@ -271,7 +271,7 @@ const { pathToFileURL } = require('url')
       changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, added: [], removed: [] },
     })
     const gNeed = ['**변경 없음**', '모든 항목에 [직전 항목 점수]와 똑같은 점수를 주고', "'지난 글과 같아요'라고 알려 주세요",
-      '- 추가된 문장(수정본에만 있음, 최대 5개): 없음', '- 삭제된 문장(직전 글에만 있음, 최대 5개): 없음', '(0%)']
+      '- 추가된 문장 0개(수정본에만 있음): 없음', '- 삭제된 문장 0개(직전 글에만 있음): 없음', '(0%)'] // step610 개수 형식
     const gMiss = gNeed.filter(p => !same.includes(p))
     // 항목 점수가 없으면 총점 기준 문구로 대체 / 문장 집합은 같아도 글자 수가 다르면(순서 바꾸기·반복) 변경 없음 아님
     const sameNoItems = rewriteGradingPrompt({ topic, rewriteEssay: prevEssay, rubrics, prevScore: 80, prevEssay,
@@ -328,7 +328,7 @@ const { pathToFileURL } = require('url')
       changeFacts: { prevChars: 43, curChars: 42, deltaPct: -2, added: ['정말 재미있었다'], removed: ['정말 재미있었다.'] } }) // 마침표만 → 자체 판정
     const jNoItems = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, prevScore: 80, prevEssay,
       changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, ...spaceFix, notationOnly: true } })                 // 항목 점수 없음 → 총점 기준 문구
-    const jNeed = [NOTE, '띄어쓰기·문장부호·맞춤법만 다릅니다', '맞춤법·문법 항목만 조정하고, 나머지 항목은 [직전 항목 점수]와 똑같이 주세요',
+    const jNeed = [NOTE, '띄어쓰기·문장부호·맞춤법 수준만 다르고 내용은 같습니다', '맞춤법·문법 항목만 조정하고, 나머지 항목은 [직전 항목 점수]와 똑같이 주세요', // step610 문구
       "(파) [변경 사실]이 '표기만 변경'이면", '맞춤법·문법에 해당하는 평가 항목이 없으면 모든 항목을 직전 점수 그대로']
     const jMiss = jNeed.filter(p => !jFlag.includes(p))
     const jPass = jMiss.length === 0 && !jFlag.includes('**변경 없음**')
@@ -338,6 +338,26 @@ const { pathToFileURL } = require('url')
     rec('FACTS', "(j) 표기만 변경 → 줄 표시(서버 플래그·자체 판정·마침표만), 음성 3종 부재, 항목 점수 없음 문구", jPass,
       jPass ? `${jNeed.length}문구 포함, 자체 판정 2종 표시, 서버 false·장난 줄·변경 없음 부재, 총점 문구 변형 확인`
         : `누락: ${jMiss.join(' / ')}; 변경없음누수=${jFlag.includes('**변경 없음**')}, 자체판정=${jDerived.includes(NOTE)}, 마침표=${jPunct.includes(NOTE)}, 서버false부재=${!jServerNo.includes(NOTE)}, 장난부재=${!prank.includes(NOTE)}, 변경없음부재=${!same.includes(NOTE)}, 총점문구=${jNoItems.includes('직전 글 점수 기준 그대로')}`)
+
+    // (k) step610: 판정 순서 — 메인 step608(포함 판정)이 표기만 고친 글을 추가 0·삭제 0·글자 수 동일로 보내므로
+    //   notationOnly:true가 '변경 없음'보다 우선. notationOnly:false + 동일 → '변경 없음'. 개수는 addedCount·removedCount.
+    const NONE = '**변경 없음**'
+    const zero = { prevChars: 43, curChars: 43, deltaPct: 0, added: [], removed: [], addedCount: 0, removedCount: 0 }
+    const kNotation = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, ...prevArgs, changeFacts: { ...zero, notationOnly: true } })
+    const kSame = rewriteGradingPrompt({ topic, rewriteEssay: prevEssay, rubrics, ...prevArgs, changeFacts: { ...zero, notationOnly: false } })
+    const kFalseAdded = rewriteGradingPrompt({ topic, rewriteEssay: `${prevEssay} ${prankLine}`, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 56, deltaPct: 30, added: [prankLine], removed: [], addedCount: 1, removedCount: 0, notationOnly: false } })
+    const seven = Array.from({ length: 5 }, (_, i) => `새 문장 ${i + 1}.`)
+    const kCount = rewriteGradingPrompt({ topic, rewriteEssay: `${prevEssay} ${seven.join(' ')}`, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 80, deltaPct: 86, added: seven, removed: [], addedCount: 7, removedCount: 0, notationOnly: false } })
+    const k1 = kNotation.includes(NOTE) && !kNotation.includes(NONE) && kNotation.includes("추가·삭제된 문장이 없어도 '변경 없음'이 아닙니다")
+      && kNotation.includes('- 추가된 문장 0개(수정본에만 있음): 없음')
+    const k2 = kSame.includes(NONE) && !kSame.includes(NOTE)
+    const k3 = !kFalseAdded.includes(NONE) && !kFalseAdded.includes(NOTE)
+    const k4 = kCount.includes('- 추가된 문장 7개(수정본에만 있음, 앞 5개만 표시):') && kCount.includes('  · "새 문장 5."') && !kCount.includes('새 문장 6')
+      && kCount.includes('- 삭제된 문장 0개(직전 글에만 있음): 없음')
+    rec('FACTS', "(k) notationOnly:true+추가0·삭제0 → '표기만 변경'(변경 없음 아님) / false+동일 → '변경 없음' / 실제 개수 표기", k1 && k2 && k3 && k4,
+      k1 && k2 && k3 && k4 ? "표기만 변경 우선, false+동일은 변경 없음, false+추가는 둘 다 없음, '7개(앞 5개만 표시)' 확인" : `표기우선=${k1}, 변경없음=${k2}, 둘다없음=${k3}, 개수=${k4}`)
   } catch (e) {
     rec('FACTS', 'FACTS 실행', false, `예외: ${e.message}`)
   }
