@@ -169,7 +169,8 @@ export default function TopicsPage() {
   const [supplyBusy, setSupplyBusy] = useState(false)
   const [autoSupplyOn, setAutoSupplyOn] = useState(false)
   const [autoSupplyJustOn, setAutoSupplyJustOn] = useState(false)       // 카드에서 방금 켬 → 설명 교체
-  const [supplyJoinedNow, setSupplyJoinedNow] = useState(false)          // 카드에서 오늘 발행분 원클릭 등록 완료
+  const [supplyListOpen, setSupplyListOpen] = useState(false)            // step612: "전국 주제 모음" 섹션 펼침(기본 접힘)
+  const [supplyJoinedIds, setSupplyJoinedIds] = useState(() => new Set()) // 오늘 발행분 원클릭 등록 완료한 원본 id(카드·목록 공용, step612)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -559,6 +560,9 @@ export default function TopicsPage() {
   const applySupplyToForm = (item) => {
     if (!assertWritable()) return false
     if (!item?.title) return false
+    // step612: 같은 제목의 학급 주제가 이미 있으면 폼 채움 전 확인(취소하면 아무것도 바꾸지 않음)
+    const dup = topics.some(t => (t.title || '').trim() === item.title.trim())
+    if (dup && !window.confirm('같은 제목의 주제가 이미 있어요. 그래도 가져올까요?')) return false
     setEditingTopicId(null)
     setEditLocked(false)
     setTitle(item.title)
@@ -586,7 +590,7 @@ export default function TopicsPage() {
     setSupplyBusy(true)
     try {
       await adoptTodaySupply(supabase, { force: true })
-      setSupplyJoinedNow(true)
+      setSupplyJoinedIds(prev => new Set([...prev, item.id]))
       await loadTopics(user?.id, classInfo?.id)
     } catch (e) {
       alert('참여에 실패했어요: ' + (e?.message || ''))
@@ -1351,7 +1355,7 @@ export default function TopicsPage() {
                   : '전국 주제는 가끔 발행돼요. 켜두면 새 주제가 나오는 날 자동으로 등록되고, 지난 주제는 언제든 가져다 쓸 수 있어요.'}
               </p>
               <div className="flex gap-2 mt-3 flex-wrap items-center">
-                {(isSupplyRegistered(latestSupply) || supplyJoinedNow) ? (
+                {(isSupplyRegistered(latestSupply) || supplyJoinedIds.has(latestSupply.id)) ? (
                   <span className="px-3 py-2 text-sm font-semibold text-sky-800">✓ 이미 등록된 주제예요</span>
                 ) : (
                   <button onClick={() => takeSupply(latestSupply)} disabled={supplyBusy}
@@ -1627,6 +1631,44 @@ export default function TopicsPage() {
                   myLikedSet={myLikedSet}
                   onToggleLike={toggleLike}
                 />
+              )}
+
+              {/* 🌏 step612: 전국 주제 모음(기본 접힘) — 발행된 전국 주제를 가져다 쓴다. 오늘 발행분은 원클릭 참여, 지난 주제는 폼 채움(AI 호출 0) */}
+              {supplyList.length > 0 && (
+                <div className="bg-sky-50 border border-sky-200 rounded-xl">
+                  <button type="button" onClick={() => setSupplyListOpen(o => !o)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-left">
+                    <span className="text-sm font-semibold text-sky-900">🌏 전국 주제 모음 ({supplyList.length})</span>
+                    <span className="text-sky-500 text-xs">{supplyListOpen ? '▲ 접기' : '▼ 펼치기'}</span>
+                  </button>
+                  {supplyListOpen && (
+                    <div className="px-4 pb-4 space-y-2">
+                      <p className="text-xs text-sky-800/80">지난 주제는 제목·설명·평가 기준이 등록 폼에 채워져요. 날짜와 우리 반 설정은 직접 고르면 돼요.</p>
+                      {supplyList.map(item => {
+                        const registered = isSupplyRegistered(item) || supplyJoinedIds.has(item.id)
+                        return (
+                          <div key={item.id} className="bg-white border border-sky-100 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs text-gray-500">
+                                📅 {shortMd(item.publishedYmd)} · {item.supply_grade || '공통'}
+                                {item.isToday && <span className="ml-2 bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">오늘</span>}
+                              </div>
+                              <div className="text-sm font-medium text-gray-900 truncate">{item.title}</div>
+                            </div>
+                            {registered ? (
+                              <span className="text-xs font-semibold text-sky-700 flex-shrink-0">✓ 등록됨</span>
+                            ) : (
+                              <button type="button" onClick={() => takeSupply(item)} disabled={supplyBusy}
+                                className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 disabled:opacity-50 flex-shrink-0">
+                                📥 가져오기
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* 🆕 step159: 주제 추천 생성 중 로딩 블록 */}
