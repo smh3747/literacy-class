@@ -120,7 +120,8 @@ const { pathToFileURL } = require('url')
     // (a) 하위호환: 미전달 === 전부 null, 첫 글 맥락 문구(계약 규칙) 없음
     // ('조언 이행 계약' 단독은 기본부 ⚖️ 줄("점수 처리는 조언 이행 계약을 따릅니다")에도 있어 규칙 11 표제로 검사)
     const CONTRACT_ONLY = ['[직전 글 채점 정보]', '11. **조언 이행 계약', '하락 근거 규칙', '[직전 글 본문]', '[변경 사실', '[직전 항목 점수]', '반드시 올리세요', '아직 남아 있어요',
-      '칭찬으로 시작하는 것은 금지', '하지 않은 개선을 칭찬', '베낄 원문이 아닙니다', '모순되면 안 됩니다']
+      '칭찬으로 시작하는 것은 금지', '하지 않은 개선을 칭찬', '베낄 원문이 아닙니다', '모순되면 안 됩니다',
+      '한꺼번에 ±1', '표기만 변경'] // step608 (타)(파)
     const aLeak = CONTRACT_ONLY.filter(p => base.includes(p))
     const aPass = base === withNulls && aLeak.length === 0
     rec('REWRITE', '첫 글 맥락 미전달 = 전부 null 동일(하위호환)', aPass,
@@ -141,9 +142,11 @@ const { pathToFileURL } = require('url')
       '표준 표기가 확실한지 다시 확인', // (아) step456 유지
       '베낄 원문이 아닙니다', // (자) step559 유지
       '모순되면 안 됩니다', // (차) step476 유지
-      "'직전 글' 대신 '지난 글'"] // (카) step596 학생 대면 호칭
+      "'직전 글' 대신 '지난 글'", // (카) step596 학생 대면 호칭
+      '모든 항목을 한꺼번에 ±1 하는 것은 금지', '근거 없는 항목은 직전 점수 그대로', // (타) step608 — 항목 단위 인용 의무·일괄 ±1 금지
+      "[변경 사실]이 '표기만 변경'이면", '내용·묘사·짜임새가 좋아진 것이 아닙니다'] // (파) step608 — 표기만 변경 시 맞춤법·문법 항목만 조정(변경 사실 유무와 무관하게 항상 주입)
     const bMissing = bPhrases.filter(p => !withPrev.includes(p))
-    rec('REWRITE', '전체 주입 시 블록+조언 이행 계약 (가)~(차) 포함', bMissing.length === 0,
+    rec('REWRITE', '전체 주입 시 블록+조언 이행 계약 (가)~(파) 포함', bMissing.length === 0,
       bMissing.length === 0 ? `${bPhrases.length}문구 모두 포함` : `누락: ${bMissing.join(' / ')}`)
 
     // step591: 폐기된 옛 규칙 문구가 되살아나지 않았는지(하락 억제·대칭 원칙·수정본 자체 완성도 채점)
@@ -310,6 +313,31 @@ const { pathToFileURL } = require('url')
       && !badFacts.includes('[변경 사실 —') && badFacts.includes('수정본에서 달라진 대목을 따옴표')
     rec('FACTS', '(i) 항목 점수 출발점 표기+형식 불일치 시 블록 생략·폴백', iStart && iGuard,
       iStart && iGuard ? '항목 점수 2줄·출발점 지시 포함, 불일치 4종 생략 확인' : `출발점=${iStart}, 방어=${iGuard}`)
+
+    // (j) step608: 표기만 변경 — 10/8 실사례(띄어쓰기만 고친 글의 내용 항목 만점). 서버 플래그 우선, 없으면 자체 판정, 음성 3종, 항목 점수 없을 때 문구 변형
+    const NOTE = '- **표기만 변경**'
+    const spaceFix = { added: ['동생이 "누나, 파도가 와!" 하고 소리쳤다.'], removed: ['동생이 "누나, 파도가와!" 하고 소리쳤다.'] }
+    const spaceEssay = prevEssay.replace('파도가와!', '파도가 와!')
+    const jFlag = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, ...spaceFix, notationOnly: true } })                 // 서버 플래그
+    const jDerived = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, ...spaceFix } })                                     // 필드 없음 → 자체 판정
+    const jServerNo = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, ...spaceFix, notationOnly: false } })                // 서버가 false 명시 → 폴백 안 씀
+    const jPunct = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, ...prevArgs,
+      changeFacts: { prevChars: 43, curChars: 42, deltaPct: -2, added: ['정말 재미있었다'], removed: ['정말 재미있었다.'] } }) // 마침표만 → 자체 판정
+    const jNoItems = rewriteGradingPrompt({ topic, rewriteEssay: spaceEssay, rubrics, prevScore: 80, prevEssay,
+      changeFacts: { prevChars: 43, curChars: 43, deltaPct: 0, ...spaceFix, notationOnly: true } })                 // 항목 점수 없음 → 총점 기준 문구
+    const jNeed = [NOTE, '띄어쓰기·문장부호·맞춤법만 다릅니다', '맞춤법·문법 항목만 조정하고, 나머지 항목은 [직전 항목 점수]와 똑같이 주세요',
+      "(파) [변경 사실]이 '표기만 변경'이면", '맞춤법·문법에 해당하는 평가 항목이 없으면 모든 항목을 직전 점수 그대로']
+    const jMiss = jNeed.filter(p => !jFlag.includes(p))
+    const jPass = jMiss.length === 0 && !jFlag.includes('**변경 없음**')
+      && jDerived.includes(NOTE) && jPunct.includes(NOTE)
+      && !jServerNo.includes(NOTE) && !prank.includes(NOTE) && !same.includes(NOTE)
+      && jNoItems.includes(NOTE) && jNoItems.includes('나머지 항목은 직전 글 점수 기준 그대로 주세요')
+    rec('FACTS', "(j) 표기만 변경 → 줄 표시(서버 플래그·자체 판정·마침표만), 음성 3종 부재, 항목 점수 없음 문구", jPass,
+      jPass ? `${jNeed.length}문구 포함, 자체 판정 2종 표시, 서버 false·장난 줄·변경 없음 부재, 총점 문구 변형 확인`
+        : `누락: ${jMiss.join(' / ')}; 변경없음누수=${jFlag.includes('**변경 없음**')}, 자체판정=${jDerived.includes(NOTE)}, 마침표=${jPunct.includes(NOTE)}, 서버false부재=${!jServerNo.includes(NOTE)}, 장난부재=${!prank.includes(NOTE)}, 변경없음부재=${!same.includes(NOTE)}, 총점문구=${jNoItems.includes('직전 글 점수 기준 그대로')}`)
   } catch (e) {
     rec('FACTS', 'FACTS 실행', false, `예외: ${e.message}`)
   }
