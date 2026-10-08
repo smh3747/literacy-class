@@ -47,10 +47,11 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
   // step477: 켤 때만 고지 확인(취소 가능), 끌 때는 바로 저장
   const toggleAutoSupply = (checked) => {
     if (!checked) return save({ auto_supply_enabled: false })
+    // step611: 발행은 수시(매일 아님) — "매일" 표현 제거
     const ok = window.confirm(
-      '매일 아침 전국 글쓰기 챌린지 주제가 우리 반에 자동 등록돼요.\n\n' +
-      '· 주제는 다온클래스가 매일 검수해 발행해요\n' +
-      '· 필요 없는 날은 주제를 삭제하면 돼요\n' +
+      '새 전국 글쓰기 챌린지 주제가 나오는 날 우리 반에 자동 등록돼요.\n\n' +
+      '· 주제는 다온클래스가 검수해 발행해요\n' +
+      '· 필요 없는 주제는 삭제하면 돼요\n' +
       '· 잘 쓴 글은 확인을 거쳐 닉네임으로 전국에 소개돼요'
     )
     if (ok) save({ auto_supply_enabled: true })
@@ -141,11 +142,11 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
                 onChange={e => toggleAutoSupply(e.target.checked)}
                 disabled={saving}
                 className="w-4 h-4" />
-              <span className="text-sm font-medium">🌏 매일 전국 글쓰기 챌린지 자동 받기</span>
+              <span className="text-sm font-medium">🌏 전국 글쓰기 챌린지 자동 받기</span>
             </label>
             <p className="text-xs text-gray-500 mt-1 ml-6">
-              매일 발행되는 전국 글쓰기 챌린지 주제가 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
-              학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 날은 주제를 삭제하면 됩니다.
+              새 전국 주제가 발행되는 날 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
+              학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 주제는 삭제하면 돼요.
             </p>
           </div>
 

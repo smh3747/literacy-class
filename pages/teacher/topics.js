@@ -11,6 +11,8 @@ import TopicLikeButton from '../../components/TopicLikeButton'   // step547: 좋
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'   // step570: 엿보기 지원
+import { pickLatestSupply, shortMd } from '../../lib/supplyBands'        // step611: 전국 주제 카드(학년 밴드·최근 1개 선택)
+import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: 서버 API 호출 공용(교사 홈과 동일 경로)
 
 // 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
 function AiLoadingBlock({ title, sub }) {
@@ -160,12 +162,20 @@ export default function TopicsPage() {
   const [likeCounts, setLikeCounts] = useState(null)
   const [myLikedSet, setMyLikedSet] = useState(new Set())
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step570: 엿보기 지원
+  // 🌏 step611: 전국 챌린지 — 발행 주제 목록(/api/supply-list)·학생 수(카드 노출 조건, step564 관행)·7일 숨김·진행 상태
+  const [supplyList, setSupplyList] = useState([])
+  const [studentCount, setStudentCount] = useState(0)
+  const [challengeCardHidden, setChallengeCardHidden] = useState(true)   // 복원 전엔 숨김(깜빡임 방지)
+  const [supplyBusy, setSupplyBusy] = useState(false)
+  const [autoSupplyOn, setAutoSupplyOn] = useState(false)
+  const [autoSupplyJustOn, setAutoSupplyJustOn] = useState(false)       // 카드에서 방금 켬 → 설명 교체
+  const [supplyJoinedNow, setSupplyJoinedNow] = useState(false)          // 카드에서 오늘 발행분 원클릭 등록 완료
 
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
     // step570: ?as= 엿보기 지원 — 읽기는 대상 교사 기준(getEffectiveProfile)
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, grade, auto_supply_enabled)')   // step611: auto_supply_enabled 추가
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
@@ -173,6 +183,21 @@ export default function TopicsPage() {
     setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
+    setAutoSupplyOn(!!profile.classes?.auto_supply_enabled)
+
+    // 🌏 step611: 전국 주제 카드 재료 — 7일 숨김 복원(교사별 키, step453 배너 관행) + 발행 목록 + 학생 수.
+    //   목록 조회는 서버 API(공급 원본은 RLS상 교사가 직접 못 읽음). 실패하면 카드만 안 뜸(비차단).
+    try {
+      const ts = Number(localStorage.getItem('lc-challenge-topics-card:' + profile.id) || 0)
+      setChallengeCardHidden(Date.now() - ts < 7 * 24 * 3600 * 1000)
+    } catch { setChallengeCardHidden(false) }
+    fetchSupplyList(supabase).then(setSupplyList).catch(e => console.warn('전국 주제 목록 조회 실패(무시):', e?.message))
+    if (profile.classes?.id) {
+      supabase.from('profiles').select('id', { count: 'exact', head: true })
+        .eq('class_id', profile.classes.id).eq('role', 'student')
+        .or('is_hidden.is.null,is_hidden.eq.false')
+        .then(r => setStudentCount(r?.count || 0))
+    }
 
     // 학급 학년 자동 추출/세팅
     let gradeStr = ''
@@ -499,6 +524,94 @@ export default function TopicsPage() {
     setMaxRewrites(1)
     setRequireRewriteChange(true)
     setDeadlineEnabled(false)
+  }
+
+  // ============================================
+  // 🌏 step611: 전국 챌린지 — 주제 관리 상단 카드
+  // ============================================
+  // 가장 최근 발행 주제(학급 학년 밴드 안, 같은 날 공통·학년별이면 학년별 우선)
+  const latestSupply = pickLatestSupply(supplyList, classInfo?.grade)
+  // 같은 원본(source_supply_id)이 이미 학급에 있거나 제목이 같은 주제가 있으면 "이미 등록"
+  const isSupplyRegistered = (item) => !!item && topics.some(t =>
+    (t.source_supply_id && t.source_supply_id === item.id) ||
+    (t.title || '').trim() === (item.title || '').trim())
+  const showChallengeCard = !loading && !!latestSupply && studentCount > 0 && !challengeCardHidden
+
+  // 카드 버튼 클릭 기록 — card_type별 평생 1회(unique). 교사 홈 recordOnboarding과 같은 insert, 엿보기 생략, 실패 무시.
+  const recordChallengeCardClick = async () => {
+    if (isImpersonating || !user?.id) return
+    try {
+      await supabase.from('onboarding_responses').insert({
+        teacher_id: user.id, card_type: 'challenge_topics_card', response: 'clicked', comment: null,
+      })
+    } catch (e) { console.warn('카드 클릭 기록 실패(무시):', e?.message) }
+  }
+
+  // ✕ = 7일 숨김만(기록 없음). 엿보기면 저장 생략.
+  const dismissChallengeCard = () => {
+    setChallengeCardHidden(true)
+    try { if (user?.id && !isImpersonating) localStorage.setItem('lc-challenge-topics-card:' + user.id, String(Date.now())) } catch {}
+  }
+
+  // 지난 전국 주제 → 등록 폼 채움(AI 호출 0). 일반 주제로 등록된다(source_supply_id 없음 — 랭킹·청소·마감과 무관).
+  //   채우는 것: 제목·설명·평가 기준(합 100 보정)·최소 글자 수. 날짜는 오늘로 두고 교사가 고른다.
+  //   운영 설정(시간 잠금·마감·다시 쓰기 횟수·공유 여부)은 복사하지 않는다 — 폼의 현재 값(우리 반 기본값) 유지.
+  const applySupplyToForm = (item) => {
+    if (!assertWritable()) return false
+    if (!item?.title) return false
+    setEditingTopicId(null)
+    setEditLocked(false)
+    setTitle(item.title)
+    setDesc(item.description || '')
+    const rb = Array.isArray(item.rubrics) && item.rubrics.length > 0 ? normalizeRubrics(item.rubrics) : DEFAULT_RUBRICS
+    setRubrics(rb)
+    setMinLength(Number(item.min_length) || 30)
+    setDate(todayStr())
+    setLastSelectedLogId(null)
+    setCopiedSource(null)
+    setAiPicker(null)
+    setTimeout(() => {
+      try { formStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
+    }, 50)
+    return true
+  }
+
+  // 버튼 ① "이 주제 가져오기": 오늘 발행분이면 교사 홈 step477 원클릭과 같은 경로(/api/supply-adopt force),
+  //   지난 주제면 폼 채움.
+  const takeSupply = async (item) => {
+    if (!assertWritable()) return
+    if (!item || supplyBusy) return
+    recordChallengeCardClick()
+    if (!item.isToday) { applySupplyToForm(item); return }
+    setSupplyBusy(true)
+    try {
+      await adoptTodaySupply(supabase, { force: true })
+      setSupplyJoinedNow(true)
+      await loadTopics(user?.id, classInfo?.id)
+    } catch (e) {
+      alert('참여에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplyBusy(false)
+  }
+
+  // 버튼 ② "새 주제 나오면 자동으로 받기": 학급 설정 토글과 같은 update + 오늘 발행분 즉시 등록(교사 홈 ON 직후와 동일).
+  const enableAutoSupply = async () => {
+    if (!assertWritable()) return
+    if (!classInfo?.id || supplyBusy) return
+    recordChallengeCardClick()
+    setSupplyBusy(true)
+    try {
+      const { error } = await supabase.from('classes').update({ auto_supply_enabled: true }).eq('id', classInfo.id)
+      if (error) throw error
+      setAutoSupplyOn(true)
+      setAutoSupplyJustOn(true)
+      setClassInfo(prev => prev ? { ...prev, auto_supply_enabled: true } : prev)
+      try { await adoptTodaySupply(supabase, { force: false }) } catch (e) { console.warn('자동 등록 즉시 실행 실패(무시):', e?.message) }
+      await loadTopics(user?.id, classInfo?.id)
+    } catch (e) {
+      alert('저장 실패: ' + (e?.message || ''))
+    }
+    setSupplyBusy(false)
   }
 
   const saveTopic = async () => {
@@ -1221,6 +1334,38 @@ export default function TopicsPage() {
           {isImpersonating && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
               📖 읽기 전용입니다. 주제 등록·수정·삭제, AI 추천·생성, 공유·좋아요는 차단되어 있어요.
+            </div>
+          )}
+
+          {/* 🌏 step611: 최근 전국 주제 카드 — 발행 이력 있음 + 학생 1명 이상 + 7일 숨김 아님. 엿보기도 표시(쓰기는 핸들러가 차단) */}
+          {showChallengeCard && (
+            <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5 relative">
+              <button onClick={dismissChallengeCard} aria-label="닫기"
+                className="absolute top-3 right-3 text-sky-400 hover:text-sky-700 text-lg leading-none">✕</button>
+              <h3 className="font-bold text-sky-900 pr-6">
+                🌏 최근 전국 주제: &lsquo;{latestSupply.title}&rsquo; ({shortMd(latestSupply.publishedYmd)})
+              </h3>
+              <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
+                {autoSupplyJustOn
+                  ? '✓ 앞으로 새 전국 주제가 나오는 날 자동으로 등록돼요. 학급 설정에서 끌 수 있어요.'
+                  : '전국 주제는 가끔 발행돼요. 켜두면 새 주제가 나오는 날 자동으로 등록되고, 지난 주제는 언제든 가져다 쓸 수 있어요.'}
+              </p>
+              <div className="flex gap-2 mt-3 flex-wrap items-center">
+                {(isSupplyRegistered(latestSupply) || supplyJoinedNow) ? (
+                  <span className="px-3 py-2 text-sm font-semibold text-sky-800">✓ 이미 등록된 주제예요</span>
+                ) : (
+                  <button onClick={() => takeSupply(latestSupply)} disabled={supplyBusy}
+                    className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
+                    {supplyBusy ? '처리 중...' : '📥 이 주제 가져오기'}
+                  </button>
+                )}
+                {!autoSupplyOn && (
+                  <button onClick={enableAutoSupply} disabled={supplyBusy}
+                    className="px-4 py-2 bg-white border border-sky-300 text-sky-800 rounded-lg text-sm font-semibold hover:bg-sky-100 disabled:opacity-50">
+                    🔔 새 주제 나오면 자동으로 받기
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

@@ -242,7 +242,7 @@ export default function TeacherRanking() {
               <p className="text-sm text-gray-400 py-3 text-center">불러오는 중...</p>
             ) : challenges.length === 0 ? (
               <p className="text-sm text-gray-500 py-3 text-center">
-                아직 참여한 챌린지가 없어요 — 학급 설정에서 자동 받기를 켜면 매일 자동으로 참여할 수 있어요
+                아직 참여한 챌린지가 없어요. 자동 받기를 켜두면 새 전국 주제가 나오는 날 자동으로 참여돼요
               </p>
             ) : (
               <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">

@@ -22,6 +22,7 @@ import { callAI } from '../../lib/aiClient'
 import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
 import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
+import { adoptTodaySupply } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화(주제 관리 카드와 동일 경로)
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -353,14 +354,10 @@ export default function TeacherHome() {
   }
 
   // 자동 받기 ON 학급: lazy 자동 등록 — 브리핑 패턴(비차단, 실패 무시). 호출부에서 !imp 가드.
+  //   step611: 호출 본문은 lib/supplyClient.js로 공용화(동작 동일 — 실패는 여기서 삼킨다).
   const maybeSupplyAdopt = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) return
-      await fetch('/api/supply-adopt', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token }),
-      })
+      await adoptTodaySupply(supabase, { force: false })
     } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
   }
 
@@ -396,17 +393,28 @@ export default function TeacherHome() {
     if (supplyJoining) return
     setSupplyJoining(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) throw new Error('로그인이 필요해요')
-      const res = await fetch('/api/supply-adopt', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token, force: true }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data?.ok) throw new Error(data?.error || '등록에 실패했어요')
+      await adoptTodaySupply(supabase, { force: true })   // step611: 공용 호출(동작 동일)
       setSupplyCard(prev => prev ? { ...prev, joined: true } : prev)
     } catch (e) {
       alert('참여에 실패했어요: ' + (e?.message || ''))
+    }
+    setSupplyJoining(false)
+  }
+
+  // 🌏 step611: 챌린지 안내 배너(505)의 원클릭 — 학급 설정 토글과 같은 update + 오늘 발행분 즉시 등록 + 화면 갱신.
+  //   (설정 패널 이동 대신 바로 켬. 주제 관리 카드의 ②와 같은 경로.)
+  const enableAutoSupplyFromBanner = async () => {
+    if (!assertWritable()) return
+    if (!classInfo?.id || supplyJoining) return
+    setSupplyJoining(true)
+    try {
+      const { error } = await supabase.from('classes').update({ auto_supply_enabled: true }).eq('id', classInfo.id)
+      if (error) throw error
+      setClassInfo(prev => prev ? { ...prev, auto_supply_enabled: true } : prev)
+      setSupplyCard(null)   // ON 학급은 원클릭 카드 없음(step544 조건과 일치)
+      await checkAuth()     // 토글 ON 직후 lazy 등록(maybeSupplyAdopt) + 참여 중 표시 갱신 — ClassSettings onUpdate와 동일
+    } catch (e) {
+      alert('저장 실패: ' + (e?.message || ''))
     }
     setSupplyJoining(false)
   }
@@ -1030,18 +1038,15 @@ export default function TeacherHome() {
               <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5">
                 {peekNote}
                 <h3 className="font-bold text-sky-900">🌏 새 기능: 전국 글쓰기 챌린지가 열렸어요!</h3>
+                {/* step611: 발행 주기 과장 금지("매일" 제거) + 버튼은 설정 이동 대신 원클릭 ON(주제 관리 카드 ②와 동일) */}
                 <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
-                  매일 시사·계절 주제가 발행되고, 전국 학생들이 같은 주제로 글을 써요.
+                  전국 주제가 발행되는 날 자동으로 등록돼요. 지난 주제도 주제 관리에서 가져다 쓸 수 있어요.
                   잘 쓴 글은 검토를 거쳐 닉네임으로 소개되고, 학생들은 전국 순위를 확인할 수 있어요.
                 </p>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => {
-                    // step506: 플로팅 ⚙️와 동일하게 설정 패널 열기 + 토글 스크롤·강조는 ClassSettings가 수행
-                    setActivePanel('settings')
-                    setSettingsSpotlightSignal(s => s + 1)
-                  }}
-                    className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700">
-                    🌏 자동 받기 켜러 가기
+                  <button onClick={enableAutoSupplyFromBanner} disabled={supplyJoining}
+                    className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
+                    {supplyJoining ? '처리 중...' : '🔔 새 주제 나오면 자동으로 받기'}
                   </button>
                   <button onClick={dismissChallengeIntro}
                     className="px-4 py-2 bg-white border border-sky-300 text-sky-800 rounded-lg text-sm hover:bg-sky-100">
@@ -1074,7 +1079,7 @@ export default function TeacherHome() {
                 <>
                   <h3 className="font-bold text-sky-900">🌏 오늘의 전국 글쓰기 챌린지: {supplyCard.title}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    전국 학생들이 오늘 함께 쓰는 챌린지 주제예요. 학급 설정에서 자동 받기를 켜면 매일 자동으로 등록돼요.
+                    전국 학생들이 오늘 함께 쓰는 챌린지 주제예요. 자동 받기를 켜두면 새 주제가 나오는 날 자동으로 등록돼요.
                   </p>
                   <button onClick={joinSupplyTopic} disabled={supplyJoining}
                     className="mt-3 px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">

@@ -404,6 +404,7 @@ export default function StudentHome() {
       .select('id, date, title, description, source_supply_id')
       .eq('teacher_id', teacherId)
       .is('supply_type', null)   // step479: 공급 원본 격리(담임=관리자 학급 노출 방지)
+      .is('source_supply_id', null)   // step611: 챌린지 복사본은 당일만 유효 — 지난 글 목록에서 제외
       .lt('date', today)
       .order('date', { ascending: false })
       .limit(30)
@@ -1393,10 +1394,9 @@ export default function StudentHome() {
       )
     })
 
-  // 🆕 step492: 안 쓴 글 목록 — 학급 주제 먼저, 챌린지는 "🌏 전국 글쓰기 챌린지" 그룹으로 구분(두 카드 공용)
+  // 🆕 step492: 안 쓴 글 목록(두 카드 공용). step611: 챌린지 복사본은 조회에서 제외되므로 학급 주제만 표시(챌린지 그룹 제거)
   const renderPendingList = () => {
     const classPending = pendingTopics.filter(t => !t.source_supply_id)
-    const challengePending = pendingTopics.filter(t => t.source_supply_id)
     const item = (t, challenge) => {
       // step491: 오늘 카드와 동일한 배지, 미리보기는 파서 body 기준(갈래 문구 중복 방지)
       const { genreLabel, body } = parseTopicDescription(t.description)
@@ -1418,15 +1418,7 @@ export default function StudentHome() {
         </button>
       )
     }
-    return (
-      <>
-        {classPending.map(t => item(t, false))}
-        {challengePending.length > 0 && (
-          <p className="text-xs text-sky-700 font-semibold pt-1">🌏 전국 글쓰기 챌린지</p>
-        )}
-        {challengePending.map(t => item(t, true))}
-      </>
-    )
+    return <>{classPending.map(t => item(t, false))}</>
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
