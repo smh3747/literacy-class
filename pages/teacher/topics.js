@@ -12,7 +12,7 @@ import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'   // step570: 엿보기 지원
 import { pickLatestSupply, shortMd } from '../../lib/supplyBands'        // step611: 전국 주제 카드(학년 밴드·최근 1개 선택)
-import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: 서버 API 호출 공용(교사 홈과 동일 경로)
+import { adoptTodaySupply, fetchSupplyList, fetchTopicSource } from '../../lib/supplyClient'   // step611: 서버 API 호출 공용(교사 홈과 동일 경로) / step613: 공유 주제 원본 조회
 
 // 🆕 step159: AI 작업 중 가시화용 로딩 블록 (스피너 + 큰 문구)
 function AiLoadingBlock({ title, sub }) {
@@ -171,6 +171,8 @@ export default function TopicsPage() {
   const [autoSupplyJustOn, setAutoSupplyJustOn] = useState(false)       // 카드에서 방금 켬 → 설명 교체
   const [supplyListOpen, setSupplyListOpen] = useState(false)            // step612: "전국 주제 모음" 섹션 펼침(기본 접힘)
   const [supplyJoinedIds, setSupplyJoinedIds] = useState(() => new Set()) // 오늘 발행분 원클릭 등록 완료한 원본 id(카드·목록 공용, step612)
+  // 🔁 step613: 공유 주제의 기존 평가 기준을 재사용해 채웠을 때 폼 위 안내 { grade: number|null }. 등록·취소·다른 선택 시 null.
+  const [reusedRubricNote, setReusedRubricNote] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -517,6 +519,7 @@ export default function TopicsPage() {
   const cancelEdit = () => {
     setEditingTopicId(null)
     setEditLocked(false)  // 🆕 step385
+    setReusedRubricNote(null)   // step613
     setTitle('')
     setDesc('')
     setRubrics(DEFAULT_RUBRICS)
@@ -573,6 +576,7 @@ export default function TopicsPage() {
     setDate(todayStr())
     setLastSelectedLogId(null)
     setCopiedSource(null)
+    setReusedRubricNote(null)   // step613
     setAiPicker(null)
     setTimeout(() => {
       try { formStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
@@ -793,6 +797,7 @@ export default function TopicsPage() {
       if (error) throw error
 
       alert(existing ? '주제 수정 완료!' : '주제 등록 완료!')
+      setReusedRubricNote(null)   // step613
       setTitle('')
       setDesc('')
       setRubrics(DEFAULT_RUBRICS)
@@ -1018,9 +1023,39 @@ export default function TopicsPage() {
     setTitle(sug.title)
     setDesc(sug.description || '')
     setLastSelectedLogId(null)
+    setReusedRubricNote(null)
     // 🆕 "다른 선생님" 공유 카드에서 온 경우만 출처 기억 (내 추천/직접작성은 null)
     // sourceIndex는 0일 수 있으니 logId 존재 여부로 판정
     setCopiedSource(sug.sourceLogId ? { logId: sug.sourceLogId, index: sug.sourceIndex } : null)
+
+    // 🔁 step613: 공유 카드가 "등록까지 간" 추천(resulting_topic_id 있음 + 그 선택 인덱스)이면 원 주제의
+    //   설명·평가 기준·최소 글자 수를 서버(/api/topic-source)에서 받아 그대로 채우고 AI 생성을 생략한다(호출·대기 0).
+    //   원 주제가 삭제됐거나(404) 조회 실패면 아래 기존 AI 생성 경로 그대로. 출처 기록(copiedSource)·익명 표시는 불변.
+    if (sug.sourceLogId) {
+      const srcLog = sharedSuggestionLogs.find(l => l.id === sug.sourceLogId)
+      const isRegistered = !!srcLog?.resulting_topic_id && srcLog.selected_index === sug.sourceIndex
+      if (isRegistered) {
+        setGeneratingRubrics(true)
+        let src = null
+        try { src = await fetchTopicSource(supabase, sug.sourceLogId) }
+        catch (e) { console.warn('원 주제 조회 실패(AI 생성으로 진행):', e?.message) }
+        setGeneratingRubrics(false)
+        if (src) {
+          if (src.description) setDesc(src.description)
+          if (Array.isArray(src.rubrics) && src.rubrics.length > 0) {
+            setRubrics(src.rubrics.map(r => ({
+              name: r?.name || '평가 기준',
+              hint: (r?.hint && String(r.hint).trim()) ? String(r.hint).trim() : '이 항목에서 무엇을 잘 표현해야 하는지',
+              score: Number(r?.score) || 0,
+            })))
+          }
+          setMinLength(Number(src.min_length) || 30)
+          setReusedRubricNote({ grade: Number.isInteger(src.grade) ? src.grade : null })
+          if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+          return
+        }
+      }
+    }
 
     if (!hasApiKey) {
       // 평가기준 없이도 폼은 채워짐
@@ -1067,6 +1102,7 @@ export default function TopicsPage() {
     // 폼에 채우기
     setTitle(picked.title)
     setDesc(picked.description)
+    setReusedRubricNote(null)   // step613: 다른 추천 선택 → 재사용 안내 해제
     // 카드는 닫음 (재선택은 다시 추천 받으면 됨)
     setAiPicker(null)
     // 🆕 step159: 폼이 채워지는 모습 + 평가기준 생성 로딩이 보이게 스크롤
@@ -1835,6 +1871,17 @@ export default function TopicsPage() {
                 const rubricLocked = !!editingTopicId && editLocked
                 return (
               <div>
+                {/* 🔁 step613: 공유 주제의 기존 기준을 재사용해 채운 경우 안내(합계 100 아니면 경고 1줄 — 차단은 step468/471 그대로) */}
+                {reusedRubricNote && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-2 text-xs text-emerald-900">
+                    <div>
+                      {reusedRubricNote.grade ? `${reusedRubricNote.grade}학년 선생님이 만든 기준이에요.` : '다른 선생님이 만든 기준이에요.'} 필요하면 고쳐 쓰세요.
+                    </div>
+                    {totalMax !== 100 && (
+                      <div className="text-amber-700 mt-0.5">⚠️ 배점 합계가 {totalMax}점이에요. 등록 전에 100점으로 맞춰 주세요.</div>
+                    )}
+                  </div>
+                )}
                 <div ref={rubricSectionRef} className="flex flex-wrap items-center justify-between gap-y-1 mb-2">
                   <label className="text-sm font-medium">
                     평가 기준 (총 <span className={totalMax !== 100 ? 'text-red-600 font-bold' : ''}>{totalMax}</span>점)
