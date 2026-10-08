@@ -21,6 +21,8 @@ import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTop
 // step600: 첫 채점 이중 호출(전용 맞춤법 검사 선행·주입) 공용 모듈
 import { ensureStrictColumn, getClassTeacherId, countRecentGradings, runStrictCheck, unionCorrections,
   GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
+// step608: 수정본 변경 사실 계산(표기 정규화·notationOnly) — 순수 함수 모듈
+import { computeChangeFacts } from '../../lib/changeFacts'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -127,41 +129,8 @@ async function fetchPrevGrading({ userId, topicId }) {
 }
 
 // 🆕 step595: 수정본 vs 직전 글 변경 사실 계산(서버 측 사실 — 모델이 "분량이 줄었다"를 지어내지 못하게).
-//   - prevChars·curChars: 공백 제외 글자 수, deltaPct: 증감 %(직전 0자면 null)
-//   - added/removed: 문장 단위(줄바꿈·./!/? 기준, 공백 압축 후 완전 일치) 비교. 수정본에만/직전에만 있는 문장.
-//     각 최대 5개, 각 120자 상한. 순수 함수, 실패하면 null(채점은 항상 계속).
+//   step608: 표기(띄어쓰기·문장부호) 정규화 + notationOnly 플래그와 함께 lib/changeFacts.js로 추출(게이트 검증용).
 //   프롬프트가 인자로 받아 쓰는 것은 spell 세션 몫(lib/prompts.server.js). 여기선 계산·전달만.
-const CHANGE_FACTS_MAX_SENTENCES = 5
-const CHANGE_FACTS_SENTENCE_CHARS = 120
-function computeChangeFacts(prevText, curText) {
-  try {
-    if (typeof prevText !== 'string' || typeof curText !== 'string') return null
-    if (!prevText.trim() || !curText.trim()) return null
-    const countChars = (s) => s.replace(/\s/g, '').length
-    const splitSentences = (s) => s
-      .replace(/([.!?])\s*/g, '$1\n')
-      .split('\n')
-      .map(x => x.trim().replace(/\s+/g, ' '))
-      .filter(Boolean)
-    const prevChars = countChars(prevText)
-    const curChars = countChars(curText)
-    const deltaPct = prevChars > 0 ? Math.round((curChars - prevChars) / prevChars * 100) : null
-    const prevSet = new Set(splitSentences(prevText))
-    const curSet = new Set(splitSentences(curText))
-    const pick = (from, notIn) => [...from]
-      .filter(x => !notIn.has(x))
-      .slice(0, CHANGE_FACTS_MAX_SENTENCES)
-      .map(x => x.slice(0, CHANGE_FACTS_SENTENCE_CHARS))
-    return {
-      prevChars, curChars, deltaPct,
-      added: pick(curSet, prevSet),
-      removed: pick(prevSet, curSet),
-    }
-  } catch (e) {
-    console.warn('변경 사실 계산 실패(무시):', e?.message)
-    return null
-  }
-}
 
 // 🆕 step442: 역전 감시(기록만 — 점수 보정 절대 금지). 지적을 고쳤는데(교정 수 감소) 총점이 떨어진 케이스.
 //   step588: 총점 하락이면 모두 기록(AND 조건 해제 — 준수율 분모를 '모든 하락'으로).
@@ -429,8 +398,8 @@ export default async function handler(req, res) {
         : null
       const prevScores = Array.isArray(prevGrading?.scores) ? prevGrading.scores : null
       const changeFacts = prevEssayRaw ? computeChangeFacts(prevEssayRaw, rewriteEssay) : null
-      // 배관 확인용(Vercel 로그) — 글자 수·개수만. 본문·문장 내용은 절대 출력하지 않는다.
-      console.log(`[rewrite-facts] prevEssay ${prevEssayRaw ? prevEssayRaw.length + '자' : '없음'}, prevScores ${prevScores ? prevScores.length + '항목' : '없음'}, facts ${changeFacts ? `prev ${changeFacts.prevChars}/cur ${changeFacts.curChars}/Δ${changeFacts.deltaPct}%/added ${changeFacts.added.length}/removed ${changeFacts.removed.length}` : '없음'}`, { userId })
+      // 배관 확인용(Vercel 로그) — 글자 수·개수만. 본문·문장 내용은 절대 출력하지 않는다. step608: 표기만 변경 여부 추가.
+      console.log(`[rewrite-facts] prevEssay ${prevEssayRaw ? prevEssayRaw.length + '자' : '없음'}, prevScores ${prevScores ? prevScores.length + '항목' : '없음'}, facts ${changeFacts ? `prev ${changeFacts.prevChars}/cur ${changeFacts.curChars}/Δ${changeFacts.deltaPct}%/added ${changeFacts.addedCount}/removed ${changeFacts.removedCount}/notationOnly ${changeFacts.notationOnly}` : '없음'}`, { userId })
       prompt = rewriteGradingPrompt({
         topic, rewriteEssay, rubrics,
         prevScore: prevGrading?.total_score ?? null,
