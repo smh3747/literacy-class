@@ -197,6 +197,11 @@ const MERGE = [
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
   { name: '반말 글 어느날→어느 날(맞춤법 교정 무영향)', corr: { original: '어느날', correction: '어느 날' }, essay: '어느날 학교에 갔다. 친구를 만났다. 같이 놀았다. 재미있었다.', expect: 'kept' }, // step560
   { name: '반말 글 해결했습다→해결했습니다(오타 교정 보존)', corr: { original: '해결했습다', correction: '해결했습니다' }, essay: '문제가 생겼다. 친구와 고민했다. 방법을 찾았다. 드디어 문제를 해결했습다.', expect: 'kept' }, // step560 (과거 isStyleChange가 죽였던 케이스, step409 재발 금지)
+  // step609: '~입이다' 오타(입니다·이다 혼동)는 반말 글에서 폐기 대신 '이다'형으로 치환해 통과. keptAs = 최종 correction 기대값.
+  { name: '반말 글 말입이다→말이다(치환 통과, 10/8)', corr: { original: '말입이다.', correction: '말입니다.', reason: "'입니다'로 써요" }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 그게 내 말입이다.', expect: 'kept', keptAs: '말이다.', reasonAs: "'입이다'는 없는 말이에요. 이 글은 반말로 썼으니 '이다'로 써요" }, // step609
+  { name: '반말 글 때문입이다→때문이다(치환 통과, 9/3)', corr: { original: '때문입이다', correction: '때문입니다', reason: '오타예요' }, essay: '늦게 일어났다. 버스를 놓쳤다. 지각을 했다. 알람이 안 울렸기 때문입이다.', expect: 'kept', keptAs: '때문이다', reasonAs: '오타예요' }, // step609 (reason에 '입니다' 없으면 AI reason 유지)
+  { name: '섞인 글 말입이다→말입니다(치환 없이 그대로)', corr: { original: '말입이다.', correction: '말입니다.' }, essay: '제 취미를 소개합니다. 축구를 좋아해요. 매일 공을 차요. 그게 제 말입이다.', expect: 'kept' }, // step609 (반말 글 아니면 기존대로)
+  { name: '반말 글 말입이다→말이에요(입니다 아님 → 기존대로 폐기)', corr: { original: '말입이다.', correction: '말이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 그게 내 말입이다.', expect: 'dropped' }, // step609
 ]
 
 // step560: countSentenceStyles(essay) 직접 테스트 — 문체역행 필터의 발동 조건 판정 헬퍼.
@@ -231,12 +236,15 @@ const STYLE = [
   // MERGE: kept / dropped
   for (const c of MERGE) {
     const { corrections, dropped } = mergeCorrectionsDetailed([c.corr], c.essay)
-    const kept = corrections.some(x => x.correction === c.corr.correction)
+    // step609: keptAs가 있으면 치환된 correction(및 reasonAs)으로 남았는지 검사
+    const want = c.keptAs != null ? c.keptAs : c.corr.correction
+    const keptItem = corrections.find(x => x.correction === want)
+    const kept = !!keptItem && (c.reasonAs == null || keptItem.reason === c.reasonAs)
     const drp = dropped.find(x => x.correction === c.corr.correction)
     let pass, detail
     if (c.expect === 'kept') {
       pass = kept && !drp
-      detail = kept ? 'corrections에 남음' : `안 남음(dropped=${drp ? drp.drop_reason : '없음'})`
+      detail = kept ? `corrections에 남음${c.keptAs != null ? `(→ ${want})` : ''}` : (keptItem ? `reason 불일치: ${keptItem.reason}` : `안 남음(dropped=${drp ? drp.drop_reason : '없음'}, 실제=${JSON.stringify(corrections.map(x => x.correction))})`)
     } else if (c.expect === 'gone') { // step598: 무의미 교정 — 조용히 제거(감시 기록에도 안 남음)
       pass = !kept && !drp
       detail = pass ? '조용히 제거됨' : (kept ? 'corrections에 남음(제거 안 됨)' : `dropped에 기록됨(${drp.drop_reason})`)
