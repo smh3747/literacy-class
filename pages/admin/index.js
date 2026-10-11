@@ -47,7 +47,7 @@ const diagnoseTeacher = (stage, { classCount, totalStudents, loginDays, lastLogi
 }
 
 // 🆕 다음 걸음 카드(교사 온보딩 설문) 응답 한글 라벨 — 사전 신청 탭 하단 섹션 표시용
-const OB_CARD_LABELS = { review: '후기', no_students: '학생 등록', no_topics: '주제 시작', no_class_run: '첫 수업' }
+const OB_CARD_LABELS = { review: '후기', no_students: '학생 등록', no_topics: '주제 시작', no_class_run: '첫 수업', challenge_topics_card: '🌏 전국 주제 카드' }   // step614: 주제 관리 카드(step611) 클릭 집계 라벨
 const OB_RESP_LABELS = {
   good: '😀 좋아요', soso: '🙂 보통이에요', bad: '😐 아쉬워요',
   roster_hassle: '명렬표 번거로움', consent_burden: '동의 부담', just_looking: '둘러보는 중',

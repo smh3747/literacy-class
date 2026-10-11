@@ -22,7 +22,7 @@ import { callAI } from '../../lib/aiClient'
 import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
 import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
-import { adoptTodaySupply } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화(주제 관리 카드와 동일 경로)
+import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화 / step614: 원클릭 카드 조회를 서버 API로
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -337,13 +337,8 @@ export default function TeacherHome() {
     }
   }
 
-  // 🆕 step477: 전국 공통 주제 — "오늘(KST) 발행분" 판정 창.
-  //   예약 발행은 topics.date에 클릭일이 저장되므로 date 비교가 아니라 published_at 창으로 판정한다.
-  const kstTodayWindow = () => {
-    const now = new Date()
-    const ymd = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-    return { startISO: new Date(`${ymd}T00:00:00+09:00`).toISOString(), nowISO: now.toISOString() }
-  }
+  // 🆕 step477: 전국 공통 주제 — "오늘(KST) 발행분" 판정은 published_at 창(예약 발행은 date가 클릭일).
+  //   step614: 판정 창 계산은 서버(/api/supply-list의 isToday)로 옮겨 이 파일의 kstTodayWindow는 제거.
 
   // 학급 학년 → 받을 수 있는 supply_grade 밴드 (서버 supply-adopt와 동일 규칙, 미설정은 공통만)
   const supplyBands = (grade) => {
@@ -364,13 +359,12 @@ export default function TeacherHome() {
   // 자동 받기 OFF 교사: 오늘 발행 공통 주제 중 미참여분이 있으면 원클릭 카드. 호출부에서 !imp 가드.
   // step544: 모든 교사 호출로 확장 — 참여 중인 오늘 주제(자동 등록·원클릭 모두 mine에 잡힘)를
   //   todaySupply로 저장해 [🏆 전국 랭킹 보기] 진입점 재료로 쓴다. 원클릭 카드 노출 조건은 기존 그대로(OFF만).
+  //   step614: 공급 원본 조회를 클라이언트 직접 SELECT(RLS top_select상 교사는 0행)에서 /api/supply-list(step611, service role)로 교체.
+  //     isToday(published_at 오늘 KST 창)만 쓰므로 판정 기준은 그대로. 카드 노출 조건·클릭 동작·todaySupply 저장은 불변.
   const maybeShowSupplyCard = async (profile) => {
     try {
-      const { startISO, nowISO } = kstTodayWindow()
-      const { data: supplies } = await supabase.from('topics')
-        .select('id, title, supply_grade')
-        .not('supply_type', 'is', null)
-        .gte('published_at', startISO).lte('published_at', nowISO)
+      const list = await fetchSupplyList(supabase)
+      const supplies = list.filter(s => s.isToday).map(s => ({ id: s.id, title: s.title, supply_grade: s.supply_grade }))
       const bands = supplyBands(profile.classes?.grade)
       const targets = (supplies || []).filter(s => bands.includes(s.supply_grade || '공통'))
       if (targets.length === 0) return
