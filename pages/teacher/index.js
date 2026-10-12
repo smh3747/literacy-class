@@ -1048,7 +1048,7 @@ export default function TeacherHome() {
                 )}
                 {/* step617: 좋은 점 2줄 앞세우기(각 한 줄) + 지난 주제 안내는 회색 작은 글씨 — 문구만 */}
                 <div className="text-sm text-sky-800/90 mt-1 leading-relaxed space-y-0.5">
-                  <p>✅ 주제를 직접 만들지 않아도 돼요 — 새 주제가 나오면 우리 반 주제 목록에 자동으로 들어와요.</p>
+                  <p>✅ 주제를 직접 만들지 않아도 돼요. 새 주제가 나오면 우리 반 주제 목록에 자동으로 들어와요.</p>
                   <p>✅ 아이들이 다른 학교 친구들의 잘 쓴 글을 읽어볼 수 있어요 (닉네임으로 소개돼요).</p>
                   <p className="text-xs text-gray-500">지난 주제는 주제 관리에서 언제든 가져다 쓸 수 있어요.</p>
                 </div>
