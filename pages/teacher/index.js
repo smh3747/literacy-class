@@ -23,6 +23,7 @@ import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계
 import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
 import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화 / step614: 원클릭 카드 조회를 서버 API로
+import { pickLatestSupply, shortMd } from '../../lib/supplyBands'   // step616: 챌린지 배너 "최근 주제" 1줄(주제 관리 카드와 같은 선택 규칙)
 
 export default function TeacherHome() {
   const router = useRouter()
@@ -65,6 +66,7 @@ export default function TeacherHome() {
   const [supplyCard, setSupplyCard] = useState(null)
   // 🆕 step544: 오늘 참여 중인 챌린지 { id, title } — [🏆 전국 랭킹 보기] 진입점용(자동 ON·이미 참여 OFF 모두)
   const [todaySupply, setTodaySupply] = useState(null)
+  const [latestSupply, setLatestSupply] = useState(null)   // step616: 챌린지 배너 "최근 주제" 줄 재료(없으면 줄 생략)
   // 🆕 step544→554: 교사용 전국 랭킹 모달 — TeacherShowcaseModal 컴포넌트로 공용화(랭킹 화면과 공유), 여기는 supplyId만 관리
   const [showcaseSid, setShowcaseSid] = useState(null)
   // 🆕 step505: 챌린지 신기능 안내 배너 닫힘 여부 (교사별 localStorage, step234 방식 lc-..-dismissed:<id>)
@@ -361,9 +363,10 @@ export default function TeacherHome() {
   //   todaySupply로 저장해 [🏆 전국 랭킹 보기] 진입점 재료로 쓴다. 원클릭 카드 노출 조건은 기존 그대로(OFF만).
   //   step614: 공급 원본 조회를 클라이언트 직접 SELECT(RLS top_select상 교사는 0행)에서 /api/supply-list(step611, service role)로 교체.
   //     isToday(published_at 오늘 KST 창)만 쓰므로 판정 기준은 그대로. 카드 노출 조건·클릭 동작·todaySupply 저장은 불변.
-  const maybeShowSupplyCard = async (profile) => {
+  //   step616: 목록은 checkAuth가 1회 받아 넘긴다(배너 "최근 주제" 줄과 공용) — 인자 없으면 직접 조회(동작 동일).
+  const maybeShowSupplyCard = async (profile, listArg = null) => {
     try {
-      const list = await fetchSupplyList(supabase)
+      const list = Array.isArray(listArg) ? listArg : await fetchSupplyList(supabase)
       const supplies = list.filter(s => s.isToday).map(s => ({ id: s.id, title: s.title, supply_grade: s.supply_grade }))
       const bands = supplyBands(profile.classes?.grade)
       const targets = (supplies || []).filter(s => bands.includes(s.supply_grade || '공통'))
@@ -596,10 +599,15 @@ export default function TeacherHome() {
       maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
       // 🆕 step477: 전국 글쓰기 챌린지 — lazy 등록·원클릭 카드 판정 (비차단, 실패 무시)
       //   step507: adopt는 토글 무관 상시 호출(OFF면 서버가 청소만 하고 disabled 반환), 원클릭 카드는 OFF일 때만
+      // step616: 발행 목록 1회 조회(비차단) — 배너 "최근 주제" 줄(엿보기 포함, 읽기 전용) + 원클릭 카드 판정에 공용.
+      const supplyListPromise = fetchSupplyList(supabase)
+        .then(list => { setLatestSupply(pickLatestSupply(list, profile.classes?.grade)); return list })
+        .catch(e => { console.warn('전국 주제 목록 조회 실패(무시):', e?.message); return null })
       if (!imp && profile.role === 'teacher') {
         // step544: adopt 완료 후 판정 — ON 학급의 오늘 자동 등록이 반영된 뒤 참여 중(todaySupply)을 잡는다.
         //   실패해도 판정은 시도(비차단 체인). 원클릭 카드 노출 조건은 함수 내부에서 기존 그대로 유지.
-        maybeSupplyAdopt().then(() => maybeShowSupplyCard(profile)).catch(() => maybeShowSupplyCard(profile))
+        const judge = () => supplyListPromise.then(list => maybeShowSupplyCard(profile, list))
+        maybeSupplyAdopt().then(judge).catch(judge)
       }
       // 신고된 제출물 수 (우리 학급 학생들의 것만, 숨김 제외)
       let reportCount = 0
@@ -1031,16 +1039,21 @@ export default function TeacherHome() {
             return (
               <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5">
                 {peekNote}
-                <h3 className="font-bold text-sky-900">🌏 새 기능: 전국 글쓰기 챌린지가 열렸어요!</h3>
-                {/* step611: 발행 주기 과장 금지("매일" 제거) + 버튼은 설정 이동 대신 원클릭 ON(주제 관리 카드 ②와 동일) */}
+                {/* step616: 제목 "새 기능" 제거 + 최근 주제 1줄(없으면 생략) + 설명 교체 — 조건·동작·계측 불변 */}
+                <h3 className="font-bold text-sky-900">🌏 전국 글쓰기 챌린지</h3>
+                {latestSupply && (
+                  <p className="text-sm text-sky-900 mt-1">
+                    최근 주제: &lsquo;{latestSupply.title}&rsquo; ({shortMd(latestSupply.publishedYmd)})
+                  </p>
+                )}
                 <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
-                  전국 주제가 발행되는 날 자동으로 등록돼요. 지난 주제도 주제 관리에서 가져다 쓸 수 있어요.
-                  잘 쓴 글은 검토를 거쳐 닉네임으로 소개되고, 학생들은 전국 순위를 확인할 수 있어요.
+                  전국 공통 주제로 글을 쓰고, 잘 쓴 글은 닉네임으로 소개돼요. 켜두면 새 주제가 나올 때 우리 반 주제 목록에
+                  자동으로 들어오고, 지난 주제는 주제 관리에서 언제든 가져다 쓸 수 있어요.
                 </p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={enableAutoSupplyFromBanner} disabled={supplyJoining}
                     className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
-                    {supplyJoining ? '처리 중...' : '🔔 새 주제 나오면 자동으로 받기'}
+                    {supplyJoining ? '처리 중...' : '🔔 새 주제 자동으로 받기'}
                   </button>
                   <button onClick={dismissChallengeIntro}
                     className="px-4 py-2 bg-white border border-sky-300 text-sky-800 rounded-lg text-sm hover:bg-sky-100">

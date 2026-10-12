@@ -50,7 +50,7 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
     // step611: 발행은 수시(매일 아님) — "매일" 표현 제거
     const ok = window.confirm(
       '새 전국 글쓰기 챌린지 주제가 나오는 날 우리 반에 자동 등록돼요.\n\n' +
-      '· 주제는 다온클래스가 검수해 발행해요\n' +
+      '· 주제는 다온클래스가 검수해서 올려요\n' +
       '· 필요 없는 주제는 삭제하면 돼요\n' +
       '· 잘 쓴 글은 확인을 거쳐 닉네임으로 전국에 소개돼요'
     )
@@ -145,7 +145,7 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
               <span className="text-sm font-medium">🌏 전국 글쓰기 챌린지 자동 받기</span>
             </label>
             <p className="text-xs text-gray-500 mt-1 ml-6">
-              새 전국 주제가 발행되는 날 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
+              새 전국 주제가 나오는 날 우리 반 주제로 자동 등록돼요. 위의 학년 설정에 맞는 주제가 오고,
               학년이 미설정이면 공통 대상 주제만 받아요. 필요 없는 주제는 삭제하면 돼요.
             </p>
           </div>

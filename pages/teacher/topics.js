@@ -1388,7 +1388,7 @@ export default function TopicsPage() {
               <p className="text-sm text-sky-800/90 mt-1 leading-relaxed">
                 {autoSupplyJustOn
                   ? '✓ 앞으로 새 전국 주제가 나오는 날 자동으로 등록돼요. 학급 설정에서 끌 수 있어요.'
-                  : '전국 주제는 가끔 발행돼요. 켜두면 새 주제가 나오는 날 자동으로 등록되고, 지난 주제는 언제든 가져다 쓸 수 있어요.'}
+                  : '전국 주제는 가끔 올라와요. 켜두면 새 주제가 나오는 날 자동으로 등록되고, 지난 주제는 언제든 가져다 쓸 수 있어요.'}
               </p>
               <div className="flex gap-2 mt-3 flex-wrap items-center">
                 {(isSupplyRegistered(latestSupply) || supplyJoinedIds.has(latestSupply.id)) ? (
