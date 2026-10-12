@@ -547,7 +547,7 @@ export default function TeacherHome() {
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp } = await getEffectiveProfile(
-      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled, showcase_enabled, allow_paste)'
+      '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score)'   // step620: 글 모음 설정 2컬럼
     )
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
@@ -1310,6 +1310,13 @@ export default function TeacherHome() {
                             <Link href={withImpersonation('/teacher/status')}
                               className="block text-xs text-primary font-medium px-2.5 py-1 hover:underline">
                               외 {todayPreview.rows.length - 5}명 · 오늘 제출 전체 보기 →
+                            </Link>
+                          )}
+                          {/* 📚 step620: 글 모음 안내 한 줄 — OFF 학급만 */}
+                          {!classInfo?.peer_share_enabled && (
+                            <Link href={withImpersonation('/teacher/submissions')}
+                              className="block text-xs text-emerald-700 font-medium px-2.5 py-1 hover:underline">
+                              📚 잘 쓴 글을 반 친구들에게 보여줄 수 있어요 → 학생 글 보기
                             </Link>
                           )}
                         </>

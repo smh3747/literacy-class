@@ -14,6 +14,7 @@ import { callAI } from '../../lib/aiClient'
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
+import { fetchPeerShare, setPeerShare as setPeerShareRemote } from '../../lib/peerShareClient'   // step620: 우리 반 글 모음(서버 API)
 import { STAMPS, stampLabel } from '../../lib/stamps'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
@@ -138,6 +139,9 @@ export default function TeacherSubmissions() {
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
   // 🆕 step436: 교사 점수 조정(병기형) — AI 점수(total_score)는 불변, teacher_score만 별도 기록
   const [editingScoreId, setEditingScoreId] = useState(null)
+  // 📚 step620: 우리 반 글 모음 상태(서버 응답 그대로) — null이면 조회 실패·미적용(카드·버튼은 classInfo 기준으로만 표시)
+  const [peerShare, setPeerShare] = useState(null)
+  const [peerBusy, setPeerBusy] = useState(false)
   const [scoreDraft, setScoreDraft] = useState('')
   const scorePopoverRef = useRef(null)  // 🆕 step437: 팝오버 바깥 클릭 판정용
 
@@ -160,7 +164,7 @@ export default function TeacherSubmissions() {
   useEffect(() => { if (router.isReady) checkAuth() }, [router.isReady])
 
   const checkAuth = async () => {
-    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code)')
+    const { profile, isImpersonating: imp } = await getEffectiveProfile('*, classes:class_id(id, name, code, peer_share_enabled, peer_share_show_score)')   // step620: 글 모음 설정
     if (!profile) { router.push('/teacher/login'); return }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
       await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
@@ -220,6 +224,7 @@ export default function TeacherSubmissions() {
       return displayStudentName(a.profile).localeCompare(displayStudentName(b.profile))
     })
     setTopicStudents(groups)
+    loadPeerShare(topic.id)   // step620: 글 모음 상태(비차단)
 
     // 학생 자동 선택? (제출한 학생만 자동 진입)
     if (autoStudentId) {
@@ -275,6 +280,7 @@ export default function TeacherSubmissions() {
       return displayStudentName(a.profile).localeCompare(displayStudentName(b.profile))
     })
     setTopicStudents(groups)
+    loadPeerShare(topic.id)   // step620: 글 모음 상태(비차단)
 
     // 🆕 특정 학생 화면을 유지해야 하면(재평가 등) 그 학생 상세로 복귀
     if (keepStudentId) {
@@ -288,6 +294,57 @@ export default function TeacherSubmissions() {
     }
     setView('topicStudents')
     syncUrl(topic.id)
+  }
+
+  // ============================================
+  // 📚 step620: 우리 반 글 모음 — 교사 켜기·추가/제외 (서버 /api/peer-share, 선정 규칙은 서버 단독)
+  // ============================================
+  const loadPeerShare = async (topicId) => {
+    try {
+      const r = await fetchPeerShare(supabase, topicId)
+      setPeerShare({
+        enabled: !!r.enabled, showScore: !!r.showScore, settingsOk: r.settingsOk !== false,
+        items: Array.isArray(r.items) ? r.items : [],
+        autoIds: r.autoIds || [], excludedAutoIds: r.excludedAutoIds || [], addedIds: r.addedIds || [],
+      })
+    } catch (e) {
+      console.warn('글 모음 상태 조회 실패(무시):', e?.message)
+      setPeerShare(null)
+    }
+  }
+
+  // 원클릭 켜기 — 학급 설정 토글과 같은 update 문장(학급 전체 ON). 엿보기 차단.
+  const enablePeerShare = async () => {
+    if (isImpersonating) return
+    if (!classInfo?.id || !selectedTopic?.id || peerBusy) return
+    setPeerBusy(true)
+    try {
+      const { error } = await supabase.from('classes').update({ peer_share_enabled: true }).eq('id', classInfo.id)
+      if (error) throw error
+      setClassInfo(prev => prev ? { ...prev, peer_share_enabled: true } : prev)
+      await loadPeerShare(selectedTopic.id)
+    } catch (e) {
+      alert('켜지 못했어요: ' + (e?.message || '') + '\n(학급 설정 SQL(step619)이 적용됐는지 확인해 주세요)')
+    }
+    setPeerBusy(false)
+  }
+
+  // 글 하나 보이기/빼기 — 서버가 자동/추가 상태에 따라 override를 정한다. 엿보기 차단.
+  const togglePeerShare = async (s, show) => {
+    if (isImpersonating) return
+    if (!selectedTopic?.id || !s?.id || peerBusy) return
+    setPeerBusy(true)
+    try {
+      const r = await setPeerShareRemote(supabase, selectedTopic.id, s.id, show)
+      setPeerShare({
+        enabled: !!r.enabled, showScore: !!r.showScore, settingsOk: r.settingsOk !== false,
+        items: Array.isArray(r.items) ? r.items : [],
+        autoIds: r.autoIds || [], excludedAutoIds: r.excludedAutoIds || [], addedIds: r.addedIds || [],
+      })
+    } catch (e) {
+      alert('저장하지 못했어요: ' + (e?.message || ''))
+    }
+    setPeerBusy(false)
   }
 
   const openStudent = (student) => {
@@ -1024,6 +1081,35 @@ export default function TeacherSubmissions() {
                 )
               })()}
 
+              {/* 📚 step620: 우리 반 글 모음 — OFF면 채점 글 5편 이상일 때 켜기 카드, ON이면 상태 줄. 엿보기도 표시(버튼만 비활성) */}
+              {(() => {
+                const gradedCount = topicStudents.flatMap(g => g.items).filter(s => s.total_score != null).length
+                const on = !!classInfo?.peer_share_enabled
+                if (!on && gradedCount >= 5) {
+                  return (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+                      <p className="text-sm text-emerald-900 leading-relaxed">
+                        📚 이 주제 잘 쓴 글 5편을 반 친구들에게 보여줄까요? 닉네임으로만 보이고, 학생은 자기 글을 낸 뒤에만 볼 수 있어요.
+                      </p>
+                      <button onClick={enablePeerShare} disabled={peerBusy || isImpersonating}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 flex-shrink-0">
+                        {peerBusy ? '켜는 중...' : '📚 우리 반 글 모음 켜기'}
+                      </button>
+                    </div>
+                  )
+                }
+                if (on) {
+                  const autoShown = (peerShare?.items || []).filter(x => x.source === 'auto').length
+                  const added = (peerShare?.items || []).filter(x => x.source === 'added').length
+                  return (
+                    <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      ✓ 우리 반 글 모음이 켜져 있어요. 자동 {autoShown}편 + 선생님 선택 {added}편. 학급 설정에서 끌 수 있어요.
+                    </p>
+                  )
+                }
+                return null
+              })()}
+
               {/* 🔄 일괄 재평가 진행 상황 */}
               {bulkRegrading && (
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
@@ -1456,6 +1542,34 @@ export default function TeacherSubmissions() {
                         })
                       )}
                     </div>
+
+                    {/* 📚 step620: 글 모음 추가/빼기 — 학급 ON일 때만. 동의 전 글은 안내, 점수 없는 글은 버튼 없음. 엿보기는 배지만(도장 행 관행) */}
+                    {!!classInfo?.peer_share_enabled && s.total_score != null && (() => {
+                      const shown = (peerShare?.items || []).some(x => x.submissionId === s.id)
+                      const isAuto = (peerShare?.autoIds || []).includes(s.id)
+                      if (isConsentLocked(selectedStudent.profile)) {
+                        return <p className="text-xs text-gray-400 mt-2">📚 학부모 동의 전이라 공유할 수 없어요</p>
+                      }
+                      return (
+                        <div className="flex items-center gap-2 flex-wrap mt-2">
+                          <span className="text-xs text-gray-500">글 모음</span>
+                          {shown && isAuto && <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">📚 자동 선정</span>}
+                          {isImpersonating ? (
+                            <span className="text-xs text-gray-400">{shown ? '보이는 중' : '안 보임'}</span>
+                          ) : shown ? (
+                            <button type="button" onClick={() => togglePeerShare(s, false)} disabled={peerBusy}
+                              className="text-xs px-2 py-1 rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+                              🙈 글 모음에서 빼기
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => togglePeerShare(s, true)} disabled={peerBusy}
+                              className="text-xs px-2 py-1 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
+                              📌 글 모음에 추가
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* 🆕 AI 점수·피드백 — 열고 닫기 (기본 열림) */}
                     {/* 🆕 step437: relative 래퍼 — 점수 조정 팝오버를 details 밖에 절대배치(접힘 상태에서도 보이게) */}

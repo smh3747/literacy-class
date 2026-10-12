@@ -180,6 +180,28 @@ export default function ClassSettings({ classInfo, onUpdate, autoSupplySpotlight
             </p>
           </div>
 
+          {/* 📚 step620: 우리 반 글 모음(기본 OFF) + 하위 옵션 점수 표시(기본 OFF, 부모 OFF면 비활성). 켜기는 학생 글 보기 화면 원클릭도 가능 */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={!!classInfo.peer_share_enabled}
+                onChange={e => save({ peer_share_enabled: e.target.checked })}
+                disabled={saving}
+                className="w-4 h-4" />
+              <span className="text-sm font-medium">📚 우리 반 글 모음</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              주제별 잘 쓴 글 5편과 선생님이 고른 글을 반 친구들에게 닉네임으로 보여줘요. 학생은 자기 글을 낸 뒤에만 볼 수 있어요.
+              학부모 동의를 마친 학생 글만 보여요.
+            </p>
+            <label className="flex items-center gap-2 mt-2 ml-6">
+              <input type="checkbox" checked={!!classInfo.peer_share_show_score}
+                onChange={e => save({ peer_share_show_score: e.target.checked })}
+                disabled={saving || !classInfo.peer_share_enabled}
+                className="w-4 h-4" />
+              <span className={`text-sm ${classInfo.peer_share_enabled ? 'text-gray-800' : 'text-gray-400'}`}>친구 글에 점수도 보여주기</span>
+            </label>
+          </div>
+
           {/* 게시판 범위 — 게시판 기능이 아직 미구현이라 화면에서만 숨김 (출시 전 정리). */}
           {false && (
             <div>
