@@ -209,6 +209,16 @@ const STYLE = [
   { name: '반말 4문장 → formal 0·plain 4', essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', formal: 0, plain: 4 },
   { name: '섞인 글 → formal 3·plain 1',    essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', formal: 3, plain: 1 },
   { name: '끝맺음 불명 문장 카운트 제외',   essay: '나의 꿈. 소방관이 되고 싶다. 사람들을 구하고 싶어서', formal: 0, plain: 1 },
+  // step622: 반환 확장 — minority(소수 문체)·minoritySentences(원문, 최대 5). 프롬프트 [문체 분포] 주입 재료.
+  { name: '존댓말 3+반말 1 → 소수 plain "법이 있다."', essay: '저는 법을 지켜요. 법은 소중해요. 모두가 지켜야 해요. 법이 있다.', formal: 3, plain: 1, minority: 'plain', minoritySentences: ['법이 있다.'] }, // 10/12 실사례형
+  { name: '반말 3+존댓말 1 → 소수 formal "정말 좋았어요."', essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 정말 좋았어요.', formal: 1, plain: 3, minority: 'formal', minoritySentences: ['정말 좋았어요.'] },
+  { name: '따옴표 안 대화문 제외(분할도 안 깨짐)', essay: '오늘은 즐거웠어요. 엄마가 "빨리 자라." 하고 말했어요. 저는 웃었어요.', formal: 3, plain: 0, minority: null, minoritySentences: [] },
+  { name: '따옴표 포함 문장은 원문째 목록에', essay: '저는 책을 좋아해요. 동생이 "같이 읽자" 하고 말했다. 그래서 같이 읽었어요.', formal: 2, plain: 1, minority: 'plain', minoritySentences: ['동생이 "같이 읽자" 하고 말했다.'] },
+  { name: '통째로 따옴표인 문장 제외', essay: '저는 웃었어요. "밥 먹어요." 동생이 말했다. 다시 웃었어요.', formal: 2, plain: 1, minority: 'plain', minoritySentences: ['동생이 말했다.'] },
+  { name: '100% 일관 → 소수 없음', essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', formal: 0, plain: 4, minority: null, minoritySentences: [] },
+  { name: '1문장 글 → 소수 없음', essay: '오늘은 즐거웠어요.', formal: 1, plain: 0, minority: null, minoritySentences: [] },
+  { name: '동률 2:2 → 소수 없음', essay: '좋아요. 재밌어요. 좋다. 재밌다.', formal: 2, plain: 2, minority: null, minoritySentences: [] },
+  { name: '소수 7개 → 목록 5개 상한(등장 순)', essay: Array.from({ length: 10 }, () => '저는 법을 지켜요.').join(' ') + ' ' + Array.from({ length: 7 }, (_, i) => `법이 ${i + 1}개 있다.`).join(' '), formal: 10, plain: 7, minority: 'plain', minoritySentences: ['법이 1개 있다.', '법이 2개 있다.', '법이 3개 있다.', '법이 4개 있다.', '법이 5개 있다.'] },
 ]
 
 ;(async () => {
@@ -256,10 +266,15 @@ const STYLE = [
   }
 
   // STYLE: countSentenceStyles 직접 테스트 (step560 — 문체역행 필터 발동 조건)
+  // step622: 기대값에 minority·minoritySentences가 있으면 함께 비교(없는 기존 케이스는 formal·plain만)
   for (const c of STYLE) {
     const r = countSentenceStyles(c.essay)
-    const pass = r.formal === c.formal && r.plain === c.plain
-    rec('STYLE', c.name, pass, pass ? `formal ${r.formal}·plain ${r.plain}` : `기대 formal ${c.formal}·plain ${c.plain}, 실제 formal ${r.formal}·plain ${r.plain}`)
+    const countOk = r.formal === c.formal && r.plain === c.plain
+    const minorOk = !('minority' in c) || (r.minority === c.minority && JSON.stringify(r.minoritySentences) === JSON.stringify(c.minoritySentences))
+    const pass = countOk && minorOk
+    rec('STYLE', c.name, pass, pass
+      ? `formal ${r.formal}·plain ${r.plain}${'minority' in c ? `·minority ${r.minority}·${r.minoritySentences.length}문장` : ''}`
+      : `기대 formal ${c.formal}·plain ${c.plain}${'minority' in c ? `·minority ${c.minority}·${JSON.stringify(c.minoritySentences)}` : ''}, 실제 formal ${r.formal}·plain ${r.plain}·minority ${r.minority}·${JSON.stringify(r.minoritySentences)}`)
   }
 
   // MERGE(정규화): AI corrections의 비문자열 필드가 병합을 깨거나 살아남지 않는지 (step426)

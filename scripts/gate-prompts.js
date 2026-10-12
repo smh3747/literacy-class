@@ -47,8 +47,10 @@ const { pathToFileURL } = require('url')
   const KEY_PHRASES = [
     { name: '규칙 6(안/않 오교정 금지)',    text: "맞는 '않'을 '안'으로 고치지 마세요" },
     { name: "규칙 10(-는데 어미)",          text: "어미 '-는데/-ㄴ데'" },
-    { name: '규칙 11(문체 일관 판정)',      text: '문장 대부분' },
-    { name: '규칙 11(문체 교정 금지 지시)', text: '일관된 글에서는 문체 교정을 하나도 만들지 마세요' },
+    { name: '규칙 11(문체 판정은 [문체 분포] 기준)', text: '문체 판정은 위 [문체 분포]를 따르세요' }, // step622: 서버 계산 분포 주입(구 '문장 대부분' 2/3 다수결 대체)
+    { name: '규칙 11(소수만 고치고 다수 불변)',    text: '소수 문장만 다수 쪽으로 고치고, 다수 문장은 절대 건드리지 마세요' }, // step622
+    { name: '규칙 11(일관 글 문체 교정 금지)',     text: '문체 교정을 하나도 만들지 마세요' },
+    { name: '규칙 11(라)(통일 교정은 끝맺음 예외)', text: '[문체 분포]가 지목한 문체 통일 교정만 예외' }, // step622: (라) "끝맺음 같아야"가 통일 교정을 다시 막지 않게
     // step443: 오교정 금지 규칙 12 — '조사' 단독은 규칙 7에도 있어 무의미, 규칙 12 고유 문구로 검사
     { name: '규칙 12(조사 떼기 금지)',      text: '조사는 항상 붙여 씁니다' },
     { name: '규칙 12(가운뎃점 변경 금지)',  text: '가운뎃점' },
@@ -74,6 +76,54 @@ const { pathToFileURL } = require('url')
     }
     rec('RULES', `${pname} · 규칙 1~12 전부 존재`, missing.length === 0,
       missing.length === 0 ? '12개 모두 존재' : `누락 번호=${missing.join(',')}`)
+  }
+
+  // ── STYLEDIST: [문체 분포] 서버 계산 주입 (step622) — 5개 프롬프트 전부 ──
+  // 배경: 존댓말 12+반말 1("법이 있다.") 글에서 통일 교정 미생성(10/12·8/20). 분포를 koreanRules가 세어 사실로 주입.
+  //   소수 있음 → '반드시 포함'+문장 인용 / 일관 → '전부 반말'+'하나도 만들지' / 1문장 → 줄 생략 / 따옴표 대화문은 소수로 안 잡힘.
+  //   NO_CORRECT_LIST에도 '[문체 분포]' 문구가 있으므로 줄 존재 여부는 머리말 '[문체 분포 — 서버 계산'으로 검사한다.
+  try {
+    const HEAD = '[문체 분포 — 서버 계산'
+    const mixedEssay = '저는 법을 지켜요. 법은 소중해요. 모두가 지켜야 해요. 법이 있다.'
+    const plainEssay = '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다.'
+    const quoteEssay = '오늘은 즐거웠어요. 엄마가 "빨리 자라." 하고 말했어요. 저는 웃었어요.'
+    const oneEssay = essay // 기본 essay = 1문장
+    const five = (e) => ({
+      gradingPrompt: gradingPrompt({ topic, essay: e, rubrics }),
+      grammarStrictPrompt: grammarStrictPrompt({ essay: e }),
+      grammarOnlyPrompt: grammarOnlyPrompt({ essay: e }),
+      regradePrompt: regradePrompt({ topic, essay: e, rubrics }),
+      rewriteGradingPrompt: rewriteGradingPrompt({ topic, rewriteEssay: e, rubrics }),
+    })
+    const mixedNeed = [HEAD, '존댓말 3문장·반말 1문장', '반말 문장 1개는 존댓말로 통일하는 교정을 corrections에 반드시 포함하세요', '"법이 있다."']
+    for (const [pname, s] of Object.entries(five(mixedEssay))) {
+      const miss = mixedNeed.filter(p => !s.includes(p))
+      rec('STYLEDIST', `${pname} · 소수 있음(존댓말 3+반말 1) → 반드시 포함+"법이 있다." 인용`, miss.length === 0,
+        miss.length === 0 ? `${mixedNeed.length}문구 포함` : `누락: ${miss.join(' / ')}`)
+    }
+    const plainNeed = [HEAD, '전부 반말(3문장)', '문체 교정을 하나도 만들지 마세요']
+    for (const [pname, s] of Object.entries(five(plainEssay))) {
+      const miss = plainNeed.filter(p => !s.includes(p))
+      const pass = miss.length === 0 && !s.includes('반드시 포함하세요')
+      rec('STYLEDIST', `${pname} · 일관(반말 3) → 전부 반말+하나도 만들지, 반드시 포함 없음`, pass,
+        pass ? `${plainNeed.length}문구 포함, 강제 문구 없음` : `누락: ${miss.join(' / ')}; 강제문구=${s.includes('반드시 포함하세요')}`)
+    }
+    for (const [pname, s] of Object.entries(five(oneEssay))) {
+      const pass = !s.includes(HEAD)
+      rec('STYLEDIST', `${pname} · 1문장 글 → [문체 분포] 줄 생략`, pass, pass ? '줄 없음' : '1문장 글에 줄이 붙음')
+    }
+    for (const [pname, s] of Object.entries(five(quoteEssay))) {
+      const pass = s.includes('전부 존댓말(3문장)') && !s.includes('반드시 포함하세요')
+      rec('STYLEDIST', `${pname} · 따옴표 대화문 "빨리 자라." → 소수로 안 잡힘(전부 존댓말)`, pass,
+        pass ? '전부 존댓말, 강제 문구 없음' : `전부존댓말=${s.includes('전부 존댓말(3문장)')}, 강제문구=${s.includes('반드시 포함하세요')}`)
+    }
+    // 구 판정 문구(2/3 다수결·"어느 쪽도 확실한 다수가 아닐 때만")가 되살아나지 않았는지
+    const OLD = ['문장 대부분(대략 3분의 2 이상)', '어느 쪽도 확실한 다수가 아닐 때만', '실제로 둘 다 있을 때, 더 많은 쪽으로 통일할 때만']
+    const g = gradingPrompt({ topic, essay: mixedEssay, rubrics })
+    const back = OLD.filter(p => g.includes(p))
+    rec('STYLEDIST', '구 2/3 다수결·혼합 조건 문구 부재', back.length === 0, back.length === 0 ? `${OLD.length}문구 모두 부재` : `되살아남: ${back.join(' / ')}`)
+  } catch (e) {
+    rec('STYLEDIST', 'STYLEDIST 실행', false, `예외: ${e.message}`)
   }
 
   // ── RULES12: 오교정 금지 목록(NO_CORRECT_LIST)이 재평가·수정본 채점에도 포함 (step448) ──
