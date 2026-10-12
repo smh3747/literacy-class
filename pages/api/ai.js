@@ -23,6 +23,8 @@ import { ensureStrictColumn, getClassTeacherId, countRecentGradings, runStrictCh
   GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
 // step608: 수정본 변경 사실 계산(표기 정규화·notationOnly) — 순수 함수 모듈
 import { computeChangeFacts } from '../../lib/changeFacts'
+// step623: 소수→다수 문체 통일 교정 표식(styleUnify) — C-1 '문체개입' 스캔 제외용, 순수 함수 모듈
+import { tagStyleUnify } from '../../lib/styleUnify'
 
 export const config = {
   maxDuration: 300, // 채점은 시간이 걸릴 수 있음 (Fluid Compute로 최대 300초)
@@ -593,6 +595,14 @@ export default async function handler(req, res) {
             return { ...c, original, correction, reason }
           })
           .filter(Boolean)
+      }
+      // step623: 서버가 정한 "소수→다수 문체 통일" 교정에 styleUnify: true 표식(저장 직전, 모든 corrections 경로 공통).
+      //   C-1 일일 스캔의 '문체개입' 판정이 이 표식을 제외해 옳은 통일 교정이 의심 교정 탭에 쌓이지 않게 한다.
+      //   해당 항목에만 키를 추가하고 다른 필드·순서는 그대로. 실패하면 표식 없이 진행(채점 영향 0).
+      try {
+        result.corrections = tagStyleUnify(result.corrections, mergeEssay)
+      } catch (e) {
+        console.warn('styleUnify 표식 실패:', e?.message)
       }
     }
 
