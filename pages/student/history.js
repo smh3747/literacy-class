@@ -13,6 +13,8 @@ import { escapeHtml } from '../../lib/escapeHtml'
 import { stampLabel } from '../../lib/stamps'
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 당시 순위 구간화 표시
 import { STUDENT_BLOCKED_MESSAGE } from '../../lib/safetyBlock'   // step606: AI 안전 필터 차단 글(점수 null) 안내 문구
+import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
+import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -109,8 +111,41 @@ export default function StudentHistory() {
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [challengeRanks, setChallengeRanks] = useState({}) // step499→539: { [source_supply_id]: { rank, total } } 당시(최종) 순위+풀 크기
+  // 📚 step621: 우리 반 친구들 글 — 주제별 캐시 { [topic_id]: { items, showScore } | null }, 담임 id, 알린 글 key
+  const [peerShareByTopic, setPeerShareByTopic] = useState({})
+  const [teacherId, setTeacherId] = useState(null)
+  const [peerNotified, setPeerNotified] = useState(() => new Set())
 
   useEffect(() => { checkAuth() }, [])
+
+  // 📚 step621: 상세 진입 시 반 주제면 친구 글 조회(1회 캐시, 비차단). 서버가 학급 ON·본인 제출을 검증.
+  useEffect(() => {
+    if (selectedIdx === null || !grouped[selectedIdx]) return
+    const g = grouped[selectedIdx]
+    if (!g.topic_id || g.source_supply_id) return
+    if (Object.prototype.hasOwnProperty.call(peerShareByTopic, g.topic_id)) return
+    let alive = true
+    fetchPeerShare(supabase, g.topic_id)
+      .then(r => {
+        if (!alive) return
+        const items = (r?.enabled && !r?.locked && Array.isArray(r.items)) ? r.items : []
+        setPeerShareByTopic(prev => ({ ...prev, [g.topic_id]: items.length > 0 ? { items, showScore: !!r.showScore } : null }))
+      })
+      .catch(e => { console.warn('친구 글 조회 실패(무시):', e?.message); if (alive) setPeerShareByTopic(prev => ({ ...prev, [g.topic_id]: null })) })
+    return () => { alive = false }
+  }, [selectedIdx, grouped])
+
+  const notifyTeacherPeer = async (topicId, item) => {
+    if (!item || peerNotified.has(`${topicId}:${item.key}`)) return
+    try {
+      const args = peerShareNotifyArgs({ teacherId, number: user?.number, topicId, nickname: item.nickname })
+      if (args) await supabase.rpc('create_notification', args)
+      setPeerNotified(prev => new Set([...prev, `${topicId}:${item.key}`]))
+    } catch (e) {
+      console.warn('알림 생성 실패:', e?.message)
+      alert('지금은 알리지 못했어요. 잠시 뒤 다시 눌러 주세요.')
+    }
+  }
 
   // 🆕 디테일 화면 진입 시 — 그 주제의 미확인 담임 코멘트 읽음 처리
   useEffect(() => {
@@ -137,7 +172,12 @@ export default function StudentHistory() {
       await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
     setUser(profile)
-    
+    // step621: 담임 id(알리기 수신자) — 학생은 자기 학급 행을 읽을 수 있음(cls_select). 실패해도 화면 정상(알리기만 비활성)
+    if (profile.class_id) {
+      supabase.from('classes').select('teacher_id').eq('id', profile.class_id).maybeSingle()
+        .then(r => setTeacherId(r?.data?.teacher_id || null)).catch(() => {})
+    }
+
     const { data } = await supabase.from('submissions').select('*, topics(title, date, source_supply_id)').eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false })
     
     // 주제별로 그룹화
@@ -493,6 +533,13 @@ export default function StudentHistory() {
                 <div className="font-bold text-purple-900 text-sm mb-1">📖 AI 예시 작품</div>
                 <p className="text-sm text-purple-900 whitespace-pre-wrap">{lastSub.example_text}</p>
               </div>
+            )}
+
+            {/* 📚 step621: 우리 반 친구들 글 — 반 주제·0편 아님일 때만 */}
+            {g.topic_id && !g.source_supply_id && peerShareByTopic[g.topic_id] && (
+              <PeerShareCard items={peerShareByTopic[g.topic_id].items} showScore={peerShareByTopic[g.topic_id].showScore}
+                onNotify={(item) => notifyTeacherPeer(g.topic_id, item)}
+                notifiedKeys={new Set([...peerNotified].filter(k => k.startsWith(`${g.topic_id}:`)).map(k => Number(k.split(':')[1])))} />
             )}
 
             {canRewrite ? (

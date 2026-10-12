@@ -22,6 +22,8 @@ import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 // step606: AI 안전 필터 차단 → 점수 없이 저장·학생 안내·담임 알림 (헬퍼·문구는 lib/safetyBlock.js)
 import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
+import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
+import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
@@ -276,6 +278,9 @@ export default function StudentHome() {
   const [essay, setEssay] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [currentSub, setCurrentSub] = useState(null)
+  // 📚 step621: 우리 반 친구들 글 — 제출 후(feedback/done)에만 조회. { items, showScore } | null. 반 주제만(챌린지 제외).
+  const [peerShare, setPeerShare] = useState(null)
+  const [peerNotified, setPeerNotified] = useState(() => new Set())
   const [feedbackResult, setFeedbackResult] = useState(null)
   const [exampleText, setExampleText] = useState('')
   const [exampleLoading, setExampleLoading] = useState(false)
@@ -392,6 +397,33 @@ export default function StudentHome() {
       setLoadError(true)   // 무한 스피너 대신 재시도 UI
     } finally {
       setLoading(false)    // 어떤 경로로든 스피너 종료 보장
+    }
+  }
+
+  // 📚 step621: 우리 반 친구들 글 — 반 주제(챌린지 제외)만, 서버(/api/peer-share)가 학급 ON·본인 제출을 검증.
+  //   OFF·locked·실패 → null(카드 없음). 비차단.
+  const loadPeerShareFor = async (topic) => {
+    if (!topic?.id || topic.source_supply_id) { setPeerShare(null); return }
+    try {
+      const r = await fetchPeerShare(supabase, topic.id)
+      const items = (r?.enabled && !r?.locked && Array.isArray(r.items)) ? r.items : []
+      setPeerShare(items.length > 0 ? { topicId: topic.id, items, showScore: !!r.showScore } : null)
+    } catch (e) {
+      console.warn('친구 글 조회 실패(무시):', e?.message)
+      setPeerShare(null)
+    }
+  }
+
+  // "🙋 선생님께 알리기" — 담임 종 알림(type 'message' 재사용, 번호·닉네임만, 본문 미포함). 같은 글은 세션 내 1회.
+  const notifyTeacherPeer = async (item) => {
+    if (!item || peerNotified.has(item.key)) return
+    try {
+      const args = peerShareNotifyArgs({ teacherId: user?.classes?.teacher_id, number: user?.number, topicId: todayTopic?.id, nickname: item.nickname })
+      if (args) await supabase.rpc('create_notification', args)
+      setPeerNotified(prev => new Set([...prev, item.key]))
+    } catch (e) {
+      console.warn('알림 생성 실패:', e?.message)
+      alert('지금은 알리지 못했어요. 잠시 뒤 다시 눌러 주세요.')
     }
   }
 
@@ -576,6 +608,7 @@ export default function StudentHome() {
     setCurrentSub(null)
     setStep('write')
     setDraftPrompt(null)  // step571: 주제 전환 시 이전 주제의 초안 배너 잔존 방지
+    setPeerShare(null)    // step621: 제출 전엔 친구 글 카드 없음(주제 전환 잔존 방지)
 
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
@@ -592,7 +625,8 @@ export default function StudentHome() {
       const sorted = [...existing].sort((a,b) => (b.attempt||1) - (a.attempt||1))
       const last = sorted[0]
       const maxAttempt = last.attempt || 1
-      
+      loadPeerShareFor(topic)   // step621: 제출이 있는 주제 → 친구 글 조회(비차단, 서버가 ON·본인 제출 검증)
+
       if (maxAttempt === 1) {
         // 첫 글만 있음 → 피드백 화면 + 다시쓰기 가능
         // step601: 보완 대기 배지용 strict_status는 별도 보조 조회(step600 SQL 미적용이면 조용히 실패 → 배지 없음, 화면 정상)
@@ -856,6 +890,7 @@ export default function StudentHome() {
       setFeedbackResult(result)
       scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('feedback')
+      loadPeerShareFor(todayTopic)   // step621: 첫 제출 직후 친구 글 카드
 
       // 🆕 step492: 챌린지 제출이면 카드의 제출 상태·내 순위 즉시 갱신(스테일 방지)
       if (todayTopic.source_supply_id) {
@@ -1319,6 +1354,7 @@ export default function StudentHome() {
       setExampleText('') // 새 예시 받기 위해 비우기
       scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('done')
+      loadPeerShareFor(todayTopic)   // step621: 수정본 제출 직후 친구 글 카드 갱신
 
       // 🆕 step492: 챌린지 수정본이면 카드 상태·내 순위 즉시 갱신(스테일 방지)
       if (todayTopic.source_supply_id) {
@@ -2082,6 +2118,12 @@ export default function StudentHome() {
                         🏆 상위 글 보기
                       </button>
                     </div>
+                  )}
+
+                  {/* 📚 step621: 우리 반 친구들 글 — 반 주제·제출 후·0편 아님일 때만(제출 전엔 이 블록 자체가 없음) */}
+                  {!todayTopic?.source_supply_id && peerShare?.topicId === todayTopic?.id && (
+                    <PeerShareCard items={peerShare.items} showScore={peerShare.showScore}
+                      onNotify={notifyTeacherPeer} notifiedKeys={peerNotified} />
                   )}
 
                   {/* 다시 쓰기 버튼 (feedback 단계에서만) — step516: 알림 직행 강조 대상. step606: 차단 글은 숨김(같은 글 재제출 유도 방지) */}
