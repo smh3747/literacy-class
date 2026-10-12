@@ -202,6 +202,12 @@ const MERGE = [
   { name: '반말 글 때문입이다→때문이다(치환 통과, 9/3)', corr: { original: '때문입이다', correction: '때문입니다', reason: '오타예요' }, essay: '늦게 일어났다. 버스를 놓쳤다. 지각을 했다. 알람이 안 울렸기 때문입이다.', expect: 'kept', keptAs: '때문이다', reasonAs: '오타예요' }, // step609 (reason에 '입니다' 없으면 AI reason 유지)
   { name: '섞인 글 말입이다→말입니다(치환 없이 그대로)', corr: { original: '말입이다.', correction: '말입니다.' }, essay: '제 취미를 소개합니다. 축구를 좋아해요. 매일 공을 차요. 그게 제 말입이다.', expect: 'kept' }, // step609 (반말 글 아니면 기존대로)
   { name: '반말 글 말입이다→말이에요(입니다 아님 → 기존대로 폐기)', corr: { original: '말입이다.', correction: '말이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 그게 내 말입이다.', expect: 'dropped' }, // step609
+  // step623: 띄어쓰기변형 필터 — 공백 없는 20자 이상 original에서 글자를 빼거나 3자 이상 바꾼 교정 폐기(10/2 송림초 23번 실사례형).
+  { name: '공백 없는 글 순수 띄어쓰기 → 통과', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렀고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'kept' },
+  { name: '공백 없는 글 띄어쓰기+오타 1개(그렀고→그렇고) → 통과', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렇고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'kept' },
+  { name: '공백 없는 글 "등등을"·"도" 삭제 → 띄어쓰기변형 폐기', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리 은행에 가서 돈을 찾고 과자 사고 싶었다 그렇고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'dropped' }, // 10/2 실사례형
+  { name: '공백 없는 글 우리은행→우리 은행(글자 동일) → 통과(프롬프트 몫)', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리 은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렀고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'kept' }, // 고유명사 분리는 글자 수가 같아 코드로 못 잡음 → [띄어쓰기] 프롬프트 줄이 막는다
+  { name: '공백 있는 일반 교정(표현 대폭 변경) → 검사 안 함(기존대로 통과)', corr: { original: '있어서 그런지 그랬다', correction: '있기 때문에 그렇다' }, essay: '친구가 있어서 그런지 그랬다', expect: 'kept' },
 ]
 
 // step560: countSentenceStyles(essay) 직접 테스트 — 문체역행 필터의 발동 조건 판정 헬퍼.
@@ -221,10 +227,29 @@ const STYLE = [
   { name: '소수 7개 → 목록 5개 상한(등장 순)', essay: Array.from({ length: 10 }, () => '저는 법을 지켜요.').join(' ') + ' ' + Array.from({ length: 7 }, (_, i) => `법이 ${i + 1}개 있다.`).join(' '), formal: 10, plain: 7, minority: 'plain', minoritySentences: ['법이 1개 있다.', '법이 2개 있다.', '법이 3개 있다.', '법이 4개 있다.', '법이 5개 있다.'] },
 ]
 
+// step623: hasLongNoSpaceRun(essay, 40)·checkSpacingIntegrity(original, corrected) 직접 테스트.
+const NOSPACE_O = '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.' // 38자, 공백 없음
+const RUN = [
+  { name: '39자 → 0(40 미만)',                 essay: '가'.repeat(39), expect: 0 },
+  { name: '40자 → 40',                         essay: '가'.repeat(40), expect: 40 },
+  { name: '두 구간 45·60 → 최대 60',            essay: '가'.repeat(45) + ' ' + '나'.repeat(60), expect: 60 },
+  { name: '줄바꿈으로 끊긴 25+25 → 0',          essay: '가'.repeat(25) + '\n' + '나'.repeat(25), expect: 0 },
+  { name: '쉼표·마침표는 구간에 포함(44자)',     essay: NOSPACE_O + '그리고동생과같이놀았다.', expect: 44 },
+]
+const INTEGRITY = [
+  { name: '순수 띄어쓰기 → checked·ok·거리 0',          o: NOSPACE_O, c: '나는 우리은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렀고 집에 왔다.', checked: true, ok: true, distance: 0 },
+  { name: '오타 1개 섞임(그렀고→그렇고) → ok·거리 1',    o: NOSPACE_O, c: '나는 우리은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렇고 집에 왔다.', checked: true, ok: true, distance: 1 },
+  { name: '단어 삭제(등등을) → ok false·거리 3',         o: NOSPACE_O, c: '나는 우리은행에 가서 돈을 찾고 과자 사고 싶었다도 그렀고 집에 왔다.', checked: true, ok: false, distance: 3 },
+  { name: '고유명사 분리(우리은행→우리 은행) → 글자 동일이라 ok(프롬프트 몫)', o: NOSPACE_O, c: '나는 우리 은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렀고 집에 왔다.', checked: true, ok: true, distance: 0 },
+  { name: '공백 있는 일반 교정 → checked false',        o: '있어서 그런지 그랬다', c: '있기 때문에 그렇다', checked: false, ok: true },
+  { name: 'original 19자(조건 미달) → checked false',   o: '가'.repeat(19), c: '가 가', checked: false, ok: true },
+  { name: 'original 20자 → checked(글자 대량 삭제라 ok false)', o: '가'.repeat(20), c: '가 가', checked: true, ok: false },
+]
+
 ;(async () => {
   const krPath = path.join(__dirname, '..', 'lib', 'koreanRules.js')
   const kr = await import(pathToFileURL(krPath).href)
-  const { findRuleBasedErrors, mergeCorrectionsDetailed, mergeCorrections, countSentenceStyles } = kr
+  const { findRuleBasedErrors, mergeCorrectionsDetailed, mergeCorrections, countSentenceStyles, hasLongNoSpaceRun, checkSpacingIntegrity } = kr
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -275,6 +300,17 @@ const STYLE = [
     rec('STYLE', c.name, pass, pass
       ? `formal ${r.formal}·plain ${r.plain}${'minority' in c ? `·minority ${r.minority}·${r.minoritySentences.length}문장` : ''}`
       : `기대 formal ${c.formal}·plain ${c.plain}${'minority' in c ? `·minority ${c.minority}·${JSON.stringify(c.minoritySentences)}` : ''}, 실제 formal ${r.formal}·plain ${r.plain}·minority ${r.minority}·${JSON.stringify(r.minoritySentences)}`)
+  }
+
+  // SPACING: hasLongNoSpaceRun·checkSpacingIntegrity 직접 테스트 (step623)
+  for (const c of RUN) {
+    const r = hasLongNoSpaceRun(c.essay, 40)
+    rec('SPACING', `run · ${c.name}`, r === c.expect, r === c.expect ? `${r}` : `기대 ${c.expect}, 실제 ${r}`)
+  }
+  for (const c of INTEGRITY) {
+    const r = checkSpacingIntegrity(c.o, c.c)
+    const pass = r.checked === c.checked && r.ok === c.ok && (c.distance == null || r.distance === c.distance)
+    rec('SPACING', `integrity · ${c.name}`, pass, pass ? JSON.stringify(r) : `기대 ${JSON.stringify({ checked: c.checked, ok: c.ok, distance: c.distance })}, 실제 ${JSON.stringify(r)}`)
   }
 
   // MERGE(정규화): AI corrections의 비문자열 필드가 병합을 깨거나 살아남지 않는지 (step426)

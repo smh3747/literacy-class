@@ -126,6 +126,38 @@ const { pathToFileURL } = require('url')
     rec('STYLEDIST', 'STYLEDIST 실행', false, `예외: ${e.message}`)
   }
 
+  // ── SPACING: [띄어쓰기] 서버 계산 주입 (step623) — 5개 프롬프트 전부 ──
+  // 배경: 10/2 송림초 23번 — 공백 없는 글을 통째 교정하며 단어 삭제·고유명사 분리. 공백 없이 40자 이상 구간이 있을 때만 줄 주입.
+  try {
+    const SP_HEAD = '[띄어쓰기 — 서버 계산'
+    const noSpace = '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.그리고동생과같이놀았다.' // 44자
+    const normal = '저는 법을 지켜요. 법은 소중해요. 모두가 지켜야 해요. 법이 있다.'
+    const both = '저는우리은행에가서돈을찾고과자등등을사고싶었어요.그리고동생과같이놀았어요.과자를먹었어요. 정말 좋았어요. 집에 왔다.' // 46자 구간 + 존댓말 4·반말 1
+    const five = (e) => ({
+      gradingPrompt: gradingPrompt({ topic, essay: e, rubrics }),
+      grammarStrictPrompt: grammarStrictPrompt({ essay: e }),
+      grammarOnlyPrompt: grammarOnlyPrompt({ essay: e }),
+      regradePrompt: regradePrompt({ topic, essay: e, rubrics }),
+      rewriteGradingPrompt: rewriteGradingPrompt({ topic, rewriteEssay: e, rubrics }),
+    })
+    const need = [SP_HEAD, '띄어쓰기 없이 44자가 이어지는 구간', '글자를 하나도 빼거나 바꾸지 마세요', '그렀고→그렇고', '고유명사는 붙여 둡니다']
+    for (const [pname, s] of Object.entries(five(noSpace))) {
+      const miss = need.filter(p => !s.includes(p))
+      rec('SPACING', `${pname} · 공백 없는 44자 글 → [띄어쓰기] 줄 포함`, miss.length === 0, miss.length === 0 ? `${need.length}문구 포함` : `누락: ${miss.join(' / ')}`)
+    }
+    for (const [pname, s] of Object.entries(five(normal))) {
+      const pass = !s.includes(SP_HEAD)
+      rec('SPACING', `${pname} · 일반 글 → [띄어쓰기] 줄 없음`, pass, pass ? '줄 없음' : '일반 글에 줄이 붙음')
+    }
+    for (const [pname, s] of Object.entries(five(both))) {
+      const i = s.indexOf('[문체 분포 — 서버 계산'), j = s.indexOf(SP_HEAD)
+      const pass = i !== -1 && j !== -1 && i < j && s.includes('"집에 왔다."')
+      rec('SPACING', `${pname} · 긴 구간+문체 섞임 → 두 줄 공존(문체 → 띄어쓰기 순)`, pass, pass ? `문체@${i} < 띄어쓰기@${j}` : `문체=${i}, 띄어쓰기=${j}, 인용=${s.includes('"집에 왔다."')}`)
+    }
+  } catch (e) {
+    rec('SPACING', 'SPACING 실행', false, `예외: ${e.message}`)
+  }
+
   // ── RULES12: 오교정 금지 목록(NO_CORRECT_LIST)이 재평가·수정본 채점에도 포함 (step448) ──
   // CORRECTIONS_RULES 3종은 위 RULES 그룹이 검사하므로, 인라인 규칙을 쓰는 두 프롬프트만 여기서.
   {
