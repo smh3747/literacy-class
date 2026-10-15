@@ -6,12 +6,14 @@
 // 학생: 자기 담임 주제만. OFF → { ok, enabled:false, items:[] } / 본인 제출 없음 → { ok, locked:true, items:[] }
 // 교사: 본인 주제만(admin은 list만 — 엿보기 읽기 전용). show/hide는 overrides upsert·삭제 후 갱신 목록 반환(캐시 없음).
 // SQL(step619) 미적용: 컬럼 조회 실패 → enabled:false로 응답(학생 무영향), 교사 쓰기는 안내 오류.
+// 📊 step625: 학생 list 응답에 글이 1편 이상 실릴 때 peer_share_views에 (class_id, topic_id, KST 날짜) 1행 기록(계측 전용, 실패 무시).
 //
 // 환경변수: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (서버 전용)
 
 import { createClient } from '@supabase/supabase-js'
 import { selectPeerShare, isEligible } from '../../lib/peerShareSelect'
 import { nicknameFromSeed } from '../../lib/nickname'
+import { todayStr } from '../../lib/kstDate'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SQL_HINT = '학급 설정 SQL(step619)을 먼저 적용해 주세요'
@@ -152,6 +154,13 @@ export default async function handler(req, res) {
         if (showScore) item.score = x.score
         return item
       })
+      // 📊 step625: 열람 계측 — 카드가 실제로 뜨는 응답(보여줄 글 1편 이상)마다 (class_id, topic_id, KST 날짜) 1행.
+      //   학생 ID·본문·점수 없음. 테이블 미적용·insert 실패는 삼키고 응답 불변(supabase-js는 throw 안 함).
+      if (items.length > 0) {
+        try {
+          await admin.from('peer_share_views').insert({ class_id: classRow.id, topic_id: topicId, view_date: todayStr() })
+        } catch (e) { /* 계측 실패는 무시 */ }
+      }
       return res.status(200).json({ ok: true, enabled: true, showScore, items })
     }
 

@@ -210,6 +210,7 @@ export default function AdminHome() {
   const [errView, setErrView] = useState('list')         // 🆕 보기: 'list' | 'byClass'
   const [logStudentNumbers, setLogStudentNumbers] = useState({})  // 🆕 에러로그 학생 번호 표시용 {user_id: number} (실명 미조회)
   const [suspectCount, setSuspectCount] = useState(0)      // 🆕 step359: 의심 교정 미해결 건수 (loadAll에서 count만)
+  const [peerShareStats, setPeerShareStats] = useState({ onClasses: 0, views7d: 0 })  // 📊 step625: 글 모음 ON 학급 수 / 최근 7일 열람 수
   const [suspectAlerts, setSuspectAlerts] = useState([])   // 🆕 step359: 의심 교정 목록 (탭 열 때 로드)
   const [suspectLoaded, setSuspectLoaded] = useState(false)
   const [suspectError, setSuspectError] = useState(null)    // 🆕 step369: 목록 로드 실패 메시지 (조용한 소멸 방지)
@@ -540,6 +541,21 @@ export default function AdminHome() {
     } catch(e) {
       // 테이블 미생성(SQL 미실행) 시 무시
       setSuspectCount(0)
+    }
+
+    // 📊 step625: 우리 반 글 모음 — ON 학급 수(이미 받은 classes 행의 peer_share_enabled, 활성 학급만) +
+    //   최근 7일 열람 수(peer_share_views head count, admin select RLS). 테이블 미적용이면 0.
+    {
+      const onClasses = activeClasses.filter(c => c.peer_share_enabled === true).length
+      let views7d = 0
+      try {
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        const { count, error } = await supabase.from('peer_share_views')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', since)
+        if (!error) views7d = count || 0
+      } catch(e) { /* 테이블 미생성(SQL 미실행) 시 0 */ }
+      setPeerShareStats({ onClasses, views7d })
     }
   }
 
@@ -1934,6 +1950,12 @@ export default function AdminHome() {
                 <div className="text-2xl font-bold">{s.val}</div>
               </div>
             ))}
+          </div>
+
+          {/* 📊 step625: 우리 반 글 모음 두 숫자 — 켜진 학급 수 / 최근 7일 열람 수(학생 조회 응답 기준, 학생 ID 없음) */}
+          <div className="text-xs text-gray-600 -mt-3 px-1">
+            📚 우리 반 글 모음: 켜진 학급 <span className="font-semibold text-gray-800">{peerShareStats.onClasses}</span>
+            {' · '}최근 7일 열람 <span className="font-semibold text-gray-800">{peerShareStats.views7d}</span>
           </div>
 
           <div className="flex gap-1 bg-white rounded-xl p-1 border border-gray-200 overflow-x-auto">
