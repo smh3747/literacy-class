@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { callAI } from '../../lib/aiClient'
+import { decideExampleFlow } from '../../lib/exampleDefer'   // step627: 피크 시 예시 생성 보류 판정
 import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
@@ -284,6 +285,8 @@ export default function StudentHome() {
   const [feedbackResult, setFeedbackResult] = useState(null)
   const [exampleText, setExampleText] = useState('')
   const [exampleLoading, setExampleLoading] = useState(false)
+  // step627: 피크 시 예시 작품 자동 생성 보류 — { essayText, totalMax, subId } 보관, "📖 예시 작품 보기" 누를 때 생성
+  const [exampleDeferred, setExampleDeferred] = useState(null)
   
   const [rewriteEssay, setRewriteEssay] = useState('')
   const [rewriting, setRewriting] = useState(false)
@@ -605,6 +608,7 @@ export default function StudentHome() {
     setEssay('')
     setFeedbackResult(null)
     setExampleText('')
+    setExampleDeferred(null)   // step627
     setCurrentSub(null)
     setStep('write')
     setDraftPrompt(null)  // step571: 주제 전환 시 이전 주제의 초안 배너 잔존 방지
@@ -902,7 +906,9 @@ export default function StudentHome() {
       // 예시 작품 생성 (백그라운드)
       // 🆕 step368: subId 명시 전달 — 기존 generateExample은 낡은 클로저의 currentSub(null)를 봐서
       //   첫 글 example_text가 DB에 저장된 적이 없었음(재방문 시 예시 미표시 원인)
-      generateExampleForSub(essay, totalMax, sub.id)
+      // 🆕 step627: 서버가 피크(__exampleDeferred)면 자동 생성 대신 보류 → 학생이 "📖 예시 작품 보기"를 누를 때 생성
+      if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText: essay, totalMax, subId: sub.id })
+      else generateExampleForSub(essay, totalMax, sub.id)
     } catch(e) {
       console.error('제출 오류:', e)
       const rawMsg = e?.message || ''
@@ -1097,7 +1103,7 @@ export default function StudentHome() {
     if (!isRewrite) setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
     pasteDetectedRef.current = false
     pasteCountRef.current = 0
-    if (isRewrite) { setEssay(essayText); setExampleText('') }
+    if (isRewrite) { setEssay(essayText); setExampleText(''); setExampleDeferred(null) }
     setCurrentSub(sub)
     setFeedbackResult({ blocked: true, scores: null, total: null, overall: '', good: '', improve: '', corrections: [] })
     scrollToResultRef.current = true
@@ -1352,6 +1358,7 @@ export default function StudentHome() {
       setCurrentSub(newSub) // 수정본 row를 currentSub로 (예시 저장 대상)
       setFeedbackResult(result)
       setExampleText('') // 새 예시 받기 위해 비우기
+      setExampleDeferred(null)   // step627
       scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
       setStep('done')
       loadPeerShareFor(todayTopic)   // step621: 수정본 제출 직후 친구 글 카드 갱신
@@ -1364,8 +1371,9 @@ export default function StudentHome() {
       }
       alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
 
-      // 수정본에 대한 새 예시 작품 생성 (백그라운드)
-      generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
+      // 수정본에 대한 새 예시 작품 생성 (백그라운드) — step627: 피크면 보류(온디맨드)
+      if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText: rewriteEssay, totalMax, subId: newSub?.id })
+      else generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
       const rawMsg = e?.message || ''
@@ -2084,7 +2092,8 @@ export default function StudentHome() {
                   </div>
 
                   {/* ⑧ 예시 작품 (피드백/완료 단계 모두 표시) — step365: 기본 접힘 */}
-                  {(exampleText || exampleLoading) && (step === 'feedback' || step === 'done') && (
+                  {/* step627: 피크 보류(exampleDeferred)면 카드 안에 "📖 예시 작품 보기" 버튼 — 누르면 그때 생성(온디맨드) */}
+                  {(exampleText || exampleLoading || exampleDeferred) && (step === 'feedback' || step === 'done') && (
                     <details className="group bg-purple-50 border border-purple-200 rounded-2xl p-5">
                       <CollapseSummary
                         tone="purple"
@@ -2098,9 +2107,18 @@ export default function StudentHome() {
                       <div className="mt-2">
                         {exampleLoading ? (
                           <p className="text-sm text-purple-700">예시 작품을 만들고 있어요...</p>
-                        ) : (
+                        ) : exampleText ? (
                           <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed">{exampleText}</p>
-                        )}
+                        ) : exampleDeferred ? (
+                          <div className="space-y-2">
+                            <p className="text-sm text-purple-700">지금은 친구들 글이 많이 몰려서 예시 작품을 나중에 만들어요. 보고 싶으면 눌러 주세요.</p>
+                            <button
+                              onClick={() => { const d = exampleDeferred; setExampleDeferred(null); generateExampleForSub(d.essayText, d.totalMax, d.subId) }}
+                              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">
+                              📖 예시 작품 보기
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     </details>
                   )}

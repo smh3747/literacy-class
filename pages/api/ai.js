@@ -20,7 +20,9 @@ import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
 import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema, supplyNewsScoutPrompt } from '../../lib/supplyTopicPrompt.server'
 // step600: 첫 채점 이중 호출(전용 맞춤법 검사 선행·주입) 공용 모듈
 import { ensureStrictColumn, getClassTeacherId, countRecentGradings, runStrictCheck, unionCorrections,
-  GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
+  INLINE_GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
+// step627: 피크 판정 창(요청 시각 기준, 학급별 60초) — 피크면 전용 검사 인라인 생략(pending) + 예시 생성 보류 플래그
+import { recordAndCount, isPeak } from '../../lib/peakWindow'
 // step608: 수정본 변경 사실 계산(표기 정규화·notationOnly) — 순수 함수 모듈
 import { computeChangeFacts } from '../../lib/changeFacts'
 // step623: 소수→다수 문체 통일 교정 표식(styleUnify) — C-1 '문체개입' 스캔 제외용, 순수 함수 모듈
@@ -301,6 +303,7 @@ export default async function handler(req, res) {
     let supplyNewsMaterials = null   // 🆕 step525: supplyTopicBatch 1차 뉴스 스카우트 결과(성공 시 텍스트) — 응답 grounded 플래그용
     let strictCorrections = null     // 🆕 step600: 첫 채점 인라인 전용 검사 결과(병합 완료) — 채점 corrections와 합칠 때 우선
     let strictStatus = null          // 🆕 step600: 'done'|'pending'|'skipped' — 응답 __strictStatus로 클라이언트가 저장(컬럼 없으면 null 유지)
+    let peak = false                 // 🆕 step627: 이 학급이 피크(최근 60초 채점 요청 3건째~)인지 — 응답 __exampleDeferred로 클라이언트가 예시 생성 보류
 
     // 챗봇은 텍스트 응답 (structured 아님) — 별도 처리
     if (type === 'tutorChat') {
@@ -335,9 +338,13 @@ export default async function handler(req, res) {
       try { ruleErrors = findRuleBasedErrors(essay) } catch { /* 채점 계속 */ }
       // 🆕 step600: 이중 호출 — 전용 맞춤법 검사(grammarStrict 조건, 같은 학급 키·3.1 풀)를 먼저 돌려 그 결과를
       //   ruleErrors 자리에 주입(buildRuleErrorBlock 재사용)하고, 채점 뒤 corrections에 합친다(아래 병합 블록).
-      //   - 교사 60초 가드: 이 교사 학급들의 최근 60초 저장 건수 N > GUARD_MAX(5)면 건너뛰고 pending(폴링·스윕이 보완).
+      //   - 교사 60초 가드: 이 교사 학급들의 최근 60초 저장 건수 N > INLINE_GUARD_MAX(3, step627 전엔 5)면 건너뛰고 pending(폴링·스윕이 보완).
       //   - 429·타임아웃(8초) → pending, 일반 실패 → skipped + error_logs. 어떤 경우에도 채점은 현행대로 계속.
       //   - step600 SQL(strict_status 컬럼) 미적용이면 전체 비활성(플래그도 없음) — 배포 순서 안전.
+      //   - step627: 요청 시각 기준 피크 창(lib/peakWindow.js, 학급별 60초 3건째~)이 주력 판정. 피크면 전용 검사를 바로 pending으로
+      //     넘기고(보완 큐가 처리) 예시 생성도 보류 플래그. 저장 기준 N(≤ INLINE_GUARD_MAX=3)은 보조.
+      const peakCount = recordAndCount(keyResult.classId)
+      peak = isPeak(peakCount)
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -348,7 +355,7 @@ export default async function handler(req, res) {
           const t0 = Date.now()
           const teacherId = await getClassTeacherId(admin, keyResult.classId)
           const recent = await countRecentGradings(admin, teacherId)
-          if (recent <= GUARD_MAX) {
+          if (!peak && recent <= INLINE_GUARD_MAX) {
             const r = await runStrictCheck({ apiKey, essay, timeoutMs: INLINE_TIMEOUT_MS })
             if (r.ok) {
               strictCorrections = r.corrections
@@ -361,8 +368,8 @@ export default async function handler(req, res) {
           } else {
             strictStatus = 'pending'
           }
-          // Vercel 로그 1줄(본문 금지): 가드 N·상태·소요·건수
-          console.log(`[strict-inline] N=${recent} status=${strictStatus} ms=${Date.now() - t0} n=${strictCorrections ? strictCorrections.length : '-'}`)
+          // Vercel 로그 1줄(본문 금지): 가드 N·피크 창 건수·상태·소요·건수
+          console.log(`[strict-inline] N=${recent} peak=${peakCount} status=${strictStatus} ms=${Date.now() - t0} n=${strictCorrections ? strictCorrections.length : '-'}`)
         }
       } catch (e) {
         // 컬럼 확인·가드 집계 단계에서 던져지면 strictStatus는 null 그대로 → 플래그 없음(종전과 동일 저장)
@@ -383,6 +390,8 @@ export default async function handler(req, res) {
         const rubricSum = rubrics.reduce((s, r) => s + (Number(r?.score) || 0), 0)
         if (rubricSum !== 100) console.warn(`[rubric-sum] 합계 ${rubricSum} — topic 확인 필요`, { userId })
       }
+      // 🆕 step627: 수정본도 피크 창에 기록(같은 학급 채점 요청). 피크면 예시 생성 보류 플래그만(전용 검사는 원래 없음).
+      peak = isPeak(recordAndCount(keyResult.classId))
       // 🆕 step443: 직전 채점 맥락 이월(3인자) — 반드시 서버가 DB에서 직접 조회.
       //   payload의 prev류 값은 절대 쓰지 않음(학생 브라우저의 채점 재료 조작 경로 차단).
       //   직전 제출 없음/조회 실패 → 3인자 전부 null → 기존 프롬프트와 완전 동일(하위호환).
@@ -647,6 +656,10 @@ export default async function handler(req, res) {
     //   컬럼 미적용·이중 호출 미실행이면 null → 플래그를 싣지 않아 클라이언트도 두 필드를 넣지 않는다.
     if (type === 'grading' && strictStatus && result && typeof result === 'object') {
       result.__strictStatus = strictStatus
+    }
+    // 🆕 step627: 피크면 예시 작품 자동 생성을 보류하라는 플래그(클라이언트가 "📖 예시 작품 보기" 온디맨드로 전환). 비피크면 키 자체 없음.
+    if ((type === 'grading' || type === 'rewriteGrading') && peak && result && typeof result === 'object') {
+      result.__exampleDeferred = true
     }
     return res.status(200).json({ result })
 
