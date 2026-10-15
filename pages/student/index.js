@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { callAI } from '../../lib/aiClient'
 import { decideExampleFlow } from '../../lib/exampleDefer'   // step627: 피크 시 예시 생성 보류 판정
+import { canUseLockGrace } from '../../lib/lockGrace'        // step629: 시간 잠금 유예(종료 뒤 5분 안 1회)
 import TutorChat from '../../components/TutorChat'
 import Header from '../../components/Header'
 import PasswordChangeModal from '../../components/PasswordChangeModal'
@@ -150,11 +151,12 @@ function checkTimeLock(topic) {
   const nowHM = `${hh}:${mm}`
   const start = topic.lock_start_time
   const end = topic.lock_end_time
+  // step629: code('before'|'after')는 유예 판정(lib/lockGrace.js)용 — allowed·reason은 불변(추가만)
   if (nowHM < start) {
-    return { allowed: false, reason: `아직 수업 시간이 아니에요. ${start}부터 글쓰기가 시작돼요.` }
+    return { allowed: false, code: 'before', reason: `아직 수업 시간이 아니에요. ${start}부터 글쓰기가 시작돼요.` }
   }
   if (nowHM > end) {
-    return { allowed: false, reason: `수업 시간이 끝났어요. (${start}~${end})` }
+    return { allowed: false, code: 'after', reason: `수업 시간이 끝났어요. (${start}~${end})` }
   }
   return { allowed: true, reason: '' }
 }
@@ -306,8 +308,11 @@ export default function StudentHome() {
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
   // step601: 첫 글 제출 진행 2단계 표시 — 'spell'(맞춤법 확인) → 6초 뒤 'grade'(글 평가). 시간 기반 근사(서버가 단계 신호를 주지 않음).
-  const [gradingStage, setGradingStage] = useState(null)
+  const [gradingStage, setGradingStage] = useState(null)   // step629: 'spell'(0~6초) → 'grade'(6~20초) → 'queue'(20초~)
   const gradingStageTimerRef = useRef(null)
+  // step629: 시간 잠금 유예 — topicId → 버튼 시점에 잠금을 통과한 시각(ms). 저장 성공 시 삭제, 남아 있으면 채점 실패.
+  //   종료 뒤 재시도도 통과 5분 안이면 1회 허용(세션 메모리만, 서버 저장 불변).
+  const lockPassRef = useRef(new Map())
   // 🆕 step516: 수정 허용 알림(action=rewrite) 직행 — 다시 쓰기 버튼 스크롤·강조
   const [rewriteSpotlight, setRewriteSpotlight] = useState(false)
   const rewriteBtnRef = useRef(null)
@@ -758,9 +763,14 @@ export default function StudentHome() {
       return alert(`글이 너무 길어요! (${maxLen}자 이하로 써주세요)\n\n현재 ${essay.trim().length}자`)
     }
 
-    // 시간 락 검증
+    // 시간 락 검증 — step629: 통과 시각 기억, 종료로 막혔어도 통과 5분 안이면 1회 유예(채점 실패 재시도 구제)
     const lock = checkTimeLock(todayTopic)
-    if (!lock.allowed) {
+    if (lock.allowed) {
+      lockPassRef.current.set(todayTopic.id, Date.now())
+    } else if (canUseLockGrace({ lock, passedAt: lockPassRef.current.get(todayTopic.id) })) {
+      lockPassRef.current.delete(todayTopic.id)   // 1회만
+      console.info('시간 잠금 유예 1회 사용(첫 글)')
+    } else {
       alert('🔒 ' + lock.reason)
       return
     }
@@ -797,9 +807,13 @@ export default function StudentHome() {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // step601: 진행 2단계 표시 — 전용 맞춤법 검사(평균 수 초) 동안 '맞춤법 확인', 6초 뒤 '글 평가'로 전환(시간 근사)
+      // step629: 3단계 — 20초 넘으면 '줄 서 있어요'(피크 대기 안내, 인원 수 표시 없음)
       setGradingStage('spell')
       if (gradingStageTimerRef.current) clearTimeout(gradingStageTimerRef.current)
-      gradingStageTimerRef.current = setTimeout(() => setGradingStage('grade'), 6000)
+      gradingStageTimerRef.current = setTimeout(() => {
+        setGradingStage('grade')
+        gradingStageTimerRef.current = setTimeout(() => setGradingStage('queue'), 14000)
+      }, 6000)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러를 반환 → catch에서 안내
       let result
@@ -882,6 +896,7 @@ export default function StudentHome() {
       }).select().single()
 
       if (error) throw error
+      lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
 
       // step571: 초안 정리 (새 키 + 구 백업 키)
       removeDraft(todayTopic.id, user.id, 'write')
@@ -1218,9 +1233,14 @@ export default function StudentHome() {
       }
     }
 
-    // 시간 락 검증
+    // 시간 락 검증 — step629: 통과 시각 기억 + 종료 뒤 5분 안 1회 유예(첫 글과 동일 규칙)
     const lock = checkTimeLock(todayTopic)
-    if (!lock.allowed) {
+    if (lock.allowed) {
+      lockPassRef.current.set(todayTopic.id, Date.now())
+    } else if (canUseLockGrace({ lock, passedAt: lockPassRef.current.get(todayTopic.id) })) {
+      lockPassRef.current.delete(todayTopic.id)   // 1회만
+      console.info('시간 잠금 유예 1회 사용(수정본)')
+    } else {
       alert('🔒 ' + lock.reason)
       return
     }
@@ -1344,6 +1364,7 @@ export default function StudentHome() {
         extra_rewrite_allowed: false
       }).select().single()
       if (error) throw error
+      lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
 
       // 이전 글들도 final 처리 (step512: 수정 기회 요청 흔적도 청소 — 요청이 이행됐으므로)
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
@@ -1862,7 +1883,9 @@ export default function StudentHome() {
                   <button onClick={submitEssay} disabled={submitting}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting
-                      ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…' : '📝 글을 평가하고 있어요…')
+                      ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
+                        : gradingStage === 'queue' ? '⏳ 친구들 글이 함께 줄 서 있어요. 조금만 기다려 주세요'
+                        : '📝 글을 평가하고 있어요…')
                       : '제출하고 피드백 받기 →'}
                   </button>
                   {submitting && retryMessage && (

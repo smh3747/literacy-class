@@ -2062,6 +2062,10 @@ export default function TopicsPage() {
                     <p className="text-xs text-gray-500 mt-2">
                       💡 이 시간대 밖에서는 학생이 새 글 제출/수정을 할 수 없어요. 작성된 글 보기는 항상 가능.
                     </p>
+                    {/* step629: 피크 지연 안내(문구만) */}
+                    <p className="text-xs text-gray-500 mt-1">
+                      제출이 한꺼번에 몰리면 AI 채점이 1~2분 줄을 설 수 있어요. 종료 시각에 3분 여유를 두면 좋아요.
+                    </p>
                   </>
                 )}
               </div>
