@@ -1720,14 +1720,16 @@ export default function AdminHome() {
       }).eq('id', f.id)
       if (error) throw error
       // 🔔 step348: 알림 센터 — 의견 작성자(교사)에게 답장 알림(비차단)
+      // 🔔 step634: 작성자가 학생이면 학생 홈(/student)으로 — 학생 홈 배너(💬 운영자 답장이 왔어요)가 받는다. 교사 경로 불변.
       try {
         if (f.user_id) {
+          const isStudent = f.author?.role === 'student'
           await supabase.rpc('create_notification', {
             p_recipient: f.user_id,
             p_type: 'admin_reply',
-            p_title: '관리자 답장이 도착했어요',
+            p_title: isStudent ? '운영자 답장이 왔어요' : '관리자 답장이 도착했어요',
             p_body: '내 의견에 답장이 왔어요',
-            p_link: '/teacher'
+            p_link: isStudent ? '/student' : '/teacher'
           })
         }
       } catch (e) { console.warn('알림 생성 실패:', e?.message) }

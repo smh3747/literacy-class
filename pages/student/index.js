@@ -310,6 +310,9 @@ export default function StudentHome() {
   const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, myRank }
   // step571: 초안 복원 제안 배너 (null 또는 { phase: 'write'|'rewrite', text, savedAt }) — 확인 후 주입(opt-in)
   const [draftPrompt, setDraftPrompt] = useState(null)
+  // 💬 step634: 내 의견에 달린 운영자 답장(교사 홈 step205-C 관행) — 본인 행만(fb_select user_id=auth.uid()), 엿보기 비활성
+  const [replyNotifs, setReplyNotifs] = useState([])
+  const [showReplies, setShowReplies] = useState(false)
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
   // step601: 첫 글 제출 진행 2단계 표시 — 'spell'(맞춤법 확인) → 6초 뒤 'grade'(글 평가). 시간 기반 근사(서버가 단계 신호를 주지 않음).
@@ -373,6 +376,37 @@ export default function StudentHome() {
     window.addEventListener('pagehide', flush)
     return () => window.removeEventListener('pagehide', flush)
   }, [essay, rewriteEssay, step, todayTopic, user])
+
+  // 💬 step634: 내 의견 중 답장 달린 것만 조회(교사 홈 step205-C와 같은 쿼리). 엿보기 중엔 세션이 admin이라 비활성.
+  useEffect(() => {
+    if (!user?.id || isImpersonating) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { data } = await supabase.from('feedback')
+          .select('id, content, reply_text, replied_at, reply_read_at')
+          .eq('user_id', user.id)
+          .not('reply_text', 'is', null)
+          .order('replied_at', { ascending: false })
+        if (alive) setReplyNotifs(data || [])
+      } catch (e) { /* 무시 */ }
+    })()
+    return () => { alive = false }
+  }, [user?.id, isImpersonating])
+
+  // 💬 step634: 답장 읽음 처리 — /api/feedback-mark-read(서비스롤, 본인 user_id 행만). 닫기 때 호출.
+  const markRepliesRead = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      await fetch('/api/feedback-mark-read', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.access_token }),
+      })
+      const now = new Date().toISOString()
+      setReplyNotifs(prev => prev.map(r => ({ ...r, reply_read_at: r.reply_read_at || now })))
+    } catch (e) { /* 무시 */ }
+  }
 
   // 🆕 step327: 어떤 조회든 무한 대기 방지 — 10초 타임아웃
   const withTimeout = (p, ms = 10000) => Promise.race([
@@ -1567,6 +1601,43 @@ export default function StudentHome() {
         <main className={`mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 ${
           step === 'rewrite' ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'
         }`}>
+          {/* 💬 step634: 내 의견에 달린 운영자 답장 배너 — 안 읽은 게 있거나 펼친 상태일 때(교사 홈 step205-C 관행). 닫기 = 읽음 처리 + 숨김 */}
+          {!isImpersonating && replyNotifs.length > 0 && (replyNotifs.some(r => !r.reply_read_at) || showReplies) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-blue-900">
+                  💬 운영자 답장이 왔어요
+                  {(() => {
+                    const n = replyNotifs.filter(r => !r.reply_read_at).length
+                    return n > 0 ? <span className="ml-1 text-blue-700">({n}건)</span> : null
+                  })()}
+                </p>
+                {!showReplies ? (
+                  <button onClick={() => setShowReplies(true)}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 flex-shrink-0">
+                    📖 답장 보기
+                  </button>
+                ) : (
+                  <button onClick={() => { setShowReplies(false); markRepliesRead() }}
+                    className="text-xs text-blue-700 underline flex-shrink-0">✕ 닫기</button>
+                )}
+              </div>
+              {showReplies && (
+                <div className="mt-3 space-y-3">
+                  {replyNotifs.map(r => (
+                    <div key={r.id} className="bg-white rounded-lg p-3 border border-blue-100">
+                      <p className="text-xs text-gray-500 mb-1">내가 보낸 의견</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap mb-2">{r.content}</p>
+                      <p className="text-xs text-blue-700 font-medium mb-1">
+                        💬 운영자 답장{r.replied_at && <span className="text-gray-400 font-normal ml-1">· {toKST(r.replied_at)}</span>}
+                      </p>
+                      <p className="text-sm text-blue-900 whitespace-pre-wrap bg-blue-50 rounded p-2">{r.reply_text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* step571: 초안 복원 제안 배너 — 자동 주입 대신 확인 후 주입. '나중에'는 배너만 닫고
               초안은 유지(실수 삭제 방지 — 제출 성공·오래된 초안 자동 정리로 소멸) */}
