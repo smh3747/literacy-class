@@ -21,7 +21,7 @@ const SQL_HINT = '학급 설정 SQL(step619)을 먼저 적용해 주세요'
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { accessToken, topicId, action = 'list', submissionId } = req.body || {}
+  const { accessToken, topicId, action = 'list', submissionId, asStudentId } = req.body || {}
   if (!accessToken) return res.status(401).json({ error: '로그인이 필요해요' })
   if (typeof topicId !== 'string' || !UUID_RE.test(topicId)) return res.status(400).json({ error: '주제 정보가 올바르지 않아요' })
   if (!['list', 'show', 'hide'].includes(action)) return res.status(400).json({ error: '요청이 올바르지 않아요' })
@@ -35,12 +35,20 @@ export default async function handler(req, res) {
   })
   const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(accessToken)
   if (userErr || !userData?.user) return res.status(401).json({ error: '인증 정보가 유효하지 않아요' })
-  const uid = userData.user.id
+  let uid = userData.user.id
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
-  const { data: profile } = await admin.from('profiles').select('role, class_id').eq('id', uid).maybeSingle()
+  let { data: profile } = await admin.from('profiles').select('role, class_id').eq('id', uid).maybeSingle()
   if (!profile || !['student', 'teacher', 'admin'].includes(profile.role)) return res.status(403).json({ error: '사용할 수 없어요' })
+
+  // 👁 step633: 관리자 학생 엿보기 — admin + asStudentId(학생)면 그 학생 시점으로 list(읽기 전용). show/hide는 학생 분기에서 403.
+  //   열람 계측(step625)은 엿보기엔 기록하지 않는다(관리자 조회가 학생 열람 수를 오염시키지 않게).
+  let viewingAsAdmin = false
+  if (profile.role === 'admin' && typeof asStudentId === 'string' && UUID_RE.test(asStudentId)) {
+    const { data: t } = await admin.from('profiles').select('role, class_id').eq('id', asStudentId).maybeSingle()
+    if (t?.role === 'student') { uid = asStudentId; profile = t; viewingAsAdmin = true }
+  }
 
   const { data: topic } = await admin.from('topics').select('id, teacher_id').eq('id', topicId).maybeSingle()
   if (!topic?.teacher_id) return res.status(404).json({ error: '주제를 찾을 수 없어요' })
@@ -156,7 +164,7 @@ export default async function handler(req, res) {
       })
       // 📊 step625: 열람 계측 — 카드가 실제로 뜨는 응답(보여줄 글 1편 이상)마다 (class_id, topic_id, KST 날짜) 1행.
       //   학생 ID·본문·점수 없음. 테이블 미적용·insert 실패는 삼키고 응답 불변(supabase-js는 throw 안 함).
-      if (items.length > 0) {
+      if (items.length > 0 && !viewingAsAdmin) {
         try {
           await admin.from('peer_share_views').insert({ class_id: classRow.id, topic_id: topicId, view_date: todayStr() })
         } catch (e) { /* 계측 실패는 무시 */ }

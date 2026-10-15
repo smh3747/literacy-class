@@ -6,10 +6,15 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { todayStr, daysAgoStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 내 기록 구간화(하위권 숫자 미노출)
+// 👁 step633: 관리자 학생 엿보기(?as=) — 읽기 전용 페이지, 진입·배너·링크·로그아웃만
+import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { displayStudentNameWithNumber } from '../../lib/displayName'
 
 export default function StudentRanking() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)   // 👁 step633
   const [classInfo, setClassInfo] = useState(null)
   const [rankings, setRankings] = useState({ avgScore: [], totalSubs: [], improvement: [] })
   const [period, setPeriod] = useState('week') // week / month / all
@@ -26,11 +31,21 @@ export default function StudentRanking() {
     const { data: { session } } = await supabase.auth.getSession()
     const au = session?.user
     if (!au) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles')
-      .select('*, classes:class_id(id, name, ranking_enabled)').eq('id', au.id).maybeSingle()
+    const PROFILE_SELECT = '*, classes:class_id(id, name, ranking_enabled)'
+    // 👁 step633: ?as=면 getEffectiveProfile(admin만, 대상 학생만). 학생 본인 경로는 종전 그대로.
+    let profile, imp = false
+    if (isImpersonatingNow()) {
+      const r = await getEffectiveProfile(PROFILE_SELECT, { allowedRoles: ['student'] })
+      profile = r.profile; imp = r.isImpersonating
+    } else {
+      const { data } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', au.id).maybeSingle()
+      profile = data
+    }
     if (!profile || profile.role !== 'student') {
+      if (profile?.role === 'admin') { router.push('/admin'); return }   // step633
       await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
 
@@ -149,7 +164,10 @@ export default function StudentRanking() {
     })
   }
 
-  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }   // step633
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -158,12 +176,13 @@ export default function StudentRanking() {
       <>
         <Head><title>랭킹 - 다온클래스</title></Head>
         <div className="min-h-screen bg-gray-50">
+          {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} targetSchool={classInfo?.name} />}
           <Header user={user} onLogout={logout} />
           <main className="max-w-3xl mx-auto px-4 py-12 text-center">
             <div className="text-5xl mb-3">🚫</div>
             <h2 className="text-lg font-bold mb-2">랭킹 기능이 꺼져있어요</h2>
             <p className="text-sm text-gray-600">선생님께서 비활성화하셨어요</p>
-            <Link href="/student" className="mt-6 inline-block text-primary hover:underline">← 메인으로</Link>
+            <Link href={withImpersonation('/student')} className="mt-6 inline-block text-primary hover:underline">← 메인으로</Link>
           </main>
         </div>
       </>
@@ -231,10 +250,11 @@ export default function StudentRanking() {
     <>
       <Head><title>랭킹 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} targetSchool={classInfo?.name} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Link href="/student" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/student')} className="text-gray-600">←</Link>
             <h1 className="text-xl font-bold">🏆 우리반 글쓰기 랭킹</h1>
           </div>
 

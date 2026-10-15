@@ -15,6 +15,10 @@ import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: �
 import { STUDENT_BLOCKED_MESSAGE } from '../../lib/safetyBlock'   // step606: AI 안전 필터 차단 글(점수 null) 안내 문구
 import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
 import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
+// 👁 step633: 관리자 학생 엿보기(?as=)
+import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonatingNow, impersonationTargetId } from '../../lib/impersonation'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { displayStudentNameWithNumber } from '../../lib/displayName'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -107,6 +111,7 @@ export default function StudentHistory() {
   const router = useRouter()
   useGrammarTooltip()
   const [user, setUser] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)   // 👁 step633
   const [grouped, setGrouped] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(null)
@@ -125,7 +130,8 @@ export default function StudentHistory() {
     if (!g.topic_id || g.source_supply_id) return
     if (Object.prototype.hasOwnProperty.call(peerShareByTopic, g.topic_id)) return
     let alive = true
-    fetchPeerShare(supabase, g.topic_id)
+    const asId = impersonationTargetId()   // step633: 엿보기면 그 학생 시점
+    fetchPeerShare(supabase, g.topic_id, asId ? { asStudentId: asId } : {})
       .then(r => {
         if (!alive) return
         const items = (r?.enabled && !r?.locked && Array.isArray(r.items)) ? r.items : []
@@ -137,6 +143,7 @@ export default function StudentHistory() {
 
   const notifyTeacherPeer = async (topicId, item) => {
     if (!item || peerNotified.has(`${topicId}:${item.key}`)) return
+    if (!assertWritable()) return   // step633
     try {
       const args = peerShareNotifyArgs({ teacherId, number: user?.number, topicId, nickname: item.nickname })
       if (args) await supabase.rpc('create_notification', args)
@@ -150,6 +157,7 @@ export default function StudentHistory() {
   // 🆕 디테일 화면 진입 시 — 그 주제의 미확인 담임 코멘트 읽음 처리
   useEffect(() => {
     if (selectedIdx === null || !grouped[selectedIdx]) return
+    if (isImpersonatingNow()) return   // step633: 엿보기는 읽음 처리(쓰기) 안 함
     const g = grouped[selectedIdx]
     const unreadIds = (g.items || [])
       .filter(s => s.teacher_comment && !s.teacher_comment_read_at)
@@ -167,10 +175,20 @@ export default function StudentHistory() {
     const { data: { session } } = await supabase.auth.getSession()
     const au = session?.user
     if (!au) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
+    // 👁 step633: ?as=면 getEffectiveProfile(admin만, 대상 학생만). 학생 본인 경로는 종전 그대로.
+    let profile, imp = false
+    if (isImpersonatingNow()) {
+      const r = await getEffectiveProfile('*', { allowedRoles: ['student'] })
+      profile = r.profile; imp = r.isImpersonating
+    } else {
+      const { data } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
+      profile = data
+    }
     if (!profile || profile.role !== 'student') {
+      if (profile?.role === 'admin') { router.push('/admin'); return }   // step633
       await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
     // step621: 담임 id(알리기 수신자) — 학생은 자기 학급 행을 읽을 수 있음(cls_select). 실패해도 화면 정상(알리기만 비활성)
     if (profile.class_id) {
@@ -211,9 +229,10 @@ export default function StudentHistory() {
     const challengeSids = [...new Set(Object.values(groups).map(g => g.source_supply_id).filter(Boolean))]
     challengeSids.forEach(async (sid) => {
       try {
+        const asId = impersonationTargetId()   // step633: 엿보기면 그 학생 기준 순위
         const res = await fetch('/api/supply-ranking', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+          body: JSON.stringify({ accessToken: session.access_token, supplyId: sid, ...(asId ? { asStudentId: asId } : {}) }),
         })
         const d = await res.json()
         if (res.ok && d?.ok && !d.locked && d.myRank != null) {
@@ -224,7 +243,10 @@ export default function StudentHistory() {
     })
   }
 
-  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }   // step633
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
+  }
 
   // step514: 상세 진입/복귀를 URL에 반영(shallow) — 새로고침 유지, step513 syncTopicUrl 패턴
   const syncGroupUrl = (key) => {
@@ -269,6 +291,7 @@ export default function StudentHistory() {
           .grammar-error { text-decoration: underline wavy #dc2626; text-decoration-thickness: 2px; text-underline-offset: 3px; background: #fee2e2; padding: 0 2px; border-radius: 2px; cursor: pointer; }
         `}</style>
         <div className="min-h-screen bg-gray-50">
+          {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} />}
           <Header user={user} onLogout={logout} />
           <main className="mx-auto px-4 py-6 space-y-4 max-w-3xl">
             <button onClick={closeGroup} className="text-sm text-gray-600">← 목록으로</button>
@@ -370,7 +393,7 @@ export default function StudentHistory() {
               />
               <div className="mt-3 space-y-2">
                 {/* step601: 첫 글 전용 맞춤법 검사 보류(pending) 배지 — 폴링으로 done이면 밑줄 갱신 */}
-                <StrictPendingBadge submissionId={lastSub?.id} status={lastSub?.strict_status} onUpdated={onStrictUpdated(lastSub)} />
+                <StrictPendingBadge submissionId={lastSub?.id} status={lastSub?.strict_status} onUpdated={onStrictUpdated(lastSub)} disabled={isImpersonating} />
                 <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{__html: applyGrammar(lastSub?.essay_text, lastSub?.corrections)}} />
                 {lastSub?.corrections?.length > 0 && (
@@ -503,7 +526,7 @@ export default function StudentHistory() {
                       )}
                     </div>
                     {/* step601: 원문(첫 글)이 보류 상태면 배지 — 수정본 카드에는 없음(수정본 채점은 이중 호출 대상 아님) */}
-                    <StrictPendingBadge submissionId={origSub?.id} status={origSub?.strict_status} onUpdated={onStrictUpdated(origSub)} />
+                    <StrictPendingBadge submissionId={origSub?.id} status={origSub?.strict_status} onUpdated={onStrictUpdated(origSub)} disabled={isImpersonating} />
                     <div className="bg-gray-50 rounded-lg p-3 text-sm leading-relaxed"
                       dangerouslySetInnerHTML={{__html: applyGrammar(origSub?.essay_text, origSub?.corrections)}} />
                     {origSub?.teacher_comment && (
@@ -538,13 +561,13 @@ export default function StudentHistory() {
             {/* 📚 step621: 우리 반 친구들 글 — 반 주제·0편 아님일 때만 */}
             {g.topic_id && !g.source_supply_id && peerShareByTopic[g.topic_id] && (
               <PeerShareCard items={peerShareByTopic[g.topic_id].items} showScore={peerShareByTopic[g.topic_id].showScore}
-                onNotify={(item) => notifyTeacherPeer(g.topic_id, item)}
+                onNotify={isImpersonating ? undefined : (item) => notifyTeacherPeer(g.topic_id, item)}
                 notifiedKeys={new Set([...peerNotified].filter(k => k.startsWith(`${g.topic_id}:`)).map(k => Number(k.split(':')[1])))} />
             )}
 
             {canRewrite ? (
               <Link
-                href={g.topic_id ? `/student?topic=${g.topic_id}` : '/student'}
+                href={withImpersonation(g.topic_id ? `/student?topic=${g.topic_id}` : '/student')}
                 className="block w-full py-3 bg-primary text-white rounded-xl font-semibold text-center"
               >
                 ✏️ {maxAttempt === 1 ? '다시 쓰기 (첫 수정)' : '추가 수정하기 (선생님이 허가함)'}
@@ -606,11 +629,12 @@ export default function StudentHistory() {
     <>
       <Head><title>내 글 기록 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">📚 내 글 기록</h2>
-            <Link href="/student" className="text-sm text-primary hover:underline">오늘 글쓰기 →</Link>
+            <Link href={withImpersonation('/student')} className="text-sm text-primary hover:underline">오늘 글쓰기 →</Link>
           </div>
 
           {chartData && grouped.length >= 2 && (

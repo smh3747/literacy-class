@@ -1946,6 +1946,14 @@ export default function StudentsPage() {
                                   title="학부모 동의가 완료되면 실명으로 표시됩니다"
                                 >🔒 동의 대기</span>
                               )}
+                              {/* 👁 step633: 관리자가 볼 때만(엿보기 중이거나 admin 본인 반) 학생 화면 엿보기 — 담임에게는 안 보임 */}
+                              {(isImpersonating || user?.role === 'admin') && (
+                                <a href={`/student?as=${s.id}`} target="_blank" rel="noreferrer"
+                                  className="text-[10px] text-red-600 hover:underline mt-0.5 inline-block"
+                                  title="이 학생 화면을 읽기 전용으로 엿봐요">
+                                  👁 학생 화면 엿보기
+                                </a>
+                              )}
                               {s.nickname ? (
                                 <div className="text-[10px] text-purple-600 mt-0.5 flex items-center gap-1 flex-wrap">
                                   <span>🎭 {s.nickname}</span>

@@ -4804,7 +4804,10 @@ function AdminSubmissionsInner() {
         // ─── flat: 기존 동작 (시간순 평면 리스트) ───
         <div className="space-y-2">
           {visibleSubmissions.map(s => (
-            <SubmissionRow key={s.id} s={s} classMap={classMap} onClick={() => setSelectedSubmission(s)} />
+            <div key={s.id} className="flex items-center gap-2">
+              <div className="flex-1 min-w-0"><SubmissionRow s={s} classMap={classMap} onClick={() => setSelectedSubmission(s)} /></div>
+              <StudentPeekLink userId={s.user_id} />
+            </div>
           ))}
         </div>
       ) : (
@@ -4849,9 +4852,14 @@ function AdminSubmissionsInner() {
                 {isExpanded && (
                   <div className="bg-white p-2 space-y-1.5 border-t border-gray-200">
                     {g.items.map(s => (
-                      <SubmissionRow key={s.id} s={s} classMap={classMap}
-                        onClick={() => setSelectedSubmission(s)}
-                        hideField={groupBy === 'topic' ? 'topic' : groupBy === 'student' ? 'student' : null} />
+                      <div key={s.id} className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <SubmissionRow s={s} classMap={classMap}
+                            onClick={() => setSelectedSubmission(s)}
+                            hideField={groupBy === 'topic' ? 'topic' : groupBy === 'student' ? 'student' : null} />
+                        </div>
+                        <StudentPeekLink userId={s.user_id} />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -4861,6 +4869,15 @@ function AdminSubmissionsInner() {
         </div>
       )}
     </div>
+  )
+}
+
+// 👁 step633: 학생 화면 엿보기 링크(새 탭, 읽기 전용) — 학생 글 탭 각 행 옆. SubmissionRow가 <button>이라 안에 못 넣고 형제로 둔다.
+function StudentPeekLink({ userId }) {
+  if (!userId) return null
+  return (
+    <a href={`/student?as=${userId}`} target="_blank" rel="noreferrer" title="이 학생 화면을 읽기 전용으로 엿봐요"
+      className="text-xs text-red-600 hover:underline shrink-0 px-1">👁</a>
   )
 }
 

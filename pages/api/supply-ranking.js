@@ -85,6 +85,14 @@ export default async function handler(req, res) {
       .select('role, class_id').eq('id', req.body.asTeacherId).maybeSingle()
     if (t?.role === 'teacher') viewerClassId = t.class_id || null
   }
+  // 👁 step633: 관리자 학생 엿보기 — admin + asStudentId(학생)면 locked·myRank 판정만 그 학생 기준(화면 일치).
+  //   실명 주석(viewerClassId)은 학생 화면엔 없으니 그대로 null. 라이브 집계(쓰기)는 아래 admin 차단 그대로.
+  let viewUid = uid
+  let asStudent = false
+  if (profile.role === 'admin' && typeof req.body?.asStudentId === 'string') {
+    const { data: t } = await admin.from('profiles').select('role').eq('id', req.body.asStudentId).maybeSingle()
+    if (t?.role === 'student') { viewUid = req.body.asStudentId; asStudent = true }
+  }
 
   // 이 공급 주제의 전국 복사본 제출 (step502: 공용 모듈)
   let loaded
@@ -99,7 +107,7 @@ export default async function handler(req, res) {
   }
 
   // 학생은 본인 제출 후에만 열람 — 미제출이면 참여 수만
-  if (profile.role === 'student' && !allSubs.some(s => s.user_id === uid)) {
+  if ((profile.role === 'student' || asStudent) && !allSubs.some(s => s.user_id === viewUid)) {
     return res.status(200).json({ ok: true, locked: true, participants })
   }
 
@@ -108,8 +116,8 @@ export default async function handler(req, res) {
   if (closed) {
     const finalRanks = await getFinalRanks(admin, supplyId)
     if (finalRanks.length > 0) {
-      const frozenRank = profile.role === 'student'
-        ? (finalRanks.find(r => r.student_id === uid)?.rank ?? null)
+      const frozenRank = (profile.role === 'student' || asStudent)
+        ? (finalRanks.find(r => r.student_id === viewUid)?.rank ?? null)
         : null
       const frozenWinners = await buildFrozenWinners(admin, supplyId, finalRanks)
       // step539: rankedPool = 동의 완료 랭킹 풀 크기(퍼센트 표시 분모). participants는 미동의 포함이라 부정확.

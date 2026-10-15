@@ -26,6 +26,10 @@ import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: �
 import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
 import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
 import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
+// 👁 step633: 관리자 학생 엿보기(?as=) — 교사 페이지 관행(getEffectiveProfile·배너·쓰기 전면 차단)
+import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonatingNow, impersonationTargetId } from '../../lib/impersonation'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { displayStudentNameWithNumber } from '../../lib/displayName'
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
@@ -268,6 +272,7 @@ export default function StudentHome() {
   const router = useRouter()
   useGrammarTooltip()
   const [user, setUser] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)   // 👁 step633: 관리자 학생 엿보기(읽기 전용)
   const [classInfo, setClassInfo] = useState(null)
   const [todayTopic, setTodayTopic] = useState(null)
   const [todayTopicList, setTodayTopicList] = useState([]) // 오늘 주제가 여러 개일 때
@@ -346,6 +351,7 @@ export default function StudentHome() {
   //   write/rewrite 단계에서만(기존 키 오염 버그: feedback/done 고아 키 수리)
   useEffect(() => {
     if (!todayTopic || !user) return
+    if (isImpersonatingNow()) return   // step633: 엿보기는 관리자 브라우저에 초안을 남기지 않음
     if (step !== 'write' && step !== 'rewrite') return
     if (backupTimerRef.current) clearTimeout(backupTimerRef.current)
     backupTimerRef.current = setTimeout(() => {
@@ -359,6 +365,7 @@ export default function StudentHome() {
   useEffect(() => {
     const flush = () => {
       if (!todayTopic || !user) return
+      if (isImpersonatingNow()) return   // step633
       if (step !== 'write' && step !== 'rewrite') return
       const text = step === 'write' ? essay : rewriteEssay
       if (text && text.length > 0) saveDraft(todayTopic.id, user.id, step, text)
@@ -385,11 +392,22 @@ export default function StudentHome() {
       if (!uid) { router.push('/student/login'); return }
 
       const tProfile = performance.now()
-      const { data: profile } = await withTimeout(supabase.from('profiles').select('*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)').eq('id', uid).maybeSingle())
+      const PROFILE_SELECT = '*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)'
+      // 👁 step633: ?as=가 있으면 getEffectiveProfile(admin만 통과, 대상은 학생만). 없으면 학생 본인 경로 종전 그대로.
+      let profile, imp = false
+      if (isImpersonatingNow()) {
+        const r = await withTimeout(getEffectiveProfile(PROFILE_SELECT, { allowedRoles: ['student'] }))
+        profile = r.profile; imp = r.isImpersonating
+      } else {
+        const { data } = await withTimeout(supabase.from('profiles').select(PROFILE_SELECT).eq('id', uid).maybeSingle())
+        profile = data
+      }
       console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
       if (!profile || profile.role !== 'student') {
+        if (profile?.role === 'admin') { router.push('/admin'); return }   // step633: 엿보기 대상이 잘못돼도 관리자 세션은 끊지 않음
         await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
       }
+      setIsImpersonating(imp)
       setUser(profile)
       setClassInfo(profile.classes)
       // 키 서버격리(step153~): 학생은 API 키를 다루지 않는다. AI 호출 시 서버가 학급 키를 조회한다.
@@ -413,7 +431,8 @@ export default function StudentHome() {
   const loadPeerShareFor = async (topic) => {
     if (!topic?.id || topic.source_supply_id) { setPeerShare(null); return }
     try {
-      const r = await fetchPeerShare(supabase, topic.id)
+      const asId = impersonationTargetId()   // step633: 엿보기면 그 학생 시점(서버가 admin일 때만 인정)
+      const r = await fetchPeerShare(supabase, topic.id, asId ? { asStudentId: asId } : {})
       const items = (r?.enabled && !r?.locked && Array.isArray(r.items)) ? r.items : []
       setPeerShare(items.length > 0 ? { topicId: topic.id, items, showScore: !!r.showScore } : null)
     } catch (e) {
@@ -425,6 +444,7 @@ export default function StudentHome() {
   // "🙋 선생님께 알리기" — 담임 종 알림(type 'message' 재사용, 번호·닉네임만, 본문 미포함). 같은 글은 세션 내 1회.
   const notifyTeacherPeer = async (item) => {
     if (!item || peerNotified.has(item.key)) return
+    if (!assertWritable()) return   // step633
     try {
       const args = peerShareNotifyArgs({ teacherId: user?.classes?.teacher_id, number: user?.number, topicId: todayTopic?.id, nickname: item.nickname })
       if (args) await supabase.rpc('create_notification', args)
@@ -534,7 +554,7 @@ export default function StudentHome() {
       //   step507: 토글 무관 상시 호출 — OFF 학급이면 서버가 전일 미제출 복사본 청소만 하고 disabled 반환.
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (session?.access_token) {
+        if (session?.access_token && !isImpersonatingNow()) {   // step633: 엿보기는 자동 등록(서버 쓰기) 호출 안 함
           await withTimeout(fetch('/api/supply-adopt', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accessToken: session.access_token }),
@@ -683,7 +703,7 @@ export default function StudentHome() {
       // step571: 수정본 초안 복원 갭 수리 — 기존엔 제출 이력이 있으면 rewrite 백업을 읽는 경로 자체가
       //   없어서(수정본 작성 중 이탈 = 이번 사고 시나리오) 초안이 있어도 유실됐다. 다시 쓸 수 있는
       //   상태(첫 글만 있음 또는 추가 수정 허용)일 때만 배너 제안.
-      try {
+      if (!isImpersonatingNow()) try {   // step633: 엿보기는 초안 읽기·이관·배너 전부 생략(관리자 브라우저 저장소 불변)
         cleanupLegacyOrphans(topic.id, profile.id)
         const sorted2 = [...existing].sort((a, b) => (b.attempt || 1) - (a.attempt || 1))
         const last2 = sorted2[0]
@@ -701,7 +721,7 @@ export default function StudentHome() {
     } else {
       // step571: 새 주제 → 초안 확인. 자동 주입 대신 배너로 물어보고 주입(opt-in).
       //   구 essay_backup_* 키는 readDraft 폴백으로 읽고 새 키로 이관.
-      try {
+      if (!isImpersonatingNow()) try {   // step633
         cleanupLegacyOrphans(topic.id, profile.id)
         const d = readDraft(topic.id, profile.id, 'write')
         if (d) {
@@ -734,7 +754,10 @@ export default function StudentHome() {
    }
   }
 
-  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }   // step633: 엿보기 중 로그아웃은 관리자 페이지로(세션 유지)
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
+  }
 
   const handlePaste = (e, type) => {
     // step536: 기본은 붙여넣기 차단. 학급 설정 allow_paste ON일 때만 허용(테스트·특별 수업 목적).
@@ -754,6 +777,7 @@ export default function StudentHome() {
   // 첫 글 제출
   const submitEssay = async () => {
     if (submitting || submittingRef.current) return
+    if (!assertWritable()) return   // step633: 엿보기 — AI 호출 전에 차단
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
     if (essay.trim().length < minLen) {
@@ -959,6 +983,7 @@ export default function StudentHome() {
   // 예시 작품 생성 (subId 명시 — 첫 글·수정본 공용, step368)
   const generateExampleForSub = async (studentEssay, totalMax, subId) => {
     if (!subId) return
+    if (isImpersonatingNow()) return   // step633: 엿보기는 AI 호출·example_text 저장 없음
 
     setExampleLoading(true)
     try {
@@ -984,9 +1009,10 @@ export default function StudentHome() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) return
+      const asId = impersonationTargetId()   // step633: 엿보기면 그 학생 기준 순위(서버가 admin일 때만 인정)
       const res = await fetch('/api/supply-ranking', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid, ...(asId ? { asStudentId: asId } : {}) }),
       })
       const d = await res.json()
       if (res.ok && d?.ok && !d.locked && d.myRank != null) {
@@ -1029,9 +1055,10 @@ export default function StudentHome() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('로그인이 필요해요')
+      const asId = impersonationTargetId()   // step633
       const res = await fetch('/api/supply-ranking', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid }),
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid, ...(asId ? { asStudentId: asId } : {}) }),
       })
       const d = await res.json()
       if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
@@ -1051,6 +1078,7 @@ export default function StudentHome() {
 
   // 🆕 step487: 원터치 신고 — 즉시 비공개, 복구는 관리자가
   const reportShowcase = async (w) => {
+    if (!assertWritable()) return   // step633
     if (!confirm('이 글을 신고할까요?')) return
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1075,6 +1103,7 @@ export default function StudentHome() {
   //   추후 알림 센터 범용 알림으로 통합 예정.
   const requestRewriteChance = async () => {
     if (!currentSub?.id) return
+    if (!assertWritable()) return   // step633
     if (!confirm('선생님께 수정 기회를 요청할까요?')) return
     try {
       const requestedAt = new Date().toISOString()
@@ -1146,6 +1175,7 @@ export default function StudentHome() {
   // 피드백 신고
   const reportFeedback = async () => {
     if (!currentSub?.id) return alert('아직 제출된 글이 없어요')
+    if (!assertWritable()) return   // step633
     if (currentSub.reported) return alert('이미 신고했어요. 선생님께서 확인하실 거예요.')
 
     const reason = prompt(
@@ -1195,6 +1225,7 @@ export default function StudentHome() {
   // 수정본 제출
   const submitRewrite = async () => {
     if (rewriting || submittingRef.current) return
+    if (!assertWritable()) return   // step633: 엿보기 — AI 호출 전에 차단
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
     if (rewriteEssay.trim().length < minLen) {
@@ -1531,6 +1562,7 @@ export default function StudentHome() {
         }
       `}</style>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} targetSchool={classInfo?.name} />}
         <Header user={user} onLogout={logout} />
         <main className={`mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 ${
           step === 'rewrite' ? 'max-w-3xl lg:max-w-6xl' : 'max-w-3xl'
@@ -1585,27 +1617,31 @@ export default function StudentHome() {
                 {user?.nickname && (
                   <p className="text-xs mt-1 text-purple-700 flex items-center gap-1.5 flex-wrap">
                     <span>🎭 친구들에겐 <strong>{user.nickname}</strong>(이)로 보여요</span>
-                    <button onClick={() => setShowNicknameModal(true)}
-                      className="text-purple-600 underline hover:text-purple-900">
-                      변경
-                    </button>
+                    {!isImpersonating && (
+                      <button onClick={() => setShowNicknameModal(true)}
+                        className="text-purple-600 underline hover:text-purple-900">
+                        변경
+                      </button>
+                    )}
                   </p>
                 )}
               </div>
               <div className="flex gap-1.5 flex-wrap">
-                <Link href="/student/ranking"
+                <Link href={withImpersonation('/student/ranking')}
                   className="text-xs text-amber-700 hover:text-amber-900 px-3 py-1 rounded-full border border-amber-200 bg-amber-50">
                   🏆 랭킹
                 </Link>
-                <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
-                  🔐 비밀번호
-                </button>
+                {!isImpersonating && (   /* step633: 비밀번호 변경은 auth.updateUser(관리자 계정) — 엿보기에서 숨김 */
+                  <button onClick={() => setShowPwModal(true)} className="text-xs text-gray-600 hover:text-primary px-3 py-1 rounded-full border border-gray-200">
+                    🔐 비밀번호
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
           {/* 🧩 step360: 맞춤법 퀴즈 진입 카드 (링크만, 로직 없음) */}
-          <Link href="/student/quiz" className="block bg-white rounded-2xl p-4 shadow-sm hover:shadow transition">
+          <Link href={withImpersonation('/student/quiz')} className="block bg-white rounded-2xl p-4 shadow-sm hover:shadow transition">
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-bold text-gray-800">🧩 맞춤법 퀴즈</div>
@@ -1623,7 +1659,7 @@ export default function StudentHome() {
               </h3>
               <div className="space-y-2 mt-2">
                 {unreadComments.map(c => (
-                  <Link key={c.id} href="/student/history"
+                  <Link key={c.id} href={withImpersonation('/student/history')}
                     className="block bg-white border border-yellow-200 hover:border-yellow-400 rounded-lg p-3 transition">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-xs text-gray-500">
@@ -1654,7 +1690,7 @@ export default function StudentHome() {
                   <div className="text-5xl mb-3">📝</div>
                   <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
                   <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
-                  <Link href="/student/history" className="mt-6 inline-block text-primary text-sm hover:underline">
+                  <Link href={withImpersonation('/student/history')} className="mt-6 inline-block text-primary text-sm hover:underline">
                     내 글 기록 보기 →
                   </Link>
                 </div>
@@ -1890,7 +1926,7 @@ export default function StudentHome() {
                     </span>
                     {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                   </div>
-                  <button onClick={submitEssay} disabled={submitting}
+                  <button onClick={submitEssay} disabled={submitting || isImpersonating}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting
                       ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
@@ -2004,6 +2040,7 @@ export default function StudentHome() {
                             submissionId={currentSub.id}
                             status={currentSub.strict_status}
                             className="mb-2"
+                            disabled={isImpersonating}
                             onUpdated={(corrs, status) => {
                               setCurrentSub(prev => prev ? { ...prev, strict_status: status, ...(corrs ? { corrections: corrs } : {}) } : prev)
                               if (corrs) setFeedbackResult(prev => prev ? { ...prev, corrections: corrs } : prev)
@@ -2114,7 +2151,7 @@ export default function StudentHome() {
                             ? 'bg-amber-100 text-amber-800 cursor-default'
                             : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
                         }`}
-                        disabled={currentSub?.reported}
+                        disabled={currentSub?.reported || isImpersonating}   /* step633: 엿보기 차단 */
                         title="피드백이 이상하다고 느껴지면 선생님께 알릴 수 있어요"
                       >
                         {currentSub?.reported ? '🙏 신고 완료' : '🚨 이 피드백 이상해요'}
@@ -2147,6 +2184,7 @@ export default function StudentHome() {
                             <p className="text-sm text-purple-700">지금은 친구들 글이 많이 몰려서 예시 작품을 나중에 만들어요. 보고 싶으면 눌러 주세요.</p>
                             <button
                               onClick={() => { const d = exampleDeferred; setExampleDeferred(null); generateExampleForSub(d.essayText, d.totalMax, d.subId) }}
+                              disabled={isImpersonating}
                               className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">
                               📖 예시 작품 보기
                             </button>
@@ -2174,7 +2212,7 @@ export default function StudentHome() {
                   {/* 📚 step621: 우리 반 친구들 글 — 반 주제·제출 후·0편 아님일 때만(제출 전엔 이 블록 자체가 없음) */}
                   {!todayTopic?.source_supply_id && peerShare?.topicId === todayTopic?.id && (
                     <PeerShareCard items={peerShare.items} showScore={peerShare.showScore}
-                      onNotify={notifyTeacherPeer} notifiedKeys={peerNotified} />
+                      onNotify={isImpersonating ? undefined : notifyTeacherPeer} notifiedKeys={peerNotified} />
                   )}
 
                   {/* 다시 쓰기 버튼 (feedback 단계에서만) — step516: 알림 직행 강조 대상. step606: 차단 글은 숨김(같은 글 재제출 유도 방지) */}
@@ -2194,8 +2232,8 @@ export default function StudentHome() {
                         ✋ 선생님께 요청했어요. 확인해주시면 다시 쓸 수 있어요!
                       </p>
                     ) : (
-                      <button onClick={requestRewriteChance}
-                        className="w-full py-3 bg-white border-2 border-amber-300 text-amber-800 rounded-xl font-semibold hover:bg-amber-50">
+                      <button onClick={requestRewriteChance} disabled={isImpersonating}
+                        className="w-full py-3 bg-white border-2 border-amber-300 text-amber-800 rounded-xl font-semibold hover:bg-amber-50 disabled:opacity-50">
                         ✋ 선생님께 수정 기회 요청하기
                       </button>
                     )
@@ -2306,7 +2344,7 @@ export default function StudentHome() {
                       <div className="flex gap-2 mt-3">
                         <button onClick={() => setStep('feedback')}
                           className="flex-1 py-3 border border-gray-200 rounded-xl text-sm">취소</button>
-                        <button onClick={submitRewrite} disabled={rewriting}
+                        <button onClick={submitRewrite} disabled={rewriting || isImpersonating}
                           className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                           {rewriting ? '🤖 AI 검토 중...' : '수정본 제출 →'}
                         </button>
@@ -2335,7 +2373,7 @@ export default function StudentHome() {
 
           {/* 내 글 기록 링크 */}
           <div className="text-center pt-4">
-            <Link href="/student/history" className="text-sm text-gray-600 hover:text-primary">
+            <Link href={withImpersonation('/student/history')} className="text-sm text-gray-600 hover:text-primary">
               📚 내 글 기록 보기 →
             </Link>
           </div>
@@ -2390,8 +2428,8 @@ export default function StudentHome() {
                               <details className="mt-2">
                                 <summary className="text-xs text-sky-700 font-semibold cursor-pointer select-none">📖 글 읽기</summary>
                                 <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{w.essay}</p>
-                                <button onClick={() => reportShowcase(w)}
-                                  className="mt-2 text-xs text-red-500 underline underline-offset-2">🚨 이 글 신고하기</button>
+                                <button onClick={() => reportShowcase(w)} disabled={isImpersonating}
+                                  className="mt-2 text-xs text-red-500 underline underline-offset-2 disabled:opacity-50">🚨 이 글 신고하기</button>
                               </details>
                             ) : (
                               <p className="mt-2 text-xs text-gray-400">
@@ -2440,10 +2478,10 @@ export default function StudentHome() {
             </div>
           </div>
         )}
-        <StudentTutorial />
+        {!isImpersonating && <StudentTutorial />}   {/* step633: 튜토리얼은 localStorage 기록 — 엿보기 미렌더 */}
 
-        {/* 🆕 AI 글쓰기 도우미 (교사가 켰을 때 + 글쓰기 단계에서만) */}
-        {classInfo?.tutor_chat_enabled && (step === 'write' || step === 'rewrite') && todayTopic && (
+        {/* 🆕 AI 글쓰기 도우미 (교사가 켰을 때 + 글쓰기 단계에서만) — step633: 엿보기 미렌더(AI 호출·tutor_chat_usage 쓰기) */}
+        {!isImpersonating && classInfo?.tutor_chat_enabled && (step === 'write' || step === 'rewrite') && todayTopic && (
           <TutorChat
             topic={todayTopic}
             currentText={step === 'rewrite' ? rewriteEssay : essay}

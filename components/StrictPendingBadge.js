@@ -12,12 +12,13 @@ const FIRST_DELAY_MS = 10_000
 const INTERVAL_MS = 30_000
 const MAX_TRIES = 21   // 10초 + 30초 × 20 ≈ 10분
 
-export default function StrictPendingBadge({ submissionId, status, onUpdated, className = '' }) {
+// step633: disabled=true면 폴링하지 않는다(배지는 표시) — 관리자 학생 엿보기에서 /api/strict-backfill(서버 쓰기)을 트리거하지 않게
+export default function StrictPendingBadge({ submissionId, status, onUpdated, className = '', disabled = false }) {
   const onUpdatedRef = useRef(onUpdated)
   onUpdatedRef.current = onUpdated
 
   useEffect(() => {
-    if (status !== 'pending' || !submissionId) return
+    if (status !== 'pending' || !submissionId || disabled) return
     let stopped = false
     let tries = 0
     let timer = null
@@ -46,7 +47,7 @@ export default function StrictPendingBadge({ submissionId, status, onUpdated, cl
 
     timer = setTimeout(poll, FIRST_DELAY_MS)
     return () => { stopped = true; if (timer) clearTimeout(timer) }
-  }, [submissionId, status])
+  }, [submissionId, status, disabled])
 
   if (status !== 'pending') return null
   return (

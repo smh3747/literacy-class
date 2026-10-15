@@ -9,6 +9,10 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import { pickStr } from '../../lib/pickStr'  // step598: 로컬 복제본 → 공용 헬퍼(step427, 동일 로직)
 import { logError } from '../../lib/errorLog'  // step603: 재료 구성 실패 기록
+// 👁 step633: 관리자 학생 엿보기(?as=) — 퀴즈는 DB 쓰기 0(답 고르기는 state 전용), 진입·링크·로그아웃만 엿보기 대응
+import { getEffectiveProfile, withImpersonation, isImpersonatingNow } from '../../lib/impersonation'
+import ImpersonationBanner from '../../components/ImpersonationBanner'
+import { displayStudentNameWithNumber } from '../../lib/displayName'
 import { mergeCorrectionsDetailed, findRuleBasedErrors, findOriginalRange } from '../../lib/koreanRules'
 
 const QUIZ_SIZE = 5
@@ -50,6 +54,7 @@ const shuffle = (arr) => {
 export default function StudentQuiz() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [isImpersonating, setIsImpersonating] = useState(false)   // 👁 step633
   const [loading, setLoading] = useState(true)
   const [pool, setPool] = useState([])          // 고유 (original→correction) 쌍 전체
   const [questions, setQuestions] = useState([]) // 이번 판 5문제 (swap: 버튼 좌우 무작위)
@@ -66,10 +71,20 @@ export default function StudentQuiz() {
     const { data: { session } } = await supabase.auth.getSession()
     const au = session?.user
     if (!au) { router.push('/student/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
+    // 👁 step633: ?as=면 getEffectiveProfile(admin만, 대상 학생만). 학생 본인 경로는 종전 그대로.
+    let profile, imp = false
+    if (isImpersonatingNow()) {
+      const r = await getEffectiveProfile('*', { allowedRoles: ['student'] })
+      profile = r.profile; imp = r.isImpersonating
+    } else {
+      const { data } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
+      profile = data
+    }
     if (!profile || profile.role !== 'student') {
+      if (profile?.role === 'admin') { router.push('/admin'); return }   // step633
       await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
     }
+    setIsImpersonating(imp)
     setUser(profile)
 
     // step603: 퀴즈 재료 구성 전체를 try/catch로 감싼다 — 어떤 예외든 빈 화면·무한 로딩 대신 안내 문구 + error_logs 기록.
@@ -195,7 +210,10 @@ export default function StudentQuiz() {
     setPicked(null)
   }
 
-  const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
+  const logout = async () => {
+    if (isImpersonating) { router.push('/admin'); return }   // step633
+    await supabase.auth.signOut({ scope: 'local' }); router.push('/')
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
 
@@ -209,10 +227,11 @@ export default function StudentQuiz() {
     <>
       <Head><title>맞춤법 퀴즈 - 다온클래스</title></Head>
       <div className="min-h-screen bg-gray-50">
+        {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} />}
         <Header user={user} onLogout={logout} />
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           <div className="flex items-center gap-2">
-            <Link href="/student" className="text-gray-600">←</Link>
+            <Link href={withImpersonation('/student')} className="text-gray-600">←</Link>
             <h1 className="text-lg font-bold text-gray-900">🧩 맞춤법 퀴즈</h1>
           </div>
 
@@ -227,7 +246,7 @@ export default function StudentQuiz() {
                   className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-xl hover:opacity-90 transition">
                   🔄 다시 시도
                 </button>
-                <Link href="/student" className="text-sm text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition">
+                <Link href={withImpersonation('/student')} className="text-sm text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition">
                   🏠 홈으로
                 </Link>
               </div>
@@ -238,7 +257,7 @@ export default function StudentQuiz() {
               <div className="text-4xl">🌱</div>
               <p className="font-bold text-gray-800">아직 퀴즈를 만들 기록이 부족해요.</p>
               <p className="text-sm text-gray-600">글을 더 쓰면 내가 틀렸던 맞춤법으로 퀴즈가 만들어져요.</p>
-              <Link href="/student" className="inline-block mt-2 bg-primary text-white text-sm font-medium px-4 py-2 rounded-xl hover:opacity-90 transition">
+              <Link href={withImpersonation('/student')} className="inline-block mt-2 bg-primary text-white text-sm font-medium px-4 py-2 rounded-xl hover:opacity-90 transition">
                 ✏️ 글 쓰러 가기
               </Link>
             </div>
@@ -259,7 +278,7 @@ export default function StudentQuiz() {
                   className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-xl hover:opacity-90 transition">
                   🔄 다시 풀기
                 </button>
-                <Link href="/student" className="text-sm text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition">
+                <Link href={withImpersonation('/student')} className="text-sm text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition">
                   🏠 홈으로
                 </Link>
               </div>
