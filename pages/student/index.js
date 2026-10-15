@@ -1175,6 +1175,16 @@ export default function StudentHome() {
           })
         }
       } catch (e) { console.warn('알림 생성 실패:', e?.message) }
+      // 🔔 step631: 관리자 전원에게도 종 알림(서버가 admin 목록 조회·일괄 insert). 비차단, 실패 무시 — 학생 흐름 불변.
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          fetch('/api/feedback-report-notify', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: session.access_token, submissionId: currentSub.id }),
+          }).catch(e => console.warn('관리자 신고 알림 실패(무시):', e?.message))
+        }
+      } catch (e) { console.warn('관리자 신고 알림 실패(무시):', e?.message) }
       setCurrentSub({ ...currentSub, reported: true, report_reason: reason })
       alert('🙏 신고가 접수됐어요!\n선생님께서 확인하시고 도와주실 거예요.')
     } catch(e) {
