@@ -15,6 +15,8 @@ import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { fetchPeerShare, setPeerShare as setPeerShareRemote } from '../../lib/peerShareClient'   // step620: 우리 반 글 모음(서버 API)
+import { fetchShowcaseStatus } from '../../lib/showcaseStatusClient'   // step632: 전국 소개 상태(서버 API, 챌린지 주제만)
+import { showcaseBadge } from '../../lib/showcaseStatus'               // step632: 배지 재료(순수)
 import { STAMPS, stampLabel } from '../../lib/stamps'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
@@ -142,6 +144,8 @@ export default function TeacherSubmissions() {
   // 📚 step620: 우리 반 글 모음 상태(서버 응답 그대로) — null이면 조회 실패·미적용(카드·버튼은 classInfo 기준으로만 표시)
   const [peerShare, setPeerShare] = useState(null)
   const [peerBusy, setPeerBusy] = useState(false)
+  // 🌏 step632: 전국 소개 상태(서버 응답 그대로) — null이면 챌린지 주제 아님·조회 실패(배지·요약 미표시)
+  const [showcaseStatus, setShowcaseStatus] = useState(null)
   const [scoreDraft, setScoreDraft] = useState('')
   const scorePopoverRef = useRef(null)  // 🆕 step437: 팝오버 바깥 클릭 판정용
 
@@ -225,6 +229,7 @@ export default function TeacherSubmissions() {
     })
     setTopicStudents(groups)
     loadPeerShare(topic.id)   // step620: 글 모음 상태(비차단)
+    loadShowcaseStatus(topic)   // step632: 전국 소개 상태(비차단, 챌린지 주제만)
 
     // 학생 자동 선택? (제출한 학생만 자동 진입)
     if (autoStudentId) {
@@ -281,6 +286,7 @@ export default function TeacherSubmissions() {
     })
     setTopicStudents(groups)
     loadPeerShare(topic.id)   // step620: 글 모음 상태(비차단)
+    loadShowcaseStatus(topic)   // step632: 전국 소개 상태(비차단, 챌린지 주제만)
 
     // 🆕 특정 학생 화면을 유지해야 하면(재평가 등) 그 학생 상세로 복귀
     if (keepStudentId) {
@@ -310,6 +316,18 @@ export default function TeacherSubmissions() {
     } catch (e) {
       console.warn('글 모음 상태 조회 실패(무시):', e?.message)
       setPeerShare(null)
+    }
+  }
+
+  // 🌏 step632: 전국 소개 상태 — 챌린지 복사본 주제(source_supply_id)만 조회. 실패·비챌린지는 null(표시 없음).
+  const loadShowcaseStatus = async (topic) => {
+    if (!topic?.source_supply_id) { setShowcaseStatus(null); return }
+    try {
+      const r = await fetchShowcaseStatus(supabase, topic.id)
+      setShowcaseStatus(r.challenge ? { items: r.items || {}, counts: r.counts || { showing: 0, pending: 0, held: 0 } } : null)
+    } catch (e) {
+      console.warn('전국 소개 상태 조회 실패(무시):', e?.message)
+      setShowcaseStatus(null)
     }
   }
 
@@ -1110,6 +1128,15 @@ export default function TeacherSubmissions() {
                 return null
               })()}
 
+              {/* 🌏 step632: 주제 요약 한 줄 — 전국 소개 N편(챌린지 주제만) · 반 친구들에게 N편(글 모음 ON만). 둘 다 없으면 미표시 */}
+              {(() => {
+                const parts = []
+                if (showcaseStatus) parts.push(`🌏 전국 소개 ${showcaseStatus.counts.showing}편`)
+                if (classInfo?.peer_share_enabled && peerShare) parts.push(`📚 반 친구들에게 ${peerShare.items.length}편`)
+                if (parts.length === 0) return null
+                return <p className="text-xs text-gray-600 px-1">{parts.join(' · ')}</p>
+              })()}
+
               {/* 🔄 일괄 재평가 진행 상황 */}
               {bulkRegrading && (
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
@@ -1543,6 +1570,17 @@ export default function TeacherSubmissions() {
                       )}
                     </div>
 
+                    {/* 🌏 step632: 전국 소개 배지(읽기 전용) — 글 모음 행이 있으면 그 줄 끝에, 없으면 챌린지 주제일 때만 별도 줄 */}
+                    {(() => {
+                      const b = showcaseBadge(showcaseStatus?.items?.[s.id])
+                      if (!b) return null
+                      const cls = b.tone === 'sky' ? 'bg-sky-100 text-sky-700' : b.tone === 'red' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600'
+                      const badge = <span title={b.title} className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{b.text}</span>
+                      const peerRowShown = !!classInfo?.peer_share_enabled && s.total_score != null && !isConsentLocked(selectedStudent.profile)
+                      if (peerRowShown) return null   // 아래 글 모음 행 안에서 렌더
+                      return <div className="flex items-center gap-2 flex-wrap mt-2">{badge}</div>
+                    })()}
+
                     {/* 📚 step620: 글 모음 추가/빼기 — 학급 ON일 때만. 동의 전 글은 안내, 점수 없는 글은 버튼 없음. 엿보기는 배지만(도장 행 관행) */}
                     {!!classInfo?.peer_share_enabled && s.total_score != null && (() => {
                       const shown = (peerShare?.items || []).some(x => x.submissionId === s.id)
@@ -1550,6 +1588,8 @@ export default function TeacherSubmissions() {
                       if (isConsentLocked(selectedStudent.profile)) {
                         return <p className="text-xs text-gray-400 mt-2">📚 학부모 동의 전이라 공유할 수 없어요</p>
                       }
+                      const sb = showcaseBadge(showcaseStatus?.items?.[s.id])   // step632: 같은 줄 끝에 전국 소개 배지
+                      const sbCls = sb ? (sb.tone === 'sky' ? 'bg-sky-100 text-sky-700' : sb.tone === 'red' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600') : ''
                       return (
                         <div className="flex items-center gap-2 flex-wrap mt-2">
                           <span className="text-xs text-gray-500">글 모음</span>
@@ -1567,6 +1607,7 @@ export default function TeacherSubmissions() {
                               📌 글 모음에 추가
                             </button>
                           )}
+                          {sb && <span title={sb.title} className={`text-xs px-2 py-0.5 rounded-full ${sbCls}`}>{sb.text}</span>}
                         </div>
                       )
                     })()}
