@@ -12,6 +12,7 @@ import StudentLoginInfoCard from '../../components/StudentLoginInfoCard'
 import SetupChecklist from '../../components/SetupChecklist'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import FeedbackModal from '../../components/FeedbackModal'   // step630: "✉️ 운영자에게 쪽지" 카드 — 헤더 💬 의견과 같은 모달·저장소 재사용
 import PasswordInput from '../../components/PasswordInput'
 import { isValidEmail } from '../../lib/email'
 import { getAuthErrorMessage } from '../../lib/authErrors'
@@ -112,6 +113,7 @@ export default function TeacherHome() {
   const [showSchoolBanner, setShowSchoolBanner] = useState(false)
   // 🆕 임퍼소네이션 상태 (와이프 피드백 5번)
   const [isImpersonating, setIsImpersonating] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)   // step630: 운영자에게 쪽지 카드 → FeedbackModal(헤더 상태와 별개)
   // 🆕 step205-C: 내 의견에 달린 운영자 답변 알림
   const [replyNotifs, setReplyNotifs] = useState([])
   const [showReplies, setShowReplies] = useState(false)
@@ -936,6 +938,16 @@ export default function TeacherHome() {
           <p className="text-xs text-gray-500">사용 방법 + 문제 해결</p>
         </div>
       </Link>
+      {/* step630: 운영자에게 쪽지 — 헤더 "💬 의견"과 같은 FeedbackModal(feedback 테이블) 재사용. 엿보기는 assertWritable이 막음(쪽지가 admin id로 저장되는 것 방지). */}
+      <button type="button"
+        onClick={() => { if (!assertWritable()) return; setShowFeedback(true) }}
+        className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition border border-gray-100 flex items-center gap-3 text-left">
+        <div className="text-2xl flex-shrink-0">✉️</div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm">운영자에게 쪽지</h3>
+          <p className="text-xs text-gray-500">궁금한 점, 불편한 점 바로 전달</p>
+        </div>
+      </button>
     </div>
   )
 
@@ -945,6 +957,7 @@ export default function TeacherHome() {
       <div className="min-h-screen bg-gray-50">
         {isImpersonating && <ImpersonationBanner targetName={user.realname} targetSchool={user.school} />}
         <Header user={user} onLogout={logout} />
+        {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} replyHint />}
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
           {/* 🆕 step161: 비번 초기화된 계정 — 변경 강하게 유도 */}
           {mustChangePw && !showPwModal && (

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function FeedbackModal({ onClose }) {
+// step630: replyHint — 교사 홈 "✉️ 운영자에게 쪽지" 카드 경유일 때만 "답장은 🔔 알림으로 와요." 표시.
+//   헤더 "💬 의견"(학생 포함 전 역할 공용)은 기본 false — 학생 의견엔 답장 경로(admin_reply→/teacher)가 없어 거짓 안내 방지.
+export default function FeedbackModal({ onClose, replyHint = false }) {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
@@ -37,9 +39,12 @@ export default function FeedbackModal({ onClose }) {
         ) : (
           <>
             <h3 className="text-lg font-bold mb-2">의견 보내기</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className={`text-sm text-gray-600 ${replyHint ? 'mb-1' : 'mb-4'}`}>
               불편한 점, 개선 제안 등을 자유롭게 보내주세요.
             </p>
+            {replyHint && (
+              <p className="text-xs text-gray-500 mb-4">답장은 🔔 알림으로 와요.</p>
+            )}
             <textarea
               className="w-full p-3 border border-gray-200 rounded-lg text-sm"
               rows="5"
