@@ -62,17 +62,24 @@ export default function FeedbackReports() {
     if (!assertWritable()) return  // step569: 엿보기 쓰기 차단
     if (!confirm('이 신고를 해제(닫기)할까요?\n학생 화면에서는 다시 신고 버튼이 보이지 않습니다.')) return
     try {
-      const { error } = await supabase.from('submissions').update({
-        reported: false,
-        report_reason: null,
-        reported_at: null
-      }).eq('id', subId)
+      // step635: 해결은 reported=false만 — reported_at·report_reason 보존(관리자 의심 교정 탭 "🚨 학생 신고" 전체 이력).
+      const { error } = await supabase.from('submissions').update({ reported: false }).eq('id', subId)
       if (error) throw error
+      // 해결 시각은 컬럼(step635 SQL)이 있을 때만 — 별도 호출, 실패 무시
+      try { await supabase.from('submissions').update({ report_resolved_at: new Date().toISOString() }).eq('id', subId) } catch (_) {}
       await loadReports(user)
     } catch(e) {
       alert('실패: ' + e.message)
     }
   }
+
+  // step635: 관리자 의심 교정 탭에서 ?sub= 로 들어오면 그 글로 스크롤(강조는 렌더에서 ring)
+  useEffect(() => {
+    const sub = router.query?.sub
+    if (!sub || reports.length === 0) return
+    const el = document.getElementById(`report-${sub}`)
+    if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200)
+  }, [reports, router.query?.sub])
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }  // step569: 엿보기 중 로그아웃 = 관리자 복귀
@@ -114,7 +121,8 @@ export default function FeedbackReports() {
           ) : (
             <div className="space-y-3">
               {reports.map(r => (
-                <div key={r.id} className="bg-white rounded-2xl p-5 shadow-sm space-y-3 border-l-4 border-amber-400">
+                <div key={r.id} id={`report-${r.id}`}
+                  className={`bg-white rounded-2xl p-5 shadow-sm space-y-3 border-l-4 border-amber-400 ${router.query?.sub === r.id ? 'ring-2 ring-red-400' : ''}`}>
                   <div className="flex justify-between items-start flex-wrap gap-2">
                     <div>
                       <div className="text-sm">

@@ -264,6 +264,10 @@ export default function AdminHome() {
   const [bulkSearch, setBulkSearch] = useState('')
   const [suspectMeta, setSuspectMeta] = useState({})        // 🆕 step371: { [alert.id]: { ctx, student } } 맥락 문장·작성 학생 정보 (표시 전용)
   const [suspectFilter, setSuspectFilter] = useState('전체') // 🆕 유형 필터 칩 — 클라이언트 표시 필터만(쿼리 불변)
+  // 🚨 step635: 학생 피드백 신고 전체 이력(reported_at not null) — 의심 교정 탭 "🚨 학생 신고" 칩에서 로드
+  const [reportRows, setReportRows] = useState({ loaded: false, rows: [], error: null })
+  const [reportFilter, setReportFilter] = useState('전체')   // 전체 | 미해결 | 해결
+  const REPORT_CHIP = '🚨 학생 신고'
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -567,6 +571,48 @@ export default function AdminHome() {
   // 🔍 step359: 의심 교정 목록 — 탭 열 때 1회만 로드 (첫 로딩 무게 안 늘림)
   // 🆕 step369: supabase-js는 실패해도 throw하지 않아 error를 직접 확인해야 함(기존엔 무시되어
   //   목록이 조용히 "없어요"로 위장됨). order도 DB 컬럼 의존을 없애고 클라이언트에서 정렬.
+  // 🚨 step635: 학생 신고 이력 — "🚨 학생 신고" 칩을 열 때 1회 로드(본문 없음: 제출 메타 + 번호·학급만).
+  //   report_resolved_at은 컬럼(step635 SQL)이 없을 수 있어 별도 조회로 합치고 실패는 무시.
+  useEffect(() => {
+    if (tab !== 'corrections' || suspectFilter !== REPORT_CHIP || reportRows.loaded) return
+    ;(async () => {
+      const { data, error } = await supabase.from('submissions')
+        .select('id, user_id, topic_title, reported, reported_at, profiles!submissions_user_id_fkey(number, class_id)')
+        .not('reported_at', 'is', null).is('deleted_at', null)
+        .order('reported_at', { ascending: false }).limit(300)
+      if (error) { setReportRows({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' }); return }
+      let rows = data || []
+      try {
+        const ids = rows.map(r => r.id)
+        if (ids.length > 0) {
+          const { data: res } = await supabase.from('submissions').select('id, report_resolved_at').in('id', ids)
+          const m = Object.fromEntries((res || []).map(x => [x.id, x.report_resolved_at]))
+          rows = rows.map(r => ({ ...r, report_resolved_at: m[r.id] || null }))
+        }
+      } catch (_) { /* 컬럼 없음 — 해결 시각 비표시 */ }
+      setReportRows({ loaded: true, rows, error: null })
+    })()
+  }, [tab, suspectFilter, reportRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🚨 step635: 관리자 해결 — 담임 "✓ 확인 완료"와 같은 처리(reported=false만, reported_at 보존). 해결 시각은 컬럼 있을 때만.
+  const resolveReport = async (id) => {
+    if (!confirm('이 신고를 해결 처리할까요? 담임 신고함에서도 사라져요.')) return
+    try {
+      const { error } = await supabase.from('submissions').update({ reported: false }).eq('id', id)
+      if (error) throw error
+      const now = new Date().toISOString()
+      let resolvedAt = null
+      try {
+        const { error: e2 } = await supabase.from('submissions').update({ report_resolved_at: now }).eq('id', id)
+        if (!e2) resolvedAt = now
+      } catch (_) {}
+      setReportRows(prev => ({ ...prev, rows: prev.rows.map(r => r.id === id ? { ...r, reported: false, report_resolved_at: r.report_resolved_at || resolvedAt } : r) }))
+      setStats(prev => ({ ...prev, reports: Math.max(0, (prev.reports || 0) - 1) }))
+    } catch (e) {
+      alert('해결 처리 실패: ' + (e?.message || e))
+    }
+  }
+
   useEffect(() => {
     if (tab !== 'corrections' || suspectLoaded) return
     ;(async () => {
@@ -1945,13 +1991,14 @@ export default function AdminHome() {
               { label: '오늘', val: stats.today, icon: '✨', color: 'bg-pink-50 text-pink-900' },
               { label: '사전 신청', val: stats.preorders, icon: '🎟️', color: 'bg-teal-50 text-teal-900' },  // 🆕 step380
               // 🆕 step631: 피드백 신고 미해결(reported=true·삭제 제외). 0이면 초록, 있으면 빨강(24h 에러와 같은 관행)
-              { label: '신고(미해결)', val: stats.reports, icon: '🚩', color: stats.reports > 0 ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-900' },
+              { label: '신고(미해결)', val: stats.reports, icon: '🚩', color: stats.reports > 0 ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-900',
+                onClick: () => { setTab('corrections'); setSuspectFilter(REPORT_CHIP) } },   // step635: 카드 클릭 → 의심 교정 탭 "🚨 학생 신고" 칩
               (() => {
                 const cnt24h = errorLogs.filter(e => Date.now() - new Date(e.created_at).getTime() < 24 * 60 * 60 * 1000).length
                 return { label: '24h 에러', val: cnt24h, icon: '🚨', color: cnt24h > 0 ? 'bg-red-100 text-red-800' : 'bg-green-50 text-green-900' }
               })()
             ].map(s => (
-              <div key={s.label} className={`${s.color} rounded-xl p-4`}>
+              <div key={s.label} onClick={s.onClick} className={`${s.color} rounded-xl p-4 ${s.onClick ? 'cursor-pointer hover:opacity-90' : ''}`}>
                 <div className="text-2xl mb-1">{s.icon}</div>
                 <div className="text-xs opacity-75">{s.label}</div>
                 <div className="text-2xl font-bold">{s.val}</div>
@@ -3340,7 +3387,7 @@ export default function AdminHome() {
               else { gmap[key] = { rep: a, ids: [a.id] }; groups.push(gmap[key]) }
             })
             // 🆕 유형 필터 칩 — prefix 매칭('(차단됨)' 무관), 클라이언트 필터만
-            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전', '사유 없음만']  // step588: 점수역전 칩 / step590: 사유 없음만 칩
+            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전', '사유 없음만', REPORT_CHIP]  // step588: 점수역전 칩 / step590: 사유 없음만 칩 / step635: 학생 신고 이력
             // step590: '사유 없음만' — 점수역전 중 AI가 하락 사유를 안 적은 건만. 새 행은 suspect_type 접미로,
             //   구판 행(step588~589 적체)은 reason의 [no_reason] 마커로 식별(리셋 전까지 호환).
             const isNoReason = (a) => (a.suspect_type || '').startsWith('점수역전(사유 없음)')
@@ -3356,6 +3403,68 @@ export default function AdminHome() {
               router.push({ pathname: router.pathname, query: { ...router.query, tab: 'submissions', sub: submissionId } }, undefined, { shallow: true })
               setTabState('submissions')
             }
+            // 🚨 step635: 학생 피드백 신고 전체 이력 블록 — 본문 없음. 미해결 행 클릭 → 담임 엿보기 신고함(?sub= 강조), 해결 행 → 학생 글 탭.
+            const reportsBlock = (() => {
+              const clsById = {}
+              ;[...classes, ...trashedClasses].forEach(c => { clsById[c.id] = c })
+              const rows = reportRows.rows
+              const unresolved = rows.filter(r => r.reported === true).length
+              const shown = reportFilter === '전체' ? rows : reportFilter === '미해결' ? rows.filter(r => r.reported === true) : rows.filter(r => r.reported !== true)
+              return (
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap mb-3">
+                    <span className="text-sm font-semibold text-gray-800">🚨 학생 피드백 신고 · 총 {rows.length}건 · 미해결 {unresolved}건</span>
+                    <span className="ml-auto flex gap-1.5">
+                      {['전체', '미해결', '해결'].map(f => (
+                        <button key={f} onClick={() => setReportFilter(f)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition ${reportFilter === f
+                            ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{f}</button>
+                      ))}
+                    </span>
+                  </div>
+                  {!reportRows.loaded ? (
+                    <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                  ) : reportRows.error ? (
+                    <div className="py-6 text-center text-sm text-red-700">목록을 불러오지 못했어요. <span className="text-xs text-red-500 break-all">{reportRows.error}</span></div>
+                  ) : shown.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-gray-400">{reportFilter === '미해결' ? '미해결 신고가 없어요 🎉' : '신고 이력이 없어요'}</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {shown.map(r => {
+                        const cls = clsById[r.profiles?.class_id]
+                        const where = [cls?.teacher_profile?.school, cls?.name].filter(Boolean).join(' ')
+                        const num = r.profiles?.number ? `${r.profiles.number}번` : '번호 없음'
+                        const teacherId = cls?.teacher_id
+                        const open = () => {
+                          if (r.reported && teacherId) window.open(`/teacher/feedback-reports?as=${teacherId}&sub=${r.id}`, '_blank', 'noopener')
+                          else goToSubmission(r.id)
+                        }
+                        return (
+                          <div key={r.id} className="p-3 rounded-xl border border-gray-200 bg-gray-50 flex items-center gap-3 flex-wrap">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${r.reported ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {r.reported ? '🔴 미해결' : '✅ 해결'}
+                            </span>
+                            <button onClick={open} title={r.reported ? '담임 엿보기 신고함에서 글·AI 피드백 확인' : '학생 글 탭에서 보기'}
+                              className="text-sm text-gray-800 hover:underline text-left min-w-0">
+                              🏫 {where || '학급 미상'} {num} · {r.topic_title || '주제 없음'}
+                            </button>
+                            <span className="text-xs text-gray-400">
+                              신고 {toKST(r.reported_at)}{r.report_resolved_at ? ` · 해결 ${toKST(r.report_resolved_at)}` : ''}
+                            </span>
+                            {r.reported && (
+                              <button onClick={() => resolveReport(r.id)}
+                                className="ml-auto text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
+                                ✅ 해결
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()
             return (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
@@ -3385,11 +3494,9 @@ export default function AdminHome() {
                       </button>
                     </div>
                   </div>
-                ) : suspectAlerts.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
                 ) : (
                   <>
-                    {/* 🆕 유형 필터 칩 — 클라이언트 표시 필터만 */}
+                    {/* 🆕 유형 필터 칩 — 클라이언트 표시 필터만. step635: 의심 교정 0건이어도 칩은 표시("🚨 학생 신고" 진입) */}
                     <div className="flex gap-1.5 flex-wrap mb-3">
                       {FILTER_CHIPS.map(f => (
                         <button key={f} onClick={() => setSuspectFilter(f)}
@@ -3400,7 +3507,9 @@ export default function AdminHome() {
                         </button>
                       ))}
                     </div>
-                    {filtered.length === 0 ? (
+                    {suspectFilter === REPORT_CHIP ? reportsBlock : suspectAlerts.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
+                    ) : filtered.length === 0 ? (
                       <div className="py-8 text-center text-sm text-gray-400">이 유형의 의심 교정이 없어요</div>
                     ) : (
                       <div className="space-y-3">
