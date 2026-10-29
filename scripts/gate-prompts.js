@@ -15,7 +15,7 @@ const { pathToFileURL } = require('url')
 ;(async () => {
   const pPath = path.join(__dirname, '..', 'lib', 'prompts.server.js')
   const mod = await import(pathToFileURL(pPath).href)
-  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt, tutorChatPrompt, topicBatchPrompt } = mod
+  const { gradingPrompt, grammarStrictPrompt, grammarOnlyPrompt, rewriteGradingPrompt, regradePrompt, tutorChatPrompt, topicBatchPrompt, exampleEssayPrompt } = mod
 
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
@@ -628,6 +628,41 @@ const { pathToFileURL } = require('url')
     rec('TOPICMIX', 'suggest(1개) 구비 생략·적합성 유지', p4, p4 ? 'count=1 모순 방지 확인' : `구비생략=${!sug1.includes('시사·사회적 소재')}, 적합성=${sug1.includes('아는 척하지 말고')}`)
   } catch (e) {
     rec('TOPICMIX', 'topicBatchPrompt 생성', false, `예외: ${e.message}`)
+  }
+
+  // ── GRADE: 학급 학년 전달 (step641) — grading·rewriteGrading·exampleEssay의 "초등 5학년" 고정을 grade 인자로 ──
+  // grade 미전달·null·5·'5'·범위 밖(0·7·'x') → 전부 바이트 동일(하위호환, 기본 5학년).
+  // grade 3 → 3학년 문구 + '5학년' 전무 + 쉬운 낱말 기준은 한 학년 아래(2학년). grade 1 → 아래 학년 바닥 1.
+  try {
+    const stripDate = (s) => s.replace(/오늘은 \d{4}년 \d{1,2}월 \d{1,2}일입니다/, '')
+    const withG = (g) => (g === undefined ? {} : { grade: g })
+    const G = {
+      gradingPrompt: (g) => stripDate(gradingPrompt({ topic, essay, rubrics, ...withG(g) })),
+      rewriteGradingPrompt: (g) => stripDate(rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 80, ...withG(g) })),
+      exampleEssayPrompt: (g) => exampleEssayPrompt({ topicTitle: topic.title, studentEssay: essay, ...withG(g) }),
+    }
+    const T3 = {
+      gradingPrompt: ['초등 3학년 글쓰기 선생님', '이 학생은 3학년이고', '초등 2학년도 아는 낱말만', 'reason은 3학년이 알아듣게'],
+      rewriteGradingPrompt: ['초등 3학년 글쓰기 선생님', '초등 2학년도 아는 낱말만', '3학년이 알아듣는 쉬운 말'],
+      exampleEssayPrompt: ['초등 3학년 학생이 쓴', '3학년 학생 수준'],
+    }
+    for (const [pname, build] of Object.entries(G)) {
+      const base = build(undefined)
+      const same = [null, 5, '5', 0, 7, 'x'].every(g => build(g) === base)
+      const has5 = base.includes('초등 5학년')
+      rec('GRADE', `${pname} · 미전달=null=5='5'=범위 밖 → 바이트 동일+'초등 5학년'`, same && has5,
+        same && has5 ? '7가지 입력 모두 동일, 기본 5학년' : `동일=${same}, 5학년=${has5}`)
+      const s3 = build(3)
+      const miss = T3[pname].filter(p => !s3.includes(p))
+      const no5 = !s3.includes('5학년')
+      rec('GRADE', `${pname} · grade 3 → 3학년 문구+한 학년 아래 기준, '5학년' 전무`, miss.length === 0 && no5,
+        miss.length === 0 && no5 ? `${T3[pname].length}문구 포함, 5학년 없음` : `누락: ${miss.join(' / ')}; 5학년없음=${no5}`)
+    }
+    const g1 = G.gradingPrompt(1)
+    const g1Pass = g1.includes('초등 1학년도 아는 낱말만') && g1.includes('초등 1학년 글쓰기 선생님')
+    rec('GRADE', "gradingPrompt · grade 1 → 아래 학년 바닥 '초등 1학년도 아는 낱말만'", g1Pass, g1Pass ? '바닥 1 확인' : `바닥=${g1.includes('초등 1학년도 아는 낱말만')}, 1학년=${g1.includes('초등 1학년 글쓰기 선생님')}`)
+  } catch (e) {
+    rec('GRADE', 'GRADE 실행', false, `예외: ${e.message}`)
   }
 
   // ── 출력 (gate-korean-rules.js와 동일 형식) ──
