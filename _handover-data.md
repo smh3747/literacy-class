@@ -1,4 +1,4 @@
-# 핸드오버 데이터 (HEAD = 6228b28 (step645, main) + 이 갱신 문서 커밋(step646). ⚠️번호 중복 3건(10/28~29 병렬): 637(spell bfbdd5a 문체 한 방향 / main 2cf6264 학생 진입 A) · 641(spell 4b713eb 학년 인자 / main e6ac481·b822e64 auth-bounce) · 644(spell fac04c4 교정 규칙 정합 / main 1aede54 429 판정). 640은 spell e485d18 단독(main의 640 작업은 641로 번호 이동). 616~635 구간 0건. 이전 중복 step611 spell c88edb0(핸드오버 문서) / main 8fd8149(전국 주제 카드) · step608 spell f957602(규칙 (타)(파)) / main fb7dc11(lib/changeFacts.js·notationOnly). 597·598은 §1 595~601 블록, 590·591은 §1 582~593 블록 참조. 해시가 권위)
+# 핸드오버 데이터 (HEAD = 7607417 (step649, main) + 이 갱신 문서 커밋(step650). ⚠️번호 중복 3건(10/28~29 병렬): 637(spell bfbdd5a 문체 한 방향 / main 2cf6264 학생 진입 A) · 641(spell 4b713eb 학년 인자 / main e6ac481·b822e64 auth-bounce) · 644(spell fac04c4 교정 규칙 정합 / main 1aede54 429 판정). 640은 spell e485d18 단독(main의 640 작업은 641로 번호 이동). 616~635 구간 0건. 이전 중복 step611 spell c88edb0(핸드오버 문서) / main 8fd8149(전국 주제 카드) · step608 spell f957602(규칙 (타)(파)) / main fb7dc11(lib/changeFacts.js·notationOnly). 597·598은 §1 595~601 블록, 590·591은 §1 582~593 블록 참조. 해시가 권위)
 
 > 살아있는 마스터 인수인계서. 파일명 `_handover-data.md` 유지.
 > ⚠️ 이 문서는 요약이다. 커밋 단위 상세는 항상 `git log`로 교차검증할 것(문서가 뒤처질 수 있음).
@@ -26,7 +26,7 @@
 ## 1. 현재 HEAD
 > **[다음 세션 시작 안내 — spell]** (10/15 갱신: spell 622 문체 통일 결정화·623 띄어쓰기 글자 보존 + main 624 styleUnify 표식 — 아래 §1 616~625 블록과 §13 10/8 블록 게이트 현황이 최신. spell 백로그 1건 = 체크리스트 ④ 수정본 무감점 범위에 문법·활용 오류 명시.) spell 백로그 0건, 관찰 모드. **관찰 대상 최신판은 §13 [★spell 갱신 2026-08-24] 블록이 권위**(이 줄의 구판 목록 대체). ✅step560 '문체역행' dropped 기록은 8/21 송림초에서 첫 등장 확인(필터가 실제로 막는 정상 신호 — 이중 방어 검증 완료·종결). 잔여 관찰: step521 종합의견 사유 / '거→것' 재발 / step542 불가능형태 / step550·555·556·559 효과(만점·95점 이상 비율 추이, '완벽'류 소멸) / 섞인 문체 재검출(step577) / 신규 규칙 7종(step575) / '밖에' 소멸(step576). 새 재료 나오면 기존 순환(확인→원류 차단→게이트 편입)대로. **수단 A(미검출 전수조사)는 월 1회 재실행 권장 루틴.**
 > ⚠️ **문체 오교정 방어 변천 요약(step393~409→560)**: 프롬프트 규칙 11(예방)과 koreanRules `isStyleChange`(fail-safe 차단+기록)의 왕복이 있었다. isStyleChange 필터는 step409에서 최종 제거(옳은 통일 지적·맞춤법 교정까지 오차단). 이후 프롬프트 측 방어는 규칙 11 step403판(4원인 차단)+규칙 12(NO_CORRECT_LIST, step443~485 — 반말→존댓말 단정 금지 편입)로 확장. **현재 상태(step560) = 프롬프트 예방에 더해 코드 레벨 결정적 차단이 재도입됨. 단 과거 필터와 달리 문장 단독 판정이 아니라 essay 문체 다수결(countSentenceStyles, 반말 압도일 때만) — 섞인 글 통일 지적·오타 교정은 보존.** 아래 개별 항목은 이력이므로 최신 결론만 볼 거면 이 줄과 §7·§13을 보라.
-- **★완료 트랙 step637~645 (2026-10-28~29, 진입 속도·튕김 수리 / 채점 지연 분석·측정·수리 / spell 문체 한 방향·무감점 범위·학년 인자·교정 규칙 정합)** — 커밋 단위 요약(전부 push 완료, git log e32f673..origin/main **13건** 전수 대조로 미기재 0):
+- **★완료 트랙 step637~649 (2026-10-28~29, 진입 속도·튕김 수리 / 채점 지연 분석·측정·수리 / spell 문체 한 방향·무감점 범위·학년 인자·교정 규칙 정합 / 신고 가시성·빠른 엿보기·신고 사유 구조화)** — 커밋 단위 요약(전부 push 완료, git log e32f673..origin/main **17건** 전수 대조로 미기재 0):
   - `2cf6264` step637(main): **학생 진입 수리 A** — `/api/supply-adopt`를 비차단으로(응답 adopted에 방금 받은 오늘 주제에 없는 id가 있을 때만 챌린지 카드 1회 재조회, 주제 선택·글 불변) · `lib/entryAuth.js` 신설 `queryWithAuthRetry`(진입 profiles 조회가 401/PGRST30x/JWT면 refreshSession 1회 → 같은 조회 1회 재시도, 학생 홈·getEffectiveProfile·관리자 홈 3곳) · `logAuthBounce`(로그인으로 보내기 직전 error_type `auth_bounce`, 분류기 "🟤 진입 튕김" 조치 필요, gate-safety-block 59) · `Promise.allSettled` 1건 → `Promise.all(map catch)`(iOS 12).
   - `06fd1f7` step638: **교사·관리자 진입 수리 B** — 교사 홈 직렬 11왕복 → 2라운드 병렬 3왕복(topics count 중복 제거, 조회별 safe 분리) · 관리자 loadAll 직렬 14 → 첫 배치 13 병렬(15→2왕복), 담임·작성자 학급은 첫 배치 전량에서 매핑, 추천 공유·주제 공유 추적·비번 요청·에러로그 학생 번호는 해당 탭 첫 진입 때 로드(loadAll 재호출은 로드된 것만 갱신). error_logs는 "24h 에러" 카드 때문에 첫 배치 유지(지시 대비 차이) · getUser → getSession(getEffectiveProfile·관리자 checkAuth, 소비자 25곳 확인. 교사 홈 복구 이메일 판정만 getUser 유지).
   - `4b64165` step639: **진입 측정 C** — `@vercel/speed-insights` ^2.0.0 + `_app.js` `<SpeedInsights />` · 교사·관리자 홈에 학생 홈과 같은 `[perf]` 로그(profile·라운드·총계).
@@ -40,7 +40,11 @@
   - `1aede54` step644(main): **AI 429 판정을 errorDetails로 + 일일 한도 서버 기억 + 수정 화면 예시 버튼** — `lib/quotaError.js`(순수: classifyQuotaError — quotaId PerDay=일일·PerMinute=분당, 메시지 꼬리 JSON 복구, legacy 'per day'만; retryWaitSec — retryDelay 올림·상한 20초, 없으면 3·6·9; nextPtMidnightMs) + gate-quota-error 19 · `lib/gemini.js` callGeminiStructured: 일일 판정·대기 교체(분기 구조·maxRetries·타임아웃 불변 — 바뀐 동작은 "분당 429가 즉시 폴백 대신 백오프"와 대기 시간뿐), 한도 기억을 서버 모듈 Map `${hashKey(apiKey)}|${model}` → PT 자정 TTL(키별, 종전 window 가드 no-op 수리), getQuotaHitModels(apiKey)·markQuotaHit(apiKey, model) 서명 변경 · 학생 홈 `showDeferredExample` 공용 핸들러 + 수정 화면(step 'rewrite') 예시 블록 3분기(만드는 중/본문/보류 안내+📖 예시 작품 보기). gate-safety-block 59 유지. 503→폴백 전환은 보류. **작업 2 보고 정정**: SDK는 details를 메시지에도 덧붙이며 실제 버그는 분당→일일 오판이었다.
   - `fac04c4` [spell] step644: **수정본 채점 corrections 규칙을 첫 글 correctionsRules 단일 소스로 정합** — 자체 7항 + 헤더 [문체 분포]/[띄어쓰기] 주입 제거, `correctionsRules(rewriteEssay, { grade, subject: '수정본' })` + "13. 같은 오류가 여러 번 나오면 각각 다 잡으세요" 로 교체(최소 교정 (라)·표현 제외 (다)·규칙 4·9·10·11 포함). correctionsRules에 `subject` 옵션(기본 '학생 글'이라 grading·grammarStrict·grammarOnly 불변). 직전 지적 재포함 (아) 유지. gate-prompts 175→200(REWRITECORR 6 + BUILD/RULES 합류).
   - `6228b28` step645: **pending 적체 해소 + 학급 학년 서버 조회 전달** — `lib/strictCheck.server.js` partitionSweep(순수: 24시간 지난 pending은 교사당 상한 무관 전부 만료, 보완 대상만 교사당 4) + sweepPending 2단계(ⓐ 만료 일괄 skipped update 1회·in 절 500·summary.expired ⓑ 24시간 안·10분 지난 pending 오래된 순 30건 보완) + gate-strict-sweep 5. 배경: 오래된 pending 30건 중 24건이 한 교사라 밤마다 4건만 종결 → 95건 적체 · `pages/api/ai.js` getClassRow(classId: classes.teacher_id·grade, 인스턴스 메모 10분) — grading의 getClassTeacherId 조회를 대체(재조회 0), rewriteGrading·exampleEssay 1회, 세 프롬프트에 `grade`(1~6 정수, 아니면 null) 서버 전달, 클라이언트 payload 학년은 받지 않음(지시 변경으로 학생 홈 payload 수정은 되돌림).
-  - ⚠️ **번호 중복 3건(해시가 권위)**: 637(spell bfbdd5a · main 2cf6264) · 641(spell 4b713eb · main e6ac481·b822e64) · 644(spell fac04c4 · main 1aede54). 640은 spell 단독. 이력 순서는 2cf6264→06fd1f7→4b64165→bfbdd5a→e485d18→e6ac481→b822e64→d9d50cb→2b404cc→4b713eb→1aede54→fac04c4→6228b28.
+  - `42eaf9a` step646: 핸드오버 갱신(637~645 트랙 13건 + §13 블록 4개 + 체크리스트 ①~⑨ + 게이트 10/29 마감). 문서만.
+  - `e7e5b9b` step647: **관리자 "🚨 학생 신고" 행 인라인** — 칩 열 때 1회 조회에 topic_id·report_reason·feedback_overall·total_score·max_score·attempt 추가(글 본문·실명 미조회). 각 행 2줄: 1줄 기존 배지·라벨(담임 엿보기/학생 글 탭, 클릭 불변)·시각 + **"👁 학생 화면"**(새 탭 `/student?as={user_id}&topic={topic_id}` — 633 학생 엿보기 + `?topic=` 딥링크로 그 글의 피드백 화면) + "✅ 해결"(미해결만). 2줄 💬 사유 80자 · 🤖 종합의견 60자 · 점수/만점·N회차(점수 null "🟣 점수 없음").
+  - `690a4b5` step648: **관리자 빠른 엿보기 검색** — `pages/api/admin-peek-search.js`(admin-last-logins 인증 관행: getUser → role admin 아니면 403, POST 외 405, 토큰 없음 401. q 2자 미만 → items [], 공백 토큰 전부 포함 일치, 교사 먼저 최대 20건. 교사 `학교 반 · 이름 선생님` → `/teacher?as=` / 학생 `학교 반 N번 · 닉네임` → `/student?as=`. **학생 실명 미반환**) + `components/AdminPeekSearch.js`(SchoolAutocomplete 관행: 300ms 디바운스·2자 최소·늦은 응답 폐기·바깥 클릭·↑↓ Enter Esc, 클릭 → 새 탭) + 관리자 제목 줄 오른쪽 배치. 실검증: GET 405·토큰 없음/잘못된 토큰 401(curl). 관리자 양성 경로는 미검증.
+  - `7607417` step649: **피드백 신고 사유 구조화** — `lib/reportReason.js`(순수: REPORT_TAGS 5 = 점수가 이상해요 / 맞춤법 지적이 틀렸어요 / 내 글에 없는 말을 해요 / 무슨 말인지 모르겠어요 / 기타, `buildReportReason` → "[태그] 상세"(40자 절단, 목록 밖 null), `parseReportReason`(구 자유 입력 tag null), `isDailyLimitReached(3)`) + gate-report-reason 9. 학생 홈 "🚨 이 피드백 이상해요" → prompt() 대신 칩 모달(1개 필수, 선택 입력 40자, 엿보기 비활성). 글당 1회(reported)·**하루 3회**(본인 행 reported_at ≥ KST 자정 count, 조회 실패 시 막지 않음) 초과 안내. 저장 컬럼·담임 종·관리자 알림(631) 불변, SQL 없음(report_reason 재사용). 관리자 신고 행 태그 배지. 담임 신고함 표시 불변("[태그] 상세" 그대로).
+  - ⚠️ **번호 중복 3건(해시가 권위)**: 637(spell bfbdd5a · main 2cf6264) · 641(spell 4b713eb · main e6ac481·b822e64) · 644(spell fac04c4 · main 1aede54). 640은 spell 단독. 이력 순서는 2cf6264→06fd1f7→4b64165→bfbdd5a→e485d18→e6ac481→b822e64→d9d50cb→2b404cc→4b713eb→1aede54→fac04c4→6228b28→42eaf9a→e7e5b9b→690a4b5→7607417.
 - **★완료 트랙 step627~635 (2026-10-15, 채점 지연 수리 3 + 운영자·교사 가시성 6)** — 커밋 단위 요약(전부 push 완료, git log b0775cc..HEAD 9건 전수 대조로 미기재 0, 번호 중복 0):
   - `3cecc16` step627: **피크 시 호출 1회화** — `lib/peakWindow.js`(학급별 요청 시각 창 60초, 이번 포함 3건째부터 피크, 인스턴스 메모리) → grading 분기에서 피크면 전용 검사 인라인 생략(pending, 보완 큐 그대로) + `INLINE_GUARD_MAX=3`(인라인 전용, 백필 GUARD_MAX=5 유지) + 응답 `__exampleDeferred`로 예시 작품 자동 생성 보류 → 학생 카드 "📖 예시 작품 보기" 온디맨드(`lib/exampleDefer.js`). `[strict-inline]` 로그에 `peak=`. gate-peak-window 12. 베껴쓰기 감지(예시 비교) 코드는 원래 없음.
   - `07e13cb` step628: **쓰로틀 학급 키별 분리** — `lib/apiThrottle.js` 전면 교체: 키 해시(djb2) 버킷·14 RPM·요청 안 대기 1회 최대 20초(재귀 없음, 초과는 상류 429 백오프) · `computeWait`/`capWait` 순수 export · 머리 주석을 "서버 실행·인스턴스 메모리"로 정정. gemini.js 3곳 `throttleApiCall(apiKey)`. gate-api-throttle 14. 오류 분류기 변경 없음(그 로그는 console 전용).
@@ -328,6 +332,14 @@ export const GRAMMAR_NOTICE_TEACHER =
 - ★**측정 체계 신설(643)**: `submissions.grading_ms`(제출 확정→AI 결과 수신 ms)·`grading_path`(SQL **적용 완료**) + 관리자 "⏱ 채점 시간" 칩(일별·학급별 p50/p95/최대·60초 초과). **교훈: 8월~10월 AI 과정 수정이 매번 새 불만을 낳은 공통 원인 = 실측 없음. 이후 처방은 이 숫자로**(체크리스트 ①).
 - 쓰로틀 14 유지 여부는 **AI Studio 실제 RPM 확인 후**(미확인, 체크리스트 ⑤). 공식 문서는 무료 수치 미게재.
 
+**[★신고 144건 판독 — 2026-10-29 (읽기 전용 SELECT, 실명·본문 미조회, 사유 104건 손 분류 ±3)]**
+- 총 144건(미해결 141, 2026-06-17~10-28, 7월 초 정점·10월 14건). **수정본 106 : 첫 글 38**(74%).
+- 사유 유형 분포(144 기준): **빈 사유 28%(40)** · **장난 7%(10)** / **오교정 왕복·맞춤법 지적 오류 18%(26)**("가전 제품↔가전제품", "매일매일", "어린아이들", "'않습니다' 계속 틀리다고") / **내용 오독·예시 왜곡 15%(21)**("바통이 아니라 손 터치인데", "사촌인데 예시는 사촌누나") / **점수 불만 11%(16)**(수정 후 하락·안 오름) / **피드백 품질·요구 11%(16)**("너무 짧아요", "계속 고치래") / 이해 안 됨 4 · 문체·학년 3 · 기타 8. 빈 사유 평균 점수 70(최저).
+- 집중 학급 상위 5: 동북초 5-2 12 · 대구범어초 4-1 11 · 송림초 5-6 9 · 대구범어초 4-8 6 · 신양초 6-4 6(상위 5 = 31%). 주제 1위 독서감상문 쓰기 10.
+- **결론: 품질 6 : 안내 4.** 사유 있는 104건의 약 60%(63)가 오교정 왕복·내용 오독·점수 하락이라는 실질 불만이고 수정본 집중과 일치. 안내 문제(빈 사유+장난 50건, 35%)는 원터치 신고가 사유 없이 눌리던 UI 때문.
+- 처방: ① **신고 사유 칩 필수 + 하루 3회(step649)** — 이후 신고는 "[태그] 상세"라 태그로 바로 집계 ② **spell 이관 3건**(복합어 띄어쓰기 오교정 왕복 · '않습니다/않아서' 미인식 · AI가 글에 없는 사실을 말하는 오독에 대한 사실 유지 규칙) — **spell 창 작업 중, 커밋 번호는 spell 보고로** ③ 이미 처방된 것: 학년(645)·문체 왕복(spell 637)·수정본 교정 규칙(spell 644)·무감점 범위(spell 640).
+- 판정 계획: **11월 태그 기준 재판독**(같은 스크립트 + parseReportReason)으로 637~649 효과 판정 — 빈 사유 0 기대, 오교정 왕복·내용 오독 비율 감소 여부(체크리스트 ⑦).
+
 **[★학생 의견 10/14~28 + 백로그 — 2026-10-29]**
 - 송림초 5-6 "느려요" 다수(10/27 "빨라졌어요" 1건 혼재) / 김래오(대구범어 4-8) 3건 → ⓑⓒ로 종결, **답장 예정** / 이지안 "예시가 수정 때 안 떠요" → ⓔ / 김우진 "랭킹 전부 보고 싶어요" → 백로그.
 - 학생 신고 **144건(미해결 143)** = 품질 데이터 — 샘플 판독 미착수(체크리스트 ⑦).
@@ -505,11 +517,12 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **④ 챌린지 주 1편 발행 루틴**(10/28 재측정: 공급 빈도가 병목).
 - **⑤ AI Studio 실제 RPM 확인 → 쓰로틀 14 유지/하향 결정**(15면 20초 상한 통과 경로가 피크 위험, 30이면 503만 남음).
 - **⑥ 김래오(대구범어 4-8)·송림초 5-6 학생 답장**(ⓑ 학년·ⓒ 교정 규칙·속도 수리 안내).
-- **⑦ 학생 신고 144건 샘플 판독**(품질 데이터, 미해결 143).
+- **⑦ 11월 신고 재판독(태그 기준)**: 10/29 전수 판독 완료(§13 [★신고 144건 판독] 블록, 품질 6:안내 4). 11월 중순에 같은 스크립트 + `parseReportReason` 태그로 재집계 → 빈 사유 0·오교정 왕복·내용 오독 비율로 637~649 효과 판정.
 - **⑧ 내일(10/30) 새벽 스윕 확인**: 크론 응답 `strictBackfill.expired` ≈ 70, `pending and created_at < now()-24h` = 0.
-- **⑨ 보류 목록**: RLS 조이기(순서 고정: 학생 랭킹 서버 집계 이전 → step147 sub_select 본인 행, plan mode) · students.js clearSelection 소형 수정(린트 Error) · 인디스쿨 2탄(경험담·도구명 1회) · 챌린지 발행일 실검증(616~618 배너·611~614 대기 항목) · 안전 필터 다음 실건 · 사고 후속 ⓐ~ⓒ · 엿보기 잔여 전환 · 알림 센터 · 자투리 풀코스 · 학생 화면 "반영한 조언 ✓" · 기저장 무의미 교정 DB 정리 · 가격 쪽지 답장(김현정·정천호, 재촉 금지) · 이중 호출 후속 · 글 모음 2단계·3단계 · '띄어쓰기변형' 사유 칩 · 학생 답장 배너 학급 토글 · 수정본 버튼 단계 문구 · 예시 온디맨드 클릭 계측 · NotificationBell `?as=` 보존 · 챗봇 사례 수집(tutorChatPrompt, spell 이관) · 638 교사·관리자 홈 재구성 숫자·탭 대조(실검증 미실시) · 630~635 가시성 실검증(10/15 ①, 미실시) · `migrations/step635-report-resolved-at.sql`(선택).
+- **⑨ 보류 목록**: RLS 조이기(순서 고정: 학생 랭킹 서버 집계 이전 → step147 sub_select 본인 행, plan mode) · students.js clearSelection 소형 수정(린트 Error) · 인디스쿨 2탄(경험담·도구명 1회) · 챌린지 발행일 실검증(616~618 배너·611~614 대기 항목) · 안전 필터 다음 실건 · 사고 후속 ⓐ~ⓒ · 엿보기 잔여 전환 · 알림 센터 · 자투리 풀코스 · 학생 화면 "반영한 조언 ✓" · 기저장 무의미 교정 DB 정리 · 가격 쪽지 답장(김현정·정천호, 재촉 금지) · 이중 호출 후속 · 글 모음 2단계·3단계 · '띄어쓰기변형' 사유 칩 · 학생 답장 배너 학급 토글 · 수정본 버튼 단계 문구 · 예시 온디맨드 클릭 계측 · NotificationBell `?as=` 보존 · 챗봇 사례 수집(tutorChatPrompt, spell 이관) · 638 교사·관리자 홈 재구성 숫자·탭 대조(실검증 미실시) · 630~635 가시성 실검증(10/15 ①, 미실시) · `migrations/step635-report-resolved-at.sql`(선택) · 648 검색 양성 경로(관리자 토큰으로 "송림" → 교사·학생 20건)·649 칩 모달 실검증.
+- **⑩ spell 이관 3건(신고 판독 재료, `lib/prompts.server.js`·`lib/koreanRules.js` — spell 창 작업 중, 커밋 번호는 spell 보고로)**: ⓐ 복합어 띄어쓰기 오교정 왕복('가전 제품'↔'가전제품', '매일 매일'↔'매일매일', '어린 아이들'↔'어린아이들', '여름 방학에' 동형 교정) ⓑ '않습니다/않아서' 미인식(koreanRules 영역, 2건) ⓒ AI가 학생 글에 없는 사실을 말하는 오독(21건) — 채점·예시 프롬프트 사실 유지 규칙. 발췌 10건은 10/29 `_last-report.md` ③ⓒ.
 - (10/15 2차 체크리스트 종결: ③ 10/22 재측정 → 10/28 실시(§13 맨 위 블록) / ⑤ 624 SQL cnt=2 확인 / ⑥ 무감점 범위 → spell 640 / ② 다음 피크 실측 → 643 측정 체계로 대체(①) / ①④⑦ 잔여는 ⑨로 이동.)
-- **다음 step 번호 = origin/main 전체(spell·메인 합산) 최대 번호 +1**(10/29: 메인 645 뒤 이 문서가 646 → 다음은 647. 번호 중복이 나면 해시가 권위, 미push 커밋만 amend).
+- **다음 step 번호 = origin/main 전체(spell·메인 합산) 최대 번호 +1**(10/29: 메인 649 뒤 이 문서가 650 → 다음은 651. 번호 중복이 나면 해시가 권위, 미push 커밋만 amend).
 
 **[★관찰 기록 — 채점 신뢰도 (체크리스트 ⑦의 참조 원본, 유지)]**
 - 의심 교정 탭 점수역전·핑퐁 재발(step476 이후 감소 추세) /
@@ -814,7 +827,8 @@ notifications CHECK 'message' / profiles.last_seen_at / submissions.teacher_scor
 - ❌ 학년별 채점 차등 → 데이터로 기각(2026-07-03). 대체=학년 맥락 보정(step345).
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
-## 워킹트리 상태 (2026-10-29 마감 갱신)
+## 워킹트리 상태 (2026-10-29 마감 2차 갱신)
+- HEAD=7607417(step649, main) + 이 갱신 문서 커밋(step650). 워킹트리 clean. 637~649 트랙은 §1 최상단 블록(git log e32f673..origin/main 17건 전수 대조, 번호 중복 637·641·644). 2차 추가분: 647 신고 행 인라인·648 빠른 엿보기 검색·649 신고 사유 칩 + §13 [★신고 144건 판독] 블록(품질 6:안내 4, spell 이관 3건). 아래는 1차 기록:
 - HEAD=6228b28(step645, main) + 이 갱신 문서 커밋(step646). 워킹트리 clean. 637~645 트랙은 §1 최상단 블록(git log e32f673..origin/main 13건 전수 대조, 번호 중복 637·641·644). 10/29 마감의 본질: **진입 속도·튕김 수리(637~641) + 채점 지연 실측 체계(643)와 429 판정·학년·교정 규칙·pending 적체 수리(644·645, spell 641·644)** — §13 맨 위 블록 4개 참조. 아래는 10/29 1차·10/15 2차 기록:
 - HEAD=b822e64(step641, main) + 이 갱신 문서 커밋(step642). 워킹트리 clean. 637~641 트랙은 §1 최상단 블록(git log e32f673..origin/main 7건 전수 대조). 아래는 10/15 2차 기록:
 - HEAD=c2029bc(step635, main) + 이 갱신 문서 커밋(step636). 워킹트리 clean.
