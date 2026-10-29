@@ -145,6 +145,12 @@ const NO_FALSE_POSITIVE = [
   { name: "'제때'(합성어, 605)",      text: '제때 도착했다' },              // step605
   { name: "'힘들지는 않나요'(보조용언)", text: '많이 힘들지는 않나요?' },   // step605: 조각도 생성 안 함
   { name: "'쉽지만은 않나'(보조용언)",   text: '생각보다 쉽지만은 않나?' }, // step605
+  // step649: 사전 등재 합성어 — 규칙이 띄우지 않음(COMPOUND_WORDS 재료 4종 + 등재 합성어)
+  { name: "'가전제품'(합성어)",           text: '우리 집 가전제품을 샀다' },      // step649
+  { name: "'매일매일'(합성어)",           text: '매일매일 운동했다' },            // step649
+  { name: "'어린아이들'(합성어+들)",      text: '어린아이들이 뛰어놀았다' },      // step649
+  { name: "'여름방학에'(합성어)",         text: '여름방학에 바다에 갔다' },       // step649
+  { name: "'점심시간'(합성어)",           text: '점심시간에 친구와 놀았다' },     // step649
 ]
 
 // mergeCorrectionsDetailed(AI corrections, essay) 레벨 — 남는지(kept)/폐기(dropped)되는지.
@@ -191,7 +197,8 @@ const MERGE = [
   { name: '무의미(자모 분리 NFD)',                corr: { original: '여름 방학'.normalize('NFD'), correction: '여름 방학' }, essay: '나는 여름 방학에 갔다', expect: 'gone' }, // step598
   { name: '무의미(앞뒤 공백만 다름)',             corr: { original: '여름 방학', correction: ' 여름 방학 ' },     essay: '나는 여름 방학에 갔다',       expect: 'gone' }, // step598 (기존 trim 동작 유지)
   { name: '제 4조→제4조(실제 띄어쓰기 교정 유지)', corr: { original: '제 4조', correction: '제4조' },             essay: '제 4조에 따라 정했다',        expect: 'kept' }, // step598
-  { name: '여름방학→여름 방학(실제 교정 유지)',    corr: { original: '여름방학', correction: '여름 방학' },        essay: '나는 여름방학에 갔다',        expect: 'kept' }, // step598
+  { name: '여름방학→여름 방학(step649: 등재 합성어 분리 → 폐기)', corr: { original: '여름방학', correction: '여름 방학' }, essay: '나는 여름방학에 갔다', expect: 'dropped' }, // step598엔 kept(무의미 필터와 구분용)였으나 step649에서 '여름방학'이 COMPOUND_WORDS에 들어 복합어분리로 폐기(10/29 신고 "'여름 방학에'로 고치라고 함")
+  { name: '제 4조→제4조·여름방학 외 실제 띄어쓰기 교정 유지(할수있다)', corr: { original: '할수있다', correction: '할 수 있다' }, essay: '나도 할수있다',  expect: 'kept' }, // step649: 무의미 필터와 구분용 대체 케이스
   // step560: 문체역행 필터 — 반말 압도 글(formal ≤ 1 && plain ≥ 3)에서만 반말→존댓말 교정 폐기.
   { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
@@ -208,6 +215,15 @@ const MERGE = [
   { name: '공백 없는 글 "등등을"·"도" 삭제 → 띄어쓰기변형 폐기', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리 은행에 가서 돈을 찾고 과자 사고 싶었다 그렇고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'dropped' }, // 10/2 실사례형
   { name: '공백 없는 글 우리은행→우리 은행(글자 동일) → 통과(프롬프트 몫)', corr: { original: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', correction: '나는 우리 은행에 가서 돈을 찾고 과자 등등을 사고 싶었다도 그렀고 집에 왔다.' }, essay: '나는우리은행에가서돈을찾고과자등등을사고싶었다도그렀고집에왔다.', expect: 'kept' }, // 고유명사 분리는 글자 수가 같아 코드로 못 잡음 → [띄어쓰기] 프롬프트 줄이 막는다
   { name: '공백 있는 일반 교정(표현 대폭 변경) → 검사 안 함(기존대로 통과)', corr: { original: '있어서 그런지 그랬다', correction: '있기 때문에 그렇다' }, essay: '친구가 있어서 그런지 그랬다', expect: 'kept' },
+  // step649: 복합어분리 필터 — 사전 등재 합성어를 띄우는 교정은 폐기, 붙이는 교정(정답 방향)·무관 교정은 통과(10/29 신고 144건 재료).
+  { name: '가전제품→가전 제품(복합어분리 폐기)',       corr: { original: '가전제품', correction: '가전 제품' },     essay: '우리 집 가전제품을 샀다.',   expect: 'dropped' }, // step649
+  { name: '어린아이들→어린 아이들(복합어분리 폐기)',   corr: { original: '어린아이들', correction: '어린 아이들' }, essay: '어린아이들이 뛰어놀았다.',   expect: 'dropped' }, // step649 (신고 2번)
+  { name: '문장 단위 어린아이들 분리(복합어분리 폐기)', corr: { original: '어린아이들이 뛰어놀았다', correction: '어린 아이들이 뛰어놀았다' }, essay: '어린아이들이 뛰어놀았다.', expect: 'dropped' }, // step649
+  { name: '매일매일→매일 매일(복합어분리 폐기)',       corr: { original: '매일매일', correction: '매일 매일' },     essay: '매일매일 운동했다.',         expect: 'dropped' }, // step649
+  { name: '여름방학에→여름 방학에(복합어분리 폐기)',   corr: { original: '여름방학에', correction: '여름 방학에' }, essay: '여름방학에 바다에 갔다.',    expect: 'dropped' }, // step649
+  { name: '가전 제품→가전제품(정답 방향 통과)',         corr: { original: '가전 제품', correction: '가전제품' },     essay: '우리 집 가전 제품을 샀다.',  expect: 'kept' },    // step649: 붙이기는 코드로 막지 않음(왕복은 반대 방향 차단으로 끊김)
+  { name: '어린아이들이 뛰어놀앗다→뛰어놀았다(합성어 보존, 오타 교정 통과)', corr: { original: '어린아이들이 뛰어놀앗다', correction: '어린아이들이 뛰어놀았다' }, essay: '어린아이들이 뛰어놀앗다.', expect: 'kept' }, // step649: 합성어가 붙어 있으면 다른 교정은 무관
+  { name: '여러가지→여러 가지(목록 밖, 띄우기 통과)',   corr: { original: '여러가지', correction: '여러 가지' },     essay: '여러가지 색이 있다.',        expect: 'kept' },    // step649: 띄어 쓰는 구는 목록에 없음
 ]
 
 // step560: countSentenceStyles(essay) 직접 테스트 — 문체역행 필터의 발동 조건 판정 헬퍼.

@@ -64,6 +64,8 @@ const { pathToFileURL } = require('url')
     { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
     { name: "규칙 12('밖에' 핑퐁 금지)",       text: "'밖에'는 교정하지 마세요" }, // step576: 조사 '밖에'(붙임)/명사구 '밖에'(띄움) 양방향 교정 5:4 공존(전수조사)
     { name: '규칙 12(판정 원칙 문체 예외)',    text: '단 하나의 예외' }, // step577: 원칙 전면 금지가 문체 통일 허용을 덮은 침묵 사례(8/20) 해소
+    { name: '규칙 12(등재 합성어 분리·왕복 금지)', text: '붙여 쓴 형태가 표준이니' }, // step649: 10/29 신고 144건 — 가전제품·매일매일·어린아이들 띄우기 핑퐁
+    { name: '규칙 12(합성어 목록 = koreanRules 단일 소스)', text: '어린아이·매일매일·가전제품·여름방학' }, // step649: COMPOUND_WORDS import 확인
   ]
   for (const [pname, s] of Object.entries(prompts)) {
     for (const kp of KEY_PHRASES) {
@@ -184,6 +186,7 @@ const { pathToFileURL } = require('url')
       { name: '규칙 12(높임 표현 교체 금지)',    text: "'집→댁'" }, // step569: 8/19 실사례(집으로→댁으로·에게→께) 대응
       { name: "규칙 12('밖에' 핑퐁 금지)",       text: "'밖에'는 교정하지 마세요" }, // step576: 조사 '밖에'(붙임)/명사구 '밖에'(띄움) 양방향 교정 5:4 공존(전수조사)
       { name: '규칙 12(판정 원칙 문체 예외)',    text: '단 하나의 예외' }, // step577: 원칙 전면 금지가 문체 통일 허용을 덮은 침묵 사례(8/20) 해소
+      { name: '규칙 12(등재 합성어 분리·왕복 금지)', text: '붙여 쓴 형태가 표준이니' }, // step649
     ]
     const inlinePrompts = {}
     try { inlinePrompts.regradePrompt = regradePrompt({ topic, essay, rubrics }) } catch (e) { rec('RULES12', 'regradePrompt 생성', false, `예외: ${e.message}`) }
