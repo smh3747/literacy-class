@@ -309,7 +309,7 @@ export default function AdminHome() {
     // step637-B: 진입 인증은 getSession(로컬 세션, 왕복 0) — step327 학생 홈과 같은 원칙. 실질 검증은 아래 profiles 조회(토큰 검증)+role 가드.
     const { data: { session } } = await supabase.auth.getSession()
     const au = session?.user || null
-    if (!au) { router.push('/teacher/login'); return }
+    if (!au) { logAuthBounce({ screen: '/admin', reason: 'no_session' }); router.push('/teacher/login'); return }   // step640: 세션 없음도 익명 기록
     // step637: 401/JWT 만료면 refresh 1회 후 같은 조회 1회 재시도(무한 재시도 없음)
     const profileRes = await queryWithAuthRetry(() => supabase.from('profiles').select('*').eq('id', au.id).maybeSingle())
     const profile = profileRes.data

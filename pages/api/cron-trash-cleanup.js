@@ -33,6 +33,15 @@ export default async function handler(req, res) {
       console.warn('error_logs 정리 실패(무시):', e?.message || e)
     }
 
+    // 🆕 step640: 호출 제한 기록(api_rate_limit, step165) 2일 지난 행 삭제 — 익명 호출 가능한 auth_bounce 버킷이 생겨 크론화.
+    //   모든 버킷의 판정 창이 24시간 이하라 2일 넘은 행은 판정에 쓰이지 않는다.
+    try {
+      const rlCutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+      await supabase.from('api_rate_limit').delete().lt('created_at', rlCutoff)
+    } catch (e) {
+      console.warn('api_rate_limit 정리 실패(무시):', e?.message || e)
+    }
+
     // 각 학급의 보관 기간 가져오기
     const { data: classes, error: classErr } = await supabase
       .from('classes')
