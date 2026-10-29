@@ -296,6 +296,13 @@ export default function StudentHome() {
   const [exampleLoading, setExampleLoading] = useState(false)
   // step627: 피크 시 예시 작품 자동 생성 보류 — { essayText, totalMax, subId } 보관, "📖 예시 작품 보기" 누를 때 생성
   const [exampleDeferred, setExampleDeferred] = useState(null)
+  // step644: 온디맨드 핸들러 공용화 — 피드백/완료 카드와 수정 화면의 "📖 예시 작품 보기"가 같은 동작(내용 불변)
+  const showDeferredExample = () => {
+    const d = exampleDeferred
+    if (!d) return
+    setExampleDeferred(null)
+    generateExampleForSub(d.essayText, d.totalMax, d.subId)
+  }
   
   const [rewriteEssay, setRewriteEssay] = useState('')
   const [rewriting, setRewriting] = useState(false)
@@ -2325,7 +2332,7 @@ export default function StudentHome() {
                           <div className="space-y-2">
                             <p className="text-sm text-purple-700">지금은 친구들 글이 많이 몰려서 예시 작품을 나중에 만들어요. 보고 싶으면 눌러 주세요.</p>
                             <button
-                              onClick={() => { const d = exampleDeferred; setExampleDeferred(null); generateExampleForSub(d.essayText, d.totalMax, d.subId) }}
+                              onClick={showDeferredExample}
                               disabled={isImpersonating}
                               className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">
                               📖 예시 작품 보기
@@ -2501,11 +2508,26 @@ export default function StudentHome() {
                   </div>
 
                   {/* 예시 작품 (전체 폭, 아래쪽) */}
-                  {exampleText && (
+                  {/* step644: 피크로 보류된 예시(exampleDeferred)면 수정 중에도 "📖 예시 작품 보기"로 요청 가능 — 피드백 화면 온디맨드 핸들러 재사용 */}
+                  {(exampleText || exampleLoading || exampleDeferred) && (
                     <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5">
                       <h3 className="font-bold text-purple-900 mb-2 text-sm">📖 AI 예시 작품 (참고만)</h3>
                       <p className="text-xs text-purple-700 mb-2">⚠️ 베끼지 마세요! 어떻게 쓰는지만 참고하고 자기 글로 새로 써야 해요.</p>
-                      <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed break-keep">{exampleText}</p>
+                      {exampleLoading ? (
+                        <p className="text-sm text-purple-700">예시 작품을 만들고 있어요...</p>
+                      ) : exampleText ? (
+                        <p className="text-sm text-purple-900 whitespace-pre-wrap leading-relaxed break-keep">{exampleText}</p>
+                      ) : exampleDeferred ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-purple-700">지금은 친구들 글이 많이 몰려서 예시 작품을 나중에 만들어요. 보고 싶으면 눌러 주세요.</p>
+                          <button
+                            onClick={showDeferredExample}
+                            disabled={isImpersonating}
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">
+                            📖 예시 작품 보기
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </>
