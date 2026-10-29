@@ -18,6 +18,7 @@ import { isValidEmail } from '../../lib/email'
 import { getAuthErrorMessage } from '../../lib/authErrors'
 import { SAMPLE_TASTE } from '../../lib/sampleFeedback'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
+import { logAuthBounce } from '../../lib/entryAuth'   // step637: 로그인으로 보내기 직전 튕김 기록(signOut 전)
 import { toKST } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
@@ -548,11 +549,16 @@ export default function TeacherHome() {
 
   const checkAuth = async () => {
     // 🆕 임퍼소네이션 고려한 profile 조회
-    const { profile, isImpersonating: imp } = await getEffectiveProfile(
+    const { profile, isImpersonating: imp, reason: entryReason, entryRes } = await getEffectiveProfile(
       '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score)'   // step620: 글 모음 설정 2컬럼
     )
-    if (!profile) { router.push('/teacher/login'); return }
+    if (!profile) {
+      // step637: 튕김 기록(세션이 있을 때만 — 비로그인·삭제 계정은 기록 불가/대상 아님). 401 재시도(1회)는 getEffectiveProfile 안.
+      if (entryReason !== 'no_session' && entryReason !== 'deleted') await logAuthBounce({ screen: '/teacher', reason: entryReason || 'profile_null', res: entryRes })
+      router.push('/teacher/login'); return
+    }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
+      await logAuthBounce({ screen: '/teacher', reason: 'role_mismatch', extra: { role: profile.role } })   // step637: signOut 전에
       await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     setIsImpersonating(imp)

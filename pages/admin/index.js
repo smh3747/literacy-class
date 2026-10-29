@@ -10,6 +10,7 @@ import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
+import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -305,8 +306,12 @@ export default function AdminHome() {
   const checkAuth = async () => {
     const { data: { user: au } } = await supabase.auth.getUser()
     if (!au) { router.push('/teacher/login'); return }
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', au.id).maybeSingle()
+    // step637: 401/JWT 만료면 refresh 1회 후 같은 조회 1회 재시도(무한 재시도 없음)
+    const profileRes = await queryWithAuthRetry(() => supabase.from('profiles').select('*').eq('id', au.id).maybeSingle())
+    const profile = profileRes.data
     if (!profile || profile.role !== 'admin') {
+      // step637: profile 자체가 없으면 진입 튕김으로 기록(교사가 /admin에 온 role 불일치는 정상 안내라 기록 안 함)
+      if (!profile) await logAuthBounce({ screen: '/admin', reason: profileRes.error ? 'query_error' : 'profile_null', res: profileRes })
       alert('관리자만 접근 가능해요!')
       router.push('/teacher')
       return
@@ -3256,6 +3261,7 @@ export default function AdminHome() {
                 ai_call: 'bg-orange-100 text-orange-700',
                 api_error: 'bg-red-100 text-red-700',
                 js_error: 'bg-amber-100 text-amber-700',
+                auth_bounce: 'bg-amber-200 text-amber-900',   // step637: 진입 튕김(로그인으로 쫓겨남)
               }
               return map[t] || 'bg-gray-100 text-gray-600'
             }

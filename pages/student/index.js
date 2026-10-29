@@ -28,6 +28,7 @@ import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 
 import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
 // 👁 step633: 관리자 학생 엿보기(?as=) — 교사 페이지 관행(getEffectiveProfile·배너·쓰기 전면 차단)
 import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonatingNow, impersonationTargetId } from '../../lib/impersonation'
+import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
@@ -428,17 +429,20 @@ export default function StudentHome() {
       const tProfile = performance.now()
       const PROFILE_SELECT = '*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)'
       // 👁 step633: ?as=가 있으면 getEffectiveProfile(admin만 통과, 대상은 학생만). 없으면 학생 본인 경로 종전 그대로.
-      let profile, imp = false
+      let profile, imp = false, profileRes = null
       if (isImpersonatingNow()) {
         const r = await withTimeout(getEffectiveProfile(PROFILE_SELECT, { allowedRoles: ['student'] }))
-        profile = r.profile; imp = r.isImpersonating
+        profile = r.profile; imp = r.isImpersonating; profileRes = r.entryRes || null
       } else {
-        const { data } = await withTimeout(supabase.from('profiles').select(PROFILE_SELECT).eq('id', uid).maybeSingle())
-        profile = data
+        // step637: 401/JWT 만료면 refresh 1회 후 같은 조회 1회 재시도(무한 재시도 없음). 시도마다 10초 타임아웃.
+        profileRes = await queryWithAuthRetry(() => withTimeout(supabase.from('profiles').select(PROFILE_SELECT).eq('id', uid).maybeSingle()))
+        profile = profileRes.data
       }
-      console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}`)
+      console.log(`[perf] profile 조회: ${Math.round(performance.now() - tProfile)}ms, rows=${profile ? 1 : 0}${profileRes?.retried ? ' (세션 갱신 후 재시도)' : ''}`)
       if (!profile || profile.role !== 'student') {
         if (profile?.role === 'admin') { router.push('/admin'); return }   // step633: 엿보기 대상이 잘못돼도 관리자 세션은 끊지 않음
+        // step637: 튕김 기록은 signOut 전에(비로그인 insert는 RLS 차단). 실패해도 진행.
+        await logAuthBounce({ screen: '/student', reason: !profile ? (profileRes?.error ? 'query_error' : 'profile_null') : 'role_mismatch', res: profileRes, extra: profile ? { role: profile.role } : null })
         await supabase.auth.signOut({ scope: 'local' }); router.push('/student/login'); return
       }
       setIsImpersonating(imp)
@@ -543,6 +547,29 @@ export default function StudentHome() {
     }
   }
 
+  // step637: 챌린지 카드만 다시 받기 — 비차단 supply-adopt가 새 복사본을 만든 뒤 1회 호출. 학급 주제·글·단계 불변.
+  //   myMaxAttempt 계산은 loadTodayTopic의 challenges 매핑과 동일(새 복사본은 제출 0건이지만 같은 식으로 산출).
+  const refreshChallengeCards = async (profile, teacherId, today) => {
+    try {
+      const { data: tts } = await withTimeout(supabase.from('topics')
+        .select('*').eq('teacher_id', teacherId).eq('date', today)
+        .is('supply_type', null)
+        .order('created_at', { ascending: true }))
+      const challenges = (tts || []).filter(t => t.source_supply_id)
+      if (challenges.length === 0) return
+      const { data: mySubs } = await withTimeout(supabase.from('submissions')
+        .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', challenges.map(t => t.id))
+        .is('deleted_at', null)).catch(() => ({ data: [] }))
+      const maxAttemptByTopic = {}
+      ;(mySubs || []).forEach(s => {
+        const cur = maxAttemptByTopic[s.topic_id] || 0
+        if ((s.attempt || 1) > cur) maxAttemptByTopic[s.topic_id] = s.attempt || 1
+      })
+      setChallengeTopics(challenges.map(t => ({ ...t, myMaxAttempt: maxAttemptByTopic[t.id] || 0 })))
+      console.log(`[perf] 챌린지 카드 재조회(자동 등록 반영): rows=${challenges.length}`)
+    } catch (e) { console.warn('챌린지 카드 재조회 실패(무시):', e?.message) }
+  }
+
   const loadTodayTopic = async (profile, targetTopicId = null) => {
    try {
     if (!profile.class_id) return
@@ -584,15 +611,22 @@ export default function StudentHome() {
       const today = todayStr()
 
       // 🆕 step477: 전국 글쓰기 챌린지 주제 lazy 자동 등록 — 오늘 발행분이 아직 없으면 서버가 복사해 준다.
-      //   첫 진입 학생에게도 주제가 바로 보이게 조회 전에 짧게 기다리되(4초 타임아웃), 실패·지연은 무시.
       //   step507: 토글 무관 상시 호출 — OFF 학급이면 서버가 전일 미제출 복사본 청소만 하고 disabled 반환.
+      //   step637: 비차단 — 응답(함수 콜드 스타트 + 서버 쿼리 5~7)을 기다리지 않고 아래 조회로 바로 진행.
+      //     응답의 adopted에 방금 받은 오늘 주제 목록에 없는 id가 있을 때만 챌린지 카드를 1회 재조회(아래 refreshChallengeCards).
+      //     4초 타임아웃·실패 무시는 종전 그대로. 첫 진입 학생은 챌린지 카드가 1~2초 늦게 나타날 수 있다.
+      let adoptP = null
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.access_token && !isImpersonatingNow()) {   // step633: 엿보기는 자동 등록(서버 쓰기) 호출 안 함
-          await withTimeout(fetch('/api/supply-adopt', {
+          const tAdopt = performance.now()
+          adoptP = withTimeout(fetch('/api/supply-adopt', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accessToken: session.access_token }),
           }), 4000)
+            .then(r => r.json())
+            .then(d => { console.log(`[perf] supply-adopt 응답(비차단): ${Math.round(performance.now() - tAdopt)}ms, adopted=${(d?.adopted || []).length}`); return d })
+            .catch(e => { console.warn('공통 주제 자동 등록 실패(무시):', e?.message); return null })
         }
       } catch (e) { console.warn('공통 주제 자동 등록 실패(무시):', e?.message) }
 
@@ -654,8 +688,19 @@ export default function StudentHome() {
         setChallengeTopics([])   // step492: 폴백 재실행 시 잔존 방지
       }
 
+      // step637: 자동 등록 응답이 오면(비차단) 방금 받은 목록에 없는 복사본이 있을 때만 챌린지 카드 재조회.
+      //   주제 선택·글·단계는 건드리지 않는다(챌린지 복사본은 자동 선택 대상이 아님 — step492).
+      if (adoptP) {
+        const knownIds = new Set((todayTopics || []).map(t => t.id))
+        adoptP.then(d => {
+          const fresh = (d?.adopted || []).filter(a => a?.id && !knownIds.has(a.id))
+          if (fresh.length > 0) refreshChallengeCards(profile, teacherId, today)
+        })
+      }
+
       // 보조 조회(지난 주제·미확인 코멘트) 완료 보장 — 실패해도 진행(화면 결과 동일)
-      await Promise.allSettled([pendingP, unreadP])
+      //   step637: allSettled → all(각 항목 catch) — iOS 12·Safari 12에는 allSettled이 없어 진입이 재시도 화면으로 떨어졌다. 동작 동일.
+      await Promise.all([pendingP, unreadP].map(p => p.catch(() => null)))
     }
 
     if (!topic) { syncTopicUrl(null); return }   // step513: 빈 날(챌린지만 등) — 홈은 깨끗한 URL

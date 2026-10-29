@@ -160,6 +160,10 @@ function fakeGenAI(makeResponse) {
     rec('ADMIN', '회귀: 401 → ⚪ 세션 만료(ignore)', ec.severityOf('401 UNAUTHENTICATED', null) === 'ignore', '')
     rec('ADMIN', '회귀: 기타 → action', ec.severityOf('알 수 없는 오류', null) === 'action', '')
     rec('ADMIN', "'safetySettings' 같은 단어만으로는 오분류 없음", ec.classifyError('invalid safetySettings param', null).label !== '🟣 AI 안전 필터', ec.classifyError('invalid safetySettings param', null).label)
+    // step637: 진입 튕김 라벨 — 401/JWT 문구가 뒤따라도 ⚪ 세션 만료로 묻히지 않고 조치 필요(action)
+    rec('ADMIN', '진입 튕김(401 JWT expired 포함) → 🟤 진입 튕김', ec.classifyError('진입 튕김: query_error (401) JWT expired', { reason: 'query_error' }).label === '🟤 진입 튕김', ec.classifyError('진입 튕김: query_error (401) JWT expired', null).label)
+    rec('ADMIN', '진입 튕김은 action(조치 필요)', ec.severityOf('진입 튕김: profile_null', null) === 'action', '')
+    rec('ADMIN', "'진입' 단어만으로는 오분류 없음", ec.classifyError('진입 중 401 UNAUTHENTICATED', null).label === '⚪ 세션 만료', ec.classifyError('진입 중 401 UNAUTHENTICATED', null).label)
   }
 
   // ── 출력 (gate-prompts.js와 동일 형식) ──
