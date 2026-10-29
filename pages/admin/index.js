@@ -304,6 +304,8 @@ export default function AdminHome() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
+    // step639: 진입 체감 지표 — 학생 홈과 같은 [perf] console 로그(profile · loadAll · 총계)
+    const tStart = performance.now()
     // step637-B: 진입 인증은 getSession(로컬 세션, 왕복 0) — step327 학생 홈과 같은 원칙. 실질 검증은 아래 profiles 조회(토큰 검증)+role 가드.
     const { data: { session } } = await supabase.auth.getSession()
     const au = session?.user || null
@@ -318,8 +320,12 @@ export default function AdminHome() {
       router.push('/teacher')
       return
     }
+    console.log(`[perf] profile 조회: ${Math.round(performance.now() - tStart)}ms${profileRes.retried ? ' (세션 갱신 후 재시도)' : ''}`)
     setUser(profile)
+    const tLoad = performance.now()
     await loadAll()
+    console.log(`[perf] loadAll(첫 배치 13 + 보충): ${Math.round(performance.now() - tLoad)}ms`)
+    console.log(`[perf] 관리자 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
     setLoading(false)
   }
 

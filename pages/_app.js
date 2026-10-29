@@ -6,6 +6,7 @@ import VersionChecker from '../components/VersionChecker'
 import { purgeLegacyApiKey } from '../lib/gemini'
 import { logError } from '../lib/errorLog'
 import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/next'   // step639: Route별 LCP·TTFB·INP p75 수집(대시보드에서 Enable 필요)
 
 export default function App({ Component, pageProps }) {
   const router = useRouter()
@@ -77,6 +78,8 @@ export default function App({ Component, pageProps }) {
       {/* 🆕 새 버전 자동 감지 — 배포 나가면 사용자에게 새로고침 안내 */}
       <VersionChecker />
       <Analytics />
+      {/* step639: Speed Insights — CSR이라 LCP는 '로딩 중' 텍스트가 잡힐 수 있어 보조 지표. 체감은 각 홈의 [perf] console 로그 */}
+      <SpeedInsights />
     </>
   )
 }

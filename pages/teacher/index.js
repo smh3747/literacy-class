@@ -548,6 +548,8 @@ export default function TeacherHome() {
   }
 
   const checkAuth = async () => {
+    // step639: 진입 체감 지표 — 학생 홈과 같은 [perf] console 로그(profile · 1라운드 · 2라운드 · 총계). 설정 저장 후 재호출 때도 찍힌다.
+    const tStart = performance.now()
     // 🆕 임퍼소네이션 고려한 profile 조회
     const { profile, isImpersonating: imp, reason: entryReason, entryRes } = await getEffectiveProfile(
       '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score)'   // step620: 글 모음 설정 2컬럼
@@ -561,6 +563,7 @@ export default function TeacherHome() {
       await logAuthBounce({ screen: '/teacher', reason: 'role_mismatch', extra: { role: profile.role } })   // step637: signOut 전에
       await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
+    console.log(`[perf] profile 조회: ${Math.round(performance.now() - tStart)}ms${entryRes?.retried ? ' (세션 갱신 후 재시도)' : ''}`)
     setIsImpersonating(imp)
     setUser(profile)
     setClassInfo(profile.classes)
@@ -595,6 +598,7 @@ export default function TeacherHome() {
       // step637-B: 1라운드 병렬 — 종전 3건(학생 수·주제 수·username 5명)에 독립 조회 2건(학생 id 전원·API 키 존재)을 합침.
       //   조회별 실패는 각자 null(safe)로 끝나 다른 조회·화면에 영향 없음(종전엔 try 하나에 묶여 뒤 조회가 통째로 생략됐음).
       const safe = (p) => Promise.resolve(p).then(r => r, () => null)
+      const tRound1 = performance.now()
       const [s, t, samples, studentIdsRes, keyRes] = await Promise.all([
         safe(supabase.from('profiles').select('id', { count: 'exact', head: true })
           .eq('class_id', profile.classes.id).eq('role', 'student')
@@ -612,6 +616,7 @@ export default function TeacherHome() {
         safe(supabase.from('class_secrets')
           .select('class_id').eq('class_id', profile.classes.id).maybeSingle()),
       ])
+      console.log(`[perf] 1라운드(학생 수·주제 수·샘플·학생 id·키) 조회: ${Math.round(performance.now() - tRound1)}ms`)
       setStudentSamples(samples?.data || [])
       // 🆕 다음 걸음 카드 — 비차단(await 안 함). API키 불필요.
       //   step568: 엿보기에서도 호출(조회 전용 함수 — 화면 일치). 쓰기는 recordOnboarding 첫머리 가드가 차단.
@@ -694,6 +699,7 @@ export default function TeacherHome() {
 
         // step637-B: 2라운드 병렬 — 학생 id에 의존하는 5건(맛보기 존재·신고 수·수정 요청·PT 제출 수·KST 제출 수)을 한 번에.
         //   각 쿼리 조건·limit 종전 그대로. 실패는 각자 null → 종전 try 분기와 같은 기본값(0·null·"피드백 없음").
+        const tRound2 = performance.now()
         const [fbRes, repRes, reqRes, ptRes, kstRes] = await Promise.all([
           // 맛보기: 존재 여부만 — limit 1, 무거운 집계 금지(이미 닫았으면 조회 자체 생략 — 종전과 동일)
           tasteDismissed ? Promise.resolve(null) : safe(supabase.from('submissions')
@@ -727,6 +733,7 @@ export default function TeacherHome() {
             .gte('created_at', kstMidnightUtc)
             .is('deleted_at', null)),
         ])
+        console.log(`[perf] 2라운드(맛보기·신고·수정 요청·오늘 제출 2) 조회: ${Math.round(performance.now() - tRound2)}ms`)
 
         if (!tasteDismissed) setShowTaste(!(fbRes?.data && fbRes.data.length > 0))
         reportCount = repRes?.count || 0
@@ -742,6 +749,7 @@ export default function TeacherHome() {
       }
       setStats({ students: s?.count || 0, topics: t?.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
     }
+    console.log(`[perf] 교사 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
     setLoading(false)
   }
 
