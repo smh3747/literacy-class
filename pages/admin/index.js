@@ -11,6 +11,7 @@ import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
+import { summarizeTimings, fmtSec, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수)
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -269,6 +270,9 @@ export default function AdminHome() {
   const [reportRows, setReportRows] = useState({ loaded: false, rows: [], error: null })
   const [reportFilter, setReportFilter] = useState('전체')   // 전체 | 미해결 | 해결
   const REPORT_CHIP = '🚨 학생 신고'
+  // ⏱ step643: 채점 대기 시간 실측(submissions.grading_ms·grading_path, 최근 14일) — 의심 교정 탭 "⏱ 채점 시간" 칩에서 로드
+  const [timingRows, setTimingRows] = useState({ loaded: false, rows: [], error: null })
+  const TIMING_CHIP = '⏱ 채점 시간'
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -647,6 +651,27 @@ export default function AdminHome() {
       setReportRows({ loaded: true, rows, error: null })
     })()
   }, [tab, suspectFilter, reportRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ⏱ step643: 채점 대기 시간 — "⏱ 채점 시간" 칩을 열 때 1회 로드. 최근 14일 grading_ms 있는 행만(본문·실명·번호 없음, class_id만).
+  //   PostgREST 1,000행 상한 → range 페이지 최대 3장(3,000건). 컬럼 미적용이면 error(블록이 SQL 안내).
+  useEffect(() => {
+    if (tab !== 'corrections' || suspectFilter !== TIMING_CHIP || timingRows.loaded) return
+    ;(async () => {
+      const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+      const rows = []
+      let error = null
+      for (let page = 0; page < 3; page++) {
+        const { data, error: e } = await supabase.from('submissions')
+          .select('created_at, grading_ms, grading_path, attempt, profiles!submissions_user_id_fkey(class_id)')
+          .not('grading_ms', 'is', null).is('deleted_at', null).gte('created_at', since)
+          .order('created_at', { ascending: false }).range(page * 1000, page * 1000 + 999)
+        if (e) { error = e.message || '알 수 없는 오류'; break }
+        rows.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      setTimingRows({ loaded: true, rows, error })
+    })()
+  }, [tab, suspectFilter, timingRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🚨 step635: 관리자 해결 — 담임 "✓ 확인 완료"와 같은 처리(reported=false만, reported_at 보존). 해결 시각은 컬럼 있을 때만.
   const resolveReport = async (id) => {
@@ -3442,7 +3467,7 @@ export default function AdminHome() {
               else { gmap[key] = { rep: a, ids: [a.id] }; groups.push(gmap[key]) }
             })
             // 🆕 유형 필터 칩 — prefix 매칭('(차단됨)' 무관), 클라이언트 필터만
-            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전', '사유 없음만', REPORT_CHIP]  // step588: 점수역전 칩 / step590: 사유 없음만 칩 / step635: 학생 신고 이력
+            const FILTER_CHIPS = ['전체', '안않오교정', '불가능형태', '문체개입', '과도한변형', '점수역전', '사유 없음만', REPORT_CHIP, TIMING_CHIP]  // step588: 점수역전 칩 / step590: 사유 없음만 칩 / step635: 학생 신고 이력 / step643: 채점 시간
             // step590: '사유 없음만' — 점수역전 중 AI가 하락 사유를 안 적은 건만. 새 행은 suspect_type 접미로,
             //   구판 행(step588~589 적체)은 reason의 [no_reason] 마커로 식별(리셋 전까지 호환).
             const isNoReason = (a) => (a.suspect_type || '').startsWith('점수역전(사유 없음)')
@@ -3520,6 +3545,69 @@ export default function AdminHome() {
                 </div>
               )
             })()
+            // ⏱ step643: 채점 대기 시간 블록 — 최근 14일 grading_ms 집계(lib/gradingTiming.js summarizeTimings). 일별(KST)·학급별 p50/p95/최대·60초 초과.
+            const timingBlock = (() => {
+              const clsById = {}
+              ;[...classes, ...trashedClasses].forEach(c => { clsById[c.id] = c })
+              const classLabel = (id) => {
+                if (!id || id === 'unknown') return '학급 정보 없음'
+                const cls = clsById[id]
+                return cls ? ([cls.teacher_profile?.school, cls.name].filter(Boolean).join(' ') || cls.name || id) : '(삭제된 학급)'
+              }
+              const s = summarizeTimings(timingRows.rows.map(r => ({ ms: r.grading_ms, path: r.grading_path, at: r.created_at, classId: r.profiles?.class_id || null })))
+              const PATH_LABEL = { inline: '정상', pending: '검사 보류(피크)', fallback: '보조 모델', retry: '재시도', error_then_retry: '실패 후 재시도', unknown: '미분류' }
+              const cell = (v, warn) => <td className={`px-2 py-1.5 text-right tabular-nums ${warn ? 'text-red-600 font-semibold' : ''}`}>{v}</td>
+              const statRow = (key, label, st) => (
+                <tr key={key} className="border-t border-gray-100">
+                  <td className="px-2 py-1.5 text-gray-800">{label}</td>
+                  {cell(st.n)}{cell(fmtSec(st.p50))}{cell(fmtSec(st.p95), st.p95 > OVER_MS)}{cell(fmtSec(st.max), st.max > OVER_MS)}{cell(st.over60, st.over60 > 0)}
+                </tr>
+              )
+              const head = (first) => (
+                <thead><tr className="text-[11px] text-gray-500">
+                  <th className="px-2 py-1 text-left font-medium">{first}</th>
+                  <th className="px-2 py-1 text-right font-medium">건수</th><th className="px-2 py-1 text-right font-medium">p50</th>
+                  <th className="px-2 py-1 text-right font-medium">p95</th><th className="px-2 py-1 text-right font-medium">최대</th><th className="px-2 py-1 text-right font-medium">60초 초과</th>
+                </tr></thead>
+              )
+              return (
+                <div>
+                  <div className="text-xs text-gray-500 mb-2">학생이 제출을 확정한 뒤 AI 결과를 받기까지 걸린 시간이에요. 학생 화면이 보낸 측정값(최근 14일, 삭제 글 제외)으로 집계해요.</div>
+                  {!timingRows.loaded ? (
+                    <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
+                  ) : timingRows.error ? (
+                    <div className="py-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4">
+                      측정값을 불러오지 못했어요. <span className="text-xs break-all">{timingRows.error}</span>
+                      <div className="text-xs text-red-500 mt-1">컬럼이 없다는 오류면 <code>migrations/step643-grading-ms.sql</code>을 적용해 주세요.</div>
+                    </div>
+                  ) : s.total.n === 0 ? (
+                    <div className="py-8 text-center text-sm text-gray-400">아직 측정값이 없어요. <code>migrations/step643-grading-ms.sql</code> 적용 후 새 제출부터 쌓여요.</div>
+                  ) : (
+                    <>
+                      <div className="text-sm font-semibold text-gray-800 mb-1">
+                        ⏱ 최근 14일 {s.total.n}건 · p50 {fmtSec(s.total.p50)} · p95 <span className={s.total.p95 > OVER_MS ? 'text-red-600' : ''}>{fmtSec(s.total.p95)}</span> · 최대 <span className={s.total.max > OVER_MS ? 'text-red-600' : ''}>{fmtSec(s.total.max)}</span> · 60초 초과 <span className={s.total.over60 > 0 ? 'text-red-600' : ''}>{s.total.over60}건</span>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap mb-3">
+                        {Object.entries(s.paths).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
+                          <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{PATH_LABEL[k] || k} {n}</span>
+                        ))}
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">일별 (한국 시각)</div>
+                          <table className="w-full text-xs">{head('날짜')}<tbody>{s.byDay.map(d => statRow(d.key, d.key, d))}</tbody></table>
+                        </div>
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">학급별 (14일 합, 건수순)</div>
+                          <table className="w-full text-xs">{head('학급')}<tbody>{s.byClass.map(c => statRow(c.key, classLabel(c.key), c))}</tbody></table>
+                        </div>
+                      </div>
+                      {timingRows.rows.length >= 3000 && <div className="text-[11px] text-gray-400 mt-2">최근 3,000건까지만 집계했어요.</div>}
+                    </>
+                  )}
+                </div>
+              )
+            })()
             return (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
@@ -3562,7 +3650,7 @@ export default function AdminHome() {
                         </button>
                       ))}
                     </div>
-                    {suspectFilter === REPORT_CHIP ? reportsBlock : suspectAlerts.length === 0 ? (
+                    {suspectFilter === TIMING_CHIP ? timingBlock : suspectFilter === REPORT_CHIP ? reportsBlock : suspectAlerts.length === 0 ? (
                       <div className="py-8 text-center text-sm text-gray-400">의심 교정이 없어요 🎉</div>
                     ) : filtered.length === 0 ? (
                       <div className="py-8 text-center text-sm text-gray-400">이 유형의 의심 교정이 없어요</div>

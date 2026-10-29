@@ -29,6 +29,7 @@ import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
 // 👁 step633: 관리자 학생 엿보기(?as=) — 교사 페이지 관행(getEffectiveProfile·배너·쓰기 전면 차단)
 import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonatingNow, impersonationTargetId } from '../../lib/impersonation'
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
+import { deriveGradingPath } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 실측 — 경로 한 값 판정(순수)
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
@@ -332,6 +333,7 @@ export default function StudentHome() {
   // 🆕 step283: 제출 동기 재진입 가드 — state(submitting/rewriting)는 re-render 후에야 반영돼
   //   같은 프레임 연타·await 창 재진입을 못 막음(중복 insert 원인). ref는 즉시 잠겨 확실히 차단.
   const submittingRef = useRef(false)
+  const gradeFailRef = useRef(new Set())   // step643: 실패 뒤 재시도 추적 — 키 `${topicId}|${attempt}`(경로 'error_then_retry' 판정용)
   // 🆕 step364: 채점 완료 직후 결과 시작점 착지용
   //   스크롤 코드가 없어도 브라우저 스크롤 앵커링이 하단 잔존 요소(내 글 기록 링크)를 붙잡아
   //   결과 맨 끝에 착지하는 문제 → 채점 직후에만 결과 상단으로 스크롤
@@ -883,6 +885,8 @@ export default function StudentHome() {
 
     submittingRef.current = true  // 🆕 step283: 첫 await 전 동기 잠금(연타 중복 방지)
     setSubmitting(true)
+    const tGrade0 = performance.now()   // step643: 채점 대기 시간 측정 시작(확인 대화상자 통과 직후, 중복 확인 조회 포함)
+    let gradingMs = null
 
     // 🆕 step575: insert 전 존재 확인 — attempt=1 중복행 사고(두 기기 동시 제출·AI 대기 중 이탈 후
     //   재제출·응답 유실 후 재시도) 차단. submittingRef는 마운트 로컬이라 이 검사가 유일한 교차 방어.
@@ -926,6 +930,7 @@ export default function StudentHome() {
           essay,
           rubrics,
         })
+        gradingMs = Math.round(performance.now() - tGrade0)   // step643: 결과 수신 시점
       } catch (aiErr) {
         if (!isSafetyBlockedErr(aiErr)) throw aiErr
         // 🟣 step606: 안전 필터 차단 — 같은 글은 다시 막히므로 재시도 없이 점수 없이 저장하고 끝(정리는 finally)
@@ -1001,6 +1006,14 @@ export default function StudentHome() {
       if (error) throw error
       lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
 
+      // step643: 채점 대기 시간·경로를 별도 update로(컬럼 미적용이면 실패를 무시 — insert는 불변). 화면 영향 없음.
+      try {
+        const failKey = `${todayTopic.id}|1`
+        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })
+        gradeFailRef.current.delete(failKey)
+        if (gradingMs !== null) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id)
+      } catch (_) { /* 측정 저장 실패는 무시 */ }
+
       // step571: 초안 정리 (새 키 + 구 백업 키)
       removeDraft(todayTopic.id, user.id, 'write')
       // step575: 지난 글 목록에서 제거 — 제출한 주제가 "안 쓴 글" 목록에 남아 재제출을 유인하던 문제
@@ -1029,6 +1042,7 @@ export default function StudentHome() {
       else generateExampleForSub(essay, totalMax, sub.id)
     } catch(e) {
       console.error('제출 오류:', e)
+      try { gradeFailRef.current.add(`${todayTopic?.id}|1`) } catch (_) {}   // step643: 다음 성공 시 'error_then_retry'
       const rawMsg = e?.message || ''
       // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
       const isAuthExpired = /인증|로그인/.test(rawMsg)
@@ -1368,6 +1382,8 @@ export default function StudentHome() {
     // 🆕 step283: 첫 await(중복확인 쿼리) 전에 동기 잠금 — 연타/재진입으로 같은 attempt 중복 insert 방지.
     //   read-then-insert(아래 existingSubs→insert)가 비원자라, 동시 진입 시 모두 같은 attempt로 insert되던 버그.
     submittingRef.current = true
+    const tGrade0 = performance.now()   // step643: 측정 시작(잠금 통과 직후, 수정 횟수 조회 포함)
+    let gradingMs = null
 
     // 추가 수정 권한 체크
     const { data: existingSubs, error: existingSubsErr } = await supabase.from('submissions')
@@ -1418,6 +1434,7 @@ export default function StudentHome() {
           rubrics,
           topicId: todayTopic.id,  // 🆕 step442: 서버가 직전 채점 요약을 조회하는 식별자(요약 자체는 서버 생성)
         })
+        gradingMs = Math.round(performance.now() - tGrade0)   // step643: 결과 수신 시점
       } catch (aiErr) {
         if (!isSafetyBlockedErr(aiErr)) throw aiErr
         // 🟣 step606: 안전 필터 차단 — 수정본도 점수 없이 저장(최종 처리), 점수 alert 없음(정리는 finally)
@@ -1486,6 +1503,14 @@ export default function StudentHome() {
       if (error) throw error
       lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
 
+      // step643: 채점 대기 시간·경로 별도 update(실패 무시, insert 불변). 수정본은 전용 검사가 없어 pending 없음.
+      try {
+        const failKey = `${todayTopic.id}|${nextAttempt}`
+        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), isFallback: rwIsFallback, attempts: result.__attempts })
+        gradeFailRef.current.delete(failKey)
+        if (gradingMs !== null && newSub?.id) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', newSub.id)
+      } catch (_) { /* 측정 저장 실패는 무시 */ }
+
       // 이전 글들도 final 처리 (step512: 수정 기회 요청 흔적도 청소 — 요청이 이행됐으므로)
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
@@ -1517,6 +1542,7 @@ export default function StudentHome() {
       else generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
     } catch(e) {
       console.error('수정본 제출 오류:', e)
+      try { gradeFailRef.current.add(`${todayTopic?.id}|${nextAttempt}`) } catch (_) {}   // step643
       const rawMsg = e?.message || ''
       // 로그인 세션 만료(401)면 새로고침 버튼 노출 — 판정은 원본 메시지 기준
       const isAuthExpired = /인증|로그인/.test(rawMsg)
