@@ -555,12 +555,12 @@ export default function TeacherHome() {
       '*, classes:class_id(id, name, code, grade, ranking_enabled, board_scope, login_hint_enabled, login_username_prefix, login_default_password, tutor_chat_enabled, self_signup_enabled, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score)'   // step620: 글 모음 설정 2컬럼
     )
     if (!profile) {
-      // step637: 튕김 기록. 401 재시도(1회)는 getEffectiveProfile 안. step640: 서버 API 경로라 세션 없음(no_session)도 기록(삭제 계정만 제외).
+      // step637: 튕김 기록. 401 재시도(1회)는 getEffectiveProfile 안. step641: 서버 API 경로라 세션 없음(no_session)도 기록(삭제 계정만 제외).
       if (entryReason !== 'deleted') await logAuthBounce({ screen: '/teacher', reason: entryReason || 'profile_null', res: entryRes })
       router.push('/teacher/login'); return
     }
     if (profile.role !== 'teacher' && profile.role !== 'admin') {
-      await logAuthBounce({ screen: '/teacher', reason: 'role_mismatch', extra: { role: profile.role } })   // step637(step640: 서버 API 경로, 즉시 반환)
+      await logAuthBounce({ screen: '/teacher', reason: 'role_mismatch', extra: { role: profile.role } })   // step637(step641: 서버 API 경로, 즉시 반환)
       await supabase.auth.signOut({ scope: 'local' }); router.push('/teacher/login'); return
     }
     console.log(`[perf] profile 조회: ${Math.round(performance.now() - tStart)}ms${entryRes?.retried ? ' (세션 갱신 후 재시도)' : ''}`)

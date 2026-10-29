@@ -1,4 +1,4 @@
-// 진입 튕김 익명 기록 — step640
+// 진입 튕김 익명 기록 — step641
 //
 // 세 홈(학생·교사·관리자)이 로그인으로 쫓아내기 직전 부른다(lib/entryAuth.js logAuthBounce).
 // step637의 클라이언트 insert 경로는 RLS(elog_insert: authenticated 전용) 때문에

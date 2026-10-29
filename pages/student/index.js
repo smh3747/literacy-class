@@ -424,7 +424,7 @@ export default function StudentHome() {
       const { data: { session } } = await supabase.auth.getSession()
       console.log(`[perf] auth 확인: ${Math.round(performance.now() - tAuth)}ms`)
       const uid = session?.user?.id
-      if (!uid) { logAuthBounce({ screen: '/student', reason: 'no_session' }); router.push('/student/login'); return }   // step640: 세션 없음도 익명 기록
+      if (!uid) { logAuthBounce({ screen: '/student', reason: 'no_session' }); router.push('/student/login'); return }   // step641: 세션 없음도 익명 기록
 
       const tProfile = performance.now()
       const PROFILE_SELECT = '*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)'
