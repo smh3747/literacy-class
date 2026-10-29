@@ -19,7 +19,7 @@ import { mergeCorrectionsDetailed, findRuleBasedErrors } from '../../lib/koreanR
 import { briefingPrompt, briefingSchema } from '../../lib/briefingPrompt.server'
 import { supplyTopicPrompt, supplyTopicSchema, supplyTopicBatchPrompt, supplyTopicBatchSchema, supplyNewsScoutPrompt } from '../../lib/supplyTopicPrompt.server'
 // step600: 첫 채점 이중 호출(전용 맞춤법 검사 선행·주입) 공용 모듈
-import { ensureStrictColumn, getClassTeacherId, countRecentGradings, runStrictCheck, unionCorrections,
+import { ensureStrictColumn, countRecentGradings, runStrictCheck, unionCorrections,   // step645: getClassTeacherId → getClassRow(이 파일) 재사용
   INLINE_GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
 // step627: 피크 판정 창(요청 시각 기준, 학급별 60초) — 피크면 전용 검사 인라인 생략(pending) + 예시 생성 보류 플래그
 import { recordAndCount, isPeak } from '../../lib/peakWindow'
@@ -212,6 +212,31 @@ async function notifyApiKeyInvalid(classId) {
 // step529: allowMissingKey — 관리자 운영 작업이 SYSTEM 키를 쓸 수 있을 때만 true.
 //   true면 학급·키가 없어도 400 대신 { apiKey: null, ... }을 반환해 호출자가 SYSTEM 키로 대체하게 한다.
 //   기본 false — 교사·학생 경로는 기존 동작과 완전 동일.
+// step645: 학급 행(teacher_id·grade) 서버 조회 — 함수 인스턴스 메모 10분(피크 때 채점마다 재조회 방지).
+//   grading의 전용 검사 가드(teacher_id, 종전 getClassTeacherId와 같은 쿼리)와 세 프롬프트의 학년 인자(spell step641)가 공용.
+//   학년은 클라이언트 payload를 쓰지 않는다(조작 경로 차단, spell 권고). 1~6 정수 아니면 null(=기본 5학년, 프롬프트 바이트 동일).
+const CLASS_ROW_TTL_MS = 10 * 60 * 1000
+const classRowCache = new Map()   // classId → { row: { teacher_id, grade }, at }
+async function getClassRow(classId) {
+  if (!classId) return null
+  const hit = classRowCache.get(classId)
+  if (hit && Date.now() - hit.at < CLASS_ROW_TTL_MS) return hit.row
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceKey) return null
+  try {
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { data } = await admin.from('classes').select('teacher_id, grade').eq('id', classId).maybeSingle()
+    const row = data || null
+    if (row) classRowCache.set(classId, { row, at: Date.now() })
+    return row
+  } catch (e) {
+    console.warn('학급 행 조회 실패(학년 기본값으로 계속):', e?.message)
+    return null
+  }
+}
+const classGradeOf = (row) => { const n = Number(row?.grade); return Number.isInteger(n) && n >= 1 && n <= 6 ? n : null }
+
 async function resolveApiKey({ accessToken, classId: classIdParam, allowMissingKey = false }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -345,6 +370,7 @@ export default async function handler(req, res) {
       //     넘기고(보완 큐가 처리) 예시 생성도 보류 플래그. 저장 기준 N(≤ INLINE_GUARD_MAX=3)은 보조.
       const peakCount = recordAndCount(keyResult.classId)
       peak = isPeak(peakCount)
+      const clsRow = await getClassRow(keyResult.classId)   // step645: teacher_id(전용 검사 가드)·grade(프롬프트 학년) 1회 조회
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -353,7 +379,7 @@ export default async function handler(req, res) {
           : null
         if (admin && await ensureStrictColumn(admin)) {
           const t0 = Date.now()
-          const teacherId = await getClassTeacherId(admin, keyResult.classId)
+          const teacherId = clsRow?.teacher_id || null   // step645: 위 getClassRow 재사용(종전 getClassTeacherId와 같은 classes 조회)
           const recent = await countRecentGradings(admin, teacherId)
           if (!peak && recent <= INLINE_GUARD_MAX) {
             const r = await runStrictCheck({ apiKey, essay, timeoutMs: INLINE_TIMEOUT_MS })
@@ -375,7 +401,7 @@ export default async function handler(req, res) {
         // 컬럼 확인·가드 집계 단계에서 던져지면 strictStatus는 null 그대로 → 플래그 없음(종전과 동일 저장)
         console.warn('strict 인라인 실패(채점 계속):', e?.message)
       }
-      prompt = gradingPrompt({ topic, essay, rubrics, ruleErrors })
+      prompt = gradingPrompt({ topic, essay, rubrics, ruleErrors, grade: classGradeOf(clsRow) })   // step645: 학급 학년(서버 조회) 전달
       schema = SCHEMAS.essayFeedback
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
       mergeEssay = essay
@@ -392,6 +418,7 @@ export default async function handler(req, res) {
       }
       // 🆕 step627: 수정본도 피크 창에 기록(같은 학급 채점 요청). 피크면 예시 생성 보류 플래그만(전용 검사는 원래 없음).
       peak = isPeak(recordAndCount(keyResult.classId))
+      const rwClsRow = await getClassRow(keyResult.classId)   // step645: 프롬프트 학년(서버 조회, 메모)
       // 🆕 step443: 직전 채점 맥락 이월(3인자) — 반드시 서버가 DB에서 직접 조회.
       //   payload의 prev류 값은 절대 쓰지 않음(학생 브라우저의 채점 재료 조작 경로 차단).
       //   직전 제출 없음/조회 실패 → 3인자 전부 null → 기존 프롬프트와 완전 동일(하위호환).
@@ -422,6 +449,7 @@ export default async function handler(req, res) {
         // step595: 직전 본문·직전 항목 점수·변경 사실(spell이 인자 받도록 별도 작업)
         prevEssay, prevScores, changeFacts,
         ruleErrors,
+        grade: classGradeOf(rwClsRow),   // step645: 학급 학년(서버 조회) 전달
       })
       schema = SCHEMAS.rewriteFeedback  // step588: essayFeedback + score_drop_reason(하락 사유 그릇)
       opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
@@ -476,7 +504,8 @@ export default async function handler(req, res) {
     } else if (type === 'exampleEssay') {
       const { topicTitle, studentEssay } = payload || {}
       if (!studentEssay) return res.status(400).json({ error: '글 내용이 필요해요' })
-      prompt = exampleEssayPrompt({ topicTitle, studentEssay })
+      const exClsRow = await getClassRow(keyResult.classId)   // step645: 프롬프트 학년(서버 조회, 메모)
+      prompt = exampleEssayPrompt({ topicTitle, studentEssay, grade: classGradeOf(exClsRow) })   // step645: 학급 학년(서버 조회) 전달
       schema = SCHEMAS.exampleEssay
       opts = { maxTokens: 8000, taskType: 'quality' }
 
