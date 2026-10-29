@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
+import AdminPeekSearch from '../../components/AdminPeekSearch'   // step648: 빠른 엿보기 검색
 import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
@@ -2052,14 +2053,18 @@ export default function AdminHome() {
         <Header user={user} onLogout={logout} />
         <main className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
           
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold">🛡️ 관리자 페이지</h1>
               <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-semibold">SUPER ADMIN</span>
             </div>
-            <Link href="/teacher" className="text-sm text-gray-600 hover:text-primary">
-              ← 선생님 모드로
-            </Link>
+            <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
+              {/* 👁 step648: 빠른 엿보기 검색 — 학교·반·번호·선생님 이름 → 새 탭 엿보기(관리자 전용 API) */}
+              <AdminPeekSearch className="w-full max-w-md" />
+              <Link href="/teacher" className="text-sm text-gray-600 hover:text-primary whitespace-nowrap">
+                ← 선생님 모드로
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
