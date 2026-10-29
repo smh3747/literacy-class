@@ -304,7 +304,9 @@ export default function AdminHome() {
   useEffect(() => { checkAuth() }, [])
 
   const checkAuth = async () => {
-    const { data: { user: au } } = await supabase.auth.getUser()
+    // step637-B: 진입 인증은 getSession(로컬 세션, 왕복 0) — step327 학생 홈과 같은 원칙. 실질 검증은 아래 profiles 조회(토큰 검증)+role 가드.
+    const { data: { session } } = await supabase.auth.getSession()
+    const au = session?.user || null
     if (!au) { router.push('/teacher/login'); return }
     // step637: 401/JWT 만료면 refresh 1회 후 같은 조회 1회 재시도(무한 재시도 없음)
     const profileRes = await queryWithAuthRetry(() => supabase.from('profiles').select('*').eq('id', au.id).maybeSingle())
@@ -329,7 +331,12 @@ export default function AdminHome() {
     const [ky, km, kd] = kstYmd.split('-').map(Number)
     const todayStartUTC = new Date(Date.UTC(ky, km - 1, kd) - 9 * 3600 * 1000).toISOString()
 
-    const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes, preordersRes, reportsRes] = await Promise.all([
+    // step637-B: 종전 직렬이던 독립 조회 5건(학급 통계 RPC·class_secrets·error_logs·의심 교정 count·글 모음 열람 count)을
+    //   같은 배치에 합침(왕복 15 → 2). 추가분은 safe()로 감싸 실패해도 배치 전체가 깨지지 않고 아래 종전 분기의 기본값으로 간다.
+    const safe = (p) => Promise.resolve(p).then(r => r, () => null)
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes, preordersRes, reportsRes,
+           classStatRes, secretsRes, elogsRes, suspectRes, viewsRes] = await Promise.all([
       supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
@@ -340,7 +347,17 @@ export default function AdminHome() {
       // 🆕 step382: interested(관심 있어요)만 카운트
       supabase.from('preorders').select('id', { count: 'exact', head: true }).eq('response', 'interested'),
       // 🆕 step631: 피드백 신고 미해결 수 — resolved 컬럼 없음, 담임 "✓ 확인 완료"가 reported=false로 되돌림 → reported=true가 곧 미해결
-      supabase.from('submissions').select('id', { count: 'exact', head: true }).eq('reported', true).is('deleted_at', null)
+      supabase.from('submissions').select('id', { count: 'exact', head: true }).eq('reported', true).is('deleted_at', null),
+      // 🆕 step333: 학급별 통계 RPC
+      safe(supabase.rpc('admin_class_stats')),
+      // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능)
+      safe(supabase.from('class_secrets').select('class_id, api_key')),
+      // 🆕 step155: 에러 로그 (최근 50건) — 대시보드 "24h 에러" 카드·탭 (N)에 쓰여 첫 배치에 둔다(학생 번호 조인만 에러 탭 지연)
+      safe(supabase.from('error_logs').select('*').order('created_at', { ascending: false }).limit(50)),
+      // 🔍 step359: 의심 교정(correction_alerts) 미해결 건수 — head:true count만(가벼움), 목록은 탭 열 때 로드
+      safe(supabase.from('correction_alerts').select('id', { count: 'exact', head: true }).eq('resolved', false)),
+      // 📊 step625: 최근 7일 열람 수(peer_share_views head count, admin select RLS). 테이블 미적용이면 0.
+      safe(supabase.from('peer_share_views').select('id', { count: 'exact', head: true }).gte('created_at', since7d)),
     ])
 
     if (classesRes.error) {
@@ -353,7 +370,8 @@ export default function AdminHome() {
     //   반환: 학급별 student_count, submission_count, first_submission_count, last_activity_at, model_stats(jsonb).
     const classStatById = {}
     try {
-      const { data: classStatRows, error: statErr } = await supabase.rpc('admin_class_stats')
+      if (!classStatRes) throw new Error('RPC 호출 실패')
+      const { data: classStatRows, error: statErr } = classStatRes
       if (statErr) throw statErr
       ;(classStatRows || []).forEach(r => {
         const key = r.class_id ?? r.id      // 키 컬럼명 방어(class_id 우선, 없으면 id)
@@ -374,10 +392,16 @@ export default function AdminHome() {
     if (classes.length > 0) {
       const teacherIds = [...new Set(classes.map(c => c.teacher_id).filter(Boolean))]
       if (teacherIds.length > 0) {
-        const { data: teacherProfiles } = await supabase.from('profiles')
-          .select('id, realname, school').in('id', teacherIds)
+        // step637-B: 담임 정보(id·realname·school)는 첫 배치의 교사 전량(teachersRes, 휴지통 포함)에서 뽑고,
+        //   거기 없는 id만 보충 조회(왕복 1 절약, 매핑 결과 동일).
         const tMap = {}
-        ;(teacherProfiles || []).forEach(t => { tMap[t.id] = t })
+        ;(teachersRes.data || []).forEach(t => { tMap[t.id] = { id: t.id, realname: t.realname, school: t.school } })
+        const missingTeacherIds = teacherIds.filter(id => !tMap[id])
+        if (missingTeacherIds.length > 0) {
+          const { data: teacherProfiles } = await supabase.from('profiles')
+            .select('id, realname, school').in('id', missingTeacherIds)
+          ;(teacherProfiles || []).forEach(t => { tMap[t.id] = t })
+        }
         // classes에 담임 정보 붙이기
         classes.forEach(c => {
           if (c.teacher_id && tMap[c.teacher_id]) {
@@ -400,12 +424,17 @@ export default function AdminHome() {
       const { data: authorProfiles } = await supabase.from('profiles')
         .select('id, realname, nickname, role, school, username, class_id').in('id', feedbackUserIds)  // 🆕 nickname: displayStudentName 폴백용
       // class_id → 학급 이름 매핑
+      //   step637-B: 첫 배치의 classes 전량(휴지통 포함)에서 이름을 뽑고, 거기 없는 id만 보충 조회(왕복 1 절약, 결과 동일).
       const authorClassIds = [...new Set((authorProfiles || []).map(p => p.class_id).filter(Boolean))]
       let classNameMap = {}
       if (authorClassIds.length > 0) {
-        const { data: authorClasses } = await supabase.from('classes')
-          .select('id, name').in('id', authorClassIds)
-        ;(authorClasses || []).forEach(c => { classNameMap[c.id] = c.name })
+        classes.forEach(c => { if (authorClassIds.includes(c.id)) classNameMap[c.id] = c.name })
+        const missingClassIds = authorClassIds.filter(id => !(id in classNameMap))
+        if (missingClassIds.length > 0) {
+          const { data: authorClasses } = await supabase.from('classes')
+            .select('id, name').in('id', missingClassIds)
+          ;(authorClasses || []).forEach(c => { classNameMap[c.id] = c.name })
+        }
       }
       const authorMap = {}
       ;(authorProfiles || []).forEach(p => {
@@ -432,9 +461,10 @@ export default function AdminHome() {
       c.last_activity_at = st?.last_activity_at || null
     })
 
-    // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능)
+    // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능) — step637-B: 첫 배치 결과 사용
     try {
-      const { data: secrets } = await supabase.from('class_secrets').select('class_id, api_key')
+      if (!secretsRes) throw new Error('조회 실패')
+      const secrets = secretsRes.data
       const keyedClassIds = new Set((secrets || []).filter(s => s.api_key).map(s => s.class_id))
       activeClasses.forEach(c => { c.has_api_key = keyedClassIds.has(c.id) })
     } catch (e) {
@@ -477,7 +507,35 @@ export default function AdminHome() {
       reports: reportsRes?.count || 0      // 🆕 step631: 피드백 신고 미해결
     })
 
-    // 🆕 공유 추천 로드 (관리자 추적용 — 누가 뭘 공유했는지)
+    // 🆕 step155: 에러 로그 (최근 50건) — step637-B: 첫 배치 결과(실패면 [] — 테이블 미생성 등). 학생 번호 조인은 에러 탭 첫 진입 때(아래 effect).
+    setErrorLogs(elogsRes?.data || [])
+
+    // 🔍 step359: 의심 교정 미해결 건수 — step637-B: 첫 배치 결과(실패·테이블 미생성이면 0)
+    setSuspectCount(suspectRes?.count || 0)
+
+    // 📊 step625: 우리 반 글 모음 — ON 학급 수(이미 받은 classes 행의 peer_share_enabled, 활성 학급만) +
+    //   최근 7일 열람 수(첫 배치 viewsRes, error면 0 — 테이블 미적용 등).
+    {
+      const onClasses = activeClasses.filter(c => c.peer_share_enabled === true).length
+      const views7d = (viewsRes && !viewsRes.error) ? (viewsRes.count || 0) : 0
+      setPeerShareStats({ onClasses, views7d })
+    }
+
+    // step637-B: 탭 재료(추천 공유·주제 공유 추적·비번 요청)는 해당 탭 첫 진입 때 로드(아래 effect).
+    //   조치 후 새로고침(loadAll 재호출)에서는 이미 로드된 것만 다시 받아 종전 "조치 직후 목록 갱신"을 유지. 첫 진입엔 전부 false라 비용 0.
+    const refreshers = []
+    if (lazyLoadedRef.current.shared) refreshers.push(loadSharedSuggestionLogs())
+    if (lazyLoadedRef.current.copies) refreshers.push(loadTopicCopies())
+    if (lazyLoadedRef.current.resets) refreshers.push(loadResetRequests())
+    if (refreshers.length > 0) await Promise.all(refreshers)
+  }
+
+  // ── step637-B: 탭별 지연 로딩 — 종전 loadAll 안의 직렬 조회 8~10·12를 그대로 옮김(쿼리·실패 처리 동일) ──
+  const lazyLoadedRef = useRef({ shared: false, copies: false, resets: false })
+  const errNumsForRef = useRef(null)   // 학생 번호 조인을 끝낸 errorLogs 배열(동일 배열이면 재조회 안 함)
+
+  // 🆕 공유 추천 로드 (관리자 추적용 — 누가 뭘 공유했는지)
+  const loadSharedSuggestionLogs = async () => {
     try {
       const { data: sharedLogs } = await supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school, role)')
@@ -488,9 +546,11 @@ export default function AdminHome() {
     } catch(e) {
       console.warn('공유 추천 로드 실패:', e)
       setSharedSuggestionLogs([])
-    }
+    } finally { lazyLoadedRef.current.shared = true }
+  }
 
-    // 🆕 주제 공유 추적 로드 (관리자 전용 — 누가 누구 주제를 가져갔나). RLS로 admin만 전량 조회.
+  // 🆕 주제 공유 추적 로드 (관리자 전용 — 누가 누구 주제를 가져갔나). RLS로 admin만 전량 조회.
+  const loadTopicCopies = async () => {
     try {
       const { data: copies } = await supabase.from('topic_copies')
         .select(`
@@ -507,9 +567,11 @@ export default function AdminHome() {
     } catch(e) {
       console.warn('주제 공유 추적 로드 실패:', e)
       setTopicCopies([])
-    }
+    } finally { lazyLoadedRef.current.copies = true }
+  }
 
-    // 🆕 비밀번호 초기화 요청 (pending만)
+  // 🆕 비밀번호 초기화 요청 (pending만) — 선생님 탭(overview) 재료
+  const loadResetRequests = async () => {
     try {
       const { data: pwReqs } = await supabase.from('password_reset_requests')
         .select('*')
@@ -520,16 +582,12 @@ export default function AdminHome() {
     } catch(e) {
       // 테이블 미생성(SQL 미실행) 시 무시
       setResetRequests([])
-    }
+    } finally { lazyLoadedRef.current.resets = true }
+  }
 
-    // 🆕 step155: 에러 로그 (최근 50건)
+  // 🆕 에러로그 학생의 '번호'만 표시용으로 조인 (⚠️ 실명 realname은 절대 조회하지 않음) — 에러 탭 재료
+  const loadErrorLogStudentNumbers = async (elogs) => {
     try {
-      const { data: elogs } = await supabase.from('error_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50)
-      setErrorLogs(elogs || [])
-      // 🆕 에러로그 학생의 '번호'만 표시용으로 조인 (⚠️ 실명 realname은 절대 조회하지 않음)
       const logUserIds = [...new Set((elogs || []).filter(e => e.role === 'student' && e.user_id).map(e => e.user_id))]
       if (logUserIds.length > 0) {
         const { data: nums } = await supabase.from('profiles').select('id, number').in('id', logUserIds)
@@ -539,37 +597,22 @@ export default function AdminHome() {
       } else {
         setLogStudentNumbers({})
       }
-    } catch(e) {
-      // 테이블 미생성(SQL 미실행) 시 무시
-      setErrorLogs([])
-    }
-
-    // 🔍 step359: 의심 교정(correction_alerts) 미해결 건수 — head:true count만(가벼움), 목록은 탭 열 때 로드
-    try {
-      const { count } = await supabase.from('correction_alerts')
-        .select('id', { count: 'exact', head: true })
-        .eq('resolved', false)
-      setSuspectCount(count || 0)
-    } catch(e) {
-      // 테이블 미생성(SQL 미실행) 시 무시
-      setSuspectCount(0)
-    }
-
-    // 📊 step625: 우리 반 글 모음 — ON 학급 수(이미 받은 classes 행의 peer_share_enabled, 활성 학급만) +
-    //   최근 7일 열람 수(peer_share_views head count, admin select RLS). 테이블 미적용이면 0.
-    {
-      const onClasses = activeClasses.filter(c => c.peer_share_enabled === true).length
-      let views7d = 0
-      try {
-        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-        const { count, error } = await supabase.from('peer_share_views')
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', since)
-        if (!error) views7d = count || 0
-      } catch(e) { /* 테이블 미생성(SQL 미실행) 시 0 */ }
-      setPeerShareStats({ onClasses, views7d })
-    }
+    } catch(e) { /* 표시 보조 — 실패 무시 */ }
   }
+
+  useEffect(() => {
+    if (loading) return   // 인증·첫 배치가 끝난 뒤에만(비관리자 리다이렉트 중엔 조회 없음)
+    if (tab === 'overview' && !lazyLoadedRef.current.resets) loadResetRequests()
+    if (tab === 'shared-suggestions' && !lazyLoadedRef.current.shared) loadSharedSuggestionLogs()
+    if (tab === 'topic-copies' && !lazyLoadedRef.current.copies) loadTopicCopies()
+  }, [tab, loading])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (loading || tab !== 'errors') return
+    if (errNumsForRef.current === errorLogs) return   // 같은 목록이면 재조회 안 함(탭 왕복)
+    errNumsForRef.current = errorLogs
+    loadErrorLogStudentNumbers(errorLogs)
+  }, [tab, loading, errorLogs])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const logout = async () => { await supabase.auth.signOut({ scope: 'local' }); router.push('/') }
 

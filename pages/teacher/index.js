@@ -592,14 +592,25 @@ export default function TeacherHome() {
     }
 
     if (profile.classes?.id) {
-      const [s, t, samples] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact', head: true })
+      // step637-B: 1라운드 병렬 — 종전 3건(학생 수·주제 수·username 5명)에 독립 조회 2건(학생 id 전원·API 키 존재)을 합침.
+      //   조회별 실패는 각자 null(safe)로 끝나 다른 조회·화면에 영향 없음(종전엔 try 하나에 묶여 뒤 조회가 통째로 생략됐음).
+      const safe = (p) => Promise.resolve(p).then(r => r, () => null)
+      const [s, t, samples, studentIdsRes, keyRes] = await Promise.all([
+        safe(supabase.from('profiles').select('id', { count: 'exact', head: true })
           .eq('class_id', profile.classes.id).eq('role', 'student')
-          .or('is_hidden.is.null,is_hidden.eq.false'),
-        supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null),   // step479: 공급 원본 제외(수치 왜곡 방지)
+          .or('is_hidden.is.null,is_hidden.eq.false')),
+        safe(supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null)),   // step479: 공급 원본 제외(수치 왜곡 방지)
         // 🆕 안내 카드용 학생 username 일부 (최대 5명)
-        supabase.from('profiles').select('username').eq('class_id', profile.classes.id).eq('role', 'student')
-          .or('is_hidden.is.null,is_hidden.eq.false').limit(5)
+        safe(supabase.from('profiles').select('username').eq('class_id', profile.classes.id).eq('role', 'student')
+          .or('is_hidden.is.null,is_hidden.eq.false').limit(5)),
+        // 학생 id 전원(셋업 체크리스트 학생 수 + 아래 2라운드 in 절 재료)
+        safe(supabase.from('profiles')
+          .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
+          .or('is_hidden.is.null,is_hidden.eq.false')),
+        // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)
+        // 키 서버격리(step153~): class_secrets 기준 (교사는 RLS로 본인 학급 조회 가능)
+        safe(supabase.from('class_secrets')
+          .select('class_id').eq('class_id', profile.classes.id).maybeSingle()),
       ])
       setStudentSamples(samples?.data || [])
       // 🆕 다음 걸음 카드 — 비차단(await 안 함). API키 불필요.
@@ -622,131 +633,114 @@ export default function TeacherHome() {
       // 오늘 API 호출 추정량 (오늘 제출 수 × 2)
       let todayApiCalls = 0
       let todaySubmissions = 0  // 🆕 step315: 오늘 제출 수(새 쿼리 없이 subCount 재사용)
-      try {
-        const { data: studentIds } = await supabase.from('profiles')
-          .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
-          .or('is_hidden.is.null,is_hidden.eq.false')
 
-        // 🆕 셋업 체크리스트용 학생 수
-        setStudentCountTotal(studentIds?.length || 0)
+      const studentIds = studentIdsRes?.data || null
+      // 🆕 셋업 체크리스트용 학생 수
+      setStudentCountTotal(studentIds?.length || 0)
 
-        // 🆕 step280: 맛보기(샘플 피드백) 노출 판정
-        //   안 닫음 + 아직 실제 AI 피드백 0건(feedback_overall 존재하는 제출 없음)
-        //   step568: 엿보기에서도 판정(읽기 1회 — 화면 일치). 닫기의 localStorage 기록만 엿보기 시 생략.
-        {
-          const tasteDismissed = typeof window !== 'undefined' &&
-            localStorage.getItem('lc-taste-feedback-dismissed:' + profile.id) === '1'
-          if (tasteDismissed) {
-            setShowTaste(false)
-          } else {
-            let seenFeedback = false
-            try {
-              if (studentIds && studentIds.length > 0) {
-                // 존재 여부만 — limit 1, 무거운 집계 금지
-                const { data: fbRow } = await supabase.from('submissions')
-                  .select('id')
-                  .in('user_id', studentIds.map(x => x.id))
-                  .not('feedback_overall', 'is', null)
-                  .is('deleted_at', null)
-                  .limit(1)
-                seenFeedback = !!(fbRow && fbRow.length > 0)
-              }
-            } catch { seenFeedback = false }
-            setShowTaste(!seenFeedback)
-          }
+      // 🆕 셋업 체크리스트용 주제 수 — step637-B: 위 t(동일 쿼리)를 재사용, 중복 조회 제거
+      setTopicCount(t?.count || 0)
+
+      // 🆕 셋업 체크리스트용 API 키 존재 여부 — step637-B: 1라운드 결과(keyRes) 사용. 조회 실패(null)면 없음으로.
+      {
+        const keyCheck = keyRes?.data || null
+        setHasApiKey(!!keyCheck)
+        // 🆕 교사 아침 브리핑: 본인 세션(비임퍼소네이션)+키 있을 때만 lazy 생성(비차단, await 안 함)
+        if (!imp && !!keyCheck) maybeGenerateBriefing(profile)
+      }
+
+      // 🆕 step280: 맛보기(샘플 피드백) 노출 판정
+      //   안 닫음 + 아직 실제 AI 피드백 0건(feedback_overall 존재하는 제출 없음)
+      //   step568: 엿보기에서도 판정(읽기 1회 — 화면 일치). 닫기의 localStorage 기록만 엿보기 시 생략.
+      const tasteDismissed = typeof window !== 'undefined' &&
+        localStorage.getItem('lc-taste-feedback-dismissed:' + profile.id) === '1'
+      if (tasteDismissed) setShowTaste(false)
+
+      if (studentIds && studentIds.length > 0) {
+        const ids = studentIds.map(x => x.id)
+
+        // ※ step545: 이 PT 창은 "오늘 AI 사용량" 추정(todayApiCalls) 전용 — Gemini 무료 한도가 PT 자정 리셋이라 PT가 맞다.
+        //   카드의 "오늘 N건 제출"(todaySubmissions)은 여기가 아니라 아래 KST 자정 카운트(step319)를 쓴다. 혼동 주의.
+        // PT는 PST/PDT 자동 전환되므로 Intl API로 정확히 계산
+        // PT 자정 = 한국 시간 오후 4시 (PDT, 3~11월) / 오후 5시 (PST, 11~3월)
+        const getPTMidnightUTC = () => {
+          const now = new Date()
+          // 현재 PT 시간 컴포넌트 추출
+          const ptFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Los_Angeles',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+          })
+          const parts = ptFormatter.formatToParts(now)
+          const get = (type) => parts.find(p => p.type === type).value
+          const ptYear = parseInt(get('year'))
+          const ptMonth = parseInt(get('month'))
+          const ptDay = parseInt(get('day'))
+          const ptHour = parseInt(get('hour'))
+          const ptMin = parseInt(get('minute'))
+          const ptSec = parseInt(get('second'))
+
+          // PT 기준으로 "오늘 00:00"이 UTC로 몇 시인지 역산
+          // 현재 PT 시각과 PT 00:00의 차이를 계산
+          const ptElapsedSec = ptHour * 3600 + ptMin * 60 + ptSec
+          // 현재 UTC에서 ptElapsedSec만큼 빼면 PT 자정의 UTC
+          return new Date(now.getTime() - ptElapsedSec * 1000)
         }
 
-        // 🆕 셋업 체크리스트용 주제 수
-        const { count: tc } = await supabase.from('topics')
-          .select('id', { count: 'exact', head: true })
-          .eq('teacher_id', profile.id)
-          .is('supply_type', null)   // step479: 공급 원본 제외(수치 왜곡 방지)
-        setTopicCount(tc || 0)
+        const todayStartIso = getPTMidnightUTC().toISOString()
+        // 🆕 step319: 카드용 "오늘 제출 수"는 한국(KST) 자정 기준으로 따로 카운트 (step545: todayStr 공용화 — 동작 동일)
+        const kstMidnightUtc = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
 
-        // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)
-        // 키 서버격리(step153~): class_secrets 기준 (교사는 RLS로 본인 학급 조회 가능)
-        try {
-          const { data: keyCheck } = await supabase.from('class_secrets')
-            .select('class_id').eq('class_id', profile.classes.id).maybeSingle()
-          setHasApiKey(!!keyCheck)
-          // 🆕 교사 아침 브리핑: 본인 세션(비임퍼소네이션)+키 있을 때만 lazy 생성(비차단, await 안 함)
-          if (!imp && !!keyCheck) maybeGenerateBriefing(profile)
-        } catch(e) {
-          setHasApiKey(false)
-        }
-
-        if (studentIds && studentIds.length > 0) {
-          const ids = studentIds.map(x => x.id)
-          const { count } = await supabase.from('submissions')
+        // step637-B: 2라운드 병렬 — 학생 id에 의존하는 5건(맛보기 존재·신고 수·수정 요청·PT 제출 수·KST 제출 수)을 한 번에.
+        //   각 쿼리 조건·limit 종전 그대로. 실패는 각자 null → 종전 try 분기와 같은 기본값(0·null·"피드백 없음").
+        const [fbRes, repRes, reqRes, ptRes, kstRes] = await Promise.all([
+          // 맛보기: 존재 여부만 — limit 1, 무거운 집계 금지(이미 닫았으면 조회 자체 생략 — 종전과 동일)
+          tasteDismissed ? Promise.resolve(null) : safe(supabase.from('submissions')
+            .select('id')
+            .in('user_id', ids)
+            .not('feedback_overall', 'is', null)
+            .is('deleted_at', null)
+            .limit(1)),
+          safe(supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids).eq('reported', true)
-            .is('deleted_at', null)
-          reportCount = count || 0
-
+            .is('deleted_at', null)),
           // 🆕 step512→532: 미처리 수정 기회 요청 수 + 가장 최근 요청의 주제(배너 직행용) — 같은 조회 1회(실패 무시)
           //   주제가 1개뿐이든 여러 개든 목적지는 "가장 최근 요청의 주제"라 최근 1행만 받으면 충분.
-          try {
-            const { count: reqCount, data: reqRows } = await supabase.from('submissions')
-              .select('topic_id', { count: 'exact' })
-              .in('user_id', ids)
-              .not('rewrite_requested_at', 'is', null)
-              .or('extra_rewrite_allowed.is.null,extra_rewrite_allowed.eq.false')
-              .is('deleted_at', null)
-              .order('rewrite_requested_at', { ascending: false })
-              .limit(1)
-            setRewriteRequestCount(reqCount || 0)
-            setRewriteRequestTopicId(reqRows?.[0]?.topic_id || null)
-          } catch (e) { /* 소지표 실패 무시 */ }
-
-          // ※ step545: 이 PT 창은 "오늘 AI 사용량" 추정(todayApiCalls) 전용 — Gemini 무료 한도가 PT 자정 리셋이라 PT가 맞다.
-          //   카드의 "오늘 N건 제출"(todaySubmissions)은 여기가 아니라 아래 KST 자정 카운트(step319)를 쓴다. 혼동 주의.
-          // PT는 PST/PDT 자동 전환되므로 Intl API로 정확히 계산
-          // PT 자정 = 한국 시간 오후 4시 (PDT, 3~11월) / 오후 5시 (PST, 11~3월)
-          const getPTMidnightUTC = () => {
-            const now = new Date()
-            // 현재 PT 시간 컴포넌트 추출
-            const ptFormatter = new Intl.DateTimeFormat('en-US', {
-              timeZone: 'America/Los_Angeles',
-              year: 'numeric', month: '2-digit', day: '2-digit',
-              hour: '2-digit', minute: '2-digit', second: '2-digit',
-              hour12: false
-            })
-            const parts = ptFormatter.formatToParts(now)
-            const get = (type) => parts.find(p => p.type === type).value
-            const ptYear = parseInt(get('year'))
-            const ptMonth = parseInt(get('month'))
-            const ptDay = parseInt(get('day'))
-            const ptHour = parseInt(get('hour'))
-            const ptMin = parseInt(get('minute'))
-            const ptSec = parseInt(get('second'))
-
-            // PT 기준으로 "오늘 00:00"이 UTC로 몇 시인지 역산
-            // 현재 PT 시각과 PT 00:00의 차이를 계산
-            const ptElapsedSec = ptHour * 3600 + ptMin * 60 + ptSec
-            // 현재 UTC에서 ptElapsedSec만큼 빼면 PT 자정의 UTC
-            return new Date(now.getTime() - ptElapsedSec * 1000)
-          }
-
-          const todayStartIso = getPTMidnightUTC().toISOString()
-
-          const { count: subCount } = await supabase.from('submissions')
+          safe(supabase.from('submissions')
+            .select('topic_id', { count: 'exact' })
+            .in('user_id', ids)
+            .not('rewrite_requested_at', 'is', null)
+            .or('extra_rewrite_allowed.is.null,extra_rewrite_allowed.eq.false')
+            .is('deleted_at', null)
+            .order('rewrite_requested_at', { ascending: false })
+            .limit(1)),
+          safe(supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids)
             .gte('created_at', todayStartIso)
-            .is('deleted_at', null)
-          // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출 (Gemini 한도 추정 — PT 자정 기준 유지)
-          todayApiCalls = (subCount || 0) * 2
-          // 🆕 step319: 카드용 "오늘 제출 수"는 한국(KST) 자정 기준으로 따로 카운트 (step545: todayStr 공용화 — 동작 동일)
-          const kstMidnightUtc = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
-          const { count: kstSubCount } = await supabase.from('submissions')
+            .is('deleted_at', null)),
+          safe(supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids)
             .gte('created_at', kstMidnightUtc)
-            .is('deleted_at', null)
-          todaySubmissions = kstSubCount || 0
+            .is('deleted_at', null)),
+        ])
+
+        if (!tasteDismissed) setShowTaste(!(fbRes?.data && fbRes.data.length > 0))
+        reportCount = repRes?.count || 0
+        if (reqRes) {
+          setRewriteRequestCount(reqRes.count || 0)
+          setRewriteRequestTopicId(reqRes.data?.[0]?.topic_id || null)
         }
-      } catch(e) { /* 컬럼 없으면 무시 */ }
-      setStats({ students: s.count || 0, topics: t.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
+        // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출 (Gemini 한도 추정 — PT 자정 기준 유지)
+        todayApiCalls = (ptRes?.count || 0) * 2
+        todaySubmissions = kstRes?.count || 0
+      } else if (!tasteDismissed) {
+        setShowTaste(true)   // 학생 0명 = 피드백 본 적 없음(종전 seenFeedback=false 경로)
+      }
+      setStats({ students: s?.count || 0, topics: t?.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
     }
     setLoading(false)
   }
