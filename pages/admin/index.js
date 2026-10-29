@@ -13,6 +13,7 @@ import { displayStudentName, displayStudentNameWithNumber } from '../../lib/disp
 import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { summarizeTimings, fmtSec, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수)
+import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -3526,7 +3527,8 @@ export default function AdminHome() {
                           else goToSubmission(r.id)
                         }
                         // step647: 펼치지 않아도 보이는 보조 줄 — 신고 사유 80자 · AI 종합의견 첫 60자 · 점수. 👁 학생 화면 = 633 학생 엿보기 + ?topic= 딥링크(그 글이 열림)
-                        const reason = String(r.report_reason || '').replace(/\s+/g, ' ').trim()
+                        const parsedReason = parseReportReason(r.report_reason)   // step649: "[태그] 상세" → 배지 + 본문(구 자유 입력은 tag null)
+                        const reason = String(parsedReason.text || '').replace(/\s+/g, ' ').trim()
                         const overall = String(r.feedback_overall || '').replace(/\s+/g, ' ').trim()
                         const scoreText = r.total_score == null ? '🟣 점수 없음' : `${r.total_score}/${r.max_score ?? '-'}점`
                         const peekStudent = () => window.open(`/student?as=${r.user_id}${r.topic_id ? `&topic=${r.topic_id}` : ''}`, '_blank', 'noopener')
@@ -3555,7 +3557,10 @@ export default function AdminHome() {
                               )}
                             </div>
                             <div className="mt-1.5 text-xs text-gray-600 flex items-start gap-2 flex-wrap">
-                              <span className="font-medium text-gray-800">💬 {reason ? reason.slice(0, 80) + (reason.length > 80 ? '…' : '') : <span className="text-gray-400 font-normal">사유 없음</span>}</span>
+                              <span className="font-medium text-gray-800">
+                                💬 {parsedReason.tag && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 mr-1 align-middle">{parsedReason.tag}</span>}
+                                {reason ? reason.slice(0, 80) + (reason.length > 80 ? '…' : '') : (parsedReason.tag ? null : <span className="text-gray-400 font-normal">사유 없음</span>)}
+                              </span>
                               <span className="text-gray-400">·</span>
                               <span>🤖 {overall ? overall.slice(0, 60) + (overall.length > 60 ? '…' : '') : '종합의견 없음'}</span>
                               <span className="text-gray-400">·</span>

@@ -30,6 +30,7 @@ import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
 import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonatingNow, impersonationTargetId } from '../../lib/impersonation'
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { deriveGradingPath } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 실측 — 경로 한 값 판정(순수)
+import { REPORT_TAGS, REPORT_DETAIL_MAX, REPORT_DAILY_LIMIT, buildReportReason, isDailyLimitReached } from '../../lib/reportReason'   // step649: 신고 사유 칩
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
@@ -313,6 +314,7 @@ export default function StudentHome() {
   const [showNicknameModal, setShowNicknameModal] = useState(false)
   // AI 호출 에러 모달
   const [errorModal, setErrorModal] = useState(null) // null 또는 { title, message }
+  const [reportModal, setReportModal] = useState(null) // step649: null 또는 { tag, detail, busy } — 신고 사유 칩 모달
   // 🆕 step492: 전국 글쓰기 챌린지 — 학급 주제와 분리된 오늘의 챌린지 주제들(하루 2개 가능: 공통+학년밴드)
   const [challengeTopics, setChallengeTopics] = useState([])   // 각 항목 {...topic, myMaxAttempt}
   const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: { rank, total } } — step539 구조 확장
@@ -1272,23 +1274,36 @@ export default function StudentHome() {
     setStep('rewrite')
   }
 
-  // 피드백 신고
+  // 피드백 신고 — step649: prompt() 대신 사유 칩 모달(5개 중 1개 필수 + 선택 입력 40자). 글당 1회(reported)·하루 3회(KST) 제한.
   const reportFeedback = async () => {
     if (!currentSub?.id) return alert('아직 제출된 글이 없어요')
     if (!assertWritable()) return   // step633
     if (currentSub.reported) return alert('이미 신고했어요. 선생님께서 확인하실 거예요.')
+    setReportModal({ tag: null, detail: '', busy: false })
+  }
 
-    const reason = prompt(
-      '🚨 이 피드백이 이상하다고 느껴졌나요?\n\n' +
-      '어떤 점이 이상한지 알려주세요 (생략 가능):\n' +
-      '예: "내 글 내용과 다른 말을 했어요", "너무 짧아요" 등'
-    )
-    if (reason === null) return // 취소
-
+  const submitReport = async () => {
+    if (!reportModal?.tag || reportModal.busy || !currentSub?.id) return
+    if (!assertWritable()) return
+    const reason = buildReportReason(reportModal.tag, reportModal.detail)
+    if (!reason) return
+    setReportModal(m => ({ ...m, busy: true }))
     try {
+      // 하루 3회 제한(KST 자정 기준, 본인 행만 — sub_select RLS). 조회 실패 시엔 막지 않는다(학생 흐름 보호).
+      try {
+        const dayStart = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
+        const { count } = await supabase.from('submissions').select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id).gte('reported_at', dayStart)
+        if (isDailyLimitReached(count)) {
+          setReportModal(null)
+          alert(`오늘은 신고를 ${REPORT_DAILY_LIMIT}번까지 보낼 수 있어요. 내일 다시 알려 주세요.\n급하면 선생님께 직접 말씀드려요.`)
+          return
+        }
+      } catch (_) { /* 조회 실패 — 제한 없이 진행 */ }
+
       const { error } = await supabase.from('submissions').update({
         reported: true,
-        report_reason: (reason || '').trim() || null,
+        report_reason: reason,
         reported_at: new Date().toISOString()
       }).eq('id', currentSub.id)
       if (error) throw error
@@ -1316,8 +1331,10 @@ export default function StudentHome() {
         }
       } catch (e) { console.warn('관리자 신고 알림 실패(무시):', e?.message) }
       setCurrentSub({ ...currentSub, reported: true, report_reason: reason })
+      setReportModal(null)
       alert('🙏 신고가 접수됐어요!\n선생님께서 확인하시고 도와주실 거예요.')
     } catch(e) {
+      setReportModal(m => (m ? { ...m, busy: false } : m))
       alert('신고 실패: ' + e.message)
     }
   }
@@ -2612,6 +2629,42 @@ export default function StudentHome() {
           </div>
         )}
 
+        {/* 🚨 step649: 신고 사유 칩 모달 — 5개 중 1개 필수, 선택 입력 40자. 저장은 "[태그] 상세" 문자열(SQL 없음) */}
+        {reportModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !reportModal.busy && setReportModal(null)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold mb-1">🚨 이 피드백 이상해요</h3>
+              <p className="text-sm text-gray-600 mb-3">어떤 점이 이상한지 하나만 골라 주세요. 선생님께서 확인하고 도와주실 거예요.</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {REPORT_TAGS.map(t => (
+                  <button key={t.key} type="button" onClick={() => setReportModal(m => ({ ...m, tag: t.label }))}
+                    className={`text-sm px-3 py-1.5 rounded-full border transition ${reportModal.tag === t.label
+                      ? 'bg-red-600 text-white border-red-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-red-50'}`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={reportModal.detail}
+                onChange={e => setReportModal(m => ({ ...m, detail: e.target.value.slice(0, REPORT_DETAIL_MAX) }))}
+                maxLength={REPORT_DETAIL_MAX}
+                placeholder="조금 더 적고 싶으면 여기에 (선택, 40자까지)"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 mb-1"
+              />
+              <div className="text-right text-[11px] text-gray-400 mb-3">{reportModal.detail.length}/{REPORT_DETAIL_MAX}</div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setReportModal(null)} disabled={reportModal.busy}
+                  className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100">취소</button>
+                <button type="button" onClick={submitReport} disabled={!reportModal.tag || reportModal.busy || isImpersonating}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {reportModal.busy ? '보내는 중...' : '신고하기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {errorModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
