@@ -634,8 +634,9 @@ export default function AdminHome() {
   useEffect(() => {
     if (tab !== 'corrections' || suspectFilter !== REPORT_CHIP || reportRows.loaded) return
     ;(async () => {
+      // step647: 행 인라인용 topic_id(학생 엿보기 딥링크)·report_reason·feedback_overall·점수·attempt 추가 — 글 본문·실명은 계속 미조회
       const { data, error } = await supabase.from('submissions')
-        .select('id, user_id, topic_title, reported, reported_at, profiles!submissions_user_id_fkey(number, class_id)')
+        .select('id, user_id, topic_id, topic_title, reported, reported_at, report_reason, feedback_overall, total_score, max_score, attempt, profiles!submissions_user_id_fkey(number, class_id)')
         .not('reported_at', 'is', null).is('deleted_at', null)
         .order('reported_at', { ascending: false }).limit(300)
       if (error) { setReportRows({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' }); return }
@@ -3519,24 +3520,42 @@ export default function AdminHome() {
                           if (r.reported && teacherId) window.open(`/teacher/feedback-reports?as=${teacherId}&sub=${r.id}`, '_blank', 'noopener')
                           else goToSubmission(r.id)
                         }
+                        // step647: 펼치지 않아도 보이는 보조 줄 — 신고 사유 80자 · AI 종합의견 첫 60자 · 점수. 👁 학생 화면 = 633 학생 엿보기 + ?topic= 딥링크(그 글이 열림)
+                        const reason = String(r.report_reason || '').replace(/\s+/g, ' ').trim()
+                        const overall = String(r.feedback_overall || '').replace(/\s+/g, ' ').trim()
+                        const scoreText = r.total_score == null ? '🟣 점수 없음' : `${r.total_score}/${r.max_score ?? '-'}점`
+                        const peekStudent = () => window.open(`/student?as=${r.user_id}${r.topic_id ? `&topic=${r.topic_id}` : ''}`, '_blank', 'noopener')
                         return (
-                          <div key={r.id} className="p-3 rounded-xl border border-gray-200 bg-gray-50 flex items-center gap-3 flex-wrap">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${r.reported ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              {r.reported ? '🔴 미해결' : '✅ 해결'}
-                            </span>
-                            <button onClick={open} title={r.reported ? '담임 엿보기 신고함에서 글·AI 피드백 확인' : '학생 글 탭에서 보기'}
-                              className="text-sm text-gray-800 hover:underline text-left min-w-0">
-                              🏫 {where || '학급 미상'} {num} · {r.topic_title || '주제 없음'}
-                            </button>
-                            <span className="text-xs text-gray-400">
-                              신고 {toKST(r.reported_at)}{r.report_resolved_at ? ` · 해결 ${toKST(r.report_resolved_at)}` : ''}
-                            </span>
-                            {r.reported && (
-                              <button onClick={() => resolveReport(r.id)}
-                                className="ml-auto text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
-                                ✅ 해결
+                          <div key={r.id} className="p-3 rounded-xl border border-gray-200 bg-gray-50">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${r.reported ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {r.reported ? '🔴 미해결' : '✅ 해결'}
+                              </span>
+                              <button onClick={open} title={r.reported ? '담임 엿보기 신고함에서 글·AI 피드백 확인' : '학생 글 탭에서 보기'}
+                                className="text-sm text-gray-800 hover:underline text-left min-w-0">
+                                🏫 {where || '학급 미상'} {num} · {r.topic_title || '주제 없음'}
                               </button>
-                            )}
+                              <span className="text-xs text-gray-400">
+                                신고 {toKST(r.reported_at)}{r.report_resolved_at ? ` · 해결 ${toKST(r.report_resolved_at)}` : ''}
+                              </span>
+                              <button onClick={peekStudent} title="이 학생 화면을 읽기 전용으로 엿봐요(이 글이 열린 상태)"
+                                className="ml-auto text-xs bg-white border border-gray-200 text-gray-700 px-2.5 py-1 rounded-lg hover:bg-gray-100 transition">
+                                👁 학생 화면
+                              </button>
+                              {r.reported && (
+                                <button onClick={() => resolveReport(r.id)}
+                                  className="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition">
+                                  ✅ 해결
+                                </button>
+                              )}
+                            </div>
+                            <div className="mt-1.5 text-xs text-gray-600 flex items-start gap-2 flex-wrap">
+                              <span className="font-medium text-gray-800">💬 {reason ? reason.slice(0, 80) + (reason.length > 80 ? '…' : '') : <span className="text-gray-400 font-normal">사유 없음</span>}</span>
+                              <span className="text-gray-400">·</span>
+                              <span>🤖 {overall ? overall.slice(0, 60) + (overall.length > 60 ? '…' : '') : '종합의견 없음'}</span>
+                              <span className="text-gray-400">·</span>
+                              <span className="tabular-nums">{scoreText} · {r.attempt || 1}회차</span>
+                            </div>
                           </div>
                         )
                       })}
