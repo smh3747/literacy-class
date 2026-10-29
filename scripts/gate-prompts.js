@@ -20,7 +20,7 @@ const { pathToFileURL } = require('url')
   const results = []
   const rec = (group, name, pass, detail) => results.push({ group, name, pass, detail })
 
-  // ── BUILD: 셋 다 에러 없이 문자열 생성 ──
+  // ── BUILD: 넷 다 에러 없이 문자열 생성 (step644: 수정본 채점도 correctionsRules 공유 → RULES 검사 대상에 합류) ──
   const topic = { title: '나의 꿈', description: '장래희망을 써 보세요' }
   const rubrics = [{ name: '내용', score: 50, hint: '주제와 관련 있게' }, { name: '표현', score: 50 }]
   const essay = '나는 소방관이 돼서 사람들을 구할 것이다.'
@@ -29,6 +29,7 @@ const { pathToFileURL } = require('url')
     gradingPrompt: () => gradingPrompt({ topic, essay, rubrics }),
     grammarStrictPrompt: () => grammarStrictPrompt({ essay }),
     grammarOnlyPrompt: () => grammarOnlyPrompt({ essay }),
+    rewriteGradingPrompt: () => rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics }),
   }
   const prompts = {} // 생성 성공한 프롬프트만 담아 아래 RULES 검사 대상으로
   for (const [name, build] of Object.entries(builders)) {
@@ -42,7 +43,7 @@ const { pathToFileURL } = require('url')
     }
   }
 
-  // ── RULES: CORRECTIONS_RULES 공유 + 핵심 지시 문구 잔존 (셋 다 검사) ──
+  // ── RULES: CORRECTIONS_RULES 공유 + 핵심 지시 문구 잔존 (넷 다 검사) ──
   // 문구는 lib/prompts.server.js의 현재 CORRECTIONS_RULES에서 실측(회귀 방지용 고정).
   const KEY_PHRASES = [
     { name: '규칙 6(안/않 오교정 금지)',    text: "맞는 '않'을 '안'으로 고치지 마세요" },
@@ -628,6 +629,43 @@ const { pathToFileURL } = require('url')
     rec('TOPICMIX', 'suggest(1개) 구비 생략·적합성 유지', p4, p4 ? 'count=1 모순 방지 확인' : `구비생략=${!sug1.includes('시사·사회적 소재')}, 적합성=${sug1.includes('아는 척하지 말고')}`)
   } catch (e) {
     rec('TOPICMIX', 'topicBatchPrompt 생성', false, `예외: ${e.message}`)
+  }
+
+  // ── REWRITECORR: 수정본 corrections 규칙 = 첫 글 correctionsRules 단일 소스 (step644) ──
+  // 자체 7항(최소 교정 (라)·표현 제외 (다)·규칙 11 (가)~(마)·규칙 4·9·10 없음) 폐기 → 공유 규칙 1~12 + 수정본 고유 13.
+  // subject '수정본'으로 [직전 글 본문]과 혼동 방지. 첫 글(gradingPrompt)은 주어 '학생 글' 그대로. 직전 지적 재포함은 계약 (아) 유지.
+  try {
+    const rw = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics })
+    const gr = gradingPrompt({ topic, essay, rubrics })
+    const nums = []
+    for (let n = 1; n <= 13; n++) if (!rw.includes(`\n   ${n}. `)) nums.push(n)
+    rec('REWRITECORR', 'rewriteGradingPrompt · 공유 규칙 1~12 + 수정본 13 번호 전부 존재', nums.length === 0,
+      nums.length === 0 ? '13개 모두 존재' : `누락 번호=${nums.join(',')}`)
+    const NEED = ['(다) 다음은 맞춤법 교정이 절대 아닙니다', '(라) correction은 original의 글자를 최소한으로만', '한국어 표준 맞춤법에 명백히 어긋난 것만',
+      "어미 '-는데/-ㄴ데'", 'original 필드에는 수정본에 "정확히 그대로 등장하는"', '띄어쓰기 오류는 수정본에 실제로 띄어쓰기가 없는',
+      '13. 같은 오류가 여러 번 나오면 각각 다 잡으세요']
+    const miss = NEED.filter(p => !rw.includes(p))
+    rec('REWRITECORR', "rewriteGradingPrompt · 최소 교정 (라)·표현 제외 (다)·규칙 4·10·주어 '수정본'·13항", miss.length === 0,
+      miss.length === 0 ? `${NEED.length}문구 포함` : `누락: ${miss.join(' / ')}`)
+    const OLD7 = ['명백한 오류는 빠짐없이.', '이미 찍힌 마침표는 잡지 말 것', '같은 오류 여러 번 나오면 각각 다 잡기']
+    const back = OLD7.filter(p => rw.includes(p))
+    const leak = rw.includes('학생 글에 "정확히 그대로 등장하는"')
+    rec('REWRITECORR', "rewriteGradingPrompt · 구 7항 문구 부재 + 주어 '학생 글' 부재(직전 글 혼동 방지)", back.length === 0 && !leak,
+      back.length === 0 && !leak ? '구 문구 없음, 주어 치환 확인' : `되살아남: ${back.join(' / ')}; 학생글주어=${leak}`)
+    const gKeep = gr.includes('original 필드에는 학생 글에 "정확히 그대로 등장하는"') && gr.includes('띄어쓰기 오류는 학생 글에 실제로') && !gr.includes('\n   13. ')
+    rec('REWRITECORR', "gradingPrompt · 주어 '학생 글' 유지 + 13항 없음(첫 글 불변)", gKeep,
+      gKeep ? '첫 글 규칙 불변' : `학생글=${gr.includes('original 필드에는 학생 글에')}, 13없음=${!gr.includes('\n   13. ')}`)
+    // [문체 분포] 줄은 첫 글처럼 규칙 11 아래 한 번만(구 헤더 주입 제거)
+    const mixed = rewriteGradingPrompt({ topic, rewriteEssay: '저는 법을 지켜요. 법은 소중해요. 모두가 지켜야 해요. 법이 있다.', rubrics })
+    const headCount = mixed.split('[문체 분포 — 서버 계산').length - 1
+    const afterRule11 = mixed.indexOf('[문체 분포 — 서버 계산') > mixed.indexOf('11. 문체(말투)·표현 관련 교정')
+    rec('REWRITECORR', 'rewriteGradingPrompt · [문체 분포] 줄은 규칙 11 아래 1회', headCount === 1 && afterRule11,
+      headCount === 1 && afterRule11 ? '1회, 규칙 11 아래' : `횟수=${headCount}, 규칙11아래=${afterRule11}`)
+    const withPrevCorr = rewriteGradingPrompt({ topic, rewriteEssay: essay, rubrics, prevScore: 80, prevCorrections: [{ original: '어느날', correction: '어느 날' }] })
+    const keepA = withPrevCorr.includes('(아) 직전 글에서 지적한 맞춤법·표현이 수정본에 그대로 남아 있으면 corrections에 다시 포함하세요')
+    rec('REWRITECORR', 'rewriteGradingPrompt · 직전 지적 재포함 (아) 유지', keepA, keepA ? '(아) 포함' : '(아) 누락')
+  } catch (e) {
+    rec('REWRITECORR', 'REWRITECORR 실행', false, `예외: ${e.message}`)
   }
 
   // ── GRADE: 학급 학년 전달 (step641) — grading·rewriteGrading·exampleEssay의 "초등 5학년" 고정을 grade 인자로 ──
