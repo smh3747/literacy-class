@@ -199,8 +199,12 @@ const MERGE = [
   { name: '제 4조→제4조(실제 띄어쓰기 교정 유지)', corr: { original: '제 4조', correction: '제4조' },             essay: '제 4조에 따라 정했다',        expect: 'kept' }, // step598
   { name: '여름방학→여름 방학(step649: 등재 합성어 분리 → 폐기)', corr: { original: '여름방학', correction: '여름 방학' }, essay: '나는 여름방학에 갔다', expect: 'dropped' }, // step598엔 kept(무의미 필터와 구분용)였으나 step649에서 '여름방학'이 COMPOUND_WORDS에 들어 복합어분리로 폐기(10/29 신고 "'여름 방학에'로 고치라고 함")
   { name: '제 4조→제4조·여름방학 외 실제 띄어쓰기 교정 유지(할수있다)', corr: { original: '할수있다', correction: '할 수 있다' }, essay: '나도 할수있다',  expect: 'kept' }, // step649: 무의미 필터와 구분용 대체 케이스
-  // step560: 문체역행 필터 — 반말 압도 글(formal ≤ 1 && plain ≥ 3)에서만 반말→존댓말 교정 폐기.
+  // step560: 문체역행 필터 — 반말 다수 글(step658: plain > formal && plain ≥ 3, 종전 formal ≤ 1)에서 반말→존댓말 교정 폐기.
   { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
+  // step658 케이스는 '아니다→아니에요' 대신 '운동이다→운동이에요'로 둔다: '아니다'는 끝이 '니다'라 countSentenceStyles가 존댓말로 세고
+  //   isPlainToPoliteChange도 '니다' 제외 규칙 때문에 반말→존댓말로 보지 않는다(둘 다 step658 범위 밖, 별도 후속). 조건 확장 자체만 검증.
+  { name: '반말 5·존댓말 2 글 운동이다→운동이에요(step658: 반말 다수 → 문체역행 폐기)', corr: { original: '운동이다.', correction: '운동이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 축구는 좋은 운동이다. 겨울에도 공을 찬다. 정말 재미있어요. 다들 해 보세요.', expect: 'dropped' }, // step658 (10/14~10/29 반말 13~17:존댓말 1~2 글의 개입 10건형. 종전 formal ≤ 1 조건은 존댓말 2문장에서 필터가 꺼졌음)
+  { name: '반말 3·존댓말 3 동률 글 운동이다→운동이에요(step658: 동률은 손대지 않음 → 통과)', corr: { original: '운동이다.', correction: '운동이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 축구는 좋은 운동이다. 정말 재미있어요. 다들 해 보세요. 축구는 최고예요.', expect: 'kept' }, // step658
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
   { name: '반말 글 어느날→어느 날(맞춤법 교정 무영향)', corr: { original: '어느날', correction: '어느 날' }, essay: '어느날 학교에 갔다. 친구를 만났다. 같이 놀았다. 재미있었다.', expect: 'kept' }, // step560
   { name: '반말 글 해결했습다→해결했습니다(오타 교정 보존)', corr: { original: '해결했습다', correction: '해결했습니다' }, essay: '문제가 생겼다. 친구와 고민했다. 방법을 찾았다. 드디어 문제를 해결했습다.', expect: 'kept' }, // step560 (과거 isStyleChange가 죽였던 케이스, step409 재발 금지)
