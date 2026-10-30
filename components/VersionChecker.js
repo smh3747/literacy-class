@@ -21,8 +21,11 @@ export default function VersionChecker() {
   const checkingRef = useRef(false)
 
   // 글 쓰는 중인지 — textarea에 의미 있는 입력이 있으면 true
+  // step652: 학생 글쓰기 화면(첫 글·수정본)은 글자 수와 무관하게 true — 페이지가 body[data-writing="1"]로 표시한다.
+  //   (10/30 유실 분석: 30자 미만이면 탭을 벗어난 사이 자동 새로고침돼 "로딩 중" 뒤 빈 화면이 됐다. 이제 배너만 띄운다.)
   const isWriting = () => {
     try {
+      if (document.body?.dataset?.writing === '1') return true
       const areas = document.querySelectorAll('textarea')
       for (const t of areas) {
         if ((t.value || '').trim().length >= 30) return true

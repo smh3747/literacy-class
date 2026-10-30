@@ -330,6 +330,25 @@ export default function StudentHome() {
     } catch (e) {}
   }
 
+  // step652: 글쓰기 화면 표시 — VersionChecker가 body[data-writing="1"]이면 자동 새로고침을 하지 않는다(배너만).
+  useEffect(() => {
+    try { document.body.dataset.writing = (step === 'write' || step === 'rewrite') && !!todayTopic ? '1' : '' } catch (e) {}
+    return () => { try { document.body.dataset.writing = '' } catch (e) {} }
+  }, [step, todayTopic])
+
+  // step652: 주제 전환·종 알림으로 글이 비기 전 확인 — 쓰던 글이 있으면 먼저 저장하고 confirm. 취소면 false.
+  const confirmLeaveDraft = () => {
+    const cur = step === 'rewrite' ? rewriteEssay : step === 'write' ? essay : ''
+    if (!todayTopic || !cur || !cur.trim()) return true
+    persistSnapshot(cur, step)
+    return confirm('쓰던 글이 있어요. 다른 주제로 넘어갈까요?\n쓰던 글은 📂 저장된 글에 있어요.')
+  }
+  const switchTopic = (topicId) => {
+    if (topicId && todayTopic && topicId === todayTopic.id) { loadTodayTopic(user, topicId); return }
+    if (!confirmLeaveDraft()) return
+    loadTodayTopic(user, topicId)
+  }
+
   // step651: 로그인 직후 슬롯 목록 적재(📂 버튼의 N). 구 키 이관은 loadSlots 안에서 1회.
   useEffect(() => {
     if (!user?.id || isImpersonatingNow()) return
@@ -1132,8 +1151,18 @@ export default function StudentHome() {
     if (!user) return
     const sig = `${router.query?.topic || ''}|${router.query?.action || ''}`
     if (handledQueryRef.current === sig) return
+    // step652: 종 알림 클릭 등으로 다른 주제가 요청됐는데 쓰던 글이 있으면 confirm. 취소하면 URL을 지금 주제로 되돌린다.
+    const nextTopic = router.query?.topic || null
+    if (nextTopic !== (todayTopic?.id || null) && !confirmLeaveDraft()) {
+      const q = { ...router.query }
+      if (todayTopic?.id) q.topic = todayTopic.id; else delete q.topic
+      delete q.action
+      handledQueryRef.current = `${todayTopic?.id || ''}|`
+      try { router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true }) } catch (e) {}
+      return
+    }
     handledQueryRef.current = sig
-    loadTodayTopic(user, router.query?.topic || null)
+    loadTodayTopic(user, nextTopic)
   }, [router.query?.topic, router.query?.action, user])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🆕 step487: 챌린지 상위 글 모달 열기 — 항상 서버 재호출(제출 직후 잠금 해제 반영)
@@ -1603,7 +1632,7 @@ export default function StudentHome() {
             <p className="text-xs text-sky-800 font-semibold mt-1">{rankLine}</p>
           )}
           <div className="flex gap-2 mt-3">
-            <button onClick={() => loadTodayTopic(user, t.id)}
+            <button onClick={() => switchTopic(t.id)}
               className="flex-1 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2 rounded-lg transition">
               ✍️ 챌린지 글쓰기
             </button>
@@ -1624,7 +1653,7 @@ export default function StudentHome() {
       const { genreLabel, body } = parseTopicDescription(t.description)
       return (
         <button key={t.id}
-          onClick={() => loadTodayTopic(user, t.id)}
+          onClick={() => switchTopic(t.id)}
           className={`w-full text-left p-3 border rounded-lg transition ${challenge ? 'bg-sky-50 border-sky-200 hover:bg-sky-100' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}>
           <div className={`text-xs font-semibold ${challenge ? 'text-sky-700' : 'text-amber-700'}`}>
             📅 {t.date}
@@ -1855,7 +1884,7 @@ export default function StudentHome() {
                       return (
                         <button
                           key={t.id}
-                          onClick={() => loadTodayTopic(user, t.id)}
+                          onClick={() => switchTopic(t.id)}
                           className={`w-full text-left p-3 rounded-lg transition ${
                             isCurrent
                               ? 'bg-primary text-white'
@@ -1936,7 +1965,7 @@ export default function StudentHome() {
                     })()}
                   </div>
                   {todayTopic.date !== todayStr() && (
-                    <button onClick={() => loadTodayTopic(user)}
+                    <button onClick={() => switchTopic(null)}
                       className="text-xs bg-white border border-primary text-primary px-3 py-1.5 rounded-full hover:bg-primary-light flex-shrink-0">
                       🌟 오늘 주제로
                     </button>
