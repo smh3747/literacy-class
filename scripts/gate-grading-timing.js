@@ -7,7 +7,7 @@ const path = require('path')
 const { pathToFileURL } = require('url')
 
 ;(async () => {
-  const { deriveGradingPath, pathFamily, percentile, kstDay, summarizeTimings, fmtSec, OVER_MS } =
+  const { deriveGradingPath, pathFamily, percentile, kstDay, summarizeTimings, fmtSec, fmtSecKo, headlineOf, interpretTimings, OVER_MS } =
     await import(pathToFileURL(path.join(__dirname, '..', 'lib', 'gradingTiming.js')).href)
 
   const results = []
@@ -52,6 +52,11 @@ const { pathToFileURL } = require('url')
     rec('빈 입력 → n 0·null', summarizeTimings([]).total.n === 0 && summarizeTimings([]).total.p50 === null && summarizeTimings(null).byDay.length === 0, '')
   }
   rec('fmtSec 61234 → 61.2s, null → -', fmtSec(61234) === '61.2s' && fmtSec(null) === '-', fmtSec(61234))
+  // step654: 한글 표기·머리 문장·해석
+  rec('fmtSecKo 5600 → 5.6초, 72000 → 1분 12초, 120000 → 2분', fmtSecKo(5600) === '5.6초' && fmtSecKo(72000) === '1분 12초' && fmtSecKo(120000) === '2분', `${fmtSecKo(5600)}/${fmtSecKo(72000)}/${fmtSecKo(120000)}`)
+  { const h = headlineOf({ n: 226, p50: 5600, p95: 13800, max: 31700, over60: 0 })
+    rec('headlineOf 문장', h === '최근 14일 226편 · 보통 5.6초 · 거의 모든 글(95%)이 13.8초 안 · 가장 오래 31.7초 · 1분 넘은 글 0건', h) }
+  rec('interpretTimings: over60 0 → ok 문장, 2 → warn 문장(503 언급), n 0 → none', interpretTimings({ n: 5, over60: 0 }).tone === 'ok' && interpretTimings({ n: 5, over60: 2 }).tone === 'warn' && /503/.test(interpretTimings({ n: 5, over60: 2 }).text) && interpretTimings({ n: 0 }).tone === 'none', '')
   rec('OVER_MS = 60000', OVER_MS === 60000, '')
 
   let pass = 0, fail = 0

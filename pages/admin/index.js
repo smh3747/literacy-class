@@ -12,7 +12,7 @@ import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
-import { summarizeTimings, fmtSec, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수)
+import { summarizeTimings, fmtSecKo, headlineOf, interpretTimings, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
@@ -3584,21 +3584,37 @@ export default function AdminHome() {
                 return cls ? ([cls.teacher_profile?.school, cls.name].filter(Boolean).join(' ') || cls.name || id) : '(삭제된 학급)'
               }
               const s = summarizeTimings(timingRows.rows.map(r => ({ ms: r.grading_ms, path: r.grading_path, at: r.created_at, classId: r.profiles?.class_id || null })))
+              // step654: 전문 용어 제거 — 열 이름·툴팁·머리 문장·해석 한 줄(lib/gradingTiming headlineOf·interpretTimings)
               const PATH_LABEL = { inline: '정상', pending: '검사 보류(피크)', fallback: '보조 모델', retry: '재시도', error_then_retry: '실패 후 재시도', unknown: '미분류' }
-              const cell = (v, warn) => <td className={`px-2 py-1.5 text-right tabular-nums ${warn ? 'text-red-600 font-semibold' : ''}`}>{v}</td>
+              const PATH_TIP = {
+                inline: '맞춤법 전용 검사와 채점을 한 번에 끝낸 글이에요.',
+                pending: '피크=반 전체가 동시에 내서 맞춤법 전용 검사를 나중으로 미룬 글이에요.',
+                fallback: '주 AI가 막혀 보조 AI가 채점한 글이에요.',
+                retry: 'AI가 한 번에 답하지 않아 서버가 다시 시도한 글이에요.',
+                error_then_retry: '실패한 뒤 학생이 다시 눌러 성공한 글이에요.',
+                unknown: '경로 정보가 없는 글이에요.',
+              }
+              const COLS = [
+                { key: 'n', label: '편수', tip: '이 기간에 측정된 글 수예요.' },
+                { key: 'p50', label: '보통(절반)', tip: '학생 절반은 이 시간 안에 결과를 받았어요.' },
+                { key: 'p95', label: '거의 모두(95%)', tip: '100명 중 95명은 이 시간 안에 결과를 받았어요.' },
+                { key: 'max', label: '가장 오래', tip: '가장 오래 기다린 글의 시간이에요.' },
+                { key: 'over60', label: '1분 넘음', tip: '결과까지 1분 넘게 걸린 글 수예요. 0이면 초록이에요.' },
+              ]
+              const cell = (v, tone) => <td className={`px-2 py-1.5 text-right tabular-nums ${tone === 'warn' ? 'text-red-600 font-semibold' : tone === 'ok' ? 'text-green-600 font-semibold' : ''}`}>{v}</td>
               const statRow = (key, label, st) => (
                 <tr key={key} className="border-t border-gray-100">
                   <td className="px-2 py-1.5 text-gray-800">{label}</td>
-                  {cell(st.n)}{cell(fmtSec(st.p50))}{cell(fmtSec(st.p95), st.p95 > OVER_MS)}{cell(fmtSec(st.max), st.max > OVER_MS)}{cell(st.over60, st.over60 > 0)}
+                  {cell(st.n)}{cell(fmtSecKo(st.p50))}{cell(fmtSecKo(st.p95), st.p95 > OVER_MS ? 'warn' : '')}{cell(fmtSecKo(st.max), st.max > OVER_MS ? 'warn' : '')}{cell(st.over60, st.over60 > 0 ? 'warn' : 'ok')}
                 </tr>
               )
               const head = (first) => (
                 <thead><tr className="text-[11px] text-gray-500">
                   <th className="px-2 py-1 text-left font-medium">{first}</th>
-                  <th className="px-2 py-1 text-right font-medium">건수</th><th className="px-2 py-1 text-right font-medium">p50</th>
-                  <th className="px-2 py-1 text-right font-medium">p95</th><th className="px-2 py-1 text-right font-medium">최대</th><th className="px-2 py-1 text-right font-medium">60초 초과</th>
+                  {COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap" title={c.tip}>{c.label} <span className="text-gray-400 cursor-help">ⓘ</span></th>)}
                 </tr></thead>
               )
+              const verdict = interpretTimings(s.total)
               return (
                 <div>
                   <div className="text-xs text-gray-500 mb-2">학생이 제출을 확정한 뒤 AI 결과를 받기까지 걸린 시간이에요. 학생 화면이 보낸 측정값(최근 14일, 삭제 글 제외)으로 집계해요.</div>
@@ -3613,12 +3629,12 @@ export default function AdminHome() {
                     <div className="py-8 text-center text-sm text-gray-400">아직 측정값이 없어요. <code>migrations/step643-grading-ms.sql</code> 적용 후 새 제출부터 쌓여요.</div>
                   ) : (
                     <>
-                      <div className="text-sm font-semibold text-gray-800 mb-1">
-                        ⏱ 최근 14일 {s.total.n}건 · p50 {fmtSec(s.total.p50)} · p95 <span className={s.total.p95 > OVER_MS ? 'text-red-600' : ''}>{fmtSec(s.total.p95)}</span> · 최대 <span className={s.total.max > OVER_MS ? 'text-red-600' : ''}>{fmtSec(s.total.max)}</span> · 60초 초과 <span className={s.total.over60 > 0 ? 'text-red-600' : ''}>{s.total.over60}건</span>
+                      <div className={`text-sm font-semibold mb-1 ${s.total.over60 > 0 ? 'text-red-700' : 'text-gray-800'}`}>
+                        ⏱ {headlineOf(s.total)}
                       </div>
                       <div className="flex gap-1.5 flex-wrap mb-3">
                         {Object.entries(s.paths).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
-                          <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{PATH_LABEL[k] || k} {n}</span>
+                          <span key={k} title={PATH_TIP[k] || ''} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 cursor-help">{PATH_LABEL[k] || k} {n} <span className="text-gray-400">ⓘ</span></span>
                         ))}
                       </div>
                       <div className="grid md:grid-cols-2 gap-4">
@@ -3631,6 +3647,12 @@ export default function AdminHome() {
                           <table className="w-full text-xs">{head('학급')}<tbody>{s.byClass.map(c => statRow(c.key, classLabel(c.key), c))}</tbody></table>
                         </div>
                       </div>
+                      {/* step654: 한 줄 해석 — 1분 넘은 글이 있으면 경고, 없으면 안심 */}
+                      {verdict.text && (
+                        <div className={`mt-3 text-sm rounded-xl px-4 py-2 ${verdict.tone === 'warn' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
+                          {verdict.text}
+                        </div>
+                      )}
                       {timingRows.rows.length >= 3000 && <div className="text-[11px] text-gray-400 mt-2">최근 3,000건까지만 집계했어요.</div>}
                     </>
                   )}
