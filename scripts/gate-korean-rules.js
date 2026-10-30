@@ -201,10 +201,14 @@ const MERGE = [
   { name: '제 4조→제4조·여름방학 외 실제 띄어쓰기 교정 유지(할수있다)', corr: { original: '할수있다', correction: '할 수 있다' }, essay: '나도 할수있다',  expect: 'kept' }, // step649: 무의미 필터와 구분용 대체 케이스
   // step560: 문체역행 필터 — 반말 다수 글(step658: plain > formal && plain ≥ 3, 종전 formal ≤ 1)에서 반말→존댓말 교정 폐기.
   { name: '반말 글 한다→해요(문체역행 차단)', corr: { original: '아쉽기도 한다.', correction: '아쉽기도 해요.' }, essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', expect: 'dropped' }, // step560 (7/23 대구범어초 실사례)
-  // step658 케이스는 '아니다→아니에요' 대신 '운동이다→운동이에요'로 둔다: '아니다'는 끝이 '니다'라 countSentenceStyles가 존댓말로 세고
-  //   isPlainToPoliteChange도 '니다' 제외 규칙 때문에 반말→존댓말로 보지 않는다(둘 다 step658 범위 밖, 별도 후속). 조건 확장 자체만 검증.
+  // step658 케이스는 '아니다→아니에요' 대신 '운동이다→운동이에요'로 둔다: 당시 '아니다'는 끝이 '니다'라 countSentenceStyles가 존댓말로 세고
+  //   isPlainToPoliteChange도 '니다' 제외 규칙 때문에 반말→존댓말로 보지 않았다(step659에서 해소, 아래 659 케이스). 조건 확장 자체만 검증.
   { name: '반말 5·존댓말 2 글 운동이다→운동이에요(step658: 반말 다수 → 문체역행 폐기)', corr: { original: '운동이다.', correction: '운동이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 축구는 좋은 운동이다. 겨울에도 공을 찬다. 정말 재미있어요. 다들 해 보세요.', expect: 'dropped' }, // step658 (10/14~10/29 반말 13~17:존댓말 1~2 글의 개입 10건형. 종전 formal ≤ 1 조건은 존댓말 2문장에서 필터가 꺼졌음)
   { name: '반말 3·존댓말 3 동률 글 운동이다→운동이에요(step658: 동률은 손대지 않음 → 통과)', corr: { original: '운동이다.', correction: '운동이에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 축구는 좋은 운동이다. 정말 재미있어요. 다들 해 보세요. 축구는 최고예요.', expect: 'kept' }, // step658
+  // step659: '아니다'를 반말 종결로 분류 — 658에서 못 넣었던 원래 사례(핸드오버 §13 "아니다→아니에요" 10건).
+  { name: '반말 5·존댓말 2 글 아니다→아니에요(step659: 반말 다수 → 문체역행 폐기)', corr: { original: '아니다.', correction: '아니에요.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 축구는 좋은 운동이다. 나는 축구를 그만둘 생각이 아니다. 정말 재미있어요. 다들 해 보세요.', expect: 'dropped' }, // step659 ('아니다' 문장이 반말로 세어져 plain 5·formal 2, 교정도 반말→존댓말로 판정)
+  { name: '반말 5·존댓말 2 글 아니다→아닙니다(step659: 닙니다 끝도 존댓말 → 폐기)', corr: { original: '아니다.', correction: '아닙니다.' }, essay: '나는 축구가 좋다. 매일 공을 찬다. 친구들과 뛰면 신난다. 축구는 좋은 운동이다. 나는 축구를 그만둘 생각이 아니다. 정말 재미있어요. 다들 해 보세요.', expect: 'dropped' }, // step659
+  { name: '존댓말 다수 글 아니다→아니에요(step659: 통일 지적 보존 → 통과)', corr: { original: '아니다.', correction: '아니에요.' }, essay: '저는 축구를 좋아해요. 매일 공을 차요. 친구들과 뛰면 신나요. 축구를 그만둘 생각이 아니다.', expect: 'kept' }, // step659 (존댓말 3:반말 1, 필터 미발동)
   { name: '섞인 글 소개한다→소개합니다(통일 지적 보존)', corr: { original: '소개한다.', correction: '소개합니다.' }, essay: '제 친구를 소개합니다. 이 친구는 착해요. 같이 놀면 재미있어요. 오늘은 새 친구를 소개한다.', expect: 'kept' }, // step560 (호평초형 옳은 통일)
   { name: '반말 글 어느날→어느 날(맞춤법 교정 무영향)', corr: { original: '어느날', correction: '어느 날' }, essay: '어느날 학교에 갔다. 친구를 만났다. 같이 놀았다. 재미있었다.', expect: 'kept' }, // step560
   { name: '반말 글 해결했습다→해결했습니다(오타 교정 보존)', corr: { original: '해결했습다', correction: '해결했습니다' }, essay: '문제가 생겼다. 친구와 고민했다. 방법을 찾았다. 드디어 문제를 해결했습다.', expect: 'kept' }, // step560 (과거 isStyleChange가 죽였던 케이스, step409 재발 금지)
@@ -244,6 +248,9 @@ const STYLE = [
   { name: '100% 일관 → 소수 없음', essay: '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 아쉽기도 한다.', formal: 0, plain: 4, minority: null, minoritySentences: [] },
   { name: '1문장 글 → 소수 없음', essay: '오늘은 즐거웠어요.', formal: 1, plain: 0, minority: null, minoritySentences: [] },
   { name: '동률 2:2 → 소수 없음', essay: '좋아요. 재밌어요. 좋다. 재밌다.', formal: 2, plain: 2, minority: null, minoritySentences: [] },
+  // step659: '아니다'는 끝글자 '니다'지만 반말 — 종전엔 formal 3·plain 1(소수 plain "찬다.")로 잘못 세었음.
+  { name: '"~는 아니다." 포함 글 → 반말로 분류(formal 2·plain 2)', essay: '정말 재미있어요. 다들 해 보세요. 축구를 그만둘 생각은 아니다. 매일 공을 찬다.', formal: 2, plain: 2, minority: null, minoritySentences: [] }, // step659
+  { name: '"~는 아니다." 반말 소수 글 → 소수 plain 목록에', essay: '정말 재미있어요. 다들 해 보세요. 축구는 최고예요. 축구를 그만둘 생각은 아니다.', formal: 3, plain: 1, minority: 'plain', minoritySentences: ['축구를 그만둘 생각은 아니다.'] }, // step659 (종전엔 전부 존댓말 4로 세었음)
   { name: '소수 7개 → 목록 5개 상한(등장 순)', essay: Array.from({ length: 10 }, () => '저는 법을 지켜요.').join(' ') + ' ' + Array.from({ length: 7 }, (_, i) => `법이 ${i + 1}개 있다.`).join(' '), formal: 10, plain: 7, minority: 'plain', minoritySentences: ['법이 1개 있다.', '법이 2개 있다.', '법이 3개 있다.', '법이 4개 있다.', '법이 5개 있다.'] },
 ]
 
