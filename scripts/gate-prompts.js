@@ -104,15 +104,27 @@ const { pathToFileURL } = require('url')
       rec('STYLEDIST', `${pname} · 소수 있음(존댓말 3+반말 1) → 반드시 포함+"법이 있다." 인용`, miss.length === 0,
         miss.length === 0 ? `${mixedNeed.length}문구 포함` : `누락: ${miss.join(' / ')}`)
     }
-    // step637: 반말 위주(반말 3+존댓말 1) → 양방향 문체 교정 금지 문구 포함, 통일 강제 문구 없음
+    // step637→step653: 반말 위주(반말 3+존댓말 1) → 존댓말→반말 금지 + 반말→존댓말 허용(강제 아님), 통일 강제 문구 없음
     const plainMajorEssay = '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었다. 여러분도 꼭 와 보세요.'
-    const plainMajorNeed = [HEAD, '존댓말 1문장·반말 3문장', '반말 위주의 글입니다', '문체 교정을 하나도 만들지 마세요', '존댓말로 바꾸지도 마세요']
+    const plainMajorNeed = [HEAD, '존댓말 1문장·반말 3문장', '존댓말 문장을 반말로 바꾸는 교정은 하나도 만들지 마세요', '반말 문장을 존댓말로 고치는 쪽만 허용합니다(강제는 아님)', '독자에게 말 거는 문장·부탁·인용은 그대로 둡니다']
+    const plainMajorBan = ['통일하는 교정을 corrections에 반드시 포함하세요', '반말 위주의 글입니다', '반말 문장을 존댓말로 바꾸지도 마세요']
     for (const [pname, s] of Object.entries(five(plainMajorEssay))) {
       const miss = plainMajorNeed.filter(p => !s.includes(p))
-      const forced = s.includes('통일하는 교정을 corrections에 반드시 포함하세요')
-      const pass = miss.length === 0 && !forced
-      rec('STYLEDIST', `${pname} · 반말 위주(반말 3+존댓말 1) → 양방향 금지 문구, 반드시 포함 없음`, pass,
-        pass ? `${plainMajorNeed.length}문구 포함, 강제 문구 없음` : `누락: ${miss.join(' / ')}; 강제문구=${forced}`)
+      const back = plainMajorBan.filter(p => s.includes(p))
+      const pass = miss.length === 0 && back.length === 0
+      rec('STYLEDIST', `${pname} · 반말 위주(반말 3+존댓말 1) → 존댓말→반말 금지·반말→존댓말 허용, 강제·구문구 없음`, pass,
+        pass ? `${plainMajorNeed.length}문구 포함, 강제·구문구 없음` : `누락: ${miss.join(' / ')}; 되살아남: ${back.join(' / ')}`)
+    }
+    // step653: 동률(존댓말 2+반말 2) → 반반 + 반말→존댓말 쪽으로만, 존댓말 문장 불변. 강제·구 "한쪽 문체로만" 문구 없음
+    const tieEssay = '오늘 바자회를 했다. 물건을 많이 팔았다. 정말 재미있었어요. 여러분도 꼭 와 보세요.'
+    const tieNeed = [HEAD, '존댓말 2문장·반말 2문장으로 반반입니다', '반말 문장을 존댓말로 고치는 쪽으로만 하고', '존댓말 문장은 건드리지 마세요']
+    const tieBan = ['반드시 포함하세요', '한쪽 문체로만 모으고']
+    for (const [pname, s] of Object.entries(five(tieEssay))) {
+      const miss = tieNeed.filter(p => !s.includes(p))
+      const back = tieBan.filter(p => s.includes(p))
+      const pass = miss.length === 0 && back.length === 0
+      rec('STYLEDIST', `${pname} · 동률(존댓말 2+반말 2) → 반반·반말→존댓말 쪽으로만, 강제·구문구 없음`, pass,
+        pass ? `${tieNeed.length}문구 포함, 강제·구문구 없음` : `누락: ${miss.join(' / ')}; 되살아남: ${back.join(' / ')}`)
     }
     const plainNeed = [HEAD, '전부 반말(3문장)', '문체 교정을 하나도 만들지 마세요']
     for (const [pname, s] of Object.entries(five(plainEssay))) {
