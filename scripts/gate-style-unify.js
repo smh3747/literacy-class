@@ -49,6 +49,32 @@ const { pathToFileURL } = require('url')
     rec('TAG', '반말 다수+존댓말 1문장: 존댓말→반말 통일에 부여', flags(out) === '1', `flags=${flags(out)}`)
   }
 
+  // ── step660: '아니다' 예외(spell 659 정합) + 끝 기호 ; : ──
+  // 존댓말 다수(4문장) + '아니다' 1문장 — 핸드오버 §13 "아니다→아니에요" 실사례 모양
+  const FORMAL_MAJ_ANIDA = '오늘은 학교에서 독서 수업을 했습니다. 저는 동화책을 골랐어요. 책을 다 읽고 느낀 점을 썼습니다. 책은 장난감이 아니다. 다음에도 열심히 읽겠습니다.'
+  {
+    const out = tagStyleUnify([C('아니다', '아니에요', '존댓말로 통일해요')], FORMAL_MAJ_ANIDA)
+    rec('TAG', "step660 ① 존댓말 다수 글의 '아니다.'→'아니에요.' → 부여('아니다'는 반말 끝)", flags(out) === '1', `flags=${flags(out)}`)
+  }
+  {
+    const out = tagStyleUnify([C('책은 장난감이 아니다.', '책은 장난감이 아닙니다.')], FORMAL_MAJ_ANIDA)
+    rec('TAG', "step660 ① 문장 통째 '아니다.'→'아닙니다.' → 부여", flags(out) === '1', `flags=${flags(out)}`)
+  }
+  {
+    // 존댓말 다수(4문장) + 반말 1문장, 글 안에서 그 문장 뒤에 쌍반점이 붙은 모양 → AI original "할것이다.;"
+    const essay = '오늘은 학교에서 독서 수업을 했습니다. 저는 동화책을 골랐어요. 책을 다 읽고 느낀 점을 썼습니다. 앞으로 더 열심히 할 것이다.; 다음에도 열심히 읽겠습니다.'
+    const out = tagStyleUnify([C('할것이다.;', '할 것입니다.')], essay)
+    rec('TAG', "step660 ② original '할것이다.;'(쌍반점 끝) → '할 것입니다.' → 부여(끝 기호 ; 제거)", flags(out) === '1', `flags=${flags(out)}`)
+    const out2 = tagStyleUnify([C('할것이다:', '할 것입니다.')], essay)
+    rec('TAG', "step660 ② original '할것이다:'(콜론 끝) → 부여(끝 기호 : 제거)", flags(out2) === '1', `flags=${flags(out2)}`)
+  }
+  {
+    // 반말 다수(4문장, '아니다' 포함) + 존댓말 1문장 — minority가 'formal'이라 '아니다→아니에요'는 소수 문장 밖
+    const essay = '주말에 가족과 바다에 갔다. 파도가 정말 컸다. 바다는 수영장이 아니다. 점심은 김밥을 먹었어요. 다음에 또 가고 싶다.'
+    const out = tagStyleUnify([C('아니다', '아니에요', '존댓말')], essay)
+    rec('NOTAG', "step660 ③ 반말 다수 글의 '아니다'→'아니에요' → 미부여(minority=formal, 종전과 같음)", flags(out) === '0', `flags=${flags(out)}`)
+  }
+
   // ── NOTAG: 표식이 붙지 않아야 하는 경우 ──
   {
     const essay = '주말에 가족과 바다에 갔다. 파도가 정말 컸다. 동생과 모래성을 만들었다. 다음에 또 가고 싶다.'
