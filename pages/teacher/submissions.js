@@ -15,6 +15,8 @@ import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { fetchPeerShare, setPeerShare as setPeerShareRemote } from '../../lib/peerShareClient'   // step620: 우리 반 글 모음(서버 API)
+import PeerShareCard from '../../components/PeerShareCard'   // step655: "학생이 보는 화면 미리보기"(학생 카드와 같은 렌더, 닉네임만)
+import { nicknameFromSeed } from '../../lib/nickname'       // step655: 서버(peer-share list)와 같은 닉네임 규칙
 import { fetchShowcaseStatus } from '../../lib/showcaseStatusClient'   // step632: 전국 소개 상태(서버 API, 챌린지 주제만)
 import { showcaseBadge } from '../../lib/showcaseStatus'               // step632: 배지 재료(순수)
 import { STAMPS, stampLabel } from '../../lib/stamps'
@@ -305,7 +307,9 @@ export default function TeacherSubmissions() {
   // ============================================
   // 📚 step620: 우리 반 글 모음 — 교사 켜기·추가/제외 (서버 /api/peer-share, 선정 규칙은 서버 단독)
   // ============================================
+  const [peerPreviewOpen, setPeerPreviewOpen] = useState(false)   // step655: 학생이 보는 화면 미리보기 펼침
   const loadPeerShare = async (topicId) => {
+    setPeerPreviewOpen(false)
     try {
       const r = await fetchPeerShare(supabase, topicId)
       setPeerShare({
@@ -1119,10 +1123,62 @@ export default function TeacherSubmissions() {
                 if (on) {
                   const autoShown = (peerShare?.items || []).filter(x => x.source === 'auto').length
                   const added = (peerShare?.items || []).filter(x => x.source === 'added').length
+                  // step655: 지금 반 친구들에게 보이는 글 묶음 — 서버 선정 결과(peerShare.items, 선정 규칙·API 불변)에 이 화면이 이미 가진
+                  //   topicStudents(실명·닉네임·본문)를 붙여 한 줄씩. 실명은 교사 권한 범위, 미리보기는 학생 카드와 같은 렌더(닉네임만).
+                  const subById = {}, profBySubId = {}
+                  topicStudents.forEach(g => g.items.forEach(s => { subById[s.id] = s; profBySubId[s.id] = g.profile }))
+                  const nickOf = (p) => String(p?.nickname == null ? '' : p.nickname).trim() || nicknameFromSeed(p?.username || p?.id)
+                  const shownRows = (peerShare?.items || []).map((x, i) => ({
+                    rank: i + 1, x, sub: subById[x.submissionId] || null, profile: profBySubId[x.submissionId] || null,
+                  }))
+                  const previewItems = shownRows.map(r => ({
+                    key: r.rank, nickname: nickOf(r.profile), essay: r.sub?.essay_text || '', mine: false,
+                    ...(classInfo?.peer_share_show_score ? { score: r.x.score } : {}),
+                  }))
                   return (
-                    <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                      ✓ 우리 반 글 모음이 켜져 있어요. 자동 {autoShown}편 + 선생님 선택 {added}편. 학급 설정에서 끌 수 있어요.
-                    </p>
+                    <>
+                      <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                        ✓ 우리 반 글 모음이 켜져 있어요. 자동 {autoShown}편 + 선생님 선택 {added}편. 학급 설정에서 끌 수 있어요.
+                      </p>
+                      <div className="bg-white rounded-2xl border border-emerald-200 p-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                          <h3 className="font-bold text-emerald-900 text-sm">📚 지금 반 친구들에게 보이는 글 ({shownRows.length})</h3>
+                          {shownRows.length > 0 && (
+                            <button type="button" onClick={() => setPeerPreviewOpen(v => !v)}
+                              className="text-xs bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1 rounded-full hover:bg-emerald-100">
+                              {peerPreviewOpen ? '미리보기 닫기' : '👀 학생이 보는 화면 미리보기'}
+                            </button>
+                          )}
+                        </div>
+                        {peerShare === null ? (
+                          <p className="text-xs text-gray-500">글 모음 상태를 불러오지 못했어요. 새로고침해 주세요.</p>
+                        ) : shownRows.length === 0 ? (
+                          <p className="text-xs text-gray-500">아직 보이는 글이 없어요. 점수가 있고 학부모 동의가 된 글이 생기면 잘 쓴 순서로 5편까지 자동으로 올라가요.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {shownRows.map(r => (
+                              <div key={r.x.submissionId} className="flex items-center gap-2 text-sm flex-wrap border-t border-gray-100 pt-1 first:border-t-0 first:pt-0">
+                                <span className="text-xs font-bold text-emerald-700 w-6">#{r.rank}</span>
+                                <span className="font-medium text-gray-900">{r.profile ? displayStudentNameWithNumber(r.profile) : '학생 정보 없음'}</span>
+                                <span className="text-xs text-gray-500">({nickOf(r.profile)})</span>
+                                <span className="text-xs text-gray-700 tabular-nums">{r.x.score != null ? `${r.x.score}점` : '점수 없음'}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.x.source === 'added' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{r.x.source === 'added' ? '선생님 선택' : '자동 선정'}</span>
+                                {r.sub && !isImpersonating && (
+                                  <button type="button" onClick={() => togglePeerShare(r.sub, false)} disabled={peerBusy}
+                                    className="ml-auto text-xs text-gray-600 hover:text-red-600 hover:underline disabled:opacity-50">🙈 빼기</button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {peerPreviewOpen && shownRows.length > 0 && (
+                          <div className="mt-3 border-t border-dashed border-emerald-200 pt-3">
+                            <p className="text-[11px] text-gray-500 mb-2">학생 화면과 같은 카드예요. 닉네임만 보이고{classInfo?.peer_share_show_score ? ' 점수도 함께 보여요' : ' 점수는 안 보여요'}.</p>
+                            <PeerShareCard items={previewItems} showScore={!!classInfo?.peer_share_show_score} />
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )
                 }
                 return null

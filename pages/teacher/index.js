@@ -25,6 +25,7 @@ import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계
 import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
 import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화 / step614: 원클릭 카드 조회를 서버 API로
+import { fetchPeerShare } from '../../lib/peerShareClient'   // step655: 오늘 제출 펼침 "📚 친구들에게 보이는 글 N편"(읽기 전용 list)
 import { pickLatestSupply, shortMd } from '../../lib/supplyBands'   // step616: 챌린지 배너 "최근 주제" 1줄(주제 관리 카드와 같은 선택 규칙)
 
 export default function TeacherHome() {
@@ -492,11 +493,20 @@ export default function TeacherHome() {
         const { data: tps } = await supabase.from('topics').select('id, title').in('id', topicIds)
         titleById = Object.fromEntries((tps || []).map(t => [t.id, t.title]))
       }
+      // step655: 글 모음 ON이면 오늘 주제별로 "지금 보이는 글" 수를 읽어 합산(list만, 선정 규칙·API 불변. 실패는 0)
+      let peerShown = null
+      if (classInfo?.peer_share_enabled && topicIds.length > 0) {
+        const counts = await Promise.all(topicIds.map(id =>
+          fetchPeerShare(supabase, id).then(r => ({ id, n: Array.isArray(r?.items) ? r.items.length : 0 })).catch(() => ({ id, n: 0 }))))
+        const total = counts.reduce((a, c) => a + c.n, 0)
+        peerShown = { total, topicId: (counts.find(c => c.n > 0) || counts[0]).id, multi: topicIds.length >= 2 }
+      }
       setTodayPreview({
         loading: false,
         rows: (subs || []).map(s => ({ ...s, profile: profById[s.user_id] })),
         multiTopic: topicIds.length >= 2,
         titleById,
+        peerShown,
       })
     } catch (e) {
       console.warn('오늘 제출 미리보기 조회 실패(무시):', e?.message)
@@ -1331,6 +1341,13 @@ export default function TeacherHome() {
                             <Link href={withImpersonation('/teacher/status')}
                               className="block text-xs text-primary font-medium px-2.5 py-1 hover:underline">
                               외 {todayPreview.rows.length - 5}명 · 오늘 제출 전체 보기 →
+                            </Link>
+                          )}
+                          {/* 📚 step655: ON 학급 — 오늘 주제에서 지금 반 친구들에게 보이는 글 수 + 학생 글 보기 직행 */}
+                          {classInfo?.peer_share_enabled && todayPreview.peerShown && (
+                            <Link href={withImpersonation(todayPreview.peerShown.multi ? '/teacher/submissions' : `/teacher/submissions?topic=${todayPreview.peerShown.topicId}`)}
+                              className="block text-xs text-emerald-700 font-medium px-2.5 py-1 hover:underline">
+                              📚 친구들에게 보이는 글 {todayPreview.peerShown.total}편 → 학생 글 보기
                             </Link>
                           )}
                           {/* 📚 step620: 글 모음 안내 한 줄 — OFF 학급만 */}
