@@ -10,11 +10,11 @@ import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
-import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step656: 카드 라벨은 lib/errorHumanize가 분류기로 계산
+import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step657: 카드 라벨은 lib/errorHumanize가 분류기로 계산
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { summarizeTimings, fmtSecKo, headlineOf, interpretTimings, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
-import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step656: 오류 탭 사람 문장화(표시 전용)
+import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step657: 오류 탭 사람 문장화(표시 전용)
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -3414,7 +3414,7 @@ export default function AdminHome() {
                     </div>
                   )
                 ) : (() => {
-                  // step656: 사람이 읽는 형식(표시 전용) — 쌍·반복 병합(lib/errorHumanize mergeLogs) → 날짜 묶음 → 조치 필요만 펼침, 무시 가능은 접힘.
+                  // step657: 사람이 읽는 형식(표시 전용) — 쌍·반복 병합(lib/errorHumanize mergeLogs) → 날짜 묶음 → 조치 필요만 펼침, 무시 가능은 접힘.
                   //   종류 필터는 로그 단위로 먼저, 심각도 필터는 카드 단위로. 기록·분류기·필터 동작 불변.
                   const typed = errorLogs.filter(e => errType === 'all' || e.error_type === errType)
                   const cards = mergeLogs(typed).filter(c => errSeverity === 'all' || c.severity === errSeverity)

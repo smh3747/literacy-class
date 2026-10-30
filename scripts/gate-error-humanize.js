@@ -1,4 +1,4 @@
-// step656: 오류 탭 사람 문장화(lib/errorHumanize.js) 회귀 게이트 (읽기 전용 — lib는 import만)
+// step657: 오류 탭 사람 문장화(lib/errorHumanize.js) 회귀 게이트 (읽기 전용 — lib는 import만)
 //
 // ▶ lib/errorHumanize.js 수정 시 커밋 전 실행:  node scripts/gate-error-humanize.js
 //   규칙: 쌍 병합(사용자·작업·60초)·반복 N번 시도·번역표·학생 체감 문장·날짜 묶음·학급 3건 묶음·하루 요약.
