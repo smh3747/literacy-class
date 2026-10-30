@@ -31,6 +31,7 @@ import { getEffectiveProfile, withImpersonation, assertWritable, isImpersonating
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { deriveGradingPath } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 실측 — 경로 한 값 판정(순수)
 import { REPORT_TAGS, REPORT_DETAIL_MAX, REPORT_DAILY_LIMIT, buildReportReason, isDailyLimitReached } from '../../lib/reportReason'   // step649: 신고 사유 칩
+import { loadSlots, saveSlots, upsertSnapshot, removeSlotsFor, sortForList, previewOf } from '../../lib/draftSlots'   // step651: 게임식 저장 슬롯
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
@@ -52,78 +53,10 @@ function parseTopicDescription(desc) {
 }
 
 // ============================================
-// 🆕 step571: 로컬 초안 금고 — 공유 크롬북에서 다른 기기 로그아웃(세션 사망)으로 작성 글이
-//   유실되던 사고(8/20) 대응. 값은 { text, savedAt }만 저장(개인정보 최소화 — 이름 등 금지).
-//   키: draft:{topicId}:{userId}:{phase} (phase = 'write' 첫 글 | 'rewrite' 수정본)
-//   구 essay_backup_* 키는 readDraft 폴백으로 1회 이관 후 삭제.
+// 🆕 step651: 로컬 초안 금고(step571 draft:* 키·복원 배너) → 게임식 저장 슬롯(lib/draftSlots.js)으로 교체.
+//   자동 저장(1.5초·pagehide·visibilitychange)은 "현재 슬롯"을 갱신하고, 80자 이상 변화·3분 경과면 새 슬롯.
+//   어느 화면에서든 "📂 저장된 글 (N)"으로 불러오기/복사하기. 구 키는 lib가 첫 로드 때 1회 이관.
 // ============================================
-const DRAFT_KEEP_PER_STUDENT = 4  // 용량 방어: 학생당 최근 초안 4개(주제 2개 × 첫글/수정본)만 유지
-
-const draftKey = (topicId, userId, phase) => `draft:${topicId}:${userId}:${phase}`
-const legacyBackupKey = (topicId, userId, phase) => `essay_backup_${userId}_${topicId}_${phase}`
-
-// 학생의 오래된 초안 정리 — savedAt 내림차순으로 최근 keep개만 남김
-function pruneDrafts(userId, keep = DRAFT_KEEP_PER_STUDENT) {
-  try {
-    const mine = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith('draft:') && k.includes(`:${userId}:`)) {
-        let savedAt = ''
-        try { savedAt = JSON.parse(localStorage.getItem(k))?.savedAt || '' } catch (e) {}
-        mine.push({ k, savedAt })
-      }
-    }
-    mine.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
-    mine.slice(keep).forEach(({ k }) => { try { localStorage.removeItem(k) } catch (e) {} })
-  } catch (e) {}
-}
-
-function saveDraft(topicId, userId, phase, text) {
-  const value = JSON.stringify({ text, savedAt: new Date().toISOString() })
-  try {
-    localStorage.setItem(draftKey(topicId, userId, phase), value)
-  } catch (e) {
-    // 용량 초과 등 — 오래된 초안 정리 후 1회 재시도(그래도 실패면 조용히 포기)
-    try { pruneDrafts(userId, 1); localStorage.setItem(draftKey(topicId, userId, phase), value) } catch (e2) {}
-  }
-  pruneDrafts(userId)
-}
-
-// 새 형식(JSON) 우선, 없으면 구 essay_backup_* 문자열 폴백 → { text, savedAt|null } 또는 null
-function readDraft(topicId, userId, phase) {
-  try {
-    const raw = localStorage.getItem(draftKey(topicId, userId, phase))
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed.text === 'string' && parsed.text.trim()) {
-        return { text: parsed.text, savedAt: parsed.savedAt || null }
-      }
-    }
-  } catch (e) {}
-  try {
-    const legacy = localStorage.getItem(legacyBackupKey(topicId, userId, phase))
-    if (legacy && legacy.trim()) return { text: legacy, savedAt: null }
-  } catch (e) {}
-  return null
-}
-
-// 구 키에서 읽힌 초안을 새 키로 이관(savedAt은 모르므로 null 유지) 후 구 키 삭제
-function migrateLegacyDraft(topicId, userId, phase, d) {
-  if (!d || d.savedAt !== null) return
-  try { localStorage.setItem(draftKey(topicId, userId, phase), JSON.stringify({ text: d.text, savedAt: null })) } catch (e) {}
-  try { localStorage.removeItem(legacyBackupKey(topicId, userId, phase)) } catch (e) {}
-}
-
-function removeDraft(topicId, userId, phase) {
-  try { localStorage.removeItem(draftKey(topicId, userId, phase)) } catch (e) {}
-  try { localStorage.removeItem(legacyBackupKey(topicId, userId, phase)) } catch (e) {}
-}
-
-// 구 백업의 고아 키(feedback/done — 키 오염 버그로 쌓이던, 아무도 안 읽는 키) 정리
-function cleanupLegacyOrphans(topicId, userId) {
-  ['feedback', 'done'].forEach(p => { try { localStorage.removeItem(legacyBackupKey(topicId, userId, p)) } catch (e) {} })
-}
 
 // 현재 시간이 락 시간대 안에 있는지 검사
 // 반환: { allowed: boolean, reason: string }
@@ -319,8 +252,14 @@ export default function StudentHome() {
   const [challengeTopics, setChallengeTopics] = useState([])   // 각 항목 {...topic, myMaxAttempt}
   const [challengeRanks, setChallengeRanks] = useState({})     // { [source_supply_id]: { rank, total } } — step539 구조 확장
   const [showcaseModal, setShowcaseModal] = useState(null)   // null 또는 { loading } | { winners, myRank }
-  // step571: 초안 복원 제안 배너 (null 또는 { phase: 'write'|'rewrite', text, savedAt }) — 확인 후 주입(opt-in)
-  const [draftPrompt, setDraftPrompt] = useState(null)
+  // step571 초안 복원 배너(draftPrompt)는 step651에서 저장 슬롯으로 대체돼 제거됨
+  // step651: 저장 슬롯 — slots(목록 표시용 사본), slotModal(null | { selected }), 저장 실패 1회 안내
+  const [slots, setSlots] = useState([])
+  const [slotModal, setSlotModal] = useState(null)
+  const [slotTitles, setSlotTitles] = useState({})   // topicId → 제목(모달 열 때 1회 조회)
+  const [saveWarn, setSaveWarn] = useState(false)
+  const slotCurrentRef = useRef({ key: null, id: null })   // 현재 갱신 중인 슬롯(주제|단계별)
+  const saveWarnShownRef = useRef(false)
   // 💬 step634: 내 의견에 달린 운영자 답장(교사 홈 step205-C 관행) — 본인 행만(fb_select user_id=auth.uid()), 엿보기 비활성
   const [replyNotifs, setReplyNotifs] = useState([])
   const [showReplies, setShowReplies] = useState(false)
@@ -362,8 +301,42 @@ export default function StudentHome() {
     try { resultTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (e) {}
   }, [step])
   
-  // step571: 초안 자동 저장 — 1.5초 디바운스(기존 5초는 계속 타이핑하면 한 번도 저장 안 되던 문제),
-  //   write/rewrite 단계에서만(기존 키 오염 버그: feedback/done 고아 키 수리)
+  // step651: 자동 저장 1회 반영 — 현재 슬롯 갱신 또는 새 슬롯(lib/draftSlots upsertSnapshot). 엿보기는 저장 안 함(step633).
+  //   저장 실패(용량·정책)는 1회만 작은 안내(saveWarn).
+  const persistSnapshot = (text, phase) => {
+    if (!todayTopic || !user || isImpersonatingNow()) return
+    if (!text || !text.trim()) return
+    try {
+      const key = `${todayTopic.id}|${phase}`
+      const curId = slotCurrentRef.current.key === key ? slotCurrentRef.current.id : null
+      const r = upsertSnapshot(loadSlots(user.id), { topicId: todayTopic.id, phase, text, currentId: curId })
+      slotCurrentRef.current = { key, id: r.currentId }
+      const ok = saveSlots(user.id, r.slots)
+      setSlots(r.slots)
+      if (!ok && !saveWarnShownRef.current) { saveWarnShownRef.current = true; setSaveWarn(true) }
+    } catch (e) {
+      if (!saveWarnShownRef.current) { saveWarnShownRef.current = true; setSaveWarn(true) }
+    }
+  }
+
+  // step651: 제출 성공 시 그 주제·단계 슬롯 삭제(종전 removeDraft 관행)
+  const clearSlotsFor = (topicId, phase) => {
+    if (!user) return
+    try {
+      const next = removeSlotsFor(loadSlots(user.id), topicId, phase)
+      saveSlots(user.id, next)
+      setSlots(next)
+      if (slotCurrentRef.current.key === `${topicId}|${phase}`) slotCurrentRef.current = { key: null, id: null }
+    } catch (e) {}
+  }
+
+  // step651: 로그인 직후 슬롯 목록 적재(📂 버튼의 N). 구 키 이관은 loadSlots 안에서 1회.
+  useEffect(() => {
+    if (!user?.id || isImpersonatingNow()) return
+    try { setSlots(loadSlots(user.id)) } catch (e) {}
+  }, [user?.id])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // step571→651: 자동 저장 — 1.5초 디바운스, write/rewrite 단계에서만. 현재 슬롯 갱신(80자 이상 변화·3분 경과면 새 슬롯).
   useEffect(() => {
     if (!todayTopic || !user) return
     if (isImpersonatingNow()) return   // step633: 엿보기는 관리자 브라우저에 초안을 남기지 않음
@@ -371,23 +344,66 @@ export default function StudentHome() {
     if (backupTimerRef.current) clearTimeout(backupTimerRef.current)
     backupTimerRef.current = setTimeout(() => {
       const text = step === 'write' ? essay : rewriteEssay
-      if (text && text.length > 0) saveDraft(todayTopic.id, user.id, step, text)
+      if (text && text.length > 0) persistSnapshot(text, step)
     }, 1500)
     return () => { if (backupTimerRef.current) clearTimeout(backupTimerRef.current) }
-  }, [essay, rewriteEssay, step, todayTopic, user])
+  }, [essay, rewriteEssay, step, todayTopic, user])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // step571: 탭 닫힘·이탈 시 즉시 저장(디바운스 미발화분 방어) — pagehide는 모바일 사파리 포함 가장 넓게 잡힘
+  //   step651: visibilitychange(hidden)에서도 즉시 저장 — 탭 메모리 해제·절전 탭은 pagehide가 안 뜰 수 있음
   useEffect(() => {
     const flush = () => {
       if (!todayTopic || !user) return
       if (isImpersonatingNow()) return   // step633
       if (step !== 'write' && step !== 'rewrite') return
       const text = step === 'write' ? essay : rewriteEssay
-      if (text && text.length > 0) saveDraft(todayTopic.id, user.id, step, text)
+      if (text && text.length > 0) persistSnapshot(text, step)
     }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)
-    return () => window.removeEventListener('pagehide', flush)
-  }, [essay, rewriteEssay, step, todayTopic, user])
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [essay, rewriteEssay, step, todayTopic, user])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // step651: 📂 저장된 글 — 목록 열기(최근 저장 순, 주제 제목은 1회 조회), 불러오기, 복사하기
+  const openSlots = async () => {
+    if (!user) return
+    let list = []
+    try { list = sortForList(loadSlots(user.id)) } catch (e) {}
+    setSlots(list)
+    setSlotModal({ selected: null })
+    const missing = [...new Set(list.map(s => s.topicId))].filter(id => !slotTitles[id] && id !== todayTopic?.id)
+    if (missing.length > 0) {
+      try {
+        const { data } = await supabase.from('topics').select('id, title, date').in('id', missing)
+        const m = {}
+        ;(data || []).forEach(t => { m[t.id] = `${t.title}${t.date ? ` (${t.date})` : ''}` })
+        setSlotTitles(prev => ({ ...prev, ...m }))
+      } catch (e) {}
+    }
+  }
+  const slotTitle = (topicId) => (todayTopic && topicId === todayTopic.id) ? todayTopic.title : (slotTitles[topicId] || '다른 날의 주제')
+  const currentPhase = () => (step === 'rewrite' ? 'rewrite' : step === 'write' ? 'write' : null)
+  const canLoadSlot = (s) => !!todayTopic && s.topicId === todayTopic.id && currentPhase() === s.phase
+  const loadSlotIntoEditor = (s) => {
+    if (!canLoadSlot(s)) return
+    const cur = step === 'rewrite' ? rewriteEssay : essay
+    if (cur && cur.trim() && cur !== s.text) {
+      if (!confirm('지금 쓰던 글도 자동 저장돼요. 저장된 글을 불러올까요?')) return
+      persistSnapshot(cur, step)   // 지금 글을 먼저 한 번 더 저장
+    }
+    if (step === 'rewrite') setRewriteEssay(s.text); else setEssay(s.text)
+    slotCurrentRef.current = { key: `${s.topicId}|${s.phase}`, id: s.id }   // 이어서 쓰면 이 슬롯을 갱신(복제 방지)
+    setSlotModal(null)
+  }
+  const copySlot = async (s) => {
+    try {
+      await navigator.clipboard.writeText(s.text)
+      alert('복사했어요. 글쓰기 칸에 붙여 넣어 주세요.')
+    } catch (e) {
+      alert('자동 복사가 안 돼요. 미리보기 글을 드래그해서 복사해 주세요.')
+    }
+  }
 
   // 💬 step634: 내 의견 중 답장 달린 것만 조회(교사 홈 step205-C와 같은 쿼리). 엿보기 중엔 세션이 admin이라 비활성.
   useEffect(() => {
@@ -649,7 +665,9 @@ export default function StudentHome() {
         .order('created_at', { ascending: true }))
       const pendingP = loadPendingTopics(profile, teacherId).catch(() => setPendingTopics([]))
       const unreadP = loadUnreadComments(profile)   // 내부 try/catch 유지
-      const { data: todayTopics } = await todayTopicsP
+      const { data: todayTopics, error: todayTopicsErr } = await todayTopicsP
+      // step651: 조회 오류(401·5xx)를 "오늘 주제 0행"으로 오판해 빈 화면을 띄우던 경로 차단 — throw → 재시도 화면(초안은 그대로)
+      if (todayTopicsErr) throw todayTopicsErr
       console.log(`[perf] todayTopics 조회: ${Math.round(performance.now() - tToday)}ms, rows=${(todayTopics || []).length}`)
 
       if (todayTopics && todayTopics.length > 0) {
@@ -726,7 +744,7 @@ export default function StudentHome() {
     setExampleDeferred(null)   // step627
     setCurrentSub(null)
     setStep('write')
-    setDraftPrompt(null)  // step571: 주제 전환 시 이전 주제의 초안 배너 잔존 방지
+    slotCurrentRef.current = { key: null, id: null }   // step651: 주제 전환 → 다음 자동 저장은 새 슬롯
     setPeerShare(null)    // step621: 제출 전엔 친구 글 카드 없음(주제 전환 잔존 방지)
 
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
@@ -790,38 +808,7 @@ export default function StudentHome() {
         }
       }
 
-      // step571: 수정본 초안 복원 갭 수리 — 기존엔 제출 이력이 있으면 rewrite 백업을 읽는 경로 자체가
-      //   없어서(수정본 작성 중 이탈 = 이번 사고 시나리오) 초안이 있어도 유실됐다. 다시 쓸 수 있는
-      //   상태(첫 글만 있음 또는 추가 수정 허용)일 때만 배너 제안.
-      if (!isImpersonatingNow()) try {   // step633: 엿보기는 초안 읽기·이관·배너 전부 생략(관리자 브라우저 저장소 불변)
-        cleanupLegacyOrphans(topic.id, profile.id)
-        const sorted2 = [...existing].sort((a, b) => (b.attempt || 1) - (a.attempt || 1))
-        const last2 = sorted2[0]
-        const canRewrite = (last2.attempt || 1) === 1 || !!last2.extra_rewrite_allowed
-        if (canRewrite) {
-          const d = readDraft(topic.id, profile.id, 'rewrite')
-          if (d) {
-            migrateLegacyDraft(topic.id, profile.id, 'rewrite', d)
-            if (d.text.trim() !== (last2.essay_text || '').trim()) {
-              setTimeout(() => setDraftPrompt({ phase: 'rewrite', text: d.text, savedAt: d.savedAt }), 800)
-            }
-          }
-        }
-      } catch(e) {}
-    } else {
-      // step571: 새 주제 → 초안 확인. 자동 주입 대신 배너로 물어보고 주입(opt-in).
-      //   구 essay_backup_* 키는 readDraft 폴백으로 읽고 새 키로 이관.
-      if (!isImpersonatingNow()) try {   // step633
-        cleanupLegacyOrphans(topic.id, profile.id)
-        const d = readDraft(topic.id, profile.id, 'write')
-        if (d) {
-          migrateLegacyDraft(topic.id, profile.id, 'write', d)
-          setTimeout(() => setDraftPrompt({ phase: 'write', text: d.text, savedAt: d.savedAt }), 800)
-        }
-        // 수정본 구 백업이 남아 있으면 새 키로 이관만(제출 0건이라 수정 단계 아님 — 주입 안 함)
-        const dr = readDraft(topic.id, profile.id, 'rewrite')
-        if (dr) migrateLegacyDraft(topic.id, profile.id, 'rewrite', dr)
-      } catch(e) {}
+      // step651: 초안 복원 배너(step571) 제거 — 저장 슬롯 "📂 저장된 글"이 대체(주제·단계 무관하게 항상 보임)
     }
 
     // 🆕 step516: 알림 직행 — 재작성 가능(feedback: 첫 글만 있거나 추가 허용됨)일 때만 버튼 스크롤·강조.
@@ -1024,7 +1011,7 @@ export default function StudentHome() {
       } catch (_) { /* 측정 저장 실패는 무시 */ }
 
       // step571: 초안 정리 (새 키 + 구 백업 키)
-      removeDraft(todayTopic.id, user.id, 'write')
+      clearSlotsFor(todayTopic.id, 'write')   // step651: 제출 성공 → 이 주제 첫 글 슬롯 삭제
       // step575: 지난 글 목록에서 제거 — 제출한 주제가 "안 쓴 글" 목록에 남아 재제출을 유인하던 문제
       setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
       pasteDetectedRef.current = false
@@ -1245,7 +1232,7 @@ export default function StudentHome() {
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
     }
-    removeDraft(todayTopic.id, user.id, isRewrite ? 'rewrite' : 'write')
+    clearSlotsFor(todayTopic.id, isRewrite ? 'rewrite' : 'write')   // step651
     if (!isRewrite) setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
     pasteDetectedRef.current = false
     pasteCountRef.current = 0
@@ -1539,7 +1526,7 @@ export default function StudentHome() {
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
 
-      removeDraft(todayTopic.id, user.id, 'rewrite')  // step571: 초안 정리 (새 키 + 구 백업 키)
+      clearSlotsFor(todayTopic.id, 'rewrite')  // step571→651: 수정본 제출 성공 → 수정본 슬롯 삭제
       pasteDetectedRef.current = false
       pasteCountRef.current = 0
 
@@ -1734,43 +1721,14 @@ export default function StudentHome() {
             </div>
           )}
 
-          {/* step571: 초안 복원 제안 배너 — 자동 주입 대신 확인 후 주입. '나중에'는 배너만 닫고
-              초안은 유지(실수 삭제 방지 — 제출 성공·오래된 초안 자동 정리로 소멸) */}
-          {draftPrompt && (
-            <div className="bg-green-50 border-2 border-green-300 rounded-2xl p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl flex-shrink-0">✍️</div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-green-900 text-sm">
-                    {draftPrompt.phase === 'rewrite' ? '다시 쓰던 수정본이 있어요' : '작성하던 글이 있어요'}
-                    {draftPrompt.savedAt ? ` (${toKST(draftPrompt.savedAt).slice(11)} 저장)` : ''}. 복원할까요?
-                  </h3>
-                  <p className="text-xs text-green-800 mt-1">
-                    저장된 글은 {draftPrompt.text.length}자예요. 복원하면 이어서 쓸 수 있어요.
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => {
-                        if (draftPrompt.phase === 'rewrite') setRewriteEssay(draftPrompt.text)
-                        else setEssay(draftPrompt.text)
-                        setDraftPrompt(null)
-                      }}
-                      className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
-                    >
-                      ✓ 복원하기
-                    </button>
-                    <button
-                      onClick={() => setDraftPrompt(null)}
-                      className="text-xs bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50"
-                    >
-                      나중에
-                    </button>
-                  </div>
-                </div>
-              </div>
+          {/* step651: 자동 저장 실패 1회 안내(용량·정책) */}
+          {saveWarn && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-sm text-amber-900 flex items-center gap-2">
+              <span>⚠️ 이 기기에서는 자동 저장이 안 돼요. 글을 자주 제출해 주세요.</span>
+              <button type="button" onClick={() => setSaveWarn(false)} className="ml-auto text-xs text-amber-700 hover:underline">닫기</button>
             </div>
           )}
-          
+
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
@@ -1856,6 +1814,13 @@ export default function StudentHome() {
                   <div className="text-5xl mb-3">📝</div>
                   <h2 className="text-lg font-bold mb-1">오늘은 글쓰기 주제가 없어요</h2>
                   <p className="text-sm text-gray-600">선생님께서 곧 등록해주실 거예요!</p>
+                  {/* step651: 주제가 없어도 저장된 글은 열어 볼 수 있어요(복사하기) */}
+                  {!isImpersonating && (
+                    <button type="button" onClick={openSlots}
+                      className="mt-4 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-full" title="자동으로 저장된 글을 열어요">
+                      📂 저장된 글 ({slots.length})
+                    </button>
+                  )}
                   <Link href={withImpersonation('/student/history')} className="mt-6 inline-block text-primary text-sm hover:underline">
                     내 글 기록 보기 →
                   </Link>
@@ -2065,7 +2030,14 @@ export default function StudentHome() {
                       </div>
                     </div>
                   )}
-                  <h3 className="font-bold">✏️ 글쓰기</h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-bold">✏️ 글쓰기</h3>
+                    {/* step651: 저장 슬롯 열기 — 항상 보임(N = 이 학생의 전체 슬롯 수) */}
+                    <button type="button" onClick={openSlots} disabled={isImpersonating}
+                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full" title="자동으로 저장된 글을 불러와요">
+                      📂 저장된 글 ({slots.length})
+                    </button>
+                  </div>
                   <div className="text-xs bg-blue-50 border border-blue-200 rounded-lg p-2 text-blue-800 flex items-start gap-1.5">
                     <span>💡</span>
                     <span>본명, 주소, 전화번호, 가족 이름 같은 <strong>개인정보는 쓰지 말아주세요</strong>. AI 학습에 활용될 수 있어요.</span>
@@ -2484,6 +2456,11 @@ export default function StudentHome() {
                       <h3 className="font-bold mb-2 text-sm flex items-center gap-1">
                         ✏️ 다시 쓰기
                         <span className="text-xs font-normal text-primary">(여기에 새로 써요)</span>
+                        {/* step651: 저장 슬롯 열기(수정본 화면) */}
+                        <button type="button" onClick={openSlots} disabled={isImpersonating}
+                          className="ml-auto text-xs font-normal bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-full" title="자동으로 저장된 글을 불러와요">
+                          📂 저장된 글 ({slots.length})
+                        </button>
                       </h3>
                       <textarea
                         value={rewriteEssay}
@@ -2629,6 +2606,57 @@ export default function StudentHome() {
           </div>
         )}
 
+        {/* 📂 step651: 저장된 글(슬롯) 모달 — 목록(주제·시각·글자 수·첫 60자) → 미리보기 → 불러오기(같은 주제·단계) / 복사하기 */}
+        {slotModal && (() => {
+          const list = sortForList(slots)
+          const sel = slotModal.selected ? list.find(s => s.id === slotModal.selected) || null : null
+          const timeOf = (ms) => { try { return toKST(new Date(ms).toISOString()) } catch (e) { return '' } }
+          return (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSlotModal(null)}>
+              <div className="bg-white rounded-2xl p-5 max-w-lg w-full shadow-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-bold">📂 저장된 글 ({list.length})</h3>
+                  <button type="button" onClick={() => setSlotModal(null)} className="text-gray-400 hover:text-gray-700 text-sm">✕ 닫기</button>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">쓰는 동안 자동으로 저장된 글이에요. 글자 수가 많이 바뀌거나 3분이 지나면 새로 저장돼요.</p>
+                {!sel ? (
+                  list.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-gray-400">아직 저장된 글이 없어요</div>
+                  ) : (
+                    <div className="space-y-2 overflow-auto">
+                      {list.map(s => (
+                        <button key={s.id} type="button" onClick={() => setSlotModal({ selected: s.id })}
+                          className="w-full text-left p-3 rounded-xl border border-gray-200 hover:bg-gray-50">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{slotTitle(s.topicId)} <span className="text-xs font-normal text-gray-500">· {s.phase === 'rewrite' ? '수정본' : '첫 글'}</span></div>
+                          <div className="text-[11px] text-gray-500">{timeOf(s.savedAt)} · {s.chars}자</div>
+                          <div className="text-xs text-gray-700 mt-1 break-keep">{previewOf(s.text)}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col min-h-0">
+                    <div className="text-sm font-semibold text-gray-900">{slotTitle(sel.topicId)} <span className="text-xs font-normal text-gray-500">· {sel.phase === 'rewrite' ? '수정본' : '첫 글'} · {timeOf(sel.savedAt)} · {sel.chars}자</span></div>
+                    <div className="mt-2 p-3 border border-gray-200 rounded-xl bg-gray-50 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed overflow-auto max-h-[45vh]">{sel.text}</div>
+                    {!canLoadSlot(sel) && (
+                      <p className="text-xs text-gray-500 mt-2">{todayTopic && sel.topicId === todayTopic.id ? '지금 단계와 달라서 복사해서 붙여 넣어 주세요.' : '다른 주제의 글이라 복사해서 붙여 넣어 주세요.'}</p>
+                    )}
+                    <div className="flex gap-2 justify-end mt-3">
+                      <button type="button" onClick={() => setSlotModal({ selected: null })} className="px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100">← 목록</button>
+                      <button type="button" onClick={() => copySlot(sel)} className="px-3 py-2 rounded-lg text-sm bg-gray-100 hover:bg-gray-200 text-gray-800">📋 복사하기</button>
+                      {canLoadSlot(sel) && (
+                        <button type="button" onClick={() => loadSlotIntoEditor(sel)} disabled={isImpersonating}
+                          className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-white hover:opacity-90 disabled:opacity-40">
+                          ✍️ 이 글 불러오기
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
         {/* 🚨 step649: 신고 사유 칩 모달 — 5개 중 1개 필수, 선택 입력 40자. 저장은 "[태그] 상세" 문자열(SQL 없음) */}
         {reportModal && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !reportModal.busy && setReportModal(null)}>
