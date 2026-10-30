@@ -28,10 +28,9 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
         status = res.status
         const d = await res.json()
         if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
-        // step582: adminPreFreeze = 엿보기(admin)인데 아직 동결본이 없는 챌린지 — 정직한 안내로 렌더
-        if (alive) setData(d.adminPreFreeze
-          ? { loading: false, adminPreFreeze: true, participants: d.participants || 0 }
-          : { loading: false, winners: d.winners || [], participants: d.participants || 0 })
+        // step582: adminPreFreeze = 엿보기(admin)인데 아직 동결본이 없는 챌린지.
+        //   step660: 서버가 읽기 전용 집계로 승자를 함께 주므로 목록은 그대로 렌더하고 안내 1줄만 덧붙인다.
+        if (alive) setData({ loading: false, adminPreFreeze: !!d.adminPreFreeze, winners: d.winners || [], participants: d.participants || 0 })
       } catch (e) {
         console.warn('교사 랭킹 조회 실패:', e?.message)
         // step582: 오류 수집 사각지대 해소 — error_logs 적재(role은 logError가 세션에서 자동 첨부,
@@ -59,11 +58,12 @@ export default function TeacherShowcaseModal({ supplyId, onClose }) {
           <p className="text-sm text-gray-500 py-6 text-center">불러오는 중...</p>
         ) : data.error ? (
           <p className="text-sm text-gray-500 py-6 text-center break-keep">전국 랭킹을 불러오지 못했어요. 잠시 후 다시 해주세요.</p>
-        ) : data.adminPreFreeze ? (
-          <p className="text-sm text-gray-500 py-6 text-center break-keep">아직 순위가 확정되지 않은 챌린지예요. 엿보기 화면에서는 확정된 순위만 볼 수 있어요.</p>
         ) : (
           <>
             <p className="text-sm text-sky-800 font-semibold mb-3">지금까지 전국 {data.participants}명 참여</p>
+            {data.adminPreFreeze && (
+              <p className="text-[11px] text-amber-700 mb-2 text-center break-keep">엿보기 화면이에요. 아직 검토 전인 글은 여기 표시되지 않아요.</p>
+            )}
             {(data.winners || []).length === 0 ? (
               <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐주세요.</p>
             ) : (

@@ -1030,7 +1030,7 @@ export default function AdminHome() {
       })
       const d = await res.json()
       if (!res.ok || !d?.ok) throw new Error(d?.error || '조회 실패')
-      setShowcasePanel({ supplyId, loading: false, rows: d.rows || [] })
+      setShowcasePanel({ supplyId, loading: false, rows: d.rows || [], views: d.views ?? 0 })   // step660: 학생 열람 수
     } catch (e) {
       alert('소개 글 조회에 실패했어요: ' + (e?.message || ''))
       setShowcasePanel(null)
@@ -1071,7 +1071,7 @@ export default function AdminHome() {
       const d = await res.json()
       if (!res.ok || !d?.ok) throw new Error(d?.error || '집계 실패')
       setShowcasePanel({
-        supplyId, loading: false, collecting: false, rows: d.rows || [],
+        supplyId, loading: false, collecting: false, rows: d.rows || [], views: d.views ?? 0,
         counts: { participants: d.participants || 0, eligible: d.eligible || 0, excluded: d.excluded || null },
       })
     } catch (e) {
@@ -4111,6 +4111,10 @@ export default function AdminHome() {
                               {showcasePanel.loading ? (
                                 <p className="text-xs text-gray-400 py-2 text-center">불러오는 중...</p>
                               ) : (<>
+                                {/* step660: 학생이 상위 글 창을 열어 글이 보인 횟수(본인 토큰만, 엿보기·교사 제외) */}
+                                <p className="text-[11px] text-gray-500 text-right" title="학생이 '상위 글 보기'를 열어 글이 1편 이상 보인 횟수. 엿보기·선생님 열람은 세지 않아요.">
+                                  👀 학생 열람 {showcasePanel.views ?? 0}회
+                                </p>
                                 {/* step502: 집계 결과 0명 사유 힌트 — step503: 사유별 카운트(0인 사유 생략) */}
                                 {showcasePanel.counts && showcasePanel.counts.eligible === 0 && showcasePanel.counts.participants > 0 && (() => {
                                   const EX_LABELS = { paste: '복붙 감지', no_consent: '동의 미완료', opt_out: '우리 반에만 공개', hidden: '숨김 학생', class_off: '학급 소개 꺼짐' }

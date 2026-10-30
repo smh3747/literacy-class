@@ -16,9 +16,42 @@ import { nicknameFromSeed } from '../../lib/nickname'
 // step502: 집계·검토 코어는 lib/showcaseRanking.server.js로 이전 — supply-showcase-admin(collect)과 공유
 // step504: 마감(원본 date < 오늘) 후에는 supply_final_ranks 확정본으로 응답 — "그날의 순위" 동결
 import {
-  loadSupplySubmissions, aggregateShowcase, reviewPendings, WINNER_LIMIT,
+  loadSupplySubmissions, aggregateShowcase, peekShowcase, reviewPendings, WINNER_LIMIT,
   isClosed, finalizeRanks, getFinalRanks, buildFrozenWinners,
 } from '../../lib/showcaseRanking.server'
+
+// 승자 선정 — rejected는 건너뛰고 다음 순위로 대체, 최대 3명 (step660: 학생 라이브·관리자 엿보기 공용으로 추출, 내용 동일)
+function buildWinners(candidates, rowBySub, profById, clsById) {
+  const winners = []
+  for (const s of candidates) {
+    if (winners.length >= WINNER_LIMIT) break
+    const row = rowBySub[s.id]
+    if (!row || row.review_status === 'rejected') continue
+    const p = profById[s.user_id]
+    const c = clsById[p.class_id] || {}
+    winners.push({
+      showcaseId: row.id,
+      rank: winners.length + 1,
+      nickname: (p.nickname || '').trim() || nicknameFromSeed(p.username || s.user_id),
+      school: p.school || c.school || '',
+      grade: c.grade || null,
+      className: c.name || '',
+      score: s.total_score || 0,
+      essay: (row.review_status === 'approved' && !row.hidden) ? (s.essay_text || '') : null,
+      pending: row.review_status === 'pending',
+    })
+  }
+  return winners
+}
+
+// 📊 step660: 열람 계측 — 학생 본인 토큰 + 열람 요청(view:true, 창 열기) + 글 1편 이상 보인 응답만 1행.
+//   엿보기(admin)·교사·내 순위 조회(view 없음)는 기록하지 않는다. 테이블 미적용·insert 실패는 삼키고 응답 불변.
+async function recordView(admin, { role, asStudent, view, uid, supplyId, winners }) {
+  if (role !== 'student' || asStudent || view !== true || !(winners?.length > 0)) return
+  try {
+    await admin.from('supply_showcase_views').insert({ student_id: uid, supply_topic_id: supplyId })
+  } catch (e) { /* 계측 실패는 무시 */ }
+}
 
 // step583: 담임 실명 주석 — winners의 showcaseId(=supply_showcase.id)로 student_id를 찾아,
 //   요청자 학급 소속 + realname 존재(=학부모 동의 완료, 앱 전역 규칙)인 수상자에게만 realname 부착.
@@ -44,7 +77,7 @@ async function annotateHomeroomRealnames(admin, winners, viewerClassId) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { accessToken, supplyId } = req.body || {}
+  const { accessToken, supplyId, view } = req.body || {}
   if (!accessToken) return res.status(401).json({ error: '로그인이 필요해요' })
   if (!supplyId) return res.status(400).json({ error: 'supplyId가 필요해요' })
 
@@ -120,15 +153,25 @@ export default async function handler(req, res) {
         ? (finalRanks.find(r => r.student_id === viewUid)?.rank ?? null)
         : null
       const frozenWinners = await buildFrozenWinners(admin, supplyId, finalRanks)
+      await recordView(admin, { role: profile.role, asStudent, view, uid, supplyId, winners: frozenWinners })
       // step539: rankedPool = 동의 완료 랭킹 풀 크기(퍼센트 표시 분모). participants는 미동의 포함이라 부정확.
       return res.status(200).json({ ok: true, locked: false, participants, winners: await annotateHomeroomRealnames(admin, frozenWinners, viewerClassId), myRank: frozenRank, rankedPool: finalRanks.length })
     }
   }
 
-  // step582: admin(엿보기)은 여기까지 — 라이브 집계는 쓰기(showcase INSERT·순위 lazy 동결·AI 검토 키 소비)라
-  //   엿보기 읽기 전용 원칙(step568~570)대로 진입 차단. 동결본이 있으면 위에서 이미 반환됐다.
+  // step582: admin(엿보기)은 라이브 집계(showcase INSERT·순위 lazy 동결·AI 검토 키 소비)에 들어가지 않는다 —
+  //   엿보기 읽기 전용 원칙(step568~570). step660: 빈 배열 대신 읽기 전용 집계(peekShowcase)로 기존 showcase 행만
+  //   읽어 학생과 같은 승자 구성. 아직 행이 없는 후보는 빠진다(학생이 열면 생김) → adminPreFreeze 플래그는 유지해
+  //   화면이 "엿보기 안내" 1줄을 붙인다. 10/30 관리자 12편 vs 학생 창 0편 혼선의 수리.
   if (profile.role === 'admin') {
-    return res.status(200).json({ ok: true, locked: false, participants, winners: [], myRank: null, rankedPool: 0, adminPreFreeze: true })
+    const { eligible, candidates, rowBySub, profById, clsById } = await peekShowcase(admin, supplyId, allSubs)
+    const winners = buildWinners(candidates, rowBySub, profById, clsById)
+    const peekIdx = asStudent ? eligible.findIndex(s => s.user_id === viewUid) : -1
+    return res.status(200).json({
+      ok: true, locked: false, participants,
+      winners: await annotateHomeroomRealnames(admin, winners, viewerClassId),
+      myRank: peekIdx >= 0 ? peekIdx + 1 : null, rankedPool: eligible.length, adminPreFreeze: true,
+    })
   }
 
   // 동의 필터·후보 선정·showcase upsert (step502: 공용 모듈)
@@ -151,26 +194,8 @@ export default async function handler(req, res) {
   const myIdx = profile.role === 'student' ? eligible.findIndex(s => s.user_id === uid) : -1
   const myRank = myIdx >= 0 ? myIdx + 1 : null
 
-  // 승자 선정 — rejected는 건너뛰고 다음 순위로 대체, 최대 3명
-  const winners = []
-  for (const s of candidates) {
-    if (winners.length >= WINNER_LIMIT) break
-    const row = rowBySub[s.id]
-    if (!row || row.review_status === 'rejected') continue
-    const p = profById[s.user_id]
-    const c = clsById[p.class_id] || {}
-    winners.push({
-      showcaseId: row.id,
-      rank: winners.length + 1,
-      nickname: (p.nickname || '').trim() || nicknameFromSeed(p.username || s.user_id),
-      school: p.school || c.school || '',
-      grade: c.grade || null,
-      className: c.name || '',
-      score: s.total_score || 0,
-      essay: (row.review_status === 'approved' && !row.hidden) ? (s.essay_text || '') : null,
-      pending: row.review_status === 'pending',
-    })
-  }
+  const winners = buildWinners(candidates, rowBySub, profById, clsById)
+  await recordView(admin, { role: profile.role, asStudent, view, uid, supplyId, winners })
 
   // step539: rankedPool = 동의 완료 랭킹 풀 크기(클라 퍼센트 표시 분모 — 집계 로직 무변경, length만 반환)
   return res.status(200).json({ ok: true, locked: false, participants, winners: await annotateHomeroomRealnames(admin, winners, viewerClassId), myRank, rankedPool: eligible.length })

@@ -91,6 +91,15 @@ async function buildList(admin, supplyId) {
   })
 }
 
+// 📊 step660: 학생 열람 수(supply_showcase_views head count). 테이블 미적용·오류면 0.
+async function countViews(admin, supplyId) {
+  try {
+    const { count, error } = await admin.from('supply_showcase_views')
+      .select('id', { count: 'exact', head: true }).eq('supply_topic_id', supplyId)
+    return error ? 0 : (count || 0)
+  } catch (e) { return 0 }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -133,8 +142,8 @@ export default async function handler(req, res) {
   if (action === 'list') {
     if (!supplyId) return res.status(400).json({ error: 'supplyId가 필요해요' })
     try {
-      const list = await buildList(admin, supplyId)
-      return res.status(200).json({ ok: true, rows: list })
+      const [list, views] = await Promise.all([buildList(admin, supplyId), countViews(admin, supplyId)])
+      return res.status(200).json({ ok: true, rows: list, views })
     } catch (e) {
       return res.status(500).json({ error: e?.message || '조회에 실패했어요' })
     }
@@ -146,9 +155,9 @@ export default async function handler(req, res) {
     try {
       const { allSubs, participants } = await loadSupplySubmissions(admin, supplyId)
       const { eligible, excluded } = await aggregateShowcase(admin, supplyId, allSubs)
-      const list = await buildList(admin, supplyId)
+      const [list, views] = await Promise.all([buildList(admin, supplyId), countViews(admin, supplyId)])
       // excluded(step503): 사유별 제외 수 — 관리자 힌트 전용
-      return res.status(200).json({ ok: true, rows: list, participants, eligible: eligible.length, excluded })
+      return res.status(200).json({ ok: true, rows: list, views, participants, eligible: eligible.length, excluded })
     } catch (e) {
       return res.status(500).json({ error: e?.message || '집계에 실패했어요' })
     }

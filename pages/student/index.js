@@ -1176,7 +1176,8 @@ export default function StudentHome() {
       const asId = impersonationTargetId()   // step633
       const res = await fetch('/api/supply-ranking', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid, ...(asId ? { asStudentId: asId } : {}) }),
+        // step660: view:true = 창 열기(열람 계측 대상). fetchMyRank(순위만)는 보내지 않는다.
+        body: JSON.stringify({ accessToken: session.access_token, supplyId: sid, view: true, ...(asId ? { asStudentId: asId } : {}) }),
       })
       const d = await res.json()
       if (!res.ok || !d?.ok) throw new Error(d?.error || '불러오지 못했어요')
@@ -1186,7 +1187,7 @@ export default function StudentHome() {
         return
       }
       if (d.myRank != null) setChallengeRanks(prev => ({ ...prev, [sid]: { rank: d.myRank, total: d.rankedPool ?? null } }))
-      setShowcaseModal({ loading: false, winners: d.winners || [], myRank: d.myRank ?? null, rankedPool: d.rankedPool ?? null })
+      setShowcaseModal({ loading: false, winners: d.winners || [], myRank: d.myRank ?? null, rankedPool: d.rankedPool ?? null, peek: !!d.adminPreFreeze })
     } catch (e) {
       setShowcaseModal(null)
       alert('상위 글을 불러오지 못했어요. 잠시 후 다시 해봐요.')
@@ -2593,6 +2594,10 @@ export default function StudentHome() {
                     <p className="text-sm text-sky-800 font-semibold mb-3">
                       {challengeRankLine({ rank: showcaseModal.myRank, total: showcaseModal.rankedPool })}
                     </p>
+                  )}
+                  {/* step660: 관리자 엿보기는 읽기 전용 집계라 아직 검토 전 글은 빠질 수 있음 — 안내 1줄(학생 본인 화면엔 없음) */}
+                  {showcaseModal.peek && (
+                    <p className="text-[11px] text-amber-700 mb-2 text-center">엿보기 화면이에요. 아직 검토 전인 글은 여기 표시되지 않아요.</p>
                   )}
                   {(showcaseModal.winners || []).length === 0 ? (
                     <p className="text-sm text-gray-500 py-4 text-center">아직 소개할 글이 없어요. 조금 뒤에 다시 봐요!</p>
