@@ -10,10 +10,11 @@ import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
-import { classifyError, severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨
+import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step656: 카드 라벨은 lib/errorHumanize가 분류기로 계산
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { summarizeTimings, fmtSecKo, headlineOf, interpretTimings, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
+import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step656: 오류 탭 사람 문장화(표시 전용)
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -3412,40 +3413,88 @@ export default function AdminHome() {
                       ))}
                     </div>
                   )
-                ) : filteredGrouped.length === 0 ? (
-                  <div className="text-sm text-gray-400 py-8 text-center">표시할 에러가 없어요 🎉</div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredGrouped.map((e, i) => {
-                      const c = classifyError(e.message, e.context)
-                      return (
-                      <div key={e.id || i} className="border border-gray-100 rounded-lg p-3 text-sm">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-xs text-gray-500">{toKST(e.created_at)}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleBadge(e.role)}`}>{e.role || 'unknown'}</span>
-                          {e.class_id && classInfoById[e.class_id] && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                              {classInfoById[e.class_id].name}{classInfoById[e.class_id].school ? ` · ${classInfoById[e.class_id].school}` : ''}{classInfoById[e.class_id].teacher ? ` (담임 ${classInfoById[e.class_id].teacher})` : ''}
-                            </span>
-                          )}
-                          {e.role === 'student' && e.user_id && logStudentNumbers[e.user_id] && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{logStudentNumbers[e.user_id]}번</span>
-                          )}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${typeBadge(e.error_type)}`}>{e.error_type}</span>
-                          {e.page && <span className="text-[10px] text-gray-400">{e.page}</span>}
-                          {e.count > 1 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold">({e.count}회)</span>}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${c.color}`}>{c.label}</span>
-                        </div>
-                        <div className="text-sm text-gray-800">{c.summary}</div>
-                        <div className="text-[10px] text-gray-400 break-all mt-0.5">{e.message}</div>
-                        {e.context && (
-                          <div className="text-[11px] text-gray-400 mt-1 break-all">{JSON.stringify(e.context)}</div>
-                        )}
+                ) : (() => {
+                  // step656: 사람이 읽는 형식(표시 전용) — 쌍·반복 병합(lib/errorHumanize mergeLogs) → 날짜 묶음 → 조치 필요만 펼침, 무시 가능은 접힘.
+                  //   종류 필터는 로그 단위로 먼저, 심각도 필터는 카드 단위로. 기록·분류기·필터 동작 불변.
+                  const typed = errorLogs.filter(e => errType === 'all' || e.error_type === errType)
+                  const cards = mergeLogs(typed).filter(c => errSeverity === 'all' || c.severity === errSeverity)
+                  if (cards.length === 0) return <div className="text-sm text-gray-400 py-8 text-center">표시할 에러가 없어요 🎉</div>
+                  const days = groupByDay(cards)
+                  const todayKey = kstDayOf(new Date().toISOString())
+                  const today = days.find(d => d.day === todayKey)
+                  const ts = today ? daySummary(today.cards) : null
+                  const whereOf = (c) => {
+                    const info = c.class_id ? classInfoById[c.class_id] : null
+                    const num = c.role === 'student' && c.user_id && logStudentNumbers[c.user_id] ? ` ${logStudentNumbers[c.user_id]}번` : ''
+                    if (info) return `${info.school ? info.school + ' ' : ''}${info.name}${num}`
+                    return c.role === 'teacher' ? '선생님' : c.role === 'admin' ? '관리자' : c.role === 'student' ? `학생${num}` : '비로그인'
+                  }
+                  const timeOf = (c) => { const s = toKST(c.primary?.created_at); return s.length > 11 ? s.slice(5, 16) : s }
+                  const card = (c) => (
+                    <div key={c.id} className={`border rounded-lg p-3 text-sm ${c.severity === 'action' ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}>
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${c.human.color}`}>{c.human.label}</span>
+                        <span className="text-gray-800 leading-relaxed min-w-0">
+                          <span className="text-gray-500">{timeOf(c)}</span> · <span className="font-medium">{whereOf(c)}</span> · {c.human.what} · {c.human.happened} · <span className="text-gray-600">{c.human.seen}</span>
+                        </span>
+                        {c.tries > 1 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold flex-shrink-0">{c.tries}번 시도</span>}
+                        {c.sources.has('client') && c.sources.has('server') && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0" title="학생 화면 기록과 서버 기록이 같은 일을 가리켜 한 카드로 합쳤어요">클라+서버</span>}
                       </div>
-                      )
-                    })}
-                  </div>
-                )}
+                      <details className="mt-1">
+                        <summary className="text-[11px] text-gray-400 cursor-pointer select-none">자세히 ▸</summary>
+                        <div className="mt-1 space-y-1">
+                          {c.logs.map((e, i) => (
+                            <div key={e.id || i} className="text-[11px] text-gray-500 break-all border-l-2 border-gray-200 pl-2">
+                              <span className="text-gray-400">{toKST(e.created_at)}</span> · <span className={`px-1 rounded ${typeBadge(e.error_type)}`}>{e.error_type}</span>{e.page ? ` · ${e.page}` : ''} · <span className={`px-1 rounded ${roleBadge(e.role)}`}>{e.role || 'unknown'}</span>
+                              <div className="text-gray-400">{e.message}</div>
+                              {e.context && <div className="text-gray-400">{JSON.stringify(e.context)}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  )
+                  return (
+                    <div className="space-y-4">
+                      {ts && (
+                        <div className="text-sm font-semibold text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                          오늘 {ts.total}건 — 구글 혼잡 {ts.busy} · 네트워크 {ts.network} · 안전 필터 {ts.safety} · <span className={ts.action > 0 ? 'text-red-600' : 'text-green-700'}>조치 필요 {ts.action}</span>
+                        </div>
+                      )}
+                      {days.map(d => (
+                        <div key={d.day}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-px bg-gray-200 flex-1" /><span className="text-xs font-semibold text-gray-600">{d.label} · {d.cards.length}건</span><div className="h-px bg-gray-200 flex-1" />
+                          </div>
+                          {d.bursts.map(b => {
+                            const info = classInfoById[b.classId]
+                            return (
+                              <div key={b.classId} className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mb-2">
+                                ⚠ {info ? `${info.school ? info.school + ' ' : ''}${info.name}` : '학급 미상'} {d.day === todayKey ? '오늘' : d.label} {b.count}건{b.label ? ` (${b.label.replace(/^[^\s]+\s/, '')})` : ''}
+                              </div>
+                            )
+                          })}
+                          {(errSeverity === 'ignore' ? [] : d.action).length > 0 && (
+                            <div className="space-y-2 mb-2">{d.action.map(card)}</div>
+                          )}
+                          {d.ignore.length > 0 && (
+                            errSeverity === 'ignore' ? (
+                              <div className="space-y-2">{d.ignore.map(card)}</div>
+                            ) : errSeverity === 'all' ? (
+                              <details className="border border-gray-100 rounded-lg px-3 py-2">
+                                <summary className="text-xs text-gray-500 cursor-pointer select-none">⚪ 무시 가능 {d.ignore.length}건 ▸</summary>
+                                <div className="space-y-2 mt-2">{d.ignore.map(card)}</div>
+                              </details>
+                            ) : null
+                          )}
+                          {errSeverity === 'action' && d.action.length === 0 && d.ignore.length > 0 && (
+                            <div className="text-xs text-gray-400">조치 필요 없음 (무시 가능 {d.ignore.length}건)</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })()}
