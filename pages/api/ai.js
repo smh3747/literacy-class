@@ -23,6 +23,8 @@ import { ensureStrictColumn, countRecentGradings, runStrictCheck, unionCorrectio
   INLINE_GUARD_MAX, INLINE_TIMEOUT_MS } from '../../lib/strictCheck.server'
 // step627: 피크 판정 창(요청 시각 기준, 학급별 60초) — 피크면 전용 검사 인라인 생략(pending) + 예시 생성 보류 플래그
 import { recordAndCount, isPeak } from '../../lib/peakWindow'
+// step663: 구글 혼잡(503/429) 시 대체 경로 전환 단축 — 채점 2타입(grading·rewriteGrading)에만 예산 30초·메인 15초
+import { GRADING_CONGESTION_OPTS } from '../../lib/congestionPolicy'
 // step608: 수정본 변경 사실 계산(표기 정규화·notationOnly) — 순수 함수 모듈
 import { computeChangeFacts } from '../../lib/changeFacts'
 // step623: 소수→다수 문체 통일 교정 표식(styleUnify) — C-1 '문체개입' 스캔 제외용, 순수 함수 모듈
@@ -403,7 +405,7 @@ export default async function handler(req, res) {
       }
       prompt = gradingPrompt({ topic, essay, rubrics, ruleErrors, grade: classGradeOf(clsRow) })   // step645: 학급 학년(서버 조회) 전달
       schema = SCHEMAS.essayFeedback
-      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0, congestion: GRADING_CONGESTION_OPTS }   // step663: 혼잡 전환 단축(예산 30초·메인 15초) — 채점 2타입만
       mergeEssay = essay
 
     } else if (type === 'rewriteGrading') {
@@ -452,7 +454,7 @@ export default async function handler(req, res) {
         grade: classGradeOf(rwClsRow),   // step645: 학급 학년(서버 조회) 전달
       })
       schema = SCHEMAS.rewriteFeedback  // step588: essayFeedback + score_drop_reason(하락 사유 그릇)
-      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0 }
+      opts = { maxTokens: 12000, taskType: 'grading', temperature: 0, congestion: GRADING_CONGESTION_OPTS }   // step663: 혼잡 전환 단축 — 채점 2타입만
       mergeEssay = rewriteEssay
 
     } else if (type === 'regrade') {
@@ -708,6 +710,7 @@ export default async function handler(req, res) {
       message: sanitizeUpstream(rawUpstreamMsg),
       timeout: !!e?.upstreamTimeout || /TIMEOUT/i.test(String(rawUpstreamMsg || '')),
       ...(blocked ? { blockReason: e?.blockReason ?? null } : {}),
+      ...(e?.quotaLine ? { quota: String(e.quotaLine).slice(0, 300) } : {}),   // step663: 429 quotaId 1줄(분당/일일 판별 재료, PII 없음)
     }
     await logServerError({ accessToken, type, message: e?.message || e, upstream })
     if (blocked) {

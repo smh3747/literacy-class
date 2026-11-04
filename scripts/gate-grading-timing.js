@@ -1,7 +1,7 @@
 // step643: 채점 대기 시간 실측(lib/gradingTiming.js) 회귀 게이트 (읽기 전용 — lib는 import만)
 //
 // ▶ lib/gradingTiming.js 수정 시 커밋 전 실행:  node scripts/gate-grading-timing.js
-//   경로 우선순위(error_then_retry > fallback > retry_N > pending > inline)·퍼센타일(nearest-rank)·60초 초과·KST 일자 고정.
+//   경로 우선순위(error_then_retry > congestion > fallback > retry_N > pending > inline)·퍼센타일(nearest-rank)·60초 초과·KST 일자 고정.
 
 const path = require('path')
 const { pathToFileURL } = require('url')
@@ -21,6 +21,11 @@ const { pathToFileURL } = require('url')
   rec('attempts 4 → retry_3', deriveGradingPath({ attempts: 4 }) === 'retry_3', '')
   rec('fallback이 retry보다 우선', deriveGradingPath({ isFallback: true, attempts: 3 }) === 'fallback', '')
   rec('error_then_retry가 최우선', deriveGradingPath({ failedBefore: true, isFallback: true, attempts: 3, strictStatus: 'pending' }) === 'error_then_retry', '')
+  // step663: congestion — error_then_retry 다음, fallback보다 우선
+  rec('congestion이 fallback·retry보다 우선', deriveGradingPath({ congestion: 'busy503', isFallback: true, attempts: 3 }) === 'congestion', deriveGradingPath({ congestion: 'busy503', isFallback: true, attempts: 3 }))
+  rec('congestion은 error_then_retry 다음', deriveGradingPath({ failedBefore: true, congestion: 'rate429' }) === 'error_then_retry', '')
+  rec('congestion 비어 있으면 종전 판정(fallback)', deriveGradingPath({ congestion: null, isFallback: true }) === 'fallback' && deriveGradingPath({ congestion: undefined, attempts: 2 }) === 'retry_1', '')
+  rec('pathFamily: congestion → congestion', pathFamily('congestion') === 'congestion', '')
   rec('attempts 비수치·문자열 "x" → inline', deriveGradingPath({ attempts: 'x' }) === 'inline', '')
   rec('pathFamily: retry_2 → retry, inline → inline, null → unknown', pathFamily('retry_2') === 'retry' && pathFamily('inline') === 'inline' && pathFamily(null) === 'unknown', '')
 

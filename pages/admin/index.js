@@ -3634,10 +3634,11 @@ export default function AdminHome() {
               }
               const s = summarizeTimings(timingRows.rows.map(r => ({ ms: r.grading_ms, path: r.grading_path, at: r.created_at, classId: r.profiles?.class_id || null })))
               // step654: 전문 용어 제거 — 열 이름·툴팁·머리 문장·해석 한 줄(lib/gradingTiming headlineOf·interpretTimings)
-              const PATH_LABEL = { inline: '정상', pending: '검사 보류(피크)', fallback: '보조 모델', retry: '재시도', error_then_retry: '실패 후 재시도', unknown: '미분류' }
+              const PATH_LABEL = { inline: '정상', pending: '검사 보류(피크)', congestion: '구글 혼잡 전환', fallback: '보조 모델', retry: '재시도', error_then_retry: '실패 후 재시도', unknown: '미분류' }
               const PATH_TIP = {
                 inline: '맞춤법 전용 검사와 채점을 한 번에 끝낸 글이에요.',
                 pending: '피크=반 전체가 동시에 내서 맞춤법 전용 검사를 나중으로 미룬 글이에요.',
+                congestion: '구글 AI가 혼잡(503·429)해서 재시도 대신 바로 다른 AI로 넘겨 채점한 글이에요(step663).',
                 fallback: '주 AI가 막혀 보조 AI가 채점한 글이에요.',
                 retry: 'AI가 한 번에 답하지 않아 서버가 다시 시도한 글이에요.',
                 error_then_retry: '실패한 뒤 학생이 다시 눌러 성공한 글이에요.',

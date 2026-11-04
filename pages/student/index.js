@@ -266,7 +266,7 @@ export default function StudentHome() {
   // AI 재시도 진행 표시 (null 또는 메시지)
   const [retryMessage, setRetryMessage] = useState(null)
   // step601: 첫 글 제출 진행 2단계 표시 — 'spell'(맞춤법 확인) → 6초 뒤 'grade'(글 평가). 시간 기반 근사(서버가 단계 신호를 주지 않음).
-  const [gradingStage, setGradingStage] = useState(null)   // step629: 'spell'(0~6초) → 'grade'(6~20초) → 'queue'(20초~)
+  const [gradingStage, setGradingStage] = useState(null)   // step629: 'spell'(0~6초) → 'grade'(6~15초) → 'queue'(15초~, step663: 구글 혼잡 문구)
   const gradingStageTimerRef = useRef(null)
   // step629: 시간 잠금 유예 — topicId → 버튼 시점에 잠금을 통과한 시각(ms). 저장 성공 시 삭제, 남아 있으면 채점 실패.
   //   종료 뒤 재시도도 통과 5분 안이면 1회 허용(세션 메모리만, 서버 저장 불변).
@@ -769,7 +769,7 @@ export default function StudentHome() {
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
     const { data: existing, error: existingErr } = await withTimeout(supabase.from('submissions')
-      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model')   // step606: graded_with_model — 안전 필터 차단 표식 판정용
+      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model, grading_path')   // step606: graded_with_model — 안전 필터 차단 표식 판정용 / step663: grading_path — 혼잡 전환 안내 줄(재진입)
       .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null))
     // step575: 조회 실패(401/5xx)를 "제출 없음"으로 오판해 이미 제출한 학생에게 빈 글쓰기 폼을
@@ -930,11 +930,12 @@ export default function StudentHome() {
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
       // step601: 진행 2단계 표시 — 전용 맞춤법 검사(평균 수 초) 동안 '맞춤법 확인', 6초 뒤 '글 평가'로 전환(시간 근사)
       // step629: 3단계 — 20초 넘으면 '줄 서 있어요'(피크 대기 안내, 인원 수 표시 없음)
+      // step663: 15초로 당기고 문구를 '구글 AI가 지금 바빠요'로(피크·혼잡을 클라이언트가 구분 못 하므로 한 문구, 시간 근사)
       setGradingStage('spell')
       if (gradingStageTimerRef.current) clearTimeout(gradingStageTimerRef.current)
       gradingStageTimerRef.current = setTimeout(() => {
         setGradingStage('grade')
-        gradingStageTimerRef.current = setTimeout(() => setGradingStage('queue'), 14000)
+        gradingStageTimerRef.current = setTimeout(() => setGradingStage('queue'), 9000)
       }, 6000)
       // 🔒 프롬프트는 서버(/api/ai)에서 구성 — 핵심 IP 보호
       // 키 서버격리(step153~): 키 미등록이면 서버가 명확한 에러를 반환 → catch에서 안내
@@ -1024,7 +1025,7 @@ export default function StudentHome() {
       // step643: 채점 대기 시간·경로를 별도 update로(컬럼 미적용이면 실패를 무시 — insert는 불변). 화면 영향 없음.
       try {
         const failKey = `${todayTopic.id}|1`
-        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })
+        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })   // step663: congestion
         gradeFailRef.current.delete(failKey)
         if (gradingMs !== null) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
@@ -1547,7 +1548,7 @@ export default function StudentHome() {
       // step643: 채점 대기 시간·경로 별도 update(실패 무시, insert 불변). 수정본은 전용 검사가 없어 pending 없음.
       try {
         const failKey = `${todayTopic.id}|${nextAttempt}`
-        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), isFallback: rwIsFallback, attempts: result.__attempts })
+        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback: rwIsFallback, attempts: result.__attempts })   // step663: congestion
         gradeFailRef.current.delete(failKey)
         if (gradingMs !== null && newSub?.id) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', newSub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
@@ -2098,7 +2099,7 @@ export default function StudentHome() {
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting
                       ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
-                        : gradingStage === 'queue' ? '⏳ 친구들 글이 함께 줄 서 있어요. 조금만 기다려 주세요'
+                        : gradingStage === 'queue' ? '⏳ 구글 AI가 지금 바빠요. 잠시 기다려 주세요'
                         : '📝 글을 평가하고 있어요…')
                       : '제출하고 피드백 받기 →'}
                   </button>
@@ -2128,6 +2129,12 @@ export default function StudentHome() {
                   {/* 피드백 결과 */}
                   <div ref={step === 'feedback' ? resultTopRef : null}
                     className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 overflow-hidden scroll-mt-16">
+                    {/* step663: 구글 혼잡으로 다른 AI가 채점한 글 — 작은 안내 1줄(제출 직후 __congestion, 재진입은 grading_path) */}
+                    {!feedbackBlocked && (feedbackResult.__congestion || currentSub?.grading_path === 'congestion') && (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 break-keep">
+                        ⚡ 구글이 혼잡해서 다른 AI가 채점했어요
+                      </p>
+                    )}
                     {/* 🟣 step606: AI 안전 필터 차단 글 — 점수·피드백 대신 안내 카드 1개 + 내 글(밑줄 없음). 재시도 유도 없음 */}
                     {feedbackBlocked ? (
                       <div className="space-y-3">

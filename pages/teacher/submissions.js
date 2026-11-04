@@ -1508,6 +1508,12 @@ export default function TeacherSubmissions() {
                               🔁 보조 채점
                             </span>
                           )}
+                          {/* step663: 구글 혼잡(503/429)으로 다른 AI에 넘겨 채점한 글 — 학생 화면과 같은 문구 */}
+                          {s.grading_path === 'congestion' && (
+                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title="구글 AI가 혼잡해 보조 AI로 바로 넘겨 채점했어요. 재평가하면 주 AI로 다시 채점돼요.">
+                              ⚡ 구글이 혼잡해서 다른 AI가 채점했어요
+                            </span>
+                          )}
                           {/* 🟣 step606: AI 안전 필터 차단 — 점수 없이 저장. 코멘트·도장은 그대로 가능 */}
                           {isBlockedSubmission(s) && (
                             <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full" title={TEACHER_BLOCKED_HINT}>
