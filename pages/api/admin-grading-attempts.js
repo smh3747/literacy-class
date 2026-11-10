@@ -39,12 +39,17 @@ export default async function handler(req, res) {
 
   try {
     const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000).toISOString()
-    const att = await readAll(() => admin.from('grading_attempts')
-      .select('user_id, class_id, started_at, last_try_at, finished_at, wait_ms, tries')
-      .gte('started_at', since).order('started_at', { ascending: false }))
+    const BASE_COLS = 'user_id, class_id, started_at, last_try_at, finished_at, wait_ms, tries'
+    const readAttempts = (cols) => readAll(() => admin.from('grading_attempts')
+      .select(cols).gte('started_at', since).order('started_at', { ascending: false }))
+    // step668: 구간 컬럼(queue_ms·strict_ms·grade_ms·server_ms)이 아직 없으면(SQL 미적용) 기존 컬럼만 읽는다
+    let att
+    try { att = await readAttempts(BASE_COLS + ', queue_ms, strict_ms, grade_ms, server_ms') }
+    catch (_) { att = await readAttempts(BASE_COLS) }
     const rows = att.rows.map(r => ({
       userId: r.user_id, classId: r.class_id || null, startedAt: r.started_at, lastTryAt: r.last_try_at,
       finishedAt: r.finished_at || null, waitMs: r.wait_ms, tries: r.tries,
+      queueMs: r.queue_ms ?? null, strictMs: r.strict_ms ?? null, gradeMs: r.grade_ms ?? null, serverMs: r.server_ms ?? null,
     }))
     // 원인 매칭 재료: 미완료 행이 있을 때만, 그 학생들의 채점 서버 오류만 읽는다
     const openUsers = [...new Set(rows.filter(r => !r.finishedAt).map(r => r.userId))]

@@ -153,6 +153,17 @@ const { pathToFileURL } = require('url')
       rec('(c) 배선: 보조 없음 + 503 뒤 메인 1800ms 응답 → 끊기지 않고 메인 성공',
         !r.err && r.out?.ok === true && r.out.__usedModel === MAIN && f.calls.join(',') === [MAIN, MAIN].join(','), `calls=${f.calls.length} ${r.err ? r.err.message : ''}`)
     }
+    // step668 배선: 구간 계측 — 성공 결과에 __queueMs·__callMs(숫자), 실패 에러에 timing이 실린다
+    {
+      const f = fake(() => ({ delay: 300 }))
+      const r = await run(f)
+      rec('step668 배선: 성공 결과에 __queueMs·__callMs 숫자(호출 300ms 이상)',
+        !r.err && Number.isFinite(r.out?.__queueMs) && r.out.__queueMs >= 0 && Number.isFinite(r.out?.__callMs) && r.out.__callMs >= 280 && r.out.__callMs < 2500, `queue=${r.out?.__queueMs} call=${r.out?.__callMs}`)
+      const f2 = fake(() => ({ error: 'JSON 형식이 아닌 일반 오류' }))
+      const r2 = await run(f2, { model: MAIN })
+      rec('step668 배선: 실패 에러에 timing{queueMs, callMs} 숫자',
+        !!r2.err && Number.isFinite(r2.err.timing?.queueMs) && Number.isFinite(r2.err.timing?.callMs), `timing=${JSON.stringify(r2.err?.timing)} ${r2.err ? r2.err.message.slice(0, 40) : 'no error'}`)
+    }
     // step667 배선: 보조 없음 + 503 두 번 → 포기하지 않고 간격을 두고(2초·4초) 다시 시도해 세 번째에 메인 성공
     {
       const f = fake((model, n) => n <= 2 ? { error: msg503 } : {})

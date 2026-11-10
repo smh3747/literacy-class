@@ -119,6 +119,34 @@ const { pathToFileURL } = require('url')
     rec('해석 줄에 추측 낱말 없음(가능성·같아요·추정)', !/가능성|같아요|추정/.test(v.text + v2.text), '')
     const h = attemptsHeadline(s.total)
     rec('머리 문장', h === '최근 14일 7번 시도 · 보통 30.0초 · 거의 모두(95%) 11분 안 · 가장 오래 11분 · 결과 못 받음 4건 · 10분 넘음 2건', h)
+    // ── step668: 구간별 시간 ──
+    const { segmentFields, summarizeSegments, segmentsVerdict, SEGMENT_SLOW_MS, SEGMENT_MAX_MS } =
+      await import(pathToFileURL(path.join(__dirname, '..', 'lib', 'gradingTiming.js')).href)
+    rec('구간 상수: 15초 넘음 기준·저장 상한 10분', SEGMENT_SLOW_MS === 15000 && SEGMENT_MAX_MS === 600000, '')
+    const sf = segmentFields({ queueMs: 120.4, strictMs: 0, gradeMs: 5321, serverMs: 6100 })
+    rec('segmentFields: 숫자 4개 → 컬럼 4개(반올림, 0 보존)', JSON.stringify(sf) === JSON.stringify({ queue_ms: 120, strict_ms: 0, grade_ms: 5321, server_ms: 6100 }), JSON.stringify(sf))
+    const sf2 = segmentFields({ queueMs: -5, strictMs: 'abc', gradeMs: null, serverMs: 700000 })
+    rec('segmentFields: 음수·문자·null·상한 초과는 그 칸을 뺀다', Object.keys(sf2).length === 0, JSON.stringify(sf2))
+    rec('segmentFields: 값 없음·객체 아님 → 빈 객체', Object.keys(segmentFields(undefined)).length === 0 && Object.keys(segmentFields('x')).length === 0, '')
+    const F = '2026-11-11T01:00:00Z'
+    const segRows = [
+      { finishedAt: F, waitMs: 6000, tries: 1, queueMs: 0, strictMs: 2000, gradeMs: 3500, serverMs: 5800 },      // 평범(그 밖 500)
+      { finishedAt: F, waitMs: 20000, tries: 1, queueMs: 0, strictMs: 1000, gradeMs: 18000, serverMs: 19500 },   // 느림: 채점 호출
+      { finishedAt: F, waitMs: 26000, tries: 1, queueMs: 19000, strictMs: 0, gradeMs: 6000, serverMs: 25500 },   // 느림: 쓰로틀 대기
+      { finishedAt: F, waitMs: 17000, tries: 1, queueMs: 0, strictMs: 9000, gradeMs: 6000, serverMs: 15500 },    // 느림: 맞춤법 검사
+      { finishedAt: F, waitMs: 16000, tries: 1, queueMs: 0, strictMs: 0, gradeMs: 4000, serverMs: 4500 },        // 느림: 그 밖(12000)
+      { finishedAt: F, waitMs: 90000, tries: 3, queueMs: 0, strictMs: 0, gradeMs: 5000, serverMs: 5500 },        // 여러 번 누름 → 제외
+      { finishedAt: F, waitMs: 5000, tries: 1, queueMs: null, strictMs: null, gradeMs: null, serverMs: null },   // 측정값 없음(구버전 탭) → 제외
+      { finishedAt: null, waitMs: null, tries: 2, gradeMs: null },                                               // 결과 못 받음 → 제외
+    ]
+    const g = summarizeSegments(segRows)
+    rec('summarizeSegments: 측정 5건·여러 번 누름 제외 1건', g.measured === 5 && g.multiPress === 1, JSON.stringify({ m: g.measured, mp: g.multiPress }))
+    rec('summarizeSegments: 채점 호출 보통 6000·95% 18000', g.seg.grade.p50 === 6000 && g.seg.grade.p95 === 18000, JSON.stringify(g.seg.grade))
+    rec('summarizeSegments: 그 밖 = 대기 − 세 구간(보통 1000·95% 12000)', g.seg.other.p50 === 1000 && g.seg.other.p95 === 12000, JSON.stringify(g.seg.other))
+    rec('summarizeSegments: 15초 넘음 4건, 가장 긴 구간 채점 1·쓰로틀 1·맞춤법 1·그 밖 1', g.slow.n === 4 && g.slow.dominant.grade === 1 && g.slow.dominant.queue === 1 && g.slow.dominant.strict === 1 && g.slow.dominant.other === 1, JSON.stringify(g.slow))
+    const sv = segmentsVerdict(g)
+    rec('구간 해석 줄: 사실 문장', sv === '15초 넘은 시도 4건: 가장 오래 걸린 구간이 채점 호출 1건·쓰로틀 대기 1건·맞춤법 검사 1건·그 밖 1건', sv)
+    rec('구간 해석 줄: 느린 시도 0 → "15초 넘은 시도가 없어요.", 측정 0 → 빈 문장', segmentsVerdict(summarizeSegments([segRows[0]])) === '15초 넘은 시도가 없어요.' && segmentsVerdict(summarizeSegments([])) === '', '')
     rec('빈 입력 → n 0·null·머리 "아직 기록이 없어요"', summarizeAttempts([], NOW).total.n === 0 && summarizeAttempts(null, NOW).total.p50 === null && attemptsHeadline(summarizeAttempts([], NOW).total) === '아직 기록이 없어요', '')
   }
 

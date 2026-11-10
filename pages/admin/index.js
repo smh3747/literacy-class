@@ -12,7 +12,7 @@ import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step657: 카드 라벨은 lib/errorHumanize가 분류기로 계산
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
-import { summarizeTimings, fmtSecKo, headlineOf, OVER_MS, summarizeAttempts, attemptsHeadline, attemptsVerdict, ATTEMPT_LONG_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
+import { summarizeTimings, fmtSecKo, headlineOf, OVER_MS, summarizeAttempts, attemptsHeadline, attemptsVerdict, ATTEMPT_LONG_MS, summarizeSegments, segmentsVerdict } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step657: 오류 탭 사람 문장화(표시 전용)
 
@@ -3741,6 +3741,47 @@ export default function AdminHome() {
                           {aVerdict.text}
                         </div>
                       )}
+                      {/* step668: 구간별 시간 — 한 번 눌러 결과를 받은 시도만. 측정값이 아직 없으면 안내 한 줄 */}
+                      {(() => {
+                        const g = summarizeSegments(attemptRows.rows)
+                        const SEG_LABEL = { queue: '쓰로틀 대기', strict: '맞춤법 검사', grade: '채점 호출', other: '그 밖' }
+                        const SEG_TIP = {
+                          queue: '분당 호출 한도를 넘지 않게 서버가 줄을 세운 시간이에요.',
+                          strict: '채점 전에 맞춤법 전용 검사를 돌린 시간이에요. 반 전체가 동시에 낼 때와 수정본은 0에 가까워요.',
+                          grade: '구글 AI에 채점을 맡기고 답을 받기까지예요. 다시 시도한 시간도 들어 있어요.',
+                          other: '위 세 구간을 뺀 나머지예요. 인터넷 왕복, 서버가 깨어나는 시간, 제출 전 확인 조회가 들어 있어요.',
+                        }
+                        return (
+                          <div className="mt-4">
+                            <div className="text-xs font-semibold text-gray-700 mb-1">⏳ 구간별 시간</div>
+                            {g.measured === 0 ? (
+                              <div className="text-xs text-gray-400">아직 구간 측정값이 없어요. <code>migrations/step668-attempt-timing.sql</code> 적용 뒤 새 제출부터 쌓여요.</div>
+                            ) : (
+                              <>
+                                <div className="text-[11px] text-gray-500 mb-2">한 번 눌러 결과를 받은 시도 {g.measured}건이에요.{g.multiPress > 0 ? ` 여러 번 누른 ${g.multiPress}건은 뺐어요.` : ''}</div>
+                                <div className="border border-gray-200 rounded-xl overflow-hidden max-w-md">
+                                  <table className="w-full text-xs">
+                                    <thead><tr className="text-[11px] text-gray-500">
+                                      <th className="px-2 py-1 text-left font-medium">구간</th>
+                                      <th className="px-2 py-1 text-right font-medium">보통(절반)</th>
+                                      <th className="px-2 py-1 text-right font-medium">거의 모두(95%)</th>
+                                    </tr></thead>
+                                    <tbody>
+                                      {['queue', 'strict', 'grade', 'other'].map(k => (
+                                        <tr key={k} className="border-t border-gray-100">
+                                          <td className="px-2 py-1.5 text-gray-800" title={SEG_TIP[k]}>{SEG_LABEL[k]} <span className="text-gray-400 cursor-help">ⓘ</span></td>
+                                          {cell(fmtSecKo(g.seg[k].p50))}{cell(fmtSecKo(g.seg[k].p95))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div className="mt-2 text-sm text-gray-800">{segmentsVerdict(g)}</div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })()}
                       {attemptRows.truncated && <div className="text-[11px] text-gray-400 mt-2">최근 5,000건까지만 집계했어요.</div>}
                     </>
                   )}

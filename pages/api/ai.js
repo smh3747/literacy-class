@@ -322,6 +322,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: '선생님이 API 키를 등록해야 AI 기능을 쓸 수 있어요.' })
   }
   const userId = keyResult.userId || null   // 🆕 요청자 id — C-2 차단 기록 맥락용
+  // step668: 구간 계측(채점 2타입 응답 __timing, 실패 로그 context.upstream.timing). 흐름에는 영향 없음.
+  const tServer0 = Date.now()
+  let strictMs = 0        // 맞춤법 전용 검사 구간(가드 조회 + 호출)
+  let strictQueueMs = 0   // 그 호출이 쓰로틀에서 기다린 시간
 
   try {
     let prompt, schema, opts
@@ -385,6 +389,7 @@ export default async function handler(req, res) {
           const recent = await countRecentGradings(admin, teacherId)
           if (!peak && recent <= INLINE_GUARD_MAX) {
             const r = await runStrictCheck({ apiKey, essay, timeoutMs: INLINE_TIMEOUT_MS })
+            strictQueueMs = Number(r?.queueMs) || 0   // step668
             if (r.ok) {
               strictCorrections = r.corrections
               ruleErrors = r.corrections   // 규칙 항목까지 병합된 목록 → 프롬프트 '자동 맞춤법 검사 요약'에 주입
@@ -396,6 +401,7 @@ export default async function handler(req, res) {
           } else {
             strictStatus = 'pending'
           }
+          strictMs = Date.now() - t0   // step668: 구간 계측(아래 콘솔 줄의 ms와 같은 값)
           // Vercel 로그 1줄(본문 금지): 가드 N·피크 창 건수·상태·소요·건수
           console.log(`[strict-inline] N=${recent} peak=${peakCount} status=${strictStatus} ms=${Date.now() - t0} n=${strictCorrections ? strictCorrections.length : '-'}`)
         }
@@ -692,6 +698,15 @@ export default async function handler(req, res) {
     if ((type === 'grading' || type === 'rewriteGrading') && peak && result && typeof result === 'object') {
       result.__exampleDeferred = true
     }
+    // step668: 채점 2타입 구간 시간 — 학생 화면이 채점 시도 기록(grading_attempts)에 그대로 넘긴다. 숫자뿐.
+    if ((type === 'grading' || type === 'rewriteGrading') && result && typeof result === 'object') {
+      result.__timing = {
+        queueMs: (Number(result.__queueMs) || 0) + strictQueueMs,
+        strictMs,
+        gradeMs: Number.isFinite(Number(result.__callMs)) ? Number(result.__callMs) : null,
+        serverMs: Date.now() - tServer0,
+      }
+    }
     return res.status(200).json({ result })
 
   } catch (e) {
@@ -711,6 +726,8 @@ export default async function handler(req, res) {
       timeout: !!e?.upstreamTimeout || /TIMEOUT/i.test(String(rawUpstreamMsg || '')),
       ...(blocked ? { blockReason: e?.blockReason ?? null } : {}),
       ...(e?.quotaLine ? { quota: String(e.quotaLine).slice(0, 300) } : {}),   // step663: 429 quotaId 1줄(분당/일일 판별 재료, PII 없음)
+      // step668: 실패한 요청의 구간 시간(숫자뿐) — 쓰로틀 대기·호출 구간·맞춤법 구간·서버 전체
+      timing: { queueMs: (Number(e?.timing?.queueMs) || 0) + strictQueueMs, callMs: Number(e?.timing?.callMs) || 0, strictMs, serverMs: Date.now() - tServer0 },
     }
     await logServerError({ accessToken, type, message: e?.message || e, upstream })
     if (blocked) {

@@ -1073,7 +1073,7 @@ export default function StudentHome() {
         const failKey = `${todayTopic.id}|1`
         const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })   // step663: congestion
         gradeFailRef.current.delete(failKey)
-        markGradingAttempt('done', { topicId: todayTopic.id, attempt: 1, submissionId: sub.id, path: gradingPath })   // step666
+        markGradingAttempt('done', { topicId: todayTopic.id, attempt: 1, submissionId: sub.id, path: gradingPath, timing: result.__timing })   // step666 / step668: 구간 시간
         if (gradingMs !== null) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
 
@@ -1601,7 +1601,7 @@ export default function StudentHome() {
         const failKey = `${todayTopic.id}|${nextAttempt}`
         const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback: rwIsFallback, attempts: result.__attempts })   // step663: congestion
         gradeFailRef.current.delete(failKey)
-        markGradingAttempt('done', { topicId: todayTopic.id, attempt: nextAttempt, submissionId: newSub?.id, path: gradingPath })   // step666
+        markGradingAttempt('done', { topicId: todayTopic.id, attempt: nextAttempt, submissionId: newSub?.id, path: gradingPath, timing: result.__timing })   // step666 / step668: 구간 시간
         if (gradingMs !== null && newSub?.id) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', newSub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
 
