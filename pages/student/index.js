@@ -38,6 +38,24 @@ import { displayStudentNameWithNumber } from '../../lib/displayName'
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
 //   "✍️ 글쓰기 안내:" 뒷부분을 분리한다. 패턴이 없으면 통째로 body로 남아 기존 렌더와 동일(하위호환).
 //   저장·채점 payload는 원문 description을 그대로 쓰므로 여기서 원본은 건드리지 않는다.
+// step666: 채점 시도 기록(측정 전용) — [제출]을 누른 순간 'start', 결과를 받아 저장한 뒤 'done'.
+//   응답을 기다리지 않는다. 토큰이 없거나 요청이 실패해도 아무 일도 일어나지 않는다(제출 흐름과 무관).
+//   보내는 값은 주제 id·단계·attempt·제출 id·경로뿐(글 본문 없음).
+function markGradingAttempt(action, fields) {
+  try {
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data?.session?.access_token
+      if (!token) return
+      fetch('/api/grading-attempt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: token, action, ...fields }),
+        keepalive: true,
+      }).catch(() => {})
+    }).catch(() => {})
+  } catch (_) { /* 측정 실패는 무시 */ }
+}
+
 function parseTopicDescription(desc) {
   if (!desc) return { genreLabel: null, body: '', guide: null }
   let rest = desc, genreLabel = null
@@ -925,6 +943,7 @@ export default function StudentHome() {
       return
     }
 
+    markGradingAttempt('start', { topicId: todayTopic.id, phase: 'first', attempt: 1 })   // step666: 누른 시도 기록(기다리지 않음, 실패 무시)
     try {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
@@ -1027,6 +1046,7 @@ export default function StudentHome() {
         const failKey = `${todayTopic.id}|1`
         const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })   // step663: congestion
         gradeFailRef.current.delete(failKey)
+        markGradingAttempt('done', { topicId: todayTopic.id, attempt: 1, submissionId: sub.id, path: gradingPath })   // step666
         if (gradingMs !== null) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
 
@@ -1259,6 +1279,7 @@ export default function StudentHome() {
       err.saveFailed = true
       throw err
     }
+    markGradingAttempt('done', { topicId: todayTopic.id, attempt, submissionId: sub?.id, path: 'safety_blocked' })   // step666: 점수 없이 저장도 "결과 받음"으로 닫는다
     if (isRewrite) {
       await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
         .eq('user_id', user.id).eq('topic_id', todayTopic.id)
@@ -1464,6 +1485,7 @@ export default function StudentHome() {
     }
 
     setRewriting(true)
+    markGradingAttempt('start', { topicId: todayTopic.id, phase: 'rewrite', attempt: nextAttempt })   // step666: 누른 시도 기록(기다리지 않음, 실패 무시)
     try {
       const rubrics = todayTopic.rubrics
       const totalMax = rubrics.reduce((s, r) => s + (r.score || 0), 0)
@@ -1550,6 +1572,7 @@ export default function StudentHome() {
         const failKey = `${todayTopic.id}|${nextAttempt}`
         const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback: rwIsFallback, attempts: result.__attempts })   // step663: congestion
         gradeFailRef.current.delete(failKey)
+        markGradingAttempt('done', { topicId: todayTopic.id, attempt: nextAttempt, submissionId: newSub?.id, path: gradingPath })   // step666
         if (gradingMs !== null && newSub?.id) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', newSub.id)
       } catch (_) { /* 측정 저장 실패는 무시 */ }
 

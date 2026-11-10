@@ -64,6 +64,64 @@ const { pathToFileURL } = require('url')
   rec('interpretTimings: over60 0 → ok 문장, 2 → warn 문장(503 언급), n 0 → none', interpretTimings({ n: 5, over60: 0 }).tone === 'ok' && interpretTimings({ n: 5, over60: 2 }).tone === 'warn' && /503/.test(interpretTimings({ n: 5, over60: 2 }).text) && interpretTimings({ n: 0 }).tone === 'none', '')
   rec('OVER_MS = 60000', OVER_MS === 60000, '')
 
+  // ── step666: 채점 시도(첫 누름~결과) 집계 ──
+  {
+    const { ATTEMPT_JOIN_MS, ATTEMPT_FRESH_MS, ATTEMPT_LONG_MS, causeOfLog, attachCauses, summarizeAttempts, attemptsHeadline, attemptsVerdict } =
+      await import(pathToFileURL(path.join(__dirname, '..', 'lib', 'gradingTiming.js')).href)
+    rec('상수: 이어 붙이기 30분·진행 중 2분·10분 넘음', ATTEMPT_JOIN_MS === 1800000 && ATTEMPT_FRESH_MS === 120000 && ATTEMPT_LONG_MS === 600000, '')
+    rec('causeOfLog: status 503 → busy503', causeOfLog({ status: 503, message: '[congestion busy503 30000ms] ...' }) === 'busy503', '')
+    rec('causeOfLog: 429·quota → limit', causeOfLog({ status: 429 }) === 'limit' && causeOfLog({ status: null, quota: true }) === 'limit', '')
+    rec('causeOfLog: TIMEOUT → timeout', causeOfLog({ status: null, timeout: true }) === 'timeout' && causeOfLog({ message: 'TIMEOUT: AI 응답 27.3초 초과' }) === 'timeout', '')
+    rec('causeOfLog: 그 밖·빈 값 → unknown', causeOfLog({ status: 500, message: 'x' }) === 'unknown' && causeOfLog(null) === 'unknown', '')
+
+    const NOW = new Date('2026-11-10T06:00:00Z').getTime()
+    const rows = [
+      // A반: 성공 2(8초, 11분), 결과 못 받음 2(503 / 한도)
+      { userId: 'u1', classId: 'A', startedAt: '2026-11-10T04:36:00Z', lastTryAt: '2026-11-10T04:36:00Z', finishedAt: '2026-11-10T04:36:08Z', waitMs: 8000, tries: 1 },
+      { userId: 'u2', classId: 'A', startedAt: '2026-11-10T04:37:00Z', lastTryAt: '2026-11-10T04:47:30Z', finishedAt: '2026-11-10T04:48:00Z', waitMs: 660000, tries: 9 },
+      { userId: 'u3', classId: 'A', startedAt: '2026-11-10T04:40:00Z', lastTryAt: '2026-11-10T05:06:00Z', finishedAt: null, waitMs: null, tries: 49 },
+      { userId: 'u4', classId: 'A', startedAt: '2026-11-10T05:00:00Z', lastTryAt: '2026-11-10T05:05:00Z', finishedAt: null, waitMs: null, tries: 4 },
+      // B반: 전날 성공 1, 원인 로그 없는 미완료 1, 타임아웃 미완료 1
+      { userId: 'u5', classId: 'B', startedAt: '2026-11-09T01:00:00Z', lastTryAt: '2026-11-09T01:00:00Z', finishedAt: '2026-11-09T01:00:30Z', waitMs: 30000, tries: 1 },
+      { userId: 'u6', classId: 'B', startedAt: '2026-11-09T01:10:00Z', lastTryAt: '2026-11-09T01:10:00Z', finishedAt: null, waitMs: null, tries: 1 },
+      { userId: 'u7', classId: null, startedAt: '2026-11-09T01:20:00Z', lastTryAt: '2026-11-09T01:20:00Z', finishedAt: null, waitMs: null, tries: 1 },
+      // 방금 누른 미완료(1분 전) → 진행 중, 집계 제외
+      { userId: 'u8', classId: 'A', startedAt: '2026-11-10T05:59:00Z', lastTryAt: '2026-11-10T05:59:00Z', finishedAt: null, waitMs: null, tries: 1 },
+      { userId: 'u9', classId: 'A', startedAt: 'bad', finishedAt: null },   // 무시
+    ]
+    const logs = [
+      { userId: 'u3', at: '2026-11-10T04:41:00Z', status: 429, quota: true },                 // 먼저 한도
+      { userId: 'u3', at: '2026-11-10T05:06:30Z', status: 503, message: 'busy' },            // 마지막은 503 → busy503
+      { userId: 'u3', at: '2026-11-10T05:30:00Z', status: 429, quota: true },                 // 창 밖(마지막 누름 2분 뒤 이후) → 무시
+      { userId: 'u4', at: '2026-11-10T05:05:10Z', status: 429, quota: true },
+      { userId: 'u7', at: '2026-11-09T01:20:28Z', status: null, timeout: true, message: 'TIMEOUT: AI 응답 27.3초 초과' },
+      { userId: 'u1', at: '2026-11-10T04:36:05Z', status: 503 },                              // 완료 행 → 원인 안 붙음
+      { userId: 'u6', at: '2026-11-08T01:10:00Z', status: 503 },                              // 하루 전 → 창 밖
+    ]
+    const withCause = attachCauses(rows, logs)
+    const cause = (u) => withCause.find(r => r.userId === u)?.cause
+    rec('attachCauses: 창 안 마지막 로그로 판정(u3 503)·한도(u4)·타임아웃(u7)', cause('u3') === 'busy503' && cause('u4') === 'limit' && cause('u7') === 'timeout', `${cause('u3')}/${cause('u4')}/${cause('u7')}`)
+    rec('attachCauses: 로그 없음·창 밖 → unknown(u6), 완료 행은 null(u1)', cause('u6') === 'unknown' && cause('u1') === null, `${cause('u6')}/${cause('u1')}`)
+
+    const s = summarizeAttempts(withCause, NOW)
+    rec('total: 시도 7(진행 중 1·잘못된 행 제외)·결과 받음 3·결과 못 받음 4', s.total.n === 7 && s.total.done === 3 && s.total.unfinished === 4 && s.inProgress === 1, JSON.stringify({ n: s.total.n, done: s.total.done, un: s.total.unfinished, ip: s.inProgress }))
+    rec('total: 대기 보통 30000·95% 660000·가장 오래 660000(결과 받은 시도만)', s.total.p50 === 30000 && s.total.p95 === 660000 && s.total.max === 660000, JSON.stringify({ p50: s.total.p50, p95: s.total.p95, max: s.total.max }))
+    rec('total: 10분 넘음 2(11분 걸려 받은 u2 + 26분 누른 미완료 u3), 5분 누른 u4는 아님', s.total.over10 === 2, `over10=${s.total.over10}`)
+    rec('total: 누른 횟수 보통 1·최다 49', s.total.triesP50 === 1 && s.total.triesMax === 49, `${s.total.triesP50}/${s.total.triesMax}`)
+    rec('causes: 503 1·한도 1·시간 초과 1·원인 불명 1', s.causes.busy503 === 1 && s.causes.limit === 1 && s.causes.timeout === 1 && s.causes.unknown === 1, JSON.stringify(s.causes))
+    rec('byDay 최신순(KST), 11/10 시도 4·못 받음 2 / 11/09 시도 3·못 받음 2', s.byDay.length === 2 && s.byDay[0].key === '2026-11-10' && s.byDay[0].n === 4 && s.byDay[0].unfinished === 2 && s.byDay[1].n === 3 && s.byDay[1].unfinished === 2, JSON.stringify(s.byDay.map(d => [d.key, d.n, d.unfinished])))
+    rec('byClass 시도순 A4·B2·unknown1, A 못 받음 2', s.byClass.map(c => `${c.key}${c.n}`).join(',') === 'A4,B2,unknown1' && s.byClass[0].unfinished === 2, s.byClass.map(c => `${c.key}${c.n}`).join(','))
+    const v = attemptsVerdict(s)
+    rec('해석 줄: 사실 문장(시간 초과 포함)', v.tone === 'warn' && v.text === '결과 못 받은 시도 4건, 그중 503 1건·한도 초과 1건·시간 초과 1건·원인 불명 1건', v.text)
+    const v2 = attemptsVerdict({ total: { n: 9, unfinished: 3 }, causes: { busy503: 2, limit: 1, timeout: 0, unknown: 0 } })
+    rec('해석 줄: 시간 초과 0이면 생략', v2.text === '결과 못 받은 시도 3건, 그중 503 2건·한도 초과 1건·원인 불명 0건', v2.text)
+    rec('해석 줄: 못 받은 시도 0 → "결과 못 받은 시도가 없어요.", 기록 0 → 빈 문장', attemptsVerdict({ total: { n: 5, unfinished: 0 } }).text === '결과 못 받은 시도가 없어요.' && attemptsVerdict({ total: { n: 0 } }).tone === 'none', '')
+    rec('해석 줄에 추측 낱말 없음(가능성·같아요·추정)', !/가능성|같아요|추정/.test(v.text + v2.text), '')
+    const h = attemptsHeadline(s.total)
+    rec('머리 문장', h === '최근 14일 7번 시도 · 보통 30.0초 · 거의 모두(95%) 11분 안 · 가장 오래 11분 · 결과 못 받음 4건 · 10분 넘음 2건', h)
+    rec('빈 입력 → n 0·null·머리 "아직 기록이 없어요"', summarizeAttempts([], NOW).total.n === 0 && summarizeAttempts(null, NOW).total.p50 === null && attemptsHeadline(summarizeAttempts([], NOW).total) === '아직 기록이 없어요', '')
+  }
+
   let pass = 0, fail = 0
   for (const r of results) { if (r.pass) pass++; else fail++; console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  — ${r.detail}` : ''}`) }
   console.log(`\n전체 ${pass}/${pass + fail} PASS${fail ? `  (실패 ${fail}건)` : ''}`)

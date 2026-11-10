@@ -12,7 +12,7 @@ import { callAI } from '../../lib/aiClient'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
 import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step657: 카드 라벨은 lib/errorHumanize가 분류기로 계산
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
-import { summarizeTimings, fmtSecKo, headlineOf, interpretTimings, OVER_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
+import { summarizeTimings, fmtSecKo, headlineOf, OVER_MS, summarizeAttempts, attemptsHeadline, attemptsVerdict, ATTEMPT_LONG_MS } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step657: 오류 탭 사람 문장화(표시 전용)
 
@@ -276,6 +276,8 @@ export default function AdminHome() {
   // ⏱ step643: 채점 대기 시간 실측(submissions.grading_ms·grading_path, 최근 14일) — 의심 교정 탭 "⏱ 채점 시간" 칩에서 로드
   const [timingRows, setTimingRows] = useState({ loaded: false, rows: [], error: null })
   const TIMING_CHIP = '⏱ 채점 시간'
+  // step666: 채점 시도(첫 누름~결과, 결과 못 받은 시도 포함) — 같은 칩에서 관리자 API로 1회 로드
+  const [attemptRows, setAttemptRows] = useState({ loaded: false, rows: [], error: null, truncated: false })
   const [expandedTeacherId, setExpandedTeacherId] = useState(null)  // 🆕 선생님 펼침
   const [feedbacks, setFeedbacks] = useState([])
   const [showHiddenFeedback, setShowHiddenFeedback] = useState(false)
@@ -676,6 +678,26 @@ export default function AdminHome() {
       setTimingRows({ loaded: true, rows, error })
     })()
   }, [tab, suspectFilter, timingRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // step666: 채점 시도 — grading_attempts는 서비스 롤 전용이라 관리자 API로 읽는다(학생 id·오류 원문 없이 원인만 붙어 온다).
+  useEffect(() => {
+    if (tab !== 'corrections' || suspectFilter !== TIMING_CHIP || attemptRows.loaded) return
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/admin-grading-attempts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: session?.access_token }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(data?.error || `오류 ${res.status}`)
+        setAttemptRows({ loaded: true, rows: Array.isArray(data?.rows) ? data.rows : [], error: null, truncated: !!data?.truncated })
+      } catch (e) {
+        setAttemptRows({ loaded: true, rows: [], error: e?.message || '알 수 없는 오류', truncated: false })
+      }
+    })()
+  }, [tab, suspectFilter, attemptRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🚨 step635: 관리자 해결 — 담임 "✓ 확인 완료"와 같은 처리(reported=false만, reported_at 보존). 해결 시각은 컬럼 있을 때만.
   const resolveReport = async (id) => {
@@ -3664,7 +3686,66 @@ export default function AdminHome() {
                   {COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap" title={c.tip}>{c.label} <span className="text-gray-400 cursor-help">ⓘ</span></th>)}
                 </tr></thead>
               )
-              const verdict = interpretTimings(s.total)
+              // step666: 첫 누름~결과(진짜 대기) + 결과 못 받은 시도. 해석 줄은 추측 없이 센 숫자만(attemptsVerdict).
+              const a = summarizeAttempts(attemptRows.rows)
+              const aVerdict = attemptsVerdict(a)
+              const A_COLS = [
+                { key: 'n', label: '시도', tip: '학생이 [제출]을 누른 시도 수예요. 30분 안에 다시 누른 것은 한 시도로 묶어요.' },
+                { key: 'p50', label: '보통(절반)', tip: '결과를 받은 시도의 절반은 처음 누른 뒤 이 시간 안에 결과를 받았어요.' },
+                { key: 'p95', label: '거의 모두(95%)', tip: '결과를 받은 시도 100개 중 95개는 이 시간 안이었어요.' },
+                { key: 'max', label: '가장 오래', tip: '처음 누른 뒤 결과까지 가장 오래 걸린 시간이에요. 다시 누른 시간도 들어 있어요.' },
+                { key: 'unfinished', label: '결과 못 받음', tip: '누르기만 하고 결과를 받지 못한 시도 수예요. 0이면 초록이에요.' },
+                { key: 'over10', label: '10분 넘음', tip: '처음 누른 뒤 10분이 넘도록 결과를 못 받았거나 10분 넘게 걸려 받은 시도 수예요.' },
+              ]
+              const aRow = (key, label, st) => (
+                <tr key={key} className="border-t border-gray-100">
+                  <td className="px-2 py-1.5 text-gray-800">{label}</td>
+                  {cell(st.n)}{cell(fmtSecKo(st.p50))}{cell(fmtSecKo(st.p95), st.p95 > OVER_MS ? 'warn' : '')}{cell(fmtSecKo(st.max), st.max > ATTEMPT_LONG_MS ? 'warn' : '')}{cell(st.unfinished, st.unfinished > 0 ? 'warn' : 'ok')}{cell(st.over10, st.over10 > 0 ? 'warn' : 'ok')}
+                </tr>
+              )
+              const aHead = (first) => (
+                <thead><tr className="text-[11px] text-gray-500">
+                  <th className="px-2 py-1 text-left font-medium">{first}</th>
+                  {A_COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap" title={c.tip}>{c.label} <span className="text-gray-400 cursor-help">ⓘ</span></th>)}
+                </tr></thead>
+              )
+              const attemptSection = (
+                <div className="mt-5 pt-4 border-t border-gray-200">
+                  <div className="text-sm font-bold text-gray-800 mb-1">🖐 처음 누른 뒤 결과까지 (진짜 대기)</div>
+                  <div className="text-xs text-gray-500 mb-2">학생이 [제출]을 처음 누른 순간부터 재요. 오류가 나서 다시 누른 시간도 들어가고, 결과를 끝내 못 받은 시도도 세요(최근 14일).</div>
+                  {!attemptRows.loaded ? (
+                    <div className="py-6 text-center text-sm text-gray-400">불러오는 중...</div>
+                  ) : attemptRows.error ? (
+                    <div className="py-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4">
+                      시도 기록을 불러오지 못했어요. <span className="text-xs break-all">{attemptRows.error}</span>
+                      <div className="text-xs text-red-500 mt-1">표가 없다는 오류면 <code>migrations/step666-grading-attempts.sql</code>을 적용해 주세요.</div>
+                    </div>
+                  ) : a.total.n === 0 ? (
+                    <div className="py-6 text-center text-sm text-gray-400">아직 기록이 없어요. 이 기능이 배포된 뒤 새로 누른 제출부터 쌓여요.</div>
+                  ) : (
+                    <>
+                      <div className={`text-sm font-semibold mb-1 ${a.total.unfinished > 0 ? 'text-red-700' : 'text-gray-800'}`}>🖐 {attemptsHeadline(a.total)}</div>
+                      <div className="text-[11px] text-gray-500 mb-3">누른 횟수: 보통 {a.total.triesP50}번 · 가장 많이 {a.total.triesMax}번{a.inProgress > 0 ? ` · 지금 채점 중 ${a.inProgress}건은 뺐어요` : ''}</div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">일별 (한국 시각)</div>
+                          <table className="w-full text-xs">{aHead('날짜')}<tbody>{a.byDay.map(d => aRow(d.key, d.key, d))}</tbody></table>
+                        </div>
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">학급별 (14일 합, 시도순)</div>
+                          <table className="w-full text-xs">{aHead('학급')}<tbody>{a.byClass.map(c => aRow(c.key, classLabel(c.key), c))}</tbody></table>
+                        </div>
+                      </div>
+                      {aVerdict.text && (
+                        <div className={`mt-3 text-sm rounded-xl px-4 py-2 ${aVerdict.tone === 'warn' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
+                          {aVerdict.text}
+                        </div>
+                      )}
+                      {attemptRows.truncated && <div className="text-[11px] text-gray-400 mt-2">최근 5,000건까지만 집계했어요.</div>}
+                    </>
+                  )}
+                </div>
+              )
               return (
                 <div>
                   <div className="text-xs text-gray-500 mb-2">학생이 제출을 확정한 뒤 AI 결과를 받기까지 걸린 시간이에요. 학생 화면이 보낸 측정값(최근 14일, 삭제 글 제외)으로 집계해요.</div>
@@ -3697,15 +3778,11 @@ export default function AdminHome() {
                           <table className="w-full text-xs">{head('학급')}<tbody>{s.byClass.map(c => statRow(c.key, classLabel(c.key), c))}</tbody></table>
                         </div>
                       </div>
-                      {/* step654: 한 줄 해석 — 1분 넘은 글이 있으면 경고, 없으면 안심 */}
-                      {verdict.text && (
-                        <div className={`mt-3 text-sm rounded-xl px-4 py-2 ${verdict.tone === 'warn' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
-                          {verdict.text}
-                        </div>
-                      )}
+                      {/* step666: step654의 추측 해석 줄("구글 혼잡일 가능성")은 뺐다. 해석은 아래 시도 구획의 사실 문장 한 줄로. */}
                       {timingRows.rows.length >= 3000 && <div className="text-[11px] text-gray-400 mt-2">최근 3,000건까지만 집계했어요.</div>}
                     </>
                   )}
+                  {attemptSection}
                 </div>
               )
             })()
