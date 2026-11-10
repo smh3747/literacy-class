@@ -286,6 +286,32 @@ export default function StudentHome() {
   // step601: 첫 글 제출 진행 2단계 표시 — 'spell'(맞춤법 확인) → 6초 뒤 'grade'(글 평가). 시간 기반 근사(서버가 단계 신호를 주지 않음).
   const [gradingStage, setGradingStage] = useState(null)   // step629: 'spell'(0~6초) → 'grade'(6~15초) → 'queue'(15초~, step663: 구글 혼잡 문구)
   const gradingStageTimerRef = useRef(null)
+  // step667: 오류 모달 뒤 [제출] 재누름 대기(30초, 남은 초 표시) — 연타가 분당 한도 초과를 부르던 것 방지.
+  //   congested는 서버가 실제 거절 신호(503·429 분당)를 받았을 때만 true → 그때만 "구글 AI가 지금 바빠요" 문구.
+  const RETRY_WAIT_MS = 30000
+  const [retryWait, setRetryWait] = useState(null)   // null 또는 { until(ms), congested }
+  const retryWaitRef = useRef(null)
+  const [retryLeftSec, setRetryLeftSec] = useState(0)
+  const startRetryWait = (congested) => {
+    const w = { until: Date.now() + RETRY_WAIT_MS, congested: !!congested }
+    retryWaitRef.current = w
+    setRetryWait(w)
+    setRetryLeftSec(Math.ceil(RETRY_WAIT_MS / 1000))
+  }
+  const isRetryWaiting = () => !!retryWaitRef.current && Date.now() < retryWaitRef.current.until
+  useEffect(() => {
+    if (!retryWait) return
+    const tick = () => {
+      const left = Math.ceil((retryWait.until - Date.now()) / 1000)
+      if (left <= 0) { retryWaitRef.current = null; setRetryWait(null); setRetryLeftSec(0) }
+      else setRetryLeftSec(left)
+    }
+    const id = setInterval(tick, 500)
+    return () => clearInterval(id)
+  }, [retryWait])
+  const retryWaitLabel = retryWait
+    ? (retryWait.congested ? `⏳ 구글 AI가 지금 바빠요. ${retryLeftSec}초 뒤에 다시 낼 수 있어요` : `⏳ ${retryLeftSec}초 뒤에 다시 낼 수 있어요`)
+    : null
   // step629: 시간 잠금 유예 — topicId → 버튼 시점에 잠금을 통과한 시각(ms). 저장 성공 시 삭제, 남아 있으면 채점 실패.
   //   종료 뒤 재시도도 통과 5분 안이면 1회 허용(세션 메모리만, 서버 저장 불변).
   const lockPassRef = useRef(new Map())
@@ -891,6 +917,7 @@ export default function StudentHome() {
   // 첫 글 제출
   const submitEssay = async () => {
     if (submitting || submittingRef.current) return
+    if (isRetryWaiting()) return   // step667: 재누름 대기 중
     if (!assertWritable()) return   // step633: 엿보기 — AI 호출 전에 차단
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
@@ -1088,6 +1115,7 @@ export default function StudentHome() {
       const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
       // step606: 안전 필터 차단인데 점수 없이 저장까지 실패한 경우(컬럼 제약 등) — 재시도 권유 없이 선생님께
       const isBlocked = isSafetyBlockedErr(e)
+      if (!isAuthExpired) startRetryWait(e?.code === 'AI_CONGESTED')   // step667: 30초 뒤 다시 누를 수 있음(로그인 만료는 새로고침 안내라 제외)
       setErrorModal({
         title: isBlocked ? '🟣 AI가 이 글을 평가하지 못했어요' : '🚨 글 제출에 문제가 생겼어요',
         message: isBlocked
@@ -1381,6 +1409,7 @@ export default function StudentHome() {
   // 수정본 제출
   const submitRewrite = async () => {
     if (rewriting || submittingRef.current) return
+    if (isRetryWaiting()) return   // step667: 재누름 대기 중
     if (!assertWritable()) return   // step633: 엿보기 — AI 호출 전에 차단
     const minLen = todayTopic?.min_length || 30
     const maxLen = todayTopic?.max_length
@@ -1617,6 +1646,7 @@ export default function StudentHome() {
       const isKeyInvalid = rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')
       // step606: 안전 필터 차단인데 저장까지 실패한 경우 — 재시도 권유 없이 선생님께
       const isBlocked = isSafetyBlockedErr(e)
+      if (!isAuthExpired) startRetryWait(e?.code === 'AI_CONGESTED')   // step667
       setErrorModal({
         title: isBlocked ? '🟣 AI가 이 글을 평가하지 못했어요' : '🚨 수정본 제출에 문제가 생겼어요',
         message: isBlocked
@@ -2118,13 +2148,13 @@ export default function StudentHome() {
                     </span>
                     {pasteWarning && <span className="text-red-600">⚠️ 붙여넣기 감지됨!</span>}
                   </div>
-                  <button onClick={submitEssay} disabled={submitting || isImpersonating}
+                  <button onClick={submitEssay} disabled={submitting || isImpersonating || !!retryWait}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting
                       ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
-                        : gradingStage === 'queue' ? '⏳ 구글 AI가 지금 바빠요. 잠시 기다려 주세요'
+                        : gradingStage === 'queue' ? '⏳ 채점 중이에요. 조금만 기다려 주세요'
                         : '📝 글을 평가하고 있어요…')
-                      : '제출하고 피드백 받기 →'}
+                      : (retryWaitLabel || '제출하고 피드백 받기 →')}
                   </button>
                   {submitting && retryMessage && (
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
@@ -2547,9 +2577,9 @@ export default function StudentHome() {
                       <div className="flex gap-2 mt-3">
                         <button onClick={() => setStep('feedback')}
                           className="flex-1 py-3 border border-gray-200 rounded-xl text-sm">취소</button>
-                        <button onClick={submitRewrite} disabled={rewriting || isImpersonating}
+                        <button onClick={submitRewrite} disabled={rewriting || isImpersonating || !!retryWait}
                           className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                          {rewriting ? '🤖 AI 검토 중...' : '수정본 제출 →'}
+                          {rewriting ? '🤖 AI 검토 중...' : (retryWaitLabel || '수정본 제출 →')}
                         </button>
                       </div>
                       {rewriting && retryMessage && (

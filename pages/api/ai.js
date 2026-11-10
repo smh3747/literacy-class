@@ -721,7 +721,12 @@ export default async function handler(req, res) {
     if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid')) {
       notifyApiKeyInvalid(keyResult?.classId)   // await 안 함
     }
+    // step667: 구글이 실제로 거절(503 혼잡·429 분당)해서 끝난 오류에만 표식을 싣는다 — 학생 화면의 "구글 AI가 지금 바빠요" 문구는 이 표식이 있을 때만.
+    //   일일 한도(429 daily)·타임아웃·그 밖의 오류에는 싣지 않는다. 메시지는 불변.
+    const upMsg = String(upstream.message || '')
+    const isDaily429 = /\bdaily\]/.test(String(upstream.quota || ''))
+    const congested = !isDaily429 && (Number(upstream.status) === 503 || Number(upstream.status) === 429 || /\[congestion (busy503|rate429)/.test(upMsg))
     // 친절한 에러 메시지는 클라이언트에서 처리하도록 원문 전달
-    return res.status(500).json({ error: e?.message || 'AI 처리 중 오류가 발생했어요' })
+    return res.status(500).json({ error: e?.message || 'AI 처리 중 오류가 발생했어요', ...(congested ? { code: 'AI_CONGESTED' } : {}) })
   }
 }

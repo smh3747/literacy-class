@@ -33,7 +33,20 @@ const { pathToFileURL } = require('url')
   const d2 = decideOnCongestion({ kind: 'busy503', consecutive: 2, remainingMs: 25000, isLastModel: false })
   rec('503 2회 연속 → switch', d2.action === 'switch' && d2.waitMs === 0, J(d2))
   const d3 = decideOnCongestion({ kind: 'busy503', consecutive: 2, remainingMs: 25000, isLastModel: true })
-  rec('503 2회 연속·마지막 모델 → fail', d3.action === 'fail', J(d3))
+  //   step667: 넘어갈 모델이 없으면 2회에서 포기하지 않고 남은 예산 안에서 간격을 늘려(2·4·6초) 재시도
+  rec('503 2회 연속·마지막 모델·예산 25초 → retry 4000ms(step667)', d3.action === 'retry' && d3.waitMs === 4000, J(d3))
+  const d3b = decideOnCongestion({ kind: 'busy503', consecutive: 3, remainingMs: 19000, isLastModel: true })
+  rec('503 3회 연속·마지막 모델·예산 19초 → retry 6000ms', d3b.action === 'retry' && d3b.waitMs === 6000, J(d3b))
+  const d3c = decideOnCongestion({ kind: 'busy503', consecutive: 4, remainingMs: 10000, isLastModel: true })
+  rec('503 4회 연속·마지막 모델·예산 10초(대기 8+최소 3 미달) → fail', d3c.action === 'fail', J(d3c))
+  const d3d = decideOnCongestion({ kind: 'busy503', consecutive: 2, remainingMs: 6000, isLastModel: true })
+  rec('503 2회 연속·마지막 모델·예산 6초(대기 4+최소 3 미달) → fail', d3d.action === 'fail', J(d3d))
+  {
+    // 마지막 모델에서 503이 계속될 때: 대기 합이 예산 30초를 넘지 않고, 3초 만에 포기하지도 않는다
+    let left = 30000, waited = 0, n = 0
+    for (;;) { n++; const d = decideOnCongestion({ kind: 'busy503', consecutive: n, remainingMs: left, isLastModel: true }); if (d.action !== 'retry') break; waited += d.waitMs; left -= d.waitMs + 500 }
+    rec('마지막 모델 503 연속: 재시도 4번(2·4·6·8초, 합 20초) 뒤 포기 — 예산 30초 안', n === 5 && waited === 20000, `n=${n} waited=${waited}`)
+  }
   const d4 = decideOnCongestion({ kind: 'busy503', consecutive: 1, remainingMs: 4000, isLastModel: false })
   rec('503 1회째인데 예산 4초(대기 2+최소 3 미달) → switch', d4.action === 'switch', J(d4))
   const d5 = decideOnCongestion({ kind: 'busy503', consecutive: 1, remainingMs: 2000, isLastModel: false })
@@ -139,6 +152,13 @@ const { pathToFileURL } = require('url')
       const r = await run(f, { model: MAIN })
       rec('(c) 배선: 보조 없음 + 503 뒤 메인 1800ms 응답 → 끊기지 않고 메인 성공',
         !r.err && r.out?.ok === true && r.out.__usedModel === MAIN && f.calls.join(',') === [MAIN, MAIN].join(','), `calls=${f.calls.length} ${r.err ? r.err.message : ''}`)
+    }
+    // step667 배선: 보조 없음 + 503 두 번 → 포기하지 않고 간격을 두고(2초·4초) 다시 시도해 세 번째에 메인 성공
+    {
+      const f = fake((model, n) => n <= 2 ? { error: msg503 } : {})
+      const r = await run(f, { model: MAIN, congestion: { deadlineMs: 30000, mainTimeoutMs: 1000 } })
+      rec('step667 배선: 보조 없음 + 503 2회 → 3번째 호출에서 메인 성공(약 6초 대기)',
+        !r.err && r.out?.ok === true && r.out.__usedModel === MAIN && f.calls.length === 3 && r.ms >= 5500 && r.ms < 9000, `calls=${f.calls.length} ms=${r.ms} ${r.err ? r.err.message : ''}`)
     }
     // 유지 확인: 503 2회 연속 → 보조 / 429(분당) → 즉시 보조
     {
