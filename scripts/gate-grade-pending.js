@@ -57,6 +57,34 @@ const { pathToFileURL } = require('url')
   rec('pendingRowFields: 배점 합이 숫자가 아니면 max_score null', pendingRowFields(undefined, 'limit').max_score === null, '')
   rec('안전 필터 blockedRowFields도 total_score null(같은 방식)', sb.blockedRowFields(100).total_score === null, '')
 
+  // ── step671: 전환 판정·학급 스위치·선점(lib/gradeDefer.js) ──
+  {
+    const d = await imp('lib/gradeDefer.js')
+    const PILOT = '630e95ed-efc3-4a29-919c-7896d0687dfb'   // 하랑초 뽀로로반(7420)
+    const OTHER = 'bb93dd15-4232-4dd1-a995-57644684fd3b'
+    rec('학급 스위치: 시범 학급은 한 반(7420)뿐', d.DEFER_PILOT_CLASS_IDS.length === 1 && d.DEFER_PILOT_CLASS_IDS[0] === PILOT, d.DEFER_PILOT_CLASS_IDS.join(','))
+    rec('isDeferClass: 시범 학급 true, 다른 학급·빈 값 false', d.isDeferClass(PILOT) && !d.isDeferClass(OTHER) && !d.isDeferClass(null) && !d.isDeferClass(''), '')
+    rec('강제 실패 표식 "#보류시험": 시범 학급 + 글에 표식 → true', d.FORCE_DEFER_MARKER === '#보류시험' && d.shouldForceDefer({ classId: PILOT, essay: '오늘은 #보류시험 글이에요' }), '')
+    rec('강제 실패: 다른 학급은 표식이 있어도 false, 표식 없으면 false, 글이 문자열이 아니면 false', !d.shouldForceDefer({ classId: OTHER, essay: '#보류시험' }) && !d.shouldForceDefer({ classId: PILOT, essay: '평범한 글' }) && !d.shouldForceDefer({ classId: PILOT, essay: null }) && !d.shouldForceDefer(), '')
+
+    const R = d.deferReasonOf
+    rec('deferReasonOf: 503(status) → busy503', R({ status: 503, message: '[congestion busy503 30000ms] …' }) === 'busy503', '')
+    rec('deferReasonOf: 503 문구만 있어도 busy503', R({ status: null, message: '[503 Service Unavailable] This model is currently experiencing high demand.' }) === 'busy503', '')
+    rec('deferReasonOf: 429 분당·일일 모두 limit', R({ status: 429, quota: '[429 quota=GenerateRequestsPerMinutePerProjectPerModel-FreeTier retryDelay=24s perMinute]' }) === 'limit' && R({ status: 429, quota: '[429 quota=GenerateRequestsPerDayPerProjectPerModel-FreeTier retryDelay=11373s daily]' }) === 'limit', '')
+    rec('deferReasonOf: 시간 초과 → timeout', R({ status: null, timeout: true, message: 'TIMEOUT: AI 응답 60초 초과' }) === 'timeout' && R({ message: 'TIMEOUT: AI 응답 27.3초 초과' }) === 'timeout', '')
+    rec('deferReasonOf: 강제 실패(503 흉내) → busy503', R({ status: 503, message: '[forced-defer test] 503 흉내(실제 구글 호출 없음)' }) === 'busy503', '')
+    rec('deferReasonOf: 키 무효 → null(종전 오류 안내)', R({ status: 400, message: 'API key not valid. Please pass a valid API key. API_KEY_INVALID' }) === null, '')
+    rec('deferReasonOf: 잔액 소진 → null', R({ status: 429, message: 'Your prepayment credits are depleted' }) === null, '')
+    rec('deferReasonOf: 안전 필터 → null', R({ status: 422, message: 'AI_SAFETY_BLOCKED: AI 안전 필터가 이 글의 평가를 거절했어요 (SAFETY)' }) === null, '')
+    rec('deferReasonOf: 일반 오류(JSON 파싱·로그인) → null', R({ status: 500, message: 'JSON 파싱 실패' }) === null && R({ status: 401, message: '인증 정보가 유효하지 않아요' }) === null && R(null) === null, '')
+
+    const NOW = new Date('2026-11-11T01:00:00Z').getTime()
+    rec('선점 상수: 90초·학급 60초 창 4건', d.CLAIM_MS === 90000 && d.CLASS_CAP_WINDOW_MS === 60000 && d.CLASS_CAP === 4, '')
+    rec('isClaimable: 잡은 적 없음 true, 89초 전 false, 90초 전 true, 깨진 값 true', d.isClaimable(null, NOW) && !d.isClaimable(new Date(NOW - 89000).toISOString(), NOW) && d.isClaimable(new Date(NOW - 90000).toISOString(), NOW) && d.isClaimable('bad', NOW), '')
+    rec('underClassCap: 3건 true, 4건 false, 값 없음 true', d.underClassCap(3) && !d.underClassCap(4) && d.underClassCap(null), '')
+    rec('폴링: 첫 20초·30초 간격·최대 30회(약 15분)', d.POLL_FIRST_MS === 20000 && d.POLL_INTERVAL_MS === 30000 && d.POLL_MAX_TRIES === 30, '')
+  }
+
   let pass = 0, fail = 0
   for (const r of results) { if (r.pass) pass++; else fail++; console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  — ${r.detail}` : ''}`) }
   console.log(`\n전체 ${pass}/${pass + fail} PASS${fail ? `  (실패 ${fail}건)` : ''}`)

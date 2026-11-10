@@ -23,7 +23,9 @@ import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공
 import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(HH:MM) 표시
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 // step606: AI 안전 필터 차단 → 점수 없이 저장·학생 안내·담임 알림 (헬퍼·문구는 lib/safetyBlock.js)
-import { isPendingGrade, isFailedGrade, STUDENT_PENDING_TITLE, STUDENT_PENDING_MESSAGE } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
+import { normalizeGradingResult, gradedRowFields } from '../../lib/gradeRow'   // step671: 채점 결과 보정·저장 필드(서버 나중 채점과 공용)
+import GradePendingBadge from '../../components/GradePendingBadge'   // step671: 채점 보류 글 폴링(나중 채점 트리거)
+import { isPendingGrade, isFailedGrade, pendingRowFields, STUDENT_PENDING_TITLE, STUDENT_PENDING_MESSAGE } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
 import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
 import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
@@ -995,41 +997,21 @@ export default function StudentHome() {
         })
         gradingMs = Math.round(performance.now() - tGrade0)   // step643: 결과 수신 시점
       } catch (aiErr) {
+        // step671: 서버가 "글 먼저 저장"으로 넘기라고 한 실패(시범 학급의 혼잡·한도·시간 초과) — 오류 모달 없이 점수 없는 제출로 저장.
+        //   저장까지 실패하면 종전 오류 모달로 간다(글은 기기 슬롯에 그대로).
+        if (aiErr?.defer) {
+          try { await savePendingSubmission({ essayText: essay, totalMax, attempt: 1, isRewrite: false, reason: aiErr.deferReason }); return }
+          catch (saveErr) { console.warn('보류 저장 실패 → 오류 안내로:', saveErr?.message); throw aiErr }
+        }
         if (!isSafetyBlockedErr(aiErr)) throw aiErr
         // 🟣 step606: 안전 필터 차단 — 같은 글은 다시 막히므로 재시도 없이 점수 없이 저장하고 끝(정리는 finally)
         await saveBlockedSubmission({ essayText: essay, totalMax, attempt: 1, isRewrite: false })
         return
       }
 
-      // 점수 검증
-      if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.7))
-      // 각 점수가 평가기준 만점 넘으면 만점으로 캡 + 음수 방지
-      result.scores = result.scores.map((s, i) => {
-        const max = rubrics[i]?.score || 25
-        const n = Number(s) || 0
-        return Math.max(0, Math.min(n, max))
-      })
-      if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
-      // 총점도 만점 넘으면 캡
-      result.total = Math.max(0, Math.min(result.total, totalMax))
-      if (!result.overall) result.overall = '글을 잘 써주었어요!'
-      if (!result.good) result.good = '열심히 글을 썼어요.'
-      if (!result.improve) result.improve = '더 자세하게 써보세요.'
-      if (!Array.isArray(result.corrections)) result.corrections = []
-
-      // 🆕 rubric_reasons 검증: scores와 길이 맞추기
-      if (!Array.isArray(result.rubric_reasons)) result.rubric_reasons = []
-      while (result.rubric_reasons.length < result.scores.length) {
-        result.rubric_reasons.push('')
-      }
-      result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
-
-      // 🆕 improve_examples 검증 (학생 글에 실제 등장 + 유효한 객체만)
-      if (!Array.isArray(result.improve_examples)) result.improve_examples = []
-      result.improve_examples = result.improve_examples
-        .filter(ex => ex && typeof ex === 'object' && ex.original && ex.suggested)
-        .filter(ex => essay.includes(ex.original))  // 학생 글에 정확히 있는 것만
-        .slice(0, 3)  // 최대 3개
+      // 점수·피드백 보정(점수 범위 자르기·빈 피드백 기본 문구·rubric_reasons 길이·improve_examples 검증)
+      //   step671: 종전 인라인 코드를 lib/gradeRow.js로 옮겼다(동작 동일, gate-grade-row가 고정). 서버 나중 채점도 같은 함수를 쓴다.
+      normalizeGradingResult(result, { rubrics, essay, isRewrite: false })
 
       // 규칙 기반 보강은 서버(pages/api/ai.js)에서 병합 완료 — result.corrections 그대로 사용
 
@@ -1045,17 +1027,7 @@ export default function StudentHome() {
         topic_description: todayTopic.description,
         attempt: 1,
         essay_text: essay,
-        scores: result.scores,
-        rubric_reasons: result.rubric_reasons,
-        total_score: result.total,
-        max_score: totalMax,
-        feedback_overall: result.overall,
-        feedback_good: result.good,
-        feedback_improve: result.improve,
-        improve_examples: result.improve_examples,
-        corrections: result.corrections,
-        graded_with_model: usedModel,
-        is_fallback_graded: isFallback,
+        ...gradedRowFields(result, totalMax),   // step671: 채점 필드 11개(scores~is_fallback_graded) — lib/gradeRow.js 공용
         paste_detected: pasteDetectedRef.current,
         paste_count: pasteCountRef.current,
         is_final: false,
@@ -1335,6 +1307,47 @@ export default function StudentHome() {
     } catch (e) { console.warn('차단 알림 생성 실패:', e?.message) }
   }
 
+  // step671: 채점 보류 저장 — 구글 혼잡·한도·시간 초과로 채점이 안 될 때 글을 점수 없이 먼저 제출한다(grade_status='pending').
+  //   saveBlockedSubmission과 같은 틀(별도 insert, 슬롯 정리, 결과 화면 전환). 담임 알림은 보내지 않는다(교사 화면 "⏳ 채점 대기" 배지).
+  //   점수는 화면의 GradePendingBadge 폴링이 /api/grade-backfill을 불러 채운다. total_score는 null(0 금지, lib/gradeStatus.js).
+  const savePendingSubmission = async ({ essayText, totalMax, attempt, isRewrite, reason }) => {
+    const { data: sub, error } = await supabase.from('submissions').insert({
+      user_id: user.id,
+      topic_id: todayTopic.id,
+      topic_title: todayTopic.title,
+      topic_description: todayTopic.description,
+      attempt,
+      essay_text: essayText,
+      ...pendingRowFields(totalMax, reason),
+      paste_detected: pasteDetectedRef.current,
+      paste_count: pasteCountRef.current,
+      is_final: !!isRewrite,
+      ...(isRewrite ? { extra_rewrite_allowed: false } : {})
+    }).select().single()
+    if (error) throw new Error(error.message || '저장 실패')
+    lockPassRef.current.delete(todayTopic.id)
+    try { gradeFailRef.current.delete(`${todayTopic.id}|${attempt}`) } catch (_) {}
+    markGradingAttempt('done', { topicId: todayTopic.id, attempt, submissionId: sub?.id, path: 'deferred' })   // 시도는 "글 저장됨"으로 닫는다
+    try { await supabase.from('submissions').update({ grading_path: 'deferred' }).eq('id', sub.id) } catch (_) { /* 측정 저장 실패는 무시 */ }
+    if (isRewrite) {
+      await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
+        .eq('user_id', user.id).eq('topic_id', todayTopic.id)
+    }
+    clearSlotsFor(todayTopic.id, isRewrite ? 'rewrite' : 'write')
+    if (!isRewrite) setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
+    pasteDetectedRef.current = false
+    pasteCountRef.current = 0
+    if (isRewrite) { setEssay(essayText); setExampleText(''); setExampleDeferred(null) }
+    setCurrentSub(sub)
+    setFeedbackResult({ blocked: true, scores: null, total: null, overall: '', good: '', improve: '', corrections: [] })
+    scrollToResultRef.current = true
+    setStep(isRewrite ? 'done' : 'feedback')
+    if (todayTopic.source_supply_id) {
+      setChallengeTopics(prev => prev.map(t =>
+        t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, attempt) } : t))
+    }
+  }
+
   // 다시 쓰기 시작
   const startRewrite = () => {
     setRewriteEssay(essay) // 처음 글로 채워둠
@@ -1530,40 +1543,19 @@ export default function StudentHome() {
         })
         gradingMs = Math.round(performance.now() - tGrade0)   // step643: 결과 수신 시점
       } catch (aiErr) {
+        // step671: 수정본도 같은 방식으로 글 먼저 저장(최종 처리는 지금, 점수는 나중)
+        if (aiErr?.defer) {
+          try { await savePendingSubmission({ essayText: rewriteEssay, totalMax, attempt: nextAttempt, isRewrite: true, reason: aiErr.deferReason }); return }
+          catch (saveErr) { console.warn('보류 저장 실패 → 오류 안내로:', saveErr?.message); throw aiErr }
+        }
         if (!isSafetyBlockedErr(aiErr)) throw aiErr
         // 🟣 step606: 안전 필터 차단 — 수정본도 점수 없이 저장(최종 처리), 점수 alert 없음(정리는 finally)
         await saveBlockedSubmission({ essayText: rewriteEssay, totalMax, attempt: nextAttempt, isRewrite: true })
         return
       }
 
-      if (!Array.isArray(result.scores)) result.scores = rubrics.map(r => Math.round(r.score * 0.8))
-      // 각 점수 만점 캡 + 음수 방지
-      result.scores = result.scores.map((s, i) => {
-        const max = rubrics[i]?.score || 25
-        const n = Number(s) || 0
-        return Math.max(0, Math.min(n, max))
-      })
-      if (typeof result.total !== 'number') result.total = result.scores.reduce((a,b)=>a+(Number(b)||0),0)
-      const rwTotalMax = rubrics.reduce((s,r) => s + (r.score || 0), 0)
-      result.total = Math.max(0, Math.min(result.total, rwTotalMax))
-      if (!result.overall) result.overall = '수정본을 잘 써주었어요!'
-      if (!result.good) result.good = '글이 더 좋아졌어요.'
-      if (!result.improve) result.improve = '계속 노력해보세요.'
-      if (!Array.isArray(result.corrections)) result.corrections = []
-
-      // 🆕 rubric_reasons 검증
-      if (!Array.isArray(result.rubric_reasons)) result.rubric_reasons = []
-      while (result.rubric_reasons.length < result.scores.length) {
-        result.rubric_reasons.push('')
-      }
-      result.rubric_reasons = result.rubric_reasons.slice(0, result.scores.length)
-
-      // 🆕 improve_examples 검증 (수정본에 실제 등장하는 문장만)
-      if (!Array.isArray(result.improve_examples)) result.improve_examples = []
-      result.improve_examples = result.improve_examples
-        .filter(ex => ex && typeof ex === 'object' && ex.original && ex.suggested)
-        .filter(ex => rewriteEssay.includes(ex.original))
-        .slice(0, 3)
+      // step671: 수정본 보정도 lib/gradeRow.js 공용 함수로(동작 동일 — 비율 0.8·수정본 기본 문구)
+      normalizeGradingResult(result, { rubrics, essay: rewriteEssay, isRewrite: true })
 
       // 규칙 기반 보강은 서버(pages/api/ai.js)에서 병합 완료 — result.corrections 그대로 사용
 
@@ -1578,17 +1570,7 @@ export default function StudentHome() {
         topic_description: todayTopic.description,
         attempt: nextAttempt,
         essay_text: rewriteEssay,
-        scores: result.scores,
-        rubric_reasons: result.rubric_reasons,
-        total_score: result.total,
-        max_score: totalMax,
-        feedback_overall: result.overall,
-        feedback_good: result.good,
-        feedback_improve: result.improve,
-        improve_examples: result.improve_examples,
-        corrections: result.corrections,
-        graded_with_model: rwUsedModel,
-        is_fallback_graded: rwIsFallback,
+        ...gradedRowFields(result, totalMax),   // step671: 채점 필드 11개 — lib/gradeRow.js 공용
         paste_detected: pasteDetectedRef.current,
         paste_count: pasteCountRef.current,
         is_final: true,
@@ -2200,6 +2182,9 @@ export default function StudentHome() {
                           <h3 className="text-sm font-bold text-amber-900 mb-1.5">{STUDENT_PENDING_TITLE}</h3>
                           <p className="text-sm text-amber-900 break-keep leading-relaxed">{STUDENT_PENDING_MESSAGE}</p>
                           <p className="text-xs text-amber-700 mt-2 break-keep">내 글은 잘 저장됐어요. 점수가 나오면 여기에서 볼 수 있어요.</p>
+                          {/* step671: 화면이 열려 있는 동안 서버에 채점을 다시 부탁한다(엿보기는 폴링 안 함). 점수가 붙으면 이 화면을 새로 불러온다 */}
+                          <GradePendingBadge submissionId={currentSub?.id} disabled={isImpersonating}
+                            onGraded={() => { if (user && todayTopic?.id) loadTodayTopic(user, todayTopic.id) }} />
                         </div>
                         )}
                         <div className={`bg-purple-50 border-2 border-purple-200 rounded-xl p-4 ${gradePending ? 'hidden' : ''}`}>

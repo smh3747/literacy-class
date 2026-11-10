@@ -10,7 +10,9 @@
 //   class_secrets에 없으면 classes.api_key 폴백 (step154에서 제거 예정).
 // ============================================
 import { createClient } from '@supabase/supabase-js'
-import { callGeminiStructured, callGemini, callGeminiGrounded, SCHEMAS } from '../../lib/gemini'
+import { callGeminiStructured, callGemini, callGeminiGrounded, SCHEMAS, MODEL_CHAINS } from '../../lib/gemini'
+// step671: "글 먼저 제출 → 나중에 자동 채점" 학급 스위치·보류 판정(순수 함수)
+import { isDeferClass, shouldForceDefer, deferReasonOf } from '../../lib/gradeDefer'
 import { gradingPrompt, rewriteGradingPrompt, regradePrompt, rubricHintPrompt,
   topicBatchPrompt, topicSinglePrompt, rubricGenPrompt, topicDescPrompt,
   exampleEssayPrompt, tutorChatPrompt, schoolRecordPrompt, commentSuggestPrompt,
@@ -326,8 +328,20 @@ export default async function handler(req, res) {
   const tServer0 = Date.now()
   let strictMs = 0        // 맞춤법 전용 검사 구간(가드 조회 + 호출)
   let strictQueueMs = 0   // 그 호출이 쓰로틀에서 기다린 시간
+  // step671: 채점 보류 시범 학급(lib/gradeDefer.js) — 채점 2타입에만 적용. 꺼진 학급은 아래 분기를 전혀 타지 않는다.
+  //   internalBackfill: 나중 채점 API(pages/api/grade-backfill.js)가 이 핸들러를 서버 안에서 직접 부를 때만 true(브라우저 요청으로는 켤 수 없다).
+  const isGradingType = type === 'grading' || type === 'rewriteGrading'
+  const internalBackfill = req.internalBackfill === true
+  const deferClass = isGradingType && isDeferClass(keyResult.classId)
 
   try {
+    // step671: 실검증용 강제 실패 — 시범 학급에서 글에 표식(#보류시험)이 있으면 구글을 부르지 않고 503을 흉내 낸다. 나중 채점에는 미적용.
+    if (deferClass && !internalBackfill && shouldForceDefer({ classId: keyResult.classId, essay: payload?.essay ?? payload?.rewriteEssay })) {
+      const forced = new Error('AI가 응답하지 않습니다. 잠시 후 다시 시도해주세요.')
+      forced.upstreamStatus = 503
+      forced.upstreamMessage = '[forced-defer test] 503 흉내(실제 구글 호출 없음)'
+      throw forced
+    }
     let prompt, schema, opts
     let mergeEssay = null   // 🆕 맞춤법 규칙 병합용 원문(corrections 생성 type만 대입 → 응답 직전 서버 병합)
     let prevGrading = null  // 🆕 step443: rewriteGrading 직전 제출 원시 행 — 3인자 전달·역전 감시에 사용
@@ -611,6 +625,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: '알 수 없는 작업 종류예요' })
     }
 
+    // step671: 시범 학급의 채점은 메인 모델만(보조 전환 없음). 근거: 11/4~11/10 보조 채점 성공 15편 대 시간 초과 134건(성공률 10%), 그 과정에서 하루 20회 소진.
+    //   메인이 예산 안에서 안 되면 오류로 끝나고, 학생 화면이 글을 먼저 저장한다(아래 catch의 defer 표식).
+    if (deferClass && opts) opts = { ...opts, model: MODEL_CHAINS.grading[0] }
     const result = await callGeminiStructured(apiKey, prompt, schema, opts)
     // 🆕 맞춤법 규칙 병합을 서버에서 수행(클라 6곳 이전). corrections 생성 type만.
     //    AI corrections가 없어도 규칙 오류를 추가하므로 항상 배열 산출(빈 배열 입력 유의미).
@@ -744,6 +761,13 @@ export default async function handler(req, res) {
     const isDaily429 = /\bdaily\]/.test(String(upstream.quota || ''))
     const congested = !isDaily429 && (Number(upstream.status) === 503 || Number(upstream.status) === 429 || /\[congestion (busy503|rate429)/.test(upMsg))
     // 친절한 에러 메시지는 클라이언트에서 처리하도록 원문 전달
-    return res.status(500).json({ error: e?.message || 'AI 처리 중 오류가 발생했어요', ...(congested ? { code: 'AI_CONGESTED' } : {}) })
+    // step671: 시범 학급의 채점이 혼잡·한도·시간 초과로 끝났으면 "글 먼저 저장" 표식을 싣는다(학생 화면이 오류 모달 대신 보류 저장).
+    //   나중 채점(internalBackfill)의 실패에는 싣지 않는다. 키 무효·잔액·안전 필터는 deferReasonOf가 null을 돌려준다.
+    const deferReason = (deferClass && !internalBackfill) ? deferReasonOf({ ...upstream, message: `${upMsg} ${errMsg}` }) : null
+    return res.status(500).json({
+      error: e?.message || 'AI 처리 중 오류가 발생했어요',
+      ...(congested ? { code: 'AI_CONGESTED' } : {}),
+      ...(deferReason ? { defer: true, deferReason } : {}),
+    })
   }
 }
