@@ -24,6 +24,7 @@ import ImpersonationBanner from '../../components/ImpersonationBanner'
 import KeyNavHint from '../../components/KeyNavHint'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
 import { calcAddedRanges, emitWithAdded } from '../../lib/textDiff'   // step537: 인라인(step474)에서 공용화
+import { isPendingGrade, isFailedGrade, noScoreLabel, noScoreHint, exportScoreCell, TEACHER_PENDING_LABEL, TEACHER_PENDING_HINT, TEACHER_FAILED_LABEL, TEACHER_FAILED_HINT } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { isBlockedSubmission, TEACHER_BLOCKED_HINT } from '../../lib/safetyBlock'   // step606: AI 안전 필터 차단 표식(표시만)
 
 // step484: 동의 전 실명 잠금 판정 — students.js 배지·displayStudentName 폴백과 동일 규약(realname 빈값=동의 대기)
@@ -444,7 +445,7 @@ export default function TeacherSubmissions() {
           g.profile.realname,
           g.profile.username,
           (s.attempt||1) === 1 ? '첫 글' : `수정본 ${(s.attempt||1) - 1}차`,
-          s.total_score,
+          exportScoreCell(s),   // step669: 채점 보류·실패 글은 빈칸 대신 '채점 대기'·'채점 실패'
           s.max_score,
           toKST(s.created_at),
           s.paste_detected ? `Y(${s.paste_count})` : 'N',
@@ -1279,6 +1280,13 @@ export default function TeacherSubmissions() {
                                 🟣 AI 평가 없음(필터)
                               </span>
                             )}
+                            {/* step669: 채점 보류·실패 글 표식 */}
+                            {sorted.some(isPendingGrade) && (
+                              <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full" title={TEACHER_PENDING_HINT}>{TEACHER_PENDING_LABEL}</span>
+                            )}
+                            {sorted.some(isFailedGrade) && (
+                              <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full" title={TEACHER_FAILED_HINT}>{TEACHER_FAILED_LABEL}</span>
+                            )}
                             {noComment && (
                               <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full" title="아직 담임 코멘트를 안 달았어요">
                                 💬 코멘트 전
@@ -1307,14 +1315,14 @@ export default function TeacherSubmissions() {
                           {/* step606: 점수 null(안전 필터 차단) 행은 "AI 평가 없음"으로 — "/100점"·null 비교 방지 */}
                           {isImproved ? (
                             <>
-                              <div className="text-gray-500">첫 {first.total_score == null ? 'AI 평가 없음' : `${first.total_score}점`}</div>
-                              <div className="font-bold">최종 {last.total_score == null ? <span className="text-purple-700">AI 평가 없음</span> : `${last.total_score}/${last.max_score}점`}
+                              <div className="text-gray-500">첫 {first.total_score == null ? noScoreLabel(first, 'AI 평가 없음') : `${first.total_score}점`}</div>
+                              <div className="font-bold">최종 {last.total_score == null ? <span className="text-purple-700">{noScoreLabel(last, 'AI 평가 없음')}</span> : `${last.total_score}/${last.max_score}점`}
                                 {typeof last.total_score === 'number' && typeof first.total_score === 'number' && last.total_score > first.total_score && <span className="text-green-600 ml-1">↑{last.total_score - first.total_score}</span>}
                               </div>
                             </>
                           ) : (
                             last.total_score == null
-                              ? <div className="font-bold text-purple-700">AI 평가 없음</div>
+                              ? <div className="font-bold text-purple-700">{noScoreLabel(last, 'AI 평가 없음')}</div>
                               : <div className="font-bold">{last.total_score}/{last.max_score}점</div>
                           )}
                         </div>
@@ -1520,6 +1528,13 @@ export default function TeacherSubmissions() {
                               🟣 AI 평가 없음(필터)
                             </span>
                           )}
+                          {/* step669: 채점 보류·실패 글 표식 */}
+                          {isPendingGrade(s) && (
+                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title={TEACHER_PENDING_HINT}>{TEACHER_PENDING_LABEL}</span>
+                          )}
+                          {isFailedGrade(s) && (
+                            <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full" title={TEACHER_FAILED_HINT}>{TEACHER_FAILED_LABEL}</span>
+                          )}
                         {isHighlySuspicious && (
                           <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-bold">
                             🚨 예시 유사도 {Math.round(similarity.score * 100)}%
@@ -1689,7 +1704,7 @@ export default function TeacherSubmissions() {
                               <span className="text-xs font-normal text-gray-400">AI 채점 {s.total_score}점</span>
                             </>
                           ) : s.total_score == null ? (
-                            <span className="font-bold text-purple-700" title={TEACHER_BLOCKED_HINT}>AI 평가 없음(필터)</span>
+                            <span className="font-bold text-purple-700" title={noScoreHint(s, TEACHER_BLOCKED_HINT)}>{noScoreLabel(s, 'AI 평가 없음(필터)')}</span>
                           ) : (
                             <span className="font-bold text-gray-900">{s.total_score}/{s.max_score}점</span>
                           )}

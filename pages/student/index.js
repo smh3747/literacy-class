@@ -23,6 +23,7 @@ import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공
 import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(HH:MM) 표시
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 // step606: AI 안전 필터 차단 → 점수 없이 저장·학생 안내·담임 알림 (헬퍼·문구는 lib/safetyBlock.js)
+import { isPendingGrade, isFailedGrade, STUDENT_PENDING_TITLE, STUDENT_PENDING_MESSAGE } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
 import PeerShareCard from '../../components/PeerShareCard'   // step621: 우리 반 친구들 글
 import { fetchPeerShare, peerShareNotifyArgs } from '../../lib/peerShareClient'
@@ -813,7 +814,7 @@ export default function StudentHome() {
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
     const { data: existing, error: existingErr } = await withTimeout(supabase.from('submissions')
-      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model, grading_path')   // step606: graded_with_model — 안전 필터 차단 표식 판정용 / step663: grading_path — 혼잡 전환 안내 줄(재진입)
+      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model, grading_path, grade_status')   // step606: graded_with_model — 안전 필터 차단 표식 판정용 / step663: grading_path — 혼잡 전환 안내 줄(재진입)
       .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
       .is('deleted_at', null))
     // step575: 조회 실패(401/5xx)를 "제출 없음"으로 오판해 이미 제출한 학생에게 빈 글쓰기 폼을
@@ -1730,7 +1731,9 @@ export default function StudentHome() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
 
   // 🟣 step606: 지금 보고 있는 글이 AI 안전 필터 차단으로 점수 없이 저장된 글인지(제출 직후·재진입 모두 currentSub 기준)
-  const feedbackBlocked = isBlockedSubmission(currentSub) || !!feedbackResult?.blocked
+  // step669: 채점 보류(grade_status='pending')·실패('failed') 글도 점수·피드백이 없으므로 같은 틀(안내 카드 + 내 글, 다시 쓰기·신고 숨김)로 보여 준다. 문구만 다르다.
+  const gradePending = isPendingGrade(currentSub)
+  const feedbackBlocked = gradePending || isFailedGrade(currentSub) || isBlockedSubmission(currentSub) || !!feedbackResult?.blocked
 
   // 🆕 step327: 진입 실패/타임아웃 시 무한 스피너 대신 재시도 화면
   if (loadError) return (
@@ -2172,7 +2175,7 @@ export default function StudentHome() {
                       <div className="text-3xl mb-1">🎉</div>
                       <div className="font-bold text-green-900">수정본 제출 완료!</div>
                       {feedbackBlocked ? (
-                        <div className="text-sm text-green-800 mt-1">선생님께서 직접 봐주실 거예요.</div>
+                        <div className="text-sm text-green-800 mt-1">{gradePending ? 'AI가 바빠서 점수는 조금 뒤에 나와요.' : '선생님께서 직접 봐주실 거예요.'}</div>
                       ) : (
                         <div className="text-sm text-green-800 mt-1">최종 점수: {feedbackResult.total}/{currentSub?.max_score}점</div>
                       )}
@@ -2191,7 +2194,15 @@ export default function StudentHome() {
                     {/* 🟣 step606: AI 안전 필터 차단 글 — 점수·피드백 대신 안내 카드 1개 + 내 글(밑줄 없음). 재시도 유도 없음 */}
                     {feedbackBlocked ? (
                       <div className="space-y-3">
-                        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
+                        {/* step669: 채점 보류 글은 노란 안내 카드(점수는 조금 뒤에). 그 밖(안전 필터·채점 실패)은 종전 보라 카드 */}
+                        {gradePending && (
+                        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+                          <h3 className="text-sm font-bold text-amber-900 mb-1.5">{STUDENT_PENDING_TITLE}</h3>
+                          <p className="text-sm text-amber-900 break-keep leading-relaxed">{STUDENT_PENDING_MESSAGE}</p>
+                          <p className="text-xs text-amber-700 mt-2 break-keep">내 글은 잘 저장됐어요. 점수가 나오면 여기에서 볼 수 있어요.</p>
+                        </div>
+                        )}
+                        <div className={`bg-purple-50 border-2 border-purple-200 rounded-xl p-4 ${gradePending ? 'hidden' : ''}`}>
                           <h3 className="text-sm font-bold text-purple-900 mb-1.5 flex items-center gap-1.5">
                             <span>🟣</span> AI가 이 글을 평가하지 못했어요
                           </h3>

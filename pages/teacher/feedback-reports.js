@@ -8,6 +8,7 @@ import { toKST } from '../../lib/timeFormat'
 import { displayStudentName } from '../../lib/displayName'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
+import { noScoreLabel } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 
 export default function FeedbackReports() {
   const router = useRouter()
@@ -153,7 +154,7 @@ export default function FeedbackReports() {
                     </summary>
                     <div className="mt-3 space-y-3">
                       <div className="bg-gray-50 rounded p-3">
-                        <div className="text-xs font-bold text-gray-700 mb-1">학생 글 ({r.total_score}/{r.max_score}점)</div>
+                        <div className="text-xs font-bold text-gray-700 mb-1">학생 글 ({r.total_score == null ? noScoreLabel(r, '점수 없음') : `${r.total_score}/${r.max_score}점`})</div>
                         <p className="text-sm whitespace-pre-wrap">{r.essay_text}</p>
                       </div>
                       <div className="bg-blue-50 rounded p-3">

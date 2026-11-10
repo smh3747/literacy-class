@@ -13,6 +13,7 @@ import { displayStudentName, displayStudentNameWithNumber } from '../../lib/disp
 import { severityOf } from '../../lib/errorClassify'   // step606: 오류 분류기 추출 + 🟣 AI 안전 필터 라벨 / step657: 카드 라벨은 lib/errorHumanize가 분류기로 계산
 import { queryWithAuthRetry, logAuthBounce } from '../../lib/entryAuth'   // step637: 진입 401 → refresh 1회 재시도 + 튕김 기록
 import { summarizeTimings, fmtSecKo, headlineOf, OVER_MS, summarizeAttempts, attemptsHeadline, attemptsVerdict, ATTEMPT_LONG_MS, summarizeSegments, segmentsVerdict } from '../../lib/gradingTiming'   // step643: 채점 대기 시간 집계(순수) / step654: 한글 표기·머리 문장·해석
+import { noScoreLabel } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step657: 오류 탭 사람 문장화(표시 전용)
 
@@ -641,7 +642,7 @@ export default function AdminHome() {
     ;(async () => {
       // step647: 행 인라인용 topic_id(학생 엿보기 딥링크)·report_reason·feedback_overall·점수·attempt 추가 — 글 본문·실명은 계속 미조회
       const { data, error } = await supabase.from('submissions')
-        .select('id, user_id, topic_id, topic_title, reported, reported_at, report_reason, feedback_overall, total_score, max_score, attempt, profiles!submissions_user_id_fkey(number, class_id)')
+        .select('id, user_id, topic_id, topic_title, reported, reported_at, report_reason, feedback_overall, total_score, max_score, attempt, grade_status, profiles!submissions_user_id_fkey(number, class_id)')
         .not('reported_at', 'is', null).is('deleted_at', null)
         .order('reported_at', { ascending: false }).limit(300)
       if (error) { setReportRows({ loaded: true, rows: [], error: error.message || '알 수 없는 오류' }); return }
@@ -3601,7 +3602,7 @@ export default function AdminHome() {
                         const parsedReason = parseReportReason(r.report_reason)   // step649: "[태그] 상세" → 배지 + 본문(구 자유 입력은 tag null)
                         const reason = String(parsedReason.text || '').replace(/\s+/g, ' ').trim()
                         const overall = String(r.feedback_overall || '').replace(/\s+/g, ' ').trim()
-                        const scoreText = r.total_score == null ? '🟣 점수 없음' : `${r.total_score}/${r.max_score ?? '-'}점`
+                        const scoreText = r.total_score == null ? noScoreLabel(r, '🟣 점수 없음') : `${r.total_score}/${r.max_score ?? '-'}점`
                         const peekStudent = () => window.open(`/student?as=${r.user_id}${r.topic_id ? `&topic=${r.topic_id}` : ''}`, '_blank', 'noopener')
                         return (
                           <div key={r.id} className="p-3 rounded-xl border border-gray-200 bg-gray-50">
@@ -5403,7 +5404,7 @@ function SubmissionRow({ s, onClick, hideField, classMap }) {
           </span>
         </div>
       </div>
-      <div className={`text-sm font-bold ml-3 flex-shrink-0 ${scoreColor}`}>{noScore ? '🟣 AI 평가 없음' : `${s.total_score}/${s.max_score}`}</div>
+      <div className={`text-sm font-bold ml-3 flex-shrink-0 ${scoreColor}`}>{noScore ? noScoreLabel(s, '🟣 AI 평가 없음') : `${s.total_score}/${s.max_score}`}</div>
     </button>
   )
 }

@@ -6,6 +6,7 @@ import { GRAMMAR_NOTICE_STUDENT } from '../lib/notices'
 import { stampLabel } from '../lib/stamps'
 import { pickStr } from '../lib/pickStr'
 import { escapeHtml } from '../lib/escapeHtml'
+import { isPendingGrade, TEACHER_PENDING_LABEL } from '../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { calcAddedRanges, emitWithAdded } from '../lib/textDiff'   // step537: 수정 전후 비교(초록) 공용 헬퍼
 
 
@@ -157,6 +158,8 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
     && sub.total_score > previousSub.total_score
   const scoreDelta = scoreImproved ? (sub.total_score - previousSub.total_score) : 0
 
+  // step669: 채점 보류(grade_status='pending')이고 선생님 점수도 없는 글 — "0 / N점" 대신 대기 표시(그 밖은 종전 그대로)
+  const pendingNoScore = isPendingGrade(sub) && sub.teacher_score == null && sub.total_score == null
   // 점수에 따른 색상 (낮을수록 빨강 계열)
   const scorePercent = totalMax > 0 ? (sub.total_score / totalMax) * 100 : 0
   const scoreColor = scorePercent >= 80 ? 'from-green-50 to-emerald-50 border-green-200'
@@ -176,7 +179,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
       {/* 🆕 step436: 선생님 조정 점수(teacher_score) 있으면 대표로, AI 점수는 작게 병기(병기형 — AI 점수 불변) */}
       <div className={`bg-gradient-to-br ${scoreColor} border-2 rounded-xl p-4 text-center`}>
         <div className="text-3xl font-bold text-gray-900">
-          {sub.teacher_score ?? sub.total_score ?? 0} <span className="text-lg font-normal text-gray-600">/ {totalMax}점</span>
+          {pendingNoScore ? <span className="text-xl">{TEACHER_PENDING_LABEL}</span> : <>{sub.teacher_score ?? sub.total_score ?? 0} <span className="text-lg font-normal text-gray-600">/ {totalMax}점</span></>}
         </div>
         {sub.teacher_score != null && (
           <div className="mt-1.5">
@@ -249,7 +252,7 @@ export default function StudentFeedbackCard({ sub, topic, headerLabel, previousS
           <span className="inline-block transition-transform group-open:rotate-90 motion-safe:animate-bounce group-open:animate-none">▶</span>
           🤖 AI 점수·피드백 보기
           <span className="group-open:hidden text-xs font-normal text-amber-600">👆 눌러서 펼쳐보세요</span>
-          <span className="ml-auto font-bold text-gray-900">{sub.teacher_score ?? sub.total_score ?? 0}/{totalMax}점</span>
+          <span className="ml-auto font-bold text-gray-900">{pendingNoScore ? TEACHER_PENDING_LABEL : `${sub.teacher_score ?? sub.total_score ?? 0}/${totalMax}점`}</span>
         </summary>
         <div className="space-y-4 mt-3">
 

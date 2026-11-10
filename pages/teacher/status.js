@@ -8,6 +8,7 @@ import { displayStudentName } from '../../lib/displayName'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
+import { noScoreLabel, noScoreHint } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 
 export default function SubmissionStatus() {
   const router = useRouter()
@@ -93,7 +94,7 @@ export default function SubmissionStatus() {
     if (studentIds.length === 0) { setSubmissions([]); return }
 
     const { data: subs } = await supabase.from('submissions')
-      .select('id, user_id, total_score, max_score, created_at, attempt, reported, teacher_comment')
+      .select('id, user_id, total_score, max_score, created_at, attempt, reported, teacher_comment, grade_status')   // step669: grade_status(채점 보류 표시용)
       .eq('topic_id', topicId)
       .in('user_id', studentIds)
       .is('deleted_at', null)
@@ -405,7 +406,7 @@ export default function SubmissionStatus() {
                             <div className="flex items-center gap-2">
                               {best && (
                                 best.total_score == null
-                                  ? <span className="text-xs text-purple-700" title="AI 안전 필터가 평가를 거절해 점수 없이 저장된 글이에요. 직접 읽고 코멘트를 남겨주세요.">🟣 AI 평가 없음</span>
+                                  ? <span className="text-xs text-purple-700" title={noScoreHint(best, 'AI 안전 필터가 평가를 거절해 점수 없이 저장된 글이에요. 직접 읽고 코멘트를 남겨주세요.')}>{noScoreLabel(best, '🟣 AI 평가 없음')}</span>
                                   : <span className="text-xs font-mono text-gray-600">
                                       {best.total_score}/{best.max_score}
                                     </span>

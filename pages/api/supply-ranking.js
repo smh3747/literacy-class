@@ -141,7 +141,15 @@ export default async function handler(req, res) {
 
   // 학생은 본인 제출 후에만 열람 — 미제출이면 참여 수만
   if ((profile.role === 'student' || asStudent) && !allSubs.some(s => s.user_id === viewUid)) {
-    return res.status(200).json({ ok: true, locked: true, participants })
+    // step669: allSubs는 점수 있는 글만 담는다. 점수 없이 먼저 제출된 글(채점 보류 등)만 낸 학생도 "제출함"으로 보고 열람을 막지 않는다.
+    //   순위 집계에는 여전히 점수 있는 글만 들어간다(이 학생의 내 순위는 채점 뒤에 생긴다). 조회 실패면 종전대로 잠근다.
+    let submittedWithoutScore = false
+    try {
+      const { data: own } = await admin.from('submissions')
+        .select('id').in('topic_id', copyIds).eq('user_id', viewUid).is('deleted_at', null).limit(1)
+      submittedWithoutScore = (own || []).length > 0
+    } catch (_) { /* 종전대로 잠금 */ }
+    if (!submittedWithoutScore) return res.status(200).json({ ok: true, locked: true, participants })
   }
 
   // step504: 마감 후 확정본이 있으면 그대로 반환 — 재계산·재검토 없음, 지각 제출자는 myRank null
@@ -188,7 +196,7 @@ export default async function handler(req, res) {
   }
 
   // step504: 마감 후 첫 조회면 이번 계산값으로 확정(lazy) — 이후 조회는 위 확정본 경로
-  if (closed) await finalizeRanks(admin, supplyId, eligible)
+  if (closed) await finalizeRanks(admin, supplyId, eligible, { copyIds })   // step669: 채점 보류 글이 남아 있으면 확정을 미룬다(copyIds 전달)
 
   // step492: 내 순위 — 동의 완료 랭킹 풀 내 호출자 위치(풀 제외·교사면 null). 순위 숫자만 반환.
   const myIdx = profile.role === 'student' ? eligible.findIndex(s => s.user_id === uid) : -1
