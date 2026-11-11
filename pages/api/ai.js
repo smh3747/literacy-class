@@ -332,7 +332,7 @@ export default async function handler(req, res) {
   //   internalBackfill: 나중 채점 API(pages/api/grade-backfill.js)가 이 핸들러를 서버 안에서 직접 부를 때만 true(브라우저 요청으로는 켤 수 없다).
   const isGradingType = type === 'grading' || type === 'rewriteGrading'
   const internalBackfill = req.internalBackfill === true
-  const deferClass = isGradingType && isDeferClass(keyResult.classId)
+  const deferClass = isGradingType && isDeferClass(keyResult.classId, process.env.GRADE_DEFER_OFF)   // step675: 전 학급 기본 켜짐, 환경변수로 끔
 
   try {
     // step671: 실검증용 강제 실패 — 시범 학급에서 글에 표식(#보류시험)이 있으면 구글을 부르지 않고 503을 흉내 낸다. 나중 채점에는 미적용.

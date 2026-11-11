@@ -22,6 +22,7 @@ import { logAuthBounce } from '../../lib/entryAuth'   // step637: 로그인으�
 import { toKST } from '../../lib/timeFormat'
 import { callAI } from '../../lib/aiClient'
 import { todayStr } from '../../lib/kstDate'   // step545: 오늘 제출 KST 계산 공용화(step498 관행)
+import { noScoreLabel } from '../../lib/gradeStatus'   // step675: 오늘 제출 미리보기의 채점 대기 표시
 import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 제출 미리보기 표시명(실명 잠금=닉네임 관행)
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
 import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화 / step614: 원클릭 카드 조회를 서버 API로
@@ -482,7 +483,7 @@ export default function TeacherHome() {
       if (ids.length === 0) { setTodayPreview({ loading: false, rows: [] }); return }
       const kstMidnightUtc = new Date(todayStr() + 'T00:00:00+09:00').toISOString()
       const { data: subs } = await supabase.from('submissions')
-        .select('id, user_id, topic_id, created_at, total_score, attempt')
+        .select('id, user_id, topic_id, created_at, total_score, attempt, grade_status')   // step675: grade_status(채점 대기 표시용)
         .in('user_id', ids).gte('created_at', kstMidnightUtc).is('deleted_at', null)
         .order('created_at', { ascending: false })
       const profById = Object.fromEntries((studs || []).map(p => [p.id, p]))
@@ -1331,7 +1332,7 @@ export default function TeacherHome() {
                                 </span>
                                 <span className="ml-auto text-xs text-gray-400 flex-shrink-0">{previewTime(row.created_at)}</span>
                                 <span className="text-xs font-semibold text-primary flex-shrink-0">
-                                  {row.total_score != null ? `${row.total_score}점` : '채점 중'}
+                                  {row.total_score != null ? `${row.total_score}점` : noScoreLabel(row, '채점 중')}
                                   {(row.attempt || 1) > 1 && <span className="font-normal text-gray-500"> (다시 쓰기)</span>}
                                 </span>
                               </Link>

@@ -1532,6 +1532,10 @@ export default function TeacherSubmissions() {
                           {isPendingGrade(s) && (
                             <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full" title={TEACHER_PENDING_HINT}>{TEACHER_PENDING_LABEL}</span>
                           )}
+                          {/* step675: 대기 배지 설명 1줄(눈에 보이게) */}
+                          {isPendingGrade(s) && (
+                            <span className="basis-full text-xs text-amber-800 break-keep">{TEACHER_PENDING_HINT}</span>
+                          )}
                           {isFailedGrade(s) && (
                             <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full" title={TEACHER_FAILED_HINT}>{TEACHER_FAILED_LABEL}</span>
                           )}

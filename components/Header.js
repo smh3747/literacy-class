@@ -3,6 +3,7 @@ import Link from 'next/link'
 import FeedbackModal from './FeedbackModal'
 import NotificationBell from './NotificationBell'
 import MessageBell from './MessageBell'
+import { isTestStudentProfile } from '../lib/testStudent'   // step675: 시험 학생은 실명이 없어 닉네임("시험 학생 1")으로 표시
 
 export default function Header({ user, onLogout }) {
   const [showFeedback, setShowFeedback] = useState(false)
@@ -20,7 +21,7 @@ export default function Header({ user, onLogout }) {
             <MessageBell user={user} />
             {user && (
               <>
-                <span className="hidden sm:inline text-sm text-gray-600">{user.realname} ({user.role === 'teacher' ? '선생님' : user.role === 'admin' ? '관리자' : '학생'})</span>
+                <span className="hidden sm:inline text-sm text-gray-600">{user.realname || (isTestStudentProfile(user) ? user.nickname : '')} ({user.role === 'teacher' ? '선생님' : user.role === 'admin' ? '관리자' : '학생'})</span>
                 <button
                   onClick={() => { if (confirm('로그아웃할까요?')) onLogout() }}
                   className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 px-2 sm:px-3 py-1 rounded-full border border-gray-200 transition"

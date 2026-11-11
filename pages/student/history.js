@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
+import GradePendingBadge from '../../components/GradePendingBadge'   // step675: 대기 글 채점을 이 화면에서도 이어 간다
 import StrictPendingBadge from '../../components/StrictPendingBadge'  // step601: 맞춤법 보완 대기 배지(폴링 겸)
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
@@ -312,6 +313,10 @@ export default function StudentHistory() {
                   <div>
                     <div className="text-xl font-bold text-purple-800">{isPendingGrade(lastSub) ? STUDENT_PENDING_SHORT : '🟣 AI 평가 없음'}</div>
                     <p className="text-xs text-purple-700 mt-1.5 break-keep leading-relaxed">{isPendingGrade(lastSub) ? STUDENT_PENDING_MESSAGE : STUDENT_BLOCKED_MESSAGE}</p>
+                    {/* step675: 내 글 기록에서도 대기 글의 채점을 이어 간다(학생 홈과 같은 폴링). 점수가 붙으면 목록을 다시 불러온다. 엿보기는 폴링 안 함 */}
+                    {isPendingGrade(lastSub) && (
+                      <GradePendingBadge submissionId={lastSub.id} disabled={isImpersonating} onGraded={() => checkAuth()} className="justify-center" />
+                    )}
                   </div>
                 ) : (
                 <div className="text-3xl font-bold text-gray-900">

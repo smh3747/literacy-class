@@ -4,6 +4,7 @@
 //   고정하는 것: 표식 판정, 점수 없는 행의 표시 순서(보류 → 실패 → 그 밖), 엑셀 칸, 저장 필드(total_score는 반드시 null),
 //   안전 필터 표식(lib/safetyBlock.js)과 서로 겹치지 않음.
 
+const fs = require('fs')
 const path = require('path')
 const { pathToFileURL } = require('url')
 
@@ -63,11 +64,19 @@ const { pathToFileURL } = require('url')
     const PILOT = '630e95ed-efc3-4a29-919c-7896d0687dfb'   // 하랑초 뽀로로반(7420)
     const OTHER = 'bb93dd15-4232-4dd1-a995-57644684fd3b'
     const TEST = 'f0b64c29-1ec2-45a0-aa20-887b74c991b3'   // 시험 반(6975, step673)
-    rec('학급 스위치: 시범 학급은 두 반(7420·시험 반 6975)뿐', d.DEFER_PILOT_CLASS_IDS.length === 2 && d.DEFER_PILOT_CLASS_IDS[0] === PILOT && d.DEFER_PILOT_CLASS_IDS[1] === TEST, d.DEFER_PILOT_CLASS_IDS.join(','))
-    rec('시험 반(6975): isDeferClass true, "#보류시험" 강제 실패 동작', d.isDeferClass(TEST) && d.shouldForceDefer({ classId: TEST, essay: '시험 글 #보류시험' }) && !d.shouldForceDefer({ classId: TEST, essay: '평범한 글' }), '')
-    rec('isDeferClass: 시범 학급 true, 다른 학급·빈 값 false', d.isDeferClass(PILOT) && !d.isDeferClass(OTHER) && !d.isDeferClass(null) && !d.isDeferClass(''), '')
-    rec('강제 실패 표식 "#보류시험": 시범 학급 + 글에 표식 → true', d.FORCE_DEFER_MARKER === '#보류시험' && d.shouldForceDefer({ classId: PILOT, essay: '오늘은 #보류시험 글이에요' }), '')
-    rec('강제 실패: 다른 학급은 표식이 있어도 false, 표식 없으면 false, 글이 문자열이 아니면 false', !d.shouldForceDefer({ classId: OTHER, essay: '#보류시험' }) && !d.shouldForceDefer({ classId: PILOT, essay: '평범한 글' }) && !d.shouldForceDefer({ classId: PILOT, essay: null }) && !d.shouldForceDefer(), '')
+    // step675: 전 학급 기본 켜짐 + 끄는 목록. 강제 실패 표식은 시험 반에서만.
+    rec('학급 스위치: 기본 켜짐, 상수 끄는 목록은 비어 있음', d.DEFER_DEFAULT_ON === true && Array.isArray(d.DEFER_OFF_CLASS_IDS) && d.DEFER_OFF_CLASS_IDS.length === 0 && d.DEFER_OFF_ENV === 'GRADE_DEFER_OFF', '')
+    rec('isDeferClass: 어느 학급이든 true(7420·다른 학급·시험 반), 빈 값은 false', d.isDeferClass(PILOT) && d.isDeferClass(OTHER) && d.isDeferClass(TEST) && !d.isDeferClass(null) && !d.isDeferClass('') && !d.isDeferClass(undefined), '')
+    rec('끄기 ①: 환경변수 "all"(대소문자·공백 무관) → 전 학급 false', !d.isDeferClass(PILOT, 'all') && !d.isDeferClass(OTHER, ' ALL ') && !d.isDeferClass(TEST, 'All'), '')
+    rec('끄기 ②: 환경변수에 학급 id → 그 반만 false, 나머지는 true', !d.isDeferClass(OTHER, OTHER) && d.isDeferClass(PILOT, OTHER) && !d.isDeferClass(PILOT, OTHER + ', ' + PILOT) && !d.isDeferClass(OTHER, OTHER + ' ' + PILOT) && d.isDeferClass(TEST, OTHER + ',' + PILOT), '')
+    rec('환경변수가 비었거나 없으면 종전대로 켜짐', d.isDeferClass(OTHER, '') && d.isDeferClass(OTHER, undefined) && d.isDeferClass(OTHER, null) && d.isDeferClass(OTHER, ' , '), '')
+    rec('parseDeferOff: all·id 목록 해석', d.parseDeferOff('all').all === true && d.parseDeferOff('a,b  c').ids.join('|') === 'a|b|c' && d.parseDeferOff('').all === false && d.parseDeferOff(null).ids.length === 0, '')
+    rec('서버만 환경변수를 넘긴다(pages/api/ai.js)', fs.readFileSync(path.join(__dirname, '..', 'pages/api/ai.js'), 'utf8').includes('isDeferClass(keyResult.classId, process.env.GRADE_DEFER_OFF)'), '')
+    rec('강제 실패 표식 "#보류시험": 시험 반(6975) + 글에 표식 → true', d.FORCE_DEFER_MARKER === '#보류시험' && d.FORCE_DEFER_CLASS_ID === TEST && d.shouldForceDefer({ classId: TEST, essay: '오늘은 #보류시험 글이에요' }), '')
+    rec('강제 실패: 실제 학급(7420 포함)은 표식이 있어도 false', !d.shouldForceDefer({ classId: OTHER, essay: '#보류시험' }) && !d.shouldForceDefer({ classId: PILOT, essay: '#보류시험' }) && !d.shouldForceDefer({ classId: null, essay: '#보류시험' }), '')
+    rec('강제 실패: 시험 반도 표식 없으면 false, 글이 문자열이 아니면 false', !d.shouldForceDefer({ classId: TEST, essay: '평범한 글' }) && !d.shouldForceDefer({ classId: TEST, essay: null }) && !d.shouldForceDefer(), '')
+    rec('교사 대기 설명 문구(step675)', g.TEACHER_PENDING_HINT === '구글 AI가 바빠서 글을 먼저 받아 두었어요. 학생이 화면을 켜 두면 자동으로 채점돼요. 급하면 재평가를 눌러 주세요.' && !/—/.test(g.TEACHER_PENDING_HINT), '')
+    rec('대기 글 폴링은 학생 홈과 내 글 기록 두 곳', fs.readFileSync(path.join(__dirname, '..', 'pages/student/index.js'), 'utf8').includes('<GradePendingBadge submissionId={currentSub?.id} disabled={isImpersonating}') && fs.readFileSync(path.join(__dirname, '..', 'pages/student/history.js'), 'utf8').includes('<GradePendingBadge submissionId={lastSub.id} disabled={isImpersonating}'), '')
 
     const R = d.deferReasonOf
     rec('deferReasonOf: 503(status) → busy503', R({ status: 503, message: '[congestion busy503 30000ms] …' }) === 'busy503', '')

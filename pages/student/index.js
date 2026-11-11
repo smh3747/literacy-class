@@ -24,6 +24,7 @@ import { toKST } from '../../lib/timeFormat'   // step571: 초안 저장 시각(
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 전국 순위 구간화 표시
 // step606: AI 안전 필터 차단 → 점수 없이 저장·학생 안내·담임 알림 (헬퍼·문구는 lib/safetyBlock.js)
 import { normalizeGradingResult, gradedRowFields } from '../../lib/gradeRow'   // step671: 채점 결과 보정·저장 필드(서버 나중 채점과 공용)
+import { isTestStudentProfile } from '../../lib/testStudent'   // step675: 지정된 시험 학생만 붙여넣기 허용
 import GradePendingBadge from '../../components/GradePendingBadge'   // step671: 채점 보류 글 폴링(나중 채점 트리거)
 import { isPendingGrade, isFailedGrade, pendingRowFields, STUDENT_PENDING_TITLE, STUDENT_PENDING_MESSAGE } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { isSafetyBlockedErr, isBlockedSubmission, blockedRowFields, blockedNotificationArgs, STUDENT_BLOCKED_MESSAGE, SAFETY_BLOCK_CODE } from '../../lib/safetyBlock'
@@ -903,6 +904,9 @@ export default function StudentHome() {
   }
 
   const handlePaste = (e, type) => {
+    // step675: 지정된 시험 학생(시험 반 6975의 sihum6975a·b)은 붙여넣기를 막지 않고 복붙 판정도 남기지 않는다(관리자 시험용).
+    //   판정은 lib/testStudent.js isTestStudentProfile(학생·시험 반·지정 아이디·미삭제). 실제 학생은 아래 종전 흐름 그대로.
+    if (isTestStudentProfile(user)) return
     // step536: 기본은 붙여넣기 차단. 학급 설정 allow_paste ON일 때만 허용(테스트·특별 수업 목적).
     //   차단 시엔 본문에 아무것도 안 들어가므로 감지 기록 안 함(억울한 복붙 배지·랭킹 제외 방지).
     if (!user?.classes?.allow_paste) {

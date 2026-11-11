@@ -25,7 +25,20 @@ const { pathToFileURL } = require('url')
   // ── 상수 ──
   rec('시험 반은 6975 한 반(id 고정)', t.TEST_CLASS_ID === CLASS)
   rec('시험 학생 아이디는 2개·형식 고정', t.TEST_STUDENT_USERNAMES.join(',') === 'sihum6975a,sihum6975b' && t.TEST_STUDENT_USERNAMES.every(u => /^[a-z0-9_-]{4,20}$/.test(u)))
-  rec('시험 반은 채점 보류 시범 학급에도 들어 있다(#보류시험 동작)', d.isDeferClass(t.TEST_CLASS_ID) && d.shouldForceDefer({ classId: t.TEST_CLASS_ID, essay: '#보류시험' }))
+  rec('시험 반에서 채점 보류와 #보류시험 강제 실패가 동작한다(강제 실패는 시험 반 id에만)', d.isDeferClass(t.TEST_CLASS_ID) && d.shouldForceDefer({ classId: t.TEST_CLASS_ID, essay: '#보류시험' }) && d.FORCE_DEFER_CLASS_ID === t.TEST_CLASS_ID && !d.shouldForceDefer({ classId: REAL_CLASS, essay: '#보류시험' }))
+
+  // ── step675: 붙여넣기 허용은 지정된 시험 학생만 ──
+  {
+    const home = read('pages/student/index.js')
+    const hp = home.slice(home.indexOf('const handlePaste = (e, type) => {'), home.indexOf('// 첫 글 제출'))
+    rec('붙여넣기 처리: 시험 학생 판정이 맨 앞에서 빠져나간다', hp.includes('if (isTestStudentProfile(user)) return') && hp.indexOf('isTestStudentProfile(user)) return') < hp.indexOf('allow_paste') && hp.indexOf('isTestStudentProfile(user)) return') < hp.indexOf('preventDefault'))
+    rec('붙여넣기 처리: 실제 학생 차단·감지 흐름은 그대로', hp.includes('if (!user?.classes?.allow_paste) {') && hp.includes('e.preventDefault()') && hp.includes("alert('직접 입력해 주세요") && hp.includes('pasteDetectedRef.current = true') && hp.includes('pasteCountRef.current++') && hp.split('isTestStudentProfile').length === 3)
+    rec('붙여넣기를 막는 곳은 글쓰기 칸 2곳(첫 글·수정본)뿐이고 둘 다 같은 처리', home.split('onPaste={').length === 3 && home.includes("onPaste={(e) => handlePaste(e, 'essay')}") && home.includes("onPaste={(e) => handlePaste(e, 'rewrite')}"))
+    rec('허용 판정에 쓰는 함수: 실제 학급 학생·시험 반의 기존 학생·교사·관리자·삭제 계정은 false', !t.isTestStudentProfile({ ...good, class_id: REAL_CLASS }) && !t.isTestStudentProfile({ ...good, username: 'grc5101' }) && !t.isTestStudentProfile({ ...good, role: 'teacher' }) && !t.isTestStudentProfile({ ...good, role: 'admin' }) && !t.isTestStudentProfile({ ...good, deleted_at: '2026-11-11T00:00:00Z' }) && !t.isTestStudentProfile(null))
+    rec('허용 판정: 시험 학생 1·2는 true', t.isTestStudentProfile(good) && t.isTestStudentProfile({ ...good, username: 'sihum6975b' }))
+    const hd = read('components/Header.js')
+    rec('머리줄 이름: 실명 우선, 시험 학생만 닉네임으로 대신', hd.includes("{user.realname || (isTestStudentProfile(user) ? user.nickname : '')}"))
+  }
 
   // ── 칸 번호 ──
   rec('칸 1·2만 아이디로 바뀐다', t.testUsernameOfSlot(1) === 'sihum6975a' && t.testUsernameOfSlot(2) === 'sihum6975b')
