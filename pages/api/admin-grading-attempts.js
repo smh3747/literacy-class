@@ -6,6 +6,7 @@
 //   첫 누름~마지막 누름 사이의 마지막 1건(lib/gradingTiming attachCauses). 응답에 학생 id·오류 원문은 싣지 않는다.
 import { createClient } from '@supabase/supabase-js'
 import { attachCauses } from '../../lib/gradingTiming'
+import { isExcludedFromAdminStats } from '../../lib/testStudent'   // step674: 시험 반(6975)은 집계에서 뺀다
 
 const DAYS = 14
 const PAGE = 1000
@@ -46,7 +47,7 @@ export default async function handler(req, res) {
     let att
     try { att = await readAttempts(BASE_COLS + ', queue_ms, strict_ms, grade_ms, server_ms') }
     catch (_) { att = await readAttempts(BASE_COLS) }
-    const rows = att.rows.map(r => ({
+    const rows = att.rows.filter(r => !isExcludedFromAdminStats(r.class_id)).map(r => ({
       userId: r.user_id, classId: r.class_id || null, startedAt: r.started_at, lastTryAt: r.last_try_at,
       finishedAt: r.finished_at || null, waitMs: r.wait_ms, tries: r.tries,
       queueMs: r.queue_ms ?? null, strictMs: r.strict_ms ?? null, gradeMs: r.grade_ms ?? null, serverMs: r.server_ms ?? null,

@@ -78,6 +78,40 @@ const { pathToFileURL } = require('url')
   const land = read('pages/test-student.js')
   rec('착지 화면은 토큰으로 로그인만 한다(DB 쓰기·엿보기 없음)', /verifyOtp\(\{ token_hash: th/.test(land) && !/\.from\(|\.rpc\(|[?&]as=/.test(land))
 
+  // ── step674: 시험 주제 자동 준비 ──
+  const TID = 'teacher-1'
+  const src = { id: 't1', date: '2026-06-26', title: '거울 속 나와 대화한 아침', description: '설명', rubrics: [{ name: '내용', score: 100 }], teacher_id: TID, class_id: null, lock_enabled: true, lock_start_time: '09:00', lock_end_time: '09:40', deadline_date: '2026-06-27', deadline_time: '15:00', min_length: 30, max_length: null, max_rewrites: 1, require_rewrite_change: true, supply_type: null, source_supply_id: null, published_at: null }
+  const row = t.buildTestTopicRow(src, { today: '2026-11-11', teacherId: TID })
+  rec('시험 주제: 오늘 날짜·"[시험] " 제목·평가 기준·글자 수·다시 쓰기 복사', row && row.date === '2026-11-11' && row.title === '[시험] 거울 속 나와 대화한 아침' && row.rubrics === src.rubrics && row.min_length === 30 && row.max_rewrites === 1 && row.require_rewrite_change === true && row.teacher_id === TID)
+  rec('시험 주제: 시간 잠금은 끄고 마감·공급 표식·id는 복사하지 않는다', row && row.lock_enabled === false && !('deadline_date' in row) && !('lock_start_time' in row) && !('supply_type' in row) && !('source_supply_id' in row) && !('published_at' in row) && !('id' in row))
+  rec('시험 주제: 이미 "[시험] "이 붙은 원본은 겹쳐 붙이지 않는다', t.buildTestTopicRow({ ...src, title: '[시험] 거울 속 나와 대화한 아침' }, { today: '2026-11-12', teacherId: TID }).title === '[시험] 거울 속 나와 대화한 아침')
+  rec('시험 주제: 공급 원본·챌린지 복사본·다른 담임 주제·평가 기준 없음·날짜 불량은 null', [
+    t.buildTestTopicRow({ ...src, supply_type: 'daily' }, { today: '2026-11-11', teacherId: TID }),
+    t.buildTestTopicRow({ ...src, source_supply_id: 's1' }, { today: '2026-11-11', teacherId: TID }),
+    t.buildTestTopicRow({ ...src, teacher_id: 'other' }, { today: '2026-11-11', teacherId: TID }),
+    t.buildTestTopicRow({ ...src, rubrics: [] }, { today: '2026-11-11', teacherId: TID }),
+    t.buildTestTopicRow({ ...src, title: ' ' }, { today: '2026-11-11', teacherId: TID }),
+    t.buildTestTopicRow(src, { today: '11/11', teacherId: TID }),
+    t.buildTestTopicRow(src, { today: '2026-11-11' }),
+    t.buildTestTopicRow(null, { today: '2026-11-11', teacherId: TID }),
+  ].every(v => v === null))
+  rec('발급 API: 주제 준비는 시험 반 담임·오늘 날짜·학급 주제 조건으로만, 있으면 건너뛴다', /\.eq\('id', TEST_CLASS_ID\)/.test(api) && /\.eq\('teacher_id', teacherId\)\.eq\('date', today\)\.is\('supply_type', null\)\.is\('source_supply_id', null\)/.test(api) && /if \(todays && todays\.length > 0\) return \{ created: false \}/.test(api))
+  rec('발급 API: 주제 준비는 링크 재대조 뒤에만, 쓰기는 기록 1곳·주제 1곳뿐', api.indexOf('const topic = await ensureTodayTestTopic(admin)') > api.indexOf('linkUserId:') && (api.match(/\.insert\(/g) || []).length === 2 && /from\('topics'\)\.insert\(row\)/.test(api))
+
+  // ── step674: 관리자 집계에서 시험 반 제외 ──
+  rec('집계 제외: 스위치 켜짐, 시험 반만 true, 다른 반·빈 값 false', t.EXCLUDE_TEST_CLASS_FROM_ADMIN_STATS === true && t.isExcludedFromAdminStats(CLASS) && !t.isExcludedFromAdminStats(REAL_CLASS) && !t.isExcludedFromAdminStats(null) && !t.isExcludedFromAdminStats(undefined))
+  rec('minusTestClass: 뺀 값, 0 아래로 안 내려감, 빼기 값이 없거나 깨지면 종전 값', t.minusTestClass(100, 7) === 93 && t.minusTestClass(3, 9) === 0 && t.minusTestClass(100, null) === 100 && t.minusTestClass(100, undefined) === 100 && t.minusTestClass(100, NaN) === 100 && t.minusTestClass(100, -5) === 100 && t.minusTestClass(null, 3) === 0)
+  const adminPage = read('pages/admin/index.js')
+  rec('관리자 화면: 종전 합산 조회 3개는 그대로 있고 시험 반 몫만 따로 빼기', /supabase\.from\('profiles'\)\.select\('id', \{ count: 'exact', head: true \}\)\.eq\('role', 'student'\)\.is\('deleted_at', null\),/.test(adminPage) && /supabase\.from\('submissions'\)\.select\('id', \{ count: 'exact', head: true \}\),/.test(adminPage) && /students: minusTestClass\(studentsRes\.count, testCnt\.students\)/.test(adminPage) && /submissions: minusTestClass\(submissionsRes\.count, testCnt\.submissions\)/.test(adminPage) && /today: minusTestClass\(todayRes\.count, testCnt\.today\)/.test(adminPage))
+  rec('채점 시간 표·시도 API: 시험 반 행 제외', /rows\.filter\(r => !isExcludedFromAdminStats\(r\.profiles\?\.class_id\)\)/.test(adminPage) && /att\.rows\.filter\(r => !isExcludedFromAdminStats\(r\.class_id\)\)/.test(read('pages/api/admin-grading-attempts.js')))
+
+  // ── step674: 시험 글 정리 ──
+  const clean = read('pages/api/admin-test-cleanup.js')
+  const cleanBody = (clean.match(/const \{([^}]*)\} = req\.body/) || [])[1] || ''
+  rec('정리 API: 입력은 accessToken뿐, 관리자 확인', cleanBody.trim() === 'accessToken' && (clean.match(/req\.body/g) || []).length === 1 && /me\.role !== 'admin'/.test(clean))
+  rec('정리 API: 대상은 시험 반 + 지정 아이디, isTestStudentProfile 통과한 학생의 글만', /\.eq\('class_id', TEST_CLASS_ID\)\.in\('username', TEST_STUDENT_USERNAMES\)/.test(clean) && /\.filter\(isTestStudentProfile\)\.map\(p => p\.id\)/.test(clean) && /\.in\('user_id', ids\)\.is\('deleted_at', null\)/.test(clean))
+  rec('정리 API: 완전 삭제 없음(휴지통 3필드 update 1곳뿐), 대상 0명이면 아무것도 안 함', !/\.delete\(/.test(clean) && (clean.match(/\.update\(/g) || []).length === 1 && /deleted_at: .*deleted_by: .*delete_reason: TEST_CLEANUP_REASON/.test(clean) && /if \(ids\.length === 0\) return res\.status\(200\)\.json\(\{ moved: 0 \}\)/.test(clean))
+
   let pass = 0, fail = 0
   for (const r of results) { if (r.pass) pass++; else fail++; console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  — ${r.detail}` : ''}`) }
   console.log(`\n전체 ${pass}/${pass + fail} PASS${fail ? `  (실패 ${fail}건)` : ''}`)

@@ -9,7 +9,33 @@
 //     - 발급할 때마다 누가·언제·어느 칸을 test_student_opens에 기록한다. 기록에 실패하면 링크를 내주지 않는다.
 //   링크는 한 번만 쓸 수 있고 시간이 지나면 만료된다(Supabase 일회용 토큰).
 import { createClient } from '@supabase/supabase-js'
-import { TEST_CLASS_ID, TEST_TAB_PATH, testUsernameOfSlot, testEmailOfSlot, testStudentRefusal } from '../../lib/testStudent'
+import { TEST_CLASS_ID, TEST_TAB_PATH, testUsernameOfSlot, testEmailOfSlot, testStudentRefusal, buildTestTopicRow } from '../../lib/testStudent'
+import { todayStr } from '../../lib/kstDate'
+
+// step674: 시험 반에 오늘 날짜 학급 주제가 없으면 가장 최근 학급 주제를 복사해 1개 만든다(있으면 건너뜀).
+//   실패해도 로그인 링크 발급은 막지 않는다. 반환: { created: boolean, title?: string, note?: string }
+async function ensureTodayTestTopic(admin) {
+  try {
+    const { data: cls } = await admin.from('classes').select('teacher_id').eq('id', TEST_CLASS_ID).maybeSingle()
+    const teacherId = cls?.teacher_id
+    if (!teacherId) return { created: false, note: '시험 반의 담임 정보가 없어 오늘 주제를 확인하지 못했어요.' }
+    const today = todayStr()
+    const { data: todays, error: tErr } = await admin.from('topics').select('id')
+      .eq('teacher_id', teacherId).eq('date', today).is('supply_type', null).is('source_supply_id', null).limit(1)
+    if (tErr) return { created: false, note: '오늘 주제를 확인하지 못했어요.' }
+    if (todays && todays.length > 0) return { created: false }
+    const { data: latest } = await admin.from('topics').select('*')
+      .eq('teacher_id', teacherId).is('supply_type', null).is('source_supply_id', null)
+      .order('date', { ascending: false }).order('created_at', { ascending: false }).limit(1)
+    const row = buildTestTopicRow(latest?.[0], { today, teacherId })
+    if (!row) return { created: false, note: '복사할 주제가 없어 오늘 시험 주제를 만들지 못했어요.' }
+    const { error: iErr } = await admin.from('topics').insert(row)
+    if (iErr) return { created: false, note: '오늘 시험 주제를 만들지 못했어요.' }
+    return { created: true, title: row.title }
+  } catch (_) {
+    return { created: false, note: '오늘 시험 주제를 확인하지 못했어요.' }
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -55,7 +81,10 @@ export default async function handler(req, res) {
     const after = testStudentRefusal({ slot, profile, authUser, linkUserId: link?.user?.id ?? null })
     if (after) return res.status(403).json({ error: `시험 학생으로 확인되지 않아 열 수 없어요 (${after})` })
 
-    return res.status(200).json({ url: `${TEST_TAB_PATH}?th=${encodeURIComponent(tokenHash)}` })
+    // 5) step674: 오늘 쓸 주제 준비(없을 때만 생성)
+    const topic = await ensureTodayTestTopic(admin)
+
+    return res.status(200).json({ url: `${TEST_TAB_PATH}?th=${encodeURIComponent(tokenHash)}`, topicCreated: topic.created, topicTitle: topic.title || null, topicNote: topic.note || null })
   } catch (e) {
     console.error('admin-test-student 오류:', e?.message || e)
     return res.status(500).json({ error: '시험 학생 창을 열지 못했어요' })

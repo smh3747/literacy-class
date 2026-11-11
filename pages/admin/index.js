@@ -7,6 +7,7 @@ import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import AdminPeekSearch from '../../components/AdminPeekSearch'   // step648: 빠른 엿보기 검색
 import AdminTestStudentButton from '../../components/AdminTestStudentButton'   // step673: 시험 학생으로 열기
+import { TEST_CLASS_ID, EXCLUDE_TEST_CLASS_FROM_ADMIN_STATS, isExcludedFromAdminStats, minusTestClass } from '../../lib/testStudent'   // step674: 관리자 집계에서 시험 반 제외
 import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
@@ -514,12 +515,25 @@ export default function AdminHome() {
       finally { setLastLoginLoaded(true) }
     })()
 
+    // step674: 합산 카드(학생·누적 글쓰기·오늘)에서 시험 반(6975) 몫을 뺀다. 종전 조회는 그대로 두고 시험 반 건수만 따로 세어 뺀다.
+    //   빼기 조회가 실패하면 그 카드는 종전 값 그대로다.
+    let testCnt = { students: null, submissions: null, today: null }
+    if (EXCLUDE_TEST_CLASS_FROM_ADMIN_STATS) {
+      const testSubs = () => supabase.from('submissions').select('id, profiles!submissions_user_id_fkey!inner(class_id)', { count: 'exact', head: true }).eq('profiles.class_id', TEST_CLASS_ID)
+      const [ts, tsub, ttoday] = await Promise.all([
+        safe(supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null).eq('class_id', TEST_CLASS_ID)),
+        safe(testSubs()),
+        safe(testSubs().gte('created_at', todayStartUTC)),
+      ])
+      testCnt = { students: ts?.error ? null : ts?.count, submissions: tsub?.error ? null : tsub?.count, today: ttoday?.error ? null : ttoday?.count }
+    }
+
     setStats({
       teachers: activeTeachers.filter(t => t.role !== 'admin').length,
       classes: activeClasses.length,
-      students: studentsRes.count || 0,
-      submissions: submissionsRes.count || 0,
-      today: todayRes.count || 0,
+      students: minusTestClass(studentsRes.count, testCnt.students),
+      submissions: minusTestClass(submissionsRes.count, testCnt.submissions),
+      today: minusTestClass(todayRes.count, testCnt.today),
       preorders: preordersRes.count || 0,  // 🆕 step380: 사전 신청 수
       reports: reportsRes?.count || 0      // 🆕 step631: 피드백 신고 미해결
     })
@@ -677,7 +691,7 @@ export default function AdminHome() {
         rows.push(...(data || []))
         if (!data || data.length < 1000) break
       }
-      setTimingRows({ loaded: true, rows, error })
+      setTimingRows({ loaded: true, rows: rows.filter(r => !isExcludedFromAdminStats(r.profiles?.class_id)), error })   // step674: 시험 반 제외
     })()
   }, [tab, suspectFilter, timingRows.loaded])   // eslint-disable-line react-hooks/exhaustive-deps
 
