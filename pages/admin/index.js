@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import AdminPeekSearch from '../../components/AdminPeekSearch'   // step648: 빠른 엿보기 검색
+import AdminTestStudentButton from '../../components/AdminTestStudentButton'   // step673: 시험 학생으로 열기
 import { toKST, toKSTDate } from '../../lib/timeFormat'
 import { todayStr } from '../../lib/kstDate'   // step504: 공급 주제 마감 표시용
 import { callAI } from '../../lib/aiClient'
@@ -2086,6 +2087,8 @@ export default function AdminHome() {
             <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
               {/* 👁 step648: 빠른 엿보기 검색 — 학교·반·번호·선생님 이름 → 새 탭 엿보기(관리자 전용 API) */}
               <AdminPeekSearch className="w-full max-w-md" />
+              {/* 🧪 step673: 시험 반(6975) 시험 전용 학생으로 로그인된 새 창 열기(관리자 전용 API, 대상은 서버 상수) */}
+              <AdminTestStudentButton />
               <Link href="/teacher" className="text-sm text-gray-600 hover:text-primary whitespace-nowrap">
                 ← 선생님 모드로
               </Link>
