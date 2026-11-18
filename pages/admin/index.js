@@ -18,6 +18,9 @@ import { summarizeTimings, fmtSecKo, headlineOf, OVER_MS, summarizeAttempts, att
 import { noScoreLabel } from '../../lib/gradeStatus'   // step669: 채점 보류 표식(표시만)
 import { parseReportReason } from '../../lib/reportReason'   // step649: 신고 사유 "[태그] 상세" 분리
 import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHumanize'   // step657: 오류 탭 사람 문장화(표시 전용)
+import { retryOnce, loadFailLine } from '../../lib/loadRetry'   // step676: 조회 실패를 "없어요"로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'   // step676: "불러오지 못했어요" + [다시 시도]
+import InfoTip from '../../components/InfoTip'                 // step676: ⓘ 설명 풍선(마우스·터치)
 
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
@@ -202,6 +205,10 @@ export default function AdminHome() {
   const [user, setUser] = useState(null)
   const [stats, setStats] = useState({ teachers: 0, classes: 0, students: 0, submissions: 0, today: 0, preorders: 0, reports: 0 })   // step631: reports = 피드백 신고 미해결(reported=true)
   const [teachers, setTeachers] = useState([])
+  // step676: 조회 실패 표시. loadFail = 첫 묶음에서 못 불러온 목록 이름들, lazyFail = 탭을 열 때 불러오는 목록의 실패 여부.
+  const [loadFail, setLoadFail] = useState([])
+  const [lazyFail, setLazyFail] = useState({ shared: false, copies: false })
+  const [reloading, setReloading] = useState(false)
   const [teacherLastLogin, setTeacherLastLogin] = useState({})  // 🆕 step254: { userId: last_sign_in_at } (auth.users 읽기)
   const [lastLoginLoaded, setLastLoginLoaded] = useState(false)  // 🆕 step334: 마지막 로그인 비차단 로딩 완료 여부(로딩 중 placeholder)
   const [classes, setClasses] = useState([])
@@ -355,12 +362,13 @@ export default function AdminHome() {
     const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const [teachersRes, classesRes, studentsRes, submissionsRes, todayRes, feedbackRes, preordersRes, reportsRes,
            classStatRes, secretsRes, elogsRes, suspectRes, viewsRes] = await Promise.all([
-      supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false }),
-      supabase.from('classes').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null),
-      supabase.from('submissions').select('id', { count: 'exact', head: true }),
-      supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC),
-      supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200),
+      // step676: 목록·합산 6건은 실패하면 한 번 더 해 본다(retryOnce). 던진 오류도 { error }로 바뀌어 묶음 전체가 깨지지 않는다.
+      retryOnce(() => supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false })),
+      retryOnce(() => supabase.from('classes').select('*').order('created_at', { ascending: false })),
+      retryOnce(() => supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null)),
+      retryOnce(() => supabase.from('submissions').select('id', { count: 'exact', head: true })),
+      retryOnce(() => supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC)),
+      retryOnce(() => supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(200)),
       // 🆕 step380: 파운딩 멤버 사전 신청 수 — head:true count 1건(병렬 배치 편승). 테이블 미생성이면 count 없음→0
       // 🆕 step382: interested(관심 있어요)만 카운트
       supabase.from('preorders').select('id', { count: 'exact', head: true }).eq('response', 'interested'),
@@ -489,11 +497,17 @@ export default function AdminHome() {
       activeClasses.forEach(c => { c.has_api_key = !!c.api_key }) // 폴백: 동결된 classes.api_key
     }
 
-    setTeachers(activeTeachers)
-    setClasses(activeClasses)
-    setTrashedTeachers(trashedTeachers)
-    setTrashedClasses(trashedClasses)
-    setFeedbacks(feedbacksWithAuthor)
+    // step676: 실패한 목록은 빈 값으로 덮지 않는다(앞서 받은 값 유지). 무엇을 못 불러왔는지는 loadFail로 화면에 알린다.
+    const countFail = !!(studentsRes.error || submissionsRes.error || todayRes.error)
+    setLoadFail([
+      teachersRes.error && '선생님',
+      classesRes.error && '학급',
+      feedbackRes.error && '의견',
+      countFail && '합산 숫자',
+    ].filter(Boolean))
+    if (!teachersRes.error) { setTeachers(activeTeachers); setTrashedTeachers(trashedTeachers) }
+    if (!classesRes.error) { setClasses(activeClasses); setTrashedClasses(trashedClasses) }
+    if (!feedbackRes.error) setFeedbacks(feedbacksWithAuthor)
 
     // 🆕 step334: 교사 마지막 로그인(auth.users.last_sign_in_at)은 보조 정보이고 조회가 느리므로(listUsers)
     //   비차단으로 처리 — 화면/setLoading을 막지 않고 백그라운드로 보내 응답 오면 해당 칼럼만 채운다.
@@ -517,26 +531,37 @@ export default function AdminHome() {
 
     // step674: 합산 카드(학생·누적 글쓰기·오늘)에서 시험 반(6975) 몫을 뺀다. 종전 조회는 그대로 두고 시험 반 건수만 따로 세어 뺀다.
     //   빼기 조회가 실패하면 그 카드는 종전 값 그대로다.
+    //   step676: 종전에는 submissions와 profiles를 묶어(inner join) 세었는데, 이 조회 2건이 8초 제한을 넘겨 500이 났고
+    //   그 사이 다른 조회까지 밀려 "학생 글 0건"이 보였다(11/16). 시험 반 사람 id를 먼저 받고(몇 명뿐) user_id로 직접 센다.
+    //   세는 대상은 종전과 같다(시험 반에 속한 모든 프로필이 쓴 글, 휴지통 포함).
     let testCnt = { students: null, submissions: null, today: null }
     if (EXCLUDE_TEST_CLASS_FROM_ADMIN_STATS) {
-      const testSubs = () => supabase.from('submissions').select('id, profiles!submissions_user_id_fkey!inner(class_id)', { count: 'exact', head: true }).eq('profiles.class_id', TEST_CLASS_ID)
-      const [ts, tsub, ttoday] = await Promise.all([
-        safe(supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null).eq('class_id', TEST_CLASS_ID)),
-        safe(testSubs()),
-        safe(testSubs().gte('created_at', todayStartUTC)),
-      ])
-      testCnt = { students: ts?.error ? null : ts?.count, submissions: tsub?.error ? null : tsub?.count, today: ttoday?.error ? null : ttoday?.count }
+      const tp = await safe(supabase.from('profiles').select('id, role, deleted_at').eq('class_id', TEST_CLASS_ID))
+      if (tp && !tp.error) {
+        const testProfiles = tp.data || []
+        const testIds = testProfiles.map(p => p.id)
+        testCnt.students = testProfiles.filter(p => p.role === 'student' && !p.deleted_at).length
+        if (testIds.length === 0) {
+          testCnt.submissions = 0; testCnt.today = 0
+        } else {
+          const testSubs = () => supabase.from('submissions').select('id', { count: 'exact', head: true }).in('user_id', testIds)
+          const [tsub, ttoday] = await Promise.all([safe(testSubs()), safe(testSubs().gte('created_at', todayStartUTC))])
+          testCnt.submissions = tsub?.error ? null : tsub?.count
+          testCnt.today = ttoday?.error ? null : ttoday?.count
+        }
+      }
     }
 
-    setStats({
-      teachers: activeTeachers.filter(t => t.role !== 'admin').length,
-      classes: activeClasses.length,
-      students: minusTestClass(studentsRes.count, testCnt.students),
-      submissions: minusTestClass(submissionsRes.count, testCnt.submissions),
-      today: minusTestClass(todayRes.count, testCnt.today),
+    // step676: 못 불러온 숫자는 0으로 덮지 않고 앞서 받은 값을 그대로 둔다.
+    setStats(prev => ({
+      teachers: teachersRes.error ? prev.teachers : activeTeachers.filter(t => t.role !== 'admin').length,
+      classes: classesRes.error ? prev.classes : activeClasses.length,
+      students: studentsRes.error ? prev.students : minusTestClass(studentsRes.count, testCnt.students),
+      submissions: submissionsRes.error ? prev.submissions : minusTestClass(submissionsRes.count, testCnt.submissions),
+      today: todayRes.error ? prev.today : minusTestClass(todayRes.count, testCnt.today),
       preorders: preordersRes.count || 0,  // 🆕 step380: 사전 신청 수
       reports: reportsRes?.count || 0      // 🆕 step631: 피드백 신고 미해결
-    })
+    }))
 
     // 🆕 step155: 에러 로그 (최근 50건) — step637-B: 첫 배치 결과(실패면 [] — 테이블 미생성 등). 학생 번호 조인은 에러 탭 첫 진입 때(아래 effect).
     setErrorLogs(elogsRes?.data || [])
@@ -568,11 +593,13 @@ export default function AdminHome() {
   // 🆕 공유 추천 로드 (관리자 추적용 — 누가 뭘 공유했는지)
   const loadSharedSuggestionLogs = async () => {
     try {
-      const { data: sharedLogs } = await supabase.from('topic_suggestion_logs')
+      const { data: sharedLogs, error } = await retryOnce(() => supabase.from('topic_suggestion_logs')
         .select('*, resulting_topic:topics(id, title, date), author:profiles!topic_suggestion_logs_teacher_id_fkey(realname, school, role)')
         .or('resulting_topic_id.not.is.null,is_shared.eq.true,shared_indexes.neq.[]')
         .order('created_at', { ascending: false })
-        .limit(200)
+        .limit(200))
+      setLazyFail(p => ({ ...p, shared: !!error }))   // step676: 실패를 빈 목록으로 보이지 않게
+      if (error) return
       setSharedSuggestionLogs(sharedLogs || [])
     } catch(e) {
       console.warn('공유 추천 로드 실패:', e)
@@ -583,7 +610,7 @@ export default function AdminHome() {
   // 🆕 주제 공유 추적 로드 (관리자 전용 — 누가 누구 주제를 가져갔나). RLS로 admin만 전량 조회.
   const loadTopicCopies = async () => {
     try {
-      const { data: copies } = await supabase.from('topic_copies')
+      const { data: copies, error } = await retryOnce(() => supabase.from('topic_copies')
         .select(`
           id, source_index, copied_at,
           copied_by:topic_copies_copied_by_teacher_id_fkey ( id, realname, school ),
@@ -593,7 +620,9 @@ export default function AdminHome() {
           )
         `)
         .order('copied_at', { ascending: false })
-        .limit(200)
+        .limit(200))
+      setLazyFail(p => ({ ...p, copies: !!error }))   // step676: 실패를 빈 목록으로 보이지 않게
+      if (error) return
       setTopicCopies(copies || [])
     } catch(e) {
       console.warn('주제 공유 추적 로드 실패:', e)
@@ -812,11 +841,13 @@ export default function AdminHome() {
     ;(async () => {
       try {
         const [msgsRes, stsRes] = await Promise.all([
-          supabase.from('messages')
+          retryOnce(() => supabase.from('messages')
             .select('id, teacher_id, sender_id, body, read_at, created_at, edited_at, deleted_at, is_bulk')
-            .order('created_at', { ascending: true }).limit(1000),
+            .order('created_at', { ascending: true }).limit(1000)),
           supabase.from('message_thread_status').select('teacher_id, resolved_at'),
         ])
+        // step676: 쪽지 조회 실패를 "아직 쪽지가 없어요"로 보이지 않게
+        if (msgsRes.error) { setMsgData({ loaded: true, msgs: [], status: {}, profs: {}, error: true }); return }
         const msgs = msgsRes.data || []
         const status = {}
         ;(stsRes.data || []).forEach(s => { status[s.teacher_id] = s.resolved_at })
@@ -829,7 +860,7 @@ export default function AdminHome() {
         setMsgData({ loaded: true, msgs, status, profs })
       } catch (e) {
         console.warn('쪽지 로드 실패:', e?.message)
-        setMsgData({ loaded: true, msgs: [], status: {}, profs: {} })
+        setMsgData({ loaded: true, msgs: [], status: {}, profs: {}, error: true })
       }
     })()
   }, [tab, msgData.loaded])
@@ -1016,11 +1047,11 @@ export default function AdminHome() {
   useEffect(() => {
     if (tab !== 'supply' || supplyList.loaded) return
     ;(async () => {
-      const { data } = await supabase.from('topics')
+      const { data, error } = await retryOnce(() => supabase.from('topics')
         .select('id, title, date, supply_type, supply_grade, publish_week, published_at, created_at')   // step504: date = 마감 표시용
         .not('supply_type', 'is', null)
-        .order('created_at', { ascending: false }).limit(100)
-      setSupplyList({ loaded: true, rows: data || [] })
+        .order('created_at', { ascending: false }).limit(100))
+      setSupplyList({ loaded: true, rows: data || [], error: !!error })   // step676: 실패 표시
     })()
   }, [tab, supplyList.loaded])
 
@@ -2109,6 +2140,13 @@ export default function AdminHome() {
             </div>
           </div>
 
+          {/* step676: 첫 묶음 조회 중 실패한 목록 안내. 실패한 목록은 비우지 않고 앞서 받은 값을 그대로 둔다. */}
+          {loadFail.length > 0 && (
+            <LoadFailNotice
+              text={reloading ? '다시 불러오는 중이에요...' : loadFailLine(loadFail)}
+              onRetry={reloading ? null : async () => { setReloading(true); try { await loadAll() } finally { setReloading(false) } }} />
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {[
               { label: '선생님', val: stats.teachers, icon: '👨‍🏫', color: 'bg-blue-50 text-blue-900' },
@@ -2383,7 +2421,9 @@ export default function AdminHome() {
                 </div>
               )}
 
-              {visibleTeachers.length === 0 ? (
+              {loadFail.includes('선생님') && teachers.length === 0 ? (
+                <LoadFailNotice onRetry={loadAll} />
+              ) : visibleTeachers.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
                   {tq ? '검색 결과가 없어요' : teachers.length === 0 ? '가입한 선생님이 없어요' : '정상 계정이 없어요. "차단 포함 보기"를 눌러주세요.'}
                 </p>
@@ -2654,7 +2694,9 @@ export default function AdminHome() {
                   )}
                 </div>
               </div>
-              {visibleClasses.length === 0 ? (
+              {loadFail.includes('학급') && classes.length === 0 ? (
+                <LoadFailNotice onRetry={loadAll} />
+              ) : visibleClasses.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
                   {cq ? '검색 결과가 없어요' : classes.length === 0 ? '학급이 없어요' : '활성 학급이 없어요. "비활성 포함 보기"를 눌러주세요.'}
                 </p>
@@ -2930,7 +2972,9 @@ export default function AdminHome() {
                   </div>
                 )}
 
-                {displayed.length === 0 ? (
+                {loadFail.includes('의견') && feedbacks.length === 0 ? (
+                  <LoadFailNotice onRetry={loadAll} />
+                ) : displayed.length === 0 ? (
                   <p className="text-sm text-gray-500 py-8 text-center">
                     {feedbacks.length === 0 ? '받은 의견이 없어요' : '보이는 의견이 없어요. 숨김 포함 보기를 사용하세요.'}
                   </p>
@@ -3072,7 +3116,9 @@ export default function AdminHome() {
               </div>
 
               <div className="bg-white rounded-2xl p-4 shadow-sm">
-                {sharedSuggestionLogs.length === 0 ? (
+                {lazyFail.shared ? (
+                  <LoadFailNotice onRetry={loadSharedSuggestionLogs} />
+                ) : sharedSuggestionLogs.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">아직 공유된 추천이 없어요</p>
                 ) : (
                   <div className="space-y-2">
@@ -3217,7 +3263,9 @@ export default function AdminHome() {
                 )}
 
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
-                  {rows.length === 0 ? (
+                  {lazyFail.copies ? (
+                    <LoadFailNotice onRetry={loadTopicCopies} />
+                  ) : rows.length === 0 ? (
                     <p className="text-sm text-gray-500 text-center py-6">아직 가져간 기록이 없어요.</p>
                   ) : (
                     <div className="space-y-2">
@@ -3701,19 +3749,29 @@ export default function AdminHome() {
               const head = (first) => (
                 <thead><tr className="text-[11px] text-gray-500">
                   <th className="px-2 py-1 text-left font-medium">{first}</th>
-                  {COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap" title={c.tip}>{c.label} <span className="text-gray-400 cursor-help">ⓘ</span></th>)}
+                  {COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap">{c.label} <InfoTip text={c.tip} label={`${c.label} 설명 보기`} /></th>)}
                 </tr></thead>
               )
               // step666: 첫 누름~결과(진짜 대기) + 결과 못 받은 시도. 해석 줄은 추측 없이 센 숫자만(attemptsVerdict).
               const a = summarizeAttempts(attemptRows.rows)
               const aVerdict = attemptsVerdict(a)
+              const A_TIP = {
+                n: '학생이 [제출]을 처음 누른 횟수예요. 다시 누른 것은 한 번으로 묶어요.',
+                p50: '빠른 순서로 줄 세웠을 때 한가운데 학생의 시간이에요. 절반은 이보다 빨리 받았어요. 평균이 아니에요.',
+                p95: '100명 중 95명은 이 시간 안에 받았어요. 가장 느린 5명만 더 걸렸어요. 평균이 아니에요.',
+                max: '가장 오래 기다린 한 번의 시간이에요.',
+                unfinished: '눌렀지만 끝내 결과를 받지 못한 횟수예요.',
+                over10: '처음 누른 뒤 10분 넘게 걸린 횟수예요.',
+                tries: '결과를 받을 때까지 [제출]을 누른 횟수예요.',
+              }
               const A_COLS = [
-                { key: 'n', label: '시도', tip: '학생이 [제출]을 누른 시도 수예요. 30분 안에 다시 누른 것은 한 시도로 묶어요.' },
-                { key: 'p50', label: '보통(절반)', tip: '결과를 받은 시도의 절반은 처음 누른 뒤 이 시간 안에 결과를 받았어요.' },
-                { key: 'p95', label: '거의 모두(95%)', tip: '결과를 받은 시도 100개 중 95개는 이 시간 안이었어요.' },
-                { key: 'max', label: '가장 오래', tip: '처음 누른 뒤 결과까지 가장 오래 걸린 시간이에요. 다시 누른 시간도 들어 있어요.' },
-                { key: 'unfinished', label: '결과 못 받음', tip: '누르기만 하고 결과를 받지 못한 시도 수예요. 0이면 초록이에요.' },
-                { key: 'over10', label: '10분 넘음', tip: '처음 누른 뒤 10분이 넘도록 결과를 못 받았거나 10분 넘게 걸려 받은 시도 수예요.' },
+                // step676: 설명 문구 교체(평균이 아니라는 점을 밝힘) + ⓘ를 누르거나 올리면 보이게(InfoTip)
+                { key: 'n', label: '시도', tip: A_TIP.n },
+                { key: 'p50', label: '보통(절반)', tip: A_TIP.p50 },
+                { key: 'p95', label: '거의 모두(95%)', tip: A_TIP.p95 },
+                { key: 'max', label: '가장 오래', tip: A_TIP.max },
+                { key: 'unfinished', label: '결과 못 받음', tip: A_TIP.unfinished },
+                { key: 'over10', label: '10분 넘음', tip: A_TIP.over10 },
               ]
               const aRow = (key, label, st) => (
                 <tr key={key} className="border-t border-gray-100">
@@ -3724,7 +3782,7 @@ export default function AdminHome() {
               const aHead = (first) => (
                 <thead><tr className="text-[11px] text-gray-500">
                   <th className="px-2 py-1 text-left font-medium">{first}</th>
-                  {A_COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap" title={c.tip}>{c.label} <span className="text-gray-400 cursor-help">ⓘ</span></th>)}
+                  {A_COLS.map(c => <th key={c.key} className="px-2 py-1 text-right font-medium whitespace-nowrap">{c.label} <InfoTip text={c.tip} label={`${c.label} 설명 보기`} /></th>)}
                 </tr></thead>
               )
               const attemptSection = (
@@ -3743,7 +3801,7 @@ export default function AdminHome() {
                   ) : (
                     <>
                       <div className={`text-sm font-semibold mb-1 ${a.total.unfinished > 0 ? 'text-red-700' : 'text-gray-800'}`}>🖐 {attemptsHeadline(a.total)}</div>
-                      <div className="text-[11px] text-gray-500 mb-3">누른 횟수: 보통 {a.total.triesP50}번 · 가장 많이 {a.total.triesMax}번{a.inProgress > 0 ? ` · 지금 채점 중 ${a.inProgress}건은 뺐어요` : ''}</div>
+                      <div className="text-[11px] text-gray-500 mb-3">누른 횟수 <InfoTip text={A_TIP.tries} label="누른 횟수 설명 보기" />: 보통 {a.total.triesP50}번 · 가장 많이 {a.total.triesMax}번{a.inProgress > 0 ? ` · 지금 채점 중 ${a.inProgress}건은 뺐어요` : ''}</div>
                       <div className="grid md:grid-cols-2 gap-4">
                         <div className="border border-gray-200 rounded-xl overflow-hidden">
                           <div className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50">일별 (한국 시각)</div>
@@ -3781,13 +3839,13 @@ export default function AdminHome() {
                                   <table className="w-full text-xs">
                                     <thead><tr className="text-[11px] text-gray-500">
                                       <th className="px-2 py-1 text-left font-medium">구간</th>
-                                      <th className="px-2 py-1 text-right font-medium">보통(절반)</th>
-                                      <th className="px-2 py-1 text-right font-medium">거의 모두(95%)</th>
+                                      <th className="px-2 py-1 text-right font-medium whitespace-nowrap">보통(절반) <InfoTip text={A_TIP.p50} label="보통(절반) 설명 보기" /></th>
+                                      <th className="px-2 py-1 text-right font-medium whitespace-nowrap">거의 모두(95%) <InfoTip text={A_TIP.p95} label="거의 모두(95%) 설명 보기" /></th>
                                     </tr></thead>
                                     <tbody>
                                       {['queue', 'strict', 'grade', 'other'].map(k => (
                                         <tr key={k} className="border-t border-gray-100">
-                                          <td className="px-2 py-1.5 text-gray-800" title={SEG_TIP[k]}>{SEG_LABEL[k]} <span className="text-gray-400 cursor-help">ⓘ</span></td>
+                                          <td className="px-2 py-1.5 text-gray-800 whitespace-nowrap">{SEG_LABEL[k]} <InfoTip text={SEG_TIP[k]} label={`${SEG_LABEL[k]} 설명 보기`} /></td>
                                           {cell(fmtSecKo(g.seg[k].p50))}{cell(fmtSecKo(g.seg[k].p95))}
                                         </tr>
                                       ))}
@@ -3824,7 +3882,7 @@ export default function AdminHome() {
                       </div>
                       <div className="flex gap-1.5 flex-wrap mb-3">
                         {Object.entries(s.paths).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
-                          <span key={k} title={PATH_TIP[k] || ''} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 cursor-help">{PATH_LABEL[k] || k} {n} <span className="text-gray-400">ⓘ</span></span>
+                          <span key={k} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{PATH_LABEL[k] || k} {n} <InfoTip text={PATH_TIP[k] || ''} label={`${PATH_LABEL[k] || k} 설명 보기`} /></span>
                         ))}
                       </div>
                       <div className="grid md:grid-cols-2 gap-4">
@@ -4163,6 +4221,8 @@ export default function AdminHome() {
                 <h3 className="text-sm font-bold text-gray-800 mb-2">발행 목록</h3>
                 {!supplyList.loaded ? (
                   <p className="text-sm text-gray-400 py-4 text-center">불러오는 중...</p>
+                ) : supplyList.error ? (
+                  <LoadFailNotice onRetry={() => setSupplyList({ loaded: false, rows: [] })} />
                 ) : supplyList.rows.length === 0 ? (
                   <p className="text-sm text-gray-400 py-4 text-center">아직 발행한 공급 주제가 없어요</p>
                 ) : (
@@ -4642,6 +4702,8 @@ export default function AdminHome() {
 
                 {!msgData.loaded ? (
                   <div className="py-8 text-center text-sm text-gray-400">불러오는 중...</div>
+                ) : msgData.error ? (
+                  <LoadFailNotice onRetry={() => setMsgData({ loaded: false, msgs: [], status: {}, profs: {} })} />
                 ) : threads.length === 0 ? (
                   <div className="py-8 text-center text-sm text-gray-400">아직 쪽지가 없어요</div>
                 ) : (
@@ -4941,6 +5003,7 @@ function AdminSubmissionsInner() {
   const router = useRouter()
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)   // step676: 조회 실패(빈 목록과 구분)
   const [selectedSubmission, setSelectedSubmissionState] = useState(null)
   // 🆕 그룹화 모드: 'flat' | 'school' | 'class' | 'topic' | 'student'
   const [groupBy, setGroupBy] = useState('flat')
@@ -5015,8 +5078,13 @@ function AdminSubmissionsInner() {
 
   const load = async () => {
     setLoading(true)
+    // step676: 조회가 실패하면(시간 초과 등) "학생 글이 없어요"가 아니라 "불러오지 못했어요"를 띄운다.
+    //   각 조회는 실패 시 한 번 더 해 본다(retryOnce). 실패하면 앞서 받은 목록은 비우지 않는다.
+    const fail = () => { setLoadError(true); setLoading(false) }
     // 학급 목록 + 담임 학교 정보 (학교별 그룹화에 필요)
-    const { data: classData } = await supabase.from('classes').select('id, name, teacher_id')
+    const classRes = await retryOnce(() => supabase.from('classes').select('id, name, teacher_id'))
+    if (classRes.error) return fail()
+    const classData = classRes.data
     // 담임 학교 매핑
     const teacherIds = [...new Set((classData || []).map(c => c.teacher_id).filter(Boolean))]
     let teacherSchoolMap = {}
@@ -5043,24 +5111,29 @@ function AdminSubmissionsInner() {
     // 🆕 특정 학급 선택 시: 그 학급 학생들의 글만 서버에서 직접 조회
     // (기존엔 전체 최근 200건에서 클라이언트 필터 → 다른 반 글이 많으면
     //  이 학급 글이 200건 밖으로 밀려나 "0건"으로 보이는 버그)
+    //   step676: 조회 조건은 종전과 같다. 재시도 때 조회를 새로 만들 수 있게 함수(buildQuery)로만 감쌌다.
+    let studentIds = null
+    if (selectedClass !== 'all') {
+      const stuRes = await retryOnce(() => supabase.from('profiles')
+        .select('id').eq('class_id', selectedClass).eq('role', 'student'))
+      if (stuRes.error) return fail()
+      studentIds = (stuRes.data || []).map(x => x.id)
+      if (studentIds.length === 0) {
+        setStudentMap({})
+        setSubmissions([])
+        setLoadError(false)
+        setLoading(false)
+        return
+      }
+    }
+    const buildQuery = () => {
     let query = supabase.from('submissions')
       .select('*, profiles!submissions_user_id_fkey(realname, nickname, username, number, class_id), topics(title, date)')
       .order('created_at', { ascending: false })
       // 🆕 학급 지정=2000(그 학급 전체) / 묶음 모드=1000(전 학급 그룹핑용 완화) / 전체 flat=200(평시 무게 보존)
       .limit(selectedClass !== 'all' ? 2000 : (groupBy !== 'flat' ? 1000 : 200))
 
-    if (selectedClass !== 'all') {
-      const { data: classStudents } = await supabase.from('profiles')
-        .select('id').eq('class_id', selectedClass).eq('role', 'student')
-      const studentIds = (classStudents || []).map(x => x.id)
-      if (studentIds.length === 0) {
-        setStudentMap({})
-        setSubmissions([])
-        setLoading(false)
-        return
-      }
-      query = query.in('user_id', studentIds)
-    }
+    if (studentIds) query = query.in('user_id', studentIds)
 
     // 🆕 날짜 필터 (KST 기준 created_at 범위). 그룹화·학급 필터와 공존.
     const kstTodayStr = () => {
@@ -5086,8 +5159,12 @@ function AdminSubmissionsInner() {
     if (subStatusFilter === 'active') query = query.is('deleted_at', null)
     else if (subStatusFilter === 'trashed') query = query.not('deleted_at', 'is', null)
     // 'all' → 필터 없음
+    return query
+    }
 
-    const { data } = await query
+    const { data, error: subErr } = await retryOnce(buildQuery)
+    if (subErr) return fail()
+    setLoadError(false)
     const filtered = data || []
 
     // 학생 매핑 만들기
@@ -5174,7 +5251,7 @@ function AdminSubmissionsInner() {
     <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-bold">
-          📝 학생 글 (최근 {submissions.length}건{sq ? ` · 검색 ${visibleSubmissions.length}건` : ''})
+          📝 학생 글 ({loadError ? '불러오지 못함' : <>최근 {submissions.length}건{sq ? ` · 검색 ${visibleSubmissions.length}건` : ''}</>})
           {selectedClass === 'all' && (
             <span className="text-[10px] text-gray-400 font-normal ml-1.5">
               {groupBy !== 'flat'
@@ -5293,6 +5370,8 @@ function AdminSubmissionsInner() {
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8 text-center">로딩 중...</p>
+      ) : loadError ? (
+        <LoadFailNotice onRetry={load} />
       ) : visibleSubmissions.length === 0 ? (
         <p className="text-sm text-gray-500 py-8 text-center">{sq ? '검색 결과가 없어요' : '학생 글이 없어요'}</p>
       ) : groupBy === 'flat' ? (
