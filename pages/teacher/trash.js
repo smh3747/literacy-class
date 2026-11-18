@@ -6,6 +6,8 @@ import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 '없음'으로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
@@ -17,6 +19,7 @@ export default function TeacherTrash() {
   const [classInfo, setClassInfo] = useState(null)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)   // step679: 보관된 글 조회 실패(빈 쓰레기통과 구분)
   const [busyId, setBusyId] = useState(null)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
 
@@ -38,19 +41,24 @@ export default function TeacherTrash() {
 
   const loadTrash = async (classId) => {
     if (!classId) return
+    // step679: 조회 실패면 멈춘다("쓰레기통이 비어있어요"로 보이지 않게). 앞서 받은 목록은 비우지 않는다.
     // 학급 학생들의 쓰레기통 글
-    const { data: students } = await supabase.from('profiles')
-      .select('id, realname, nickname, username, number').eq('class_id', classId).eq('role', 'student')   // step574: displayStudentName 폴백용 nickname·username 추가
+    const { data: students, error: stuErr } = await retryOnce(() => supabase.from('profiles')
+      .select('id, realname, nickname, username, number').eq('class_id', classId).eq('role', 'student'))
+    if (stuErr) { setLoadError(true); return }
+    //   // step574: displayStudentName 폴백용 nickname·username 추가
     const studentMap = {}
     ;(students || []).forEach(s => { studentMap[s.id] = s })
     const studentIds = (students || []).map(s => s.id)
     if (studentIds.length === 0) { setItems([]); return }
 
-    const { data: subs } = await supabase.from('submissions')
+    const { data: subs, error: subErr } = await retryOnce(() => supabase.from('submissions')
       .select('*')
       .in('user_id', studentIds)
       .not('deleted_at', 'is', null)
-      .order('deleted_at', { ascending: false })
+      .order('deleted_at', { ascending: false }))
+    if (subErr) { setLoadError(true); return }
+    setLoadError(false)
 
     const enriched = (subs || []).map(s => ({
       ...s,
@@ -172,7 +180,9 @@ export default function TeacherTrash() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h2 className="font-bold mb-3">📋 보관된 글 ({items.length}개)</h2>
 
-            {items.length === 0 ? (
+            {loadError ? (
+              <LoadFailNotice text="보관된 글을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => loadTrash(classInfo?.id)} />
+            ) : items.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-4xl mb-2">🗑️</div>
                 <p className="text-sm">쓰레기통이 비어있어요</p>

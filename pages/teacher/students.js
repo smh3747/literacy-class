@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 '없음'으로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
 import NicknameChangeModal from '../../components/NicknameChangeModal'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
@@ -16,6 +18,7 @@ export default function StudentsPage() {
   const [classInfo, setClassInfo] = useState(null)
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)   // step679: 학생 목록 조회 실패(빈 목록과 구분)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕
   const [uploadStatus, setUploadStatus] = useState(null)
   const [parsedStudents, setParsedStudents] = useState([])
@@ -85,7 +88,10 @@ export default function StudentsPage() {
 
   const loadStudents = async (classId) => {
     if (!classId) return
-    const { data } = await supabase.from('profiles').select('*').eq('class_id', classId).eq('role', 'student').order('username')
+    const { data, error: stuErr } = await retryOnce(() => supabase.from('profiles').select('*').eq('class_id', classId).eq('role', 'student').order('username'))
+    // step679: 조회 실패면 멈춘다. 종전에는 실패가 "아직 등록된 학생이 없어요"로 보였다. 앞서 받은 목록은 비우지 않는다.
+    if (stuErr) { setLoadError(true); return }
+    setLoadError(false)
     setStudents(data || [])
 
     // 🆕 학생이 이미 있는데 학급 안내가 비어있으면 자동 백필
@@ -1768,7 +1774,9 @@ export default function StudentsPage() {
               </div>
             </div>
 
-            {students.length === 0 ? (
+            {loadError && students.length === 0 ? (
+              <LoadFailNotice text="학생 목록을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => loadStudents(classInfo?.id)} />
+            ) : students.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 학생이 없어요</p>
             ) : (() => {
               const visibleStudents = [...students]

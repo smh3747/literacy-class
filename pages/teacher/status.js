@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 '없음'으로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
 import { displayStudentName } from '../../lib/displayName'
 import { todayStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
@@ -19,6 +21,7 @@ export default function SubmissionStatus() {
   const [students, setStudents] = useState([])
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)   // step679: 주제·학생·제출 조회 실패(빈 목록과 구분)
   const [topicFilter, setTopicFilter] = useState('all') // step494: all / class / challenge(source_supply_id 유무)
   const [weeklyChallengeCount, setWeeklyChallengeCount] = useState(null) // step494: 이번 주 챌린지 참여 학생 수(필터 무관)
   const [isImpersonating, setIsImpersonating] = useState(false)  // 🆕 step569: 엿보기 지원
@@ -38,12 +41,14 @@ export default function SubmissionStatus() {
 
     if (profile.classes?.id) {
       // 주제 목록 (최근 30개)
-      const { data: topicList } = await supabase.from('topics')
+      const { data: topicList, error: topicErr } = await retryOnce(() => supabase.from('topics')
         .select('id, date, title, source_supply_id')   // step494: 챌린지 필터 판정용 컬럼 추가
         .eq('teacher_id', profile.id)
         .is('supply_type', null)   // step479: 공급 원본 격리
         .order('date', { ascending: false })
-        .limit(30)
+        .limit(30))
+      // step679: 조회 실패면 멈추고 실패 안내를 띄운다("등록된 주제가 없어요"로 보이지 않게)
+      if (topicErr) { setLoadError(true); setLoading(false); return }
       setTopics(topicList || [])
 
       // step494: 이번 주(KST 월~일) 챌린지 참여 학생 수 — 필터와 무관한 소지표(실패 무시)
@@ -75,9 +80,11 @@ export default function SubmissionStatus() {
       setSelectedTopicId(initialId)
 
       // 학급 학생 목록 (숨김 제외)
-      const { data: studentList } = await supabase.from('profiles')
+      const { data: studentList, error: stuErr } = await retryOnce(() => supabase.from('profiles')
         .select('id, realname, nickname, username, number, is_hidden')
-        .eq('class_id', profile.classes.id).eq('role', 'student')
+        .eq('class_id', profile.classes.id).eq('role', 'student'))
+      if (stuErr) { setLoadError(true); setLoading(false); return }   // step679: "학급에 학생이 없어요"로 보이지 않게
+      setLoadError(false)
       const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
       setStudents(visibleStudents)
 
@@ -93,11 +100,14 @@ export default function SubmissionStatus() {
     const studentIds = studentList.map(s => s.id)
     if (studentIds.length === 0) { setSubmissions([]); return }
 
-    const { data: subs } = await supabase.from('submissions')
+    const { data: subs, error: subErr } = await retryOnce(() => supabase.from('submissions')
       .select('id, user_id, total_score, max_score, created_at, attempt, reported, teacher_comment, grade_status')   // step669: grade_status(채점 보류 표시용)
       .eq('topic_id', topicId)
       .in('user_id', studentIds)
-      .is('deleted_at', null)
+      .is('deleted_at', null))
+    // step679: 조회 실패면 제출 목록을 비우지 않고 실패 안내를 띄운다(전원 미제출로 보이지 않게)
+    if (subErr) { setLoadError(true); return }
+    setLoadError(false)
     setSubmissions(subs || [])
   }
 
@@ -209,7 +219,7 @@ export default function SubmissionStatus() {
               ))}
             </div>
             <label className="block text-xs text-gray-600 mb-1">주제 선택</label>
-            {topics.length === 0 ? (
+            {loadError && topics.length === 0 ? null : topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-4 text-center">등록된 주제가 없어요</p>
             ) : (() => {
               const visible = topics.filter(t => matchesFilter(t, topicFilter))
@@ -232,7 +242,9 @@ export default function SubmissionStatus() {
             )}
           </div>
 
-          {students.length === 0 ? (
+          {loadError ? (
+            <LoadFailNotice text="제출 현황을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => { setLoading(true); checkAuth() }} />
+          ) : students.length === 0 ? (
             <div className="bg-white rounded-2xl p-10 text-center text-gray-500">
               <p className="text-sm">학급에 학생이 없어요</p>
               <Link href={withImpersonation('/teacher/students')} className="text-xs text-primary underline mt-2 inline-block">

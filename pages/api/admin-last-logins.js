@@ -9,6 +9,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 
+const LAST_LOGIN_BATCH = 25   // step679: 한 번에 동시에 조회하는 인원
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -43,24 +45,21 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: '관리자만 조회할 수 있어요' })
   }
 
-  // auth.users 전량 순회 (listUsers는 perPage 최대 1000 — 페이지네이션 필수)
-  const lastLogins = {}  // { userId: last_sign_in_at }
-  let page = 1
-  const perPage = 1000
-  let guard = 0
+  // step679: 교사·관리자만 읽는다. 종전에는 인증 사용자 전원(학생 포함 4,300여 명)을 1000명씩 차례로 읽어
+  //   서버가 약 2.4MB를 받고 전원의 시각(117kB)을 돌려줬다. 화면은 교사 행만 쓴다.
+  //   교사·관리자 id를 profiles에서 받고, 그 id만 한 명씩 묶음(LAST_LOGIN_BATCH명 동시)으로 조회한다. 한 명이 실패해도 나머지는 돌려준다.
+  const lastLogins = {}  // { userId: last_sign_in_at } — 교사·관리자만. 이메일 등 PII는 담지 않음.
   try {
-    while (guard++ < 100) {  // 최대 10만명 가드 (무한 루프 방지)
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage })
-      if (error) {
-        return res.status(500).json({ error: '사용자 목록 조회 실패' })
-      }
-      const users = data?.users || []
-      users.forEach(u => {
-        // id ↔ 마지막 로그인 시각만. 이메일 등 PII는 담지 않음.
-        lastLogins[u.id] = u.last_sign_in_at || null
-      })
-      if (users.length < perPage) break
-      page += 1
+    const { data: staff, error: staffErr } = await supabaseAdmin.from('profiles')
+      .select('id').in('role', ['teacher', 'admin'])
+    if (staffErr) return res.status(500).json({ error: '교사 목록 조회 실패' })
+    const ids = (staff || []).map(p => p.id)
+    for (let i = 0; i < ids.length; i += LAST_LOGIN_BATCH) {
+      const got = await Promise.all(ids.slice(i, i + LAST_LOGIN_BATCH).map(id =>
+        supabaseAdmin.auth.admin.getUserById(id)
+          .then(r => [id, r?.data?.user?.last_sign_in_at || null])
+          .catch(() => [id, null])))
+      for (const [id, at] of got) lastLogins[id] = at
     }
   } catch (e) {
     return res.status(500).json({ error: '사용자 목록 조회 중 오류' })

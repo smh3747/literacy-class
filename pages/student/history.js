@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 "아직 쓴 글이 없어요"로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
 import GradePendingBadge from '../../components/GradePendingBadge'   // step675: 대기 글 채점을 이 화면에서도 이어 간다
 import StrictPendingBadge from '../../components/StrictPendingBadge'  // step601: 맞춤법 보완 대기 배지(폴링 겸)
@@ -109,6 +111,11 @@ function stripPenalty(str) {
   return String(str).replace(/\(\s*-?\d+\s*점(?:\s*감점)?\s*\)/g, '').replace(/\s{2,}/g, ' ').trim()
 }
 
+// step679: 목록은 가벼운 컬럼만 받는다(글 본문·피드백·예시·교정은 뺀다). 본문은 상세를 열 때 그 주제 글만 받는다.
+//   배경(11/18 실측): 한 학생 142편을 통째로 받으면 188~664ms, 글이 늘수록 커진다. 목록이 쓰는 것은 제목·날짜·점수·표식뿐이다.
+//   선생님 코멘트(teacher_comment)는 상세를 열 때 읽음 처리 판정에 쓰여 목록에도 둔다(짧은 글).
+const HISTORY_LIST_COLS = 'id, user_id, topic_id, topic_title, attempt, created_at, total_score, max_score, teacher_score, grade_status, graded_with_model, strict_status, teacher_comment, teacher_comment_read_at, extra_rewrite_allowed, topics(title, date, source_supply_id)'
+
 export default function StudentHistory() {
   const router = useRouter()
   useGrammarTooltip()
@@ -117,6 +124,8 @@ export default function StudentHistory() {
   const [grouped, setGrouped] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(null)
+  const [listError, setListError] = useState(false)       // step679: 목록 조회 실패(빈 목록과 구분)
+  const [detailError, setDetailError] = useState(false)   // step679: 상세(본문) 조회 실패
   const [challengeRanks, setChallengeRanks] = useState({}) // step499→539: { [source_supply_id]: { rank, total } } 당시(최종) 순위+풀 크기
   // 📚 step621: 우리 반 친구들 글 — 주제별 캐시 { [topic_id]: { items, showScore } | null }, 담임 id, 알린 글 key
   const [peerShareByTopic, setPeerShareByTopic] = useState({})
@@ -172,6 +181,21 @@ export default function StudentHistory() {
       .catch(() => {})  // 실패해도 무시 (다음에 또 시도됨)
   }, [selectedIdx])
 
+  // step679: 상세를 열면 그 주제 글의 전체 내용(본문·피드백 포함)을 받는다. 받은 주제는 full 표식으로 다시 받지 않는다.
+  const loadGroupDetail = async (g) => {
+    if (!g || g.full) return
+    const ids = (g.items || []).map(x => x.id)
+    if (ids.length === 0) return
+    setDetailError(false)
+    const { data, error } = await retryOnce(() => supabase.from('submissions').select('*, topics(title, date, source_supply_id)').in('id', ids).is('deleted_at', null))
+    if (error || !data || data.length === 0) { setDetailError(true); return }
+    setGrouped(prev => prev.map(x => x.key === g.key ? { ...x, items: data, full: true } : x))
+  }
+  useEffect(() => {
+    if (selectedIdx === null || !grouped[selectedIdx] || grouped[selectedIdx].full) return
+    loadGroupDetail(grouped[selectedIdx])
+  }, [selectedIdx, grouped])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const checkAuth = async () => {
     // 🆕 step331: 진입 인증은 getSession(로컬, 왕복 없음). 실질 검증은 아래 profile RLS+role 가드.
     const { data: { session } } = await supabase.auth.getSession()
@@ -198,7 +222,10 @@ export default function StudentHistory() {
         .then(r => setTeacherId(r?.data?.teacher_id || null)).catch(() => {})
     }
 
-    const { data } = await supabase.from('submissions').select('*, topics(title, date, source_supply_id)').eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false })
+    const { data, error: listErr } = await retryOnce(() => supabase.from('submissions').select(HISTORY_LIST_COLS).eq('user_id', profile.id).is('deleted_at', null).order('created_at', { ascending: false }))
+    // step679: 조회 실패면 멈추고 실패 안내를 띄운다(앞서 받은 목록은 비우지 않는다)
+    if (listErr) { setListError(true); setLoading(false); return }
+    setListError(false)
     
     // 주제별로 그룹화
     const groups = {}
@@ -272,6 +299,30 @@ export default function StudentHistory() {
   const closeGroup = () => { setSelectedIdx(null); syncGroupUrl(null) }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
+
+  // step679: 상세 본문을 받는 동안(또는 실패)에는 틀(제목)만 먼저 보여 준다
+  if (selectedIdx !== null && grouped[selectedIdx] && !grouped[selectedIdx].full) {
+    const g = grouped[selectedIdx]
+    return (
+      <>
+        <Head><title>{g.title} - 다온클래스</title></Head>
+        <div className="min-h-screen bg-gray-50">
+          {isImpersonating && <ImpersonationBanner kind="student" targetName={displayStudentNameWithNumber(user)} />}
+          <Header user={user} onLogout={logout} />
+          <main className="mx-auto px-4 py-6 space-y-4 max-w-3xl">
+            <button onClick={closeGroup} className="text-sm text-gray-600">← 목록으로</button>
+            <div className="bg-primary-light rounded-2xl p-4">
+              <div className="text-xs text-primary-dark">📅 {g.date}</div>
+              <h2 className="text-lg font-bold text-primary-dark">{g.title}</h2>
+            </div>
+            {detailError
+              ? <LoadFailNotice text="글을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => loadGroupDetail(g)} />
+              : <div className="bg-white rounded-2xl p-8 text-center text-sm text-gray-500 shadow-sm">글을 불러오는 중이에요...</div>}
+          </main>
+        </div>
+      </>
+    )
+  }
 
   // 디테일 화면
   if (selectedIdx !== null && grouped[selectedIdx]) {
@@ -650,7 +701,9 @@ export default function StudentHistory() {
             </div>
           )}
 
-          {grouped.length === 0 ? (
+          {listError ? (
+            <LoadFailNotice text="내 글을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => { setLoading(true); checkAuth() }} />
+          ) : grouped.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
               <div className="text-4xl mb-2">📝</div>
               <p className="text-sm">아직 쓴 글이 없어요</p>

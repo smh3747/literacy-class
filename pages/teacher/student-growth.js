@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 '없음'으로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation } from '../../lib/impersonation'
@@ -19,6 +21,7 @@ export default function StudentGrowth() {
   const [students, setStudents] = useState([])
   const [allSubmissions, setAllSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)   // step679: 학생·글 조회 실패(글 없음과 구분)
   const [selectedStudent, setSelectedStudent] = useState('all')
   const [sortMode, setSortMode] = useState('growth')  // 'growth'(성장순) | 'number'(번호순)
   const [gradeAvg, setGradeAvg] = useState(null)  // 🆕 step345: 우리 학년 전체 평균(참조선), RPC 비차단
@@ -68,14 +71,18 @@ export default function StudentGrowth() {
     setClassInfo(profile.classes)
 
     if (profile.classes?.id) {
-      const { data: studentList } = await supabase.from('profiles').select('id, realname, nickname, username, number, is_hidden').eq('class_id', profile.classes.id).eq('role', 'student').order('username')
+      // step679: 조회 실패면 멈추고 실패 안내를 띄운다("아직 제출된 글이 없어요"로 보이지 않게)
+      const { data: studentList, error: stuErr } = await retryOnce(() => supabase.from('profiles').select('id, realname, nickname, username, number, is_hidden').eq('class_id', profile.classes.id).eq('role', 'student').order('username'))
+      if (stuErr) { setLoadError(true); setLoading(false); return }
       const visibleStudents = (studentList || []).filter(s => !s.is_hidden)
       setStudents(visibleStudents)
 
       const studentIds = visibleStudents.map(s => s.id)
       if (studentIds.length > 0) {
         // step607: AI 안전 필터 차단(점수 없음) 글은 성장 그래프·학급 평균에서 제외(0점으로 왜곡되지 않게)
-        const { data: subs } = await supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).is('deleted_at', null).not('total_score', 'is', null).order('created_at')
+        const { data: subs, error: subErr } = await retryOnce(() => supabase.from('submissions').select('*, topics(date)').in('user_id', studentIds).is('deleted_at', null).not('total_score', 'is', null).order('created_at'))
+        if (subErr) { setLoadError(true); setLoading(false); return }
+        setLoadError(false)
         setAllSubmissions(subs || [])
       }
     }
@@ -280,7 +287,9 @@ export default function StudentGrowth() {
             <h1 className="text-xl font-bold">📊 학생 성장 그래프</h1>
           </div>
 
-          {allSubmissions.length === 0 ? (
+          {loadError ? (
+            <LoadFailNotice text="성장 기록을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => { setLoading(true); check() }} />
+          ) : allSubmissions.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center text-gray-500">
               <p>아직 제출된 글이 없어요</p>
             </div>

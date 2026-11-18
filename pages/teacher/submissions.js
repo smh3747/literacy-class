@@ -12,6 +12,7 @@ import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { callAI } from '../../lib/aiClient'
 import { retryOnce } from '../../lib/loadRetry'   // step677: 조회 실패를 "미제출"로 보이지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
@@ -136,6 +137,7 @@ export default function TeacherSubmissions() {
   const [hasApiKey, setHasApiKey] = useState(false)  // 키 서버격리(step153~): class_secrets 기준
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
+  const [topicsLoadError, setTopicsLoadError] = useState(false)   // step679: 주제 목록 조회 실패(빈 목록과 구분)
   const [view, setView] = useState('topics') // topics / topicStudents / studentDetail / allFinal
   const [topicFilter, setTopicFilter] = useState('all') // step493: all / class / challenge(source_supply_id 유무)
   const [selectedTopic, setSelectedTopic] = useState(null)
@@ -190,7 +192,8 @@ export default function TeacherSubmissions() {
       } catch (e) { setHasApiKey(false) }
     }
 
-    const { data } = await supabase.from('topics').select('*').eq('teacher_id', profile.id).is('supply_type', null).order('date', { ascending: false }).limit(30)   // step479: 공급 원본 격리
+    const { data, error: topicsErr } = await retryOnce(() => supabase.from('topics').select('*').eq('teacher_id', profile.id).is('supply_type', null).order('date', { ascending: false }).limit(30))   // step479: 공급 원본 격리
+    setTopicsLoadError(!!topicsErr)   // step679: 실패를 "등록된 주제가 없어요"로 보이지 않게
     setTopics(data || [])
     setLoading(false)
 
@@ -985,7 +988,9 @@ export default function TeacherSubmissions() {
                     </button>
                   ))}
                 </div>
-                {topics.length === 0 ? (
+                {topicsLoadError ? (
+                  <LoadFailNotice text="주제 목록을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => { setLoading(true); checkAuth() }} />
+                ) : topics.length === 0 ? (
                   <p className="text-sm text-gray-500 py-8 text-center">등록된 주제가 없어요. 먼저 주제를 등록해주세요.</p>
                 ) : (() => {
                   const visible = topics.filter(t =>

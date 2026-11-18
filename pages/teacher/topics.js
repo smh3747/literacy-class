@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { retryOnce } from '../../lib/loadRetry'   // step677: 조회 실패를 '없음'으로 읽지 않게(자동 재시도 1회)
+import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
@@ -228,14 +229,18 @@ export default function TopicsPage() {
     setLoading(false)
   }
 
+  const [topicsLoadError, setTopicsLoadError] = useState(false)   // step679: 주제 목록 조회 실패(빈 목록과 구분)
   const loadTopics = async (teacherId, classId = null) => {
     if (!teacherId) return
-    const { data } = await supabase.from('topics')
+    const { data, error: topicsErr } = await retryOnce(() => supabase.from('topics')
       .select('*')
       .eq('teacher_id', teacherId)
       .is('supply_type', null)   // step479: 공급 원본 격리(담임=관리자면 원본이 목록에 섞이는 것 방지)
       .order('date', { ascending: false })
-      .limit(50)
+      .limit(50))
+    // step679: 조회 실패면 멈춘다(앞서 받은 목록 유지). 종전에는 실패가 "아직 등록된 주제가 없어요"로 보였다.
+    if (topicsErr) { setTopicsLoadError(true); return }
+    setTopicsLoadError(false)
 
     if (!data || data.length === 0) {
       setTopics([])
@@ -2197,7 +2202,9 @@ export default function TopicsPage() {
                 </button>
               ))}
             </div>
-            {topics.length === 0 ? (
+            {topicsLoadError && topics.length === 0 ? (
+              <LoadFailNotice text="주제 목록을 불러오지 못했어요. 다시 시도해 주세요." onRetry={() => loadTopics(user?.id, classInfo?.id)} />
+            ) : topics.length === 0 ? (
               <p className="text-sm text-gray-500 py-8 text-center">아직 등록된 주제가 없어요</p>
             ) : (() => {
               const today = todayStr()

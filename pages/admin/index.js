@@ -22,6 +22,9 @@ import { retryOnce, loadFailLine } from '../../lib/loadRetry'   // step676: 조�
 import LoadFailNotice from '../../components/LoadFailNotice'   // step676: "불러오지 못했어요" + [다시 시도]
 import InfoTip from '../../components/InfoTip'                 // step676: ⓘ 설명 풍선(마우스·터치)
 
+// step679: 관리자 화면이 받는 학급 컬럼. 옛 열쇠 컬럼(api_key)은 넣지 않는다. 학급 표에 컬럼을 추가하면 여기에도 추가해야 화면에 온다.
+const ADMIN_CLASS_COLS = 'id, name, code, teacher_id, created_at, is_active, school, grade, board_scope, ranking_enabled, login_hint_enabled, login_username_prefix, login_default_password, trash_retention_days, deleted_at, deleted_by, delete_reason, tutor_chat_enabled, school_code, consent_password, feedback_reply_visible_to_students, self_signup_enabled, consent_notice_intro, morning_briefing_text, morning_briefing_source_topic_id, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score'
+
 // 🆕 교사 활동 단계 분류 기준(일) — 방학엔 조정 예정. 이미 로드된 데이터의 파생 계산만(DB 무변경).
 const ACTIVE_DAYS = 7
 const COOLING_DAYS = 14
@@ -209,6 +212,7 @@ export default function AdminHome() {
   const [loadFail, setLoadFail] = useState([])
   const [lazyFail, setLazyFail] = useState({ shared: false, copies: false })
   const [reloading, setReloading] = useState(false)
+  const keyedClassIdsRef = useRef(null)   // step679: 앞서 받은 열쇠 등록 학급 id(조회 실패 때 유지용)
   const [teacherLastLogin, setTeacherLastLogin] = useState({})  // 🆕 step254: { userId: last_sign_in_at } (auth.users 읽기)
   const [lastLoginLoaded, setLastLoginLoaded] = useState(false)  // 🆕 step334: 마지막 로그인 비차단 로딩 완료 여부(로딩 중 placeholder)
   const [classes, setClasses] = useState([])
@@ -364,7 +368,8 @@ export default function AdminHome() {
            classStatRes, secretsRes, elogsRes, suspectRes, viewsRes] = await Promise.all([
       // step676: 목록·합산 6건은 실패하면 한 번 더 해 본다(retryOnce). 던진 오류도 { error }로 바뀌어 묶음 전체가 깨지지 않는다.
       retryOnce(() => supabase.from('profiles').select('*, classes:class_id(name, code)').in('role', ['teacher', 'admin']).order('created_at', { ascending: false })),
-      retryOnce(() => supabase.from('classes').select('*').order('created_at', { ascending: false })),
+      // step679: 옛 열쇠 컬럼(classes.api_key)이 브라우저로 내려오지 않게 컬럼을 명시한다(ADMIN_CLASS_COLS, api_key 제외)
+      retryOnce(() => supabase.from('classes').select(ADMIN_CLASS_COLS).order('created_at', { ascending: false })),
       retryOnce(() => supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').is('deleted_at', null)),
       retryOnce(() => supabase.from('submissions').select('id', { count: 'exact', head: true })),
       retryOnce(() => supabase.from('submissions').select('id', { count: 'exact', head: true }).gte('created_at', todayStartUTC)),
@@ -377,7 +382,8 @@ export default function AdminHome() {
       // 🆕 step333: 학급별 통계 RPC
       safe(supabase.rpc('admin_class_stats')),
       // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능)
-      safe(supabase.from('class_secrets').select('class_id, api_key')),
+      //   step679: 열쇠 값은 받지 않는다. 열쇠가 있는 행의 class_id만 받는다(등록 여부).
+      safe(supabase.from('class_secrets').select('class_id').not('api_key', 'is', null)),
       // 🆕 step155: 에러 로그 (최근 50건) — 대시보드 "24h 에러" 카드·탭 (N)에 쓰여 첫 배치에 둔다(학생 번호 조인만 에러 탭 지연)
       safe(supabase.from('error_logs').select('*').order('created_at', { ascending: false }).limit(50)),
       // 🔍 step359: 의심 교정(correction_alerts) 미해결 건수 — head:true count만(가벼움), 목록은 탭 열 때 로드
@@ -488,13 +494,19 @@ export default function AdminHome() {
     })
 
     // 🆕 키 서버격리(step153~): API 키 등록 여부는 class_secrets 기준 (admin은 RLS로 전체 조회 가능) — step637-B: 첫 배치 결과 사용
+    let keyFail = false   // step679: 열쇠 등록 여부 조회 실패
     try {
       if (!secretsRes) throw new Error('조회 실패')
       const secrets = secretsRes.data
-      const keyedClassIds = new Set((secrets || []).filter(s => s.api_key).map(s => s.class_id))
+      if (secretsRes.error) throw secretsRes.error
+      const keyedClassIds = new Set((secrets || []).map(s => s.class_id))
       activeClasses.forEach(c => { c.has_api_key = keyedClassIds.has(c.id) })
+      keyedClassIdsRef.current = keyedClassIds
     } catch (e) {
-      activeClasses.forEach(c => { c.has_api_key = !!c.api_key }) // 폴백: 동결된 classes.api_key
+      // step679: 조회 실패면 앞서 받은 등록 여부를 그대로 쓴다(옛 컬럼 값은 더 이상 받지 않는다). 처음부터 실패면 알 수 없음으로 두고 위 배너에 알린다.
+      const prevKeyed = keyedClassIdsRef.current
+      activeClasses.forEach(c => { c.has_api_key = prevKeyed ? prevKeyed.has(c.id) : false })
+      keyFail = true
     }
 
     // step676: 실패한 목록은 빈 값으로 덮지 않는다(앞서 받은 값 유지). 무엇을 못 불러왔는지는 loadFail로 화면에 알린다.
@@ -504,6 +516,7 @@ export default function AdminHome() {
       classesRes.error && '학급',
       feedbackRes.error && '의견',
       countFail && '합산 숫자',
+      keyFail && '열쇠 등록 여부',
     ].filter(Boolean))
     if (!teachersRes.error) { setTeachers(activeTeachers); setTrashedTeachers(trashedTeachers) }
     if (!classesRes.error) { setClasses(activeClasses); setTrashedClasses(trashedClasses) }

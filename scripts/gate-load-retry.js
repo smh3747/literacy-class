@@ -73,6 +73,33 @@ const { pathToFileURL } = require('url')
   rec('ⓘ 문구 7개가 정해진 그대로', TIPS.every(t => admin.includes(`'${t}'`)), TIPS.filter(t => !admin.includes(`'${t}'`)).join(' / '))
   rec('ⓘ: 진짜 대기 표 머리(일별·학급별 공용)·누른 횟수·구간 표 머리와 행에 붙어 있다', /A_COLS\.map\(c => <th[^>]*>\{c\.label\} <InfoTip text=\{c\.tip\}/.test(admin) && admin.includes('<InfoTip text={A_TIP.tries}') && admin.includes('<InfoTip text={A_TIP.p50}') && admin.includes('<InfoTip text={A_TIP.p95}') && admin.includes('<InfoTip text={SEG_TIP[k]}'))
 
+  // ── step679: 열쇠 값 비노출 · 교사만 조회 · 내 글 기록 본문 지연 · 교사 화면 실패 표시 ──
+  rec('관리자: class_secrets에서 열쇠 값을 받지 않는다(등록된 class_id만)', admin.includes("from('class_secrets').select('class_id').not('api_key', 'is', null)") && !/from\('class_secrets'\)\.select\('[^']*api_key/.test(admin))
+  rec('관리자: 학급 조회는 컬럼 명시(옛 열쇠 컬럼 제외), select(*) 없음', /const ADMIN_CLASS_COLS = '[^']+'/.test(admin) && !/ADMIN_CLASS_COLS = '[^']*api_key/.test(admin) && admin.includes("from('classes').select(ADMIN_CLASS_COLS)") && !/from\('classes'\)\.select\('\*'\)/.test(admin) && !/c\.api_key/.test(admin))
+  for (const f of ['pages/admin/index.js', 'pages/teacher/index.js', 'pages/teacher/topics.js', 'pages/teacher/submissions.js', 'pages/teacher/record.js', 'pages/teacher/grammar-backfill.js', 'pages/student/index.js', 'pages/student/history.js']) {
+    rec(`${f}: 화면 코드가 열쇠 값(api_key)을 조회하지 않는다`, !/select\('[^']*api_key[^']*'\)/.test(read(f)))
+  }
+  const ll = read('pages/api/admin-last-logins.js')
+  rec('마지막 로그인 API: 전원 목록(listUsers)을 읽지 않고 교사·관리자 id만 조회', !/listUsers\(/.test(ll) && ll.includes(".select('id').in('role', ['teacher', 'admin'])") && ll.includes('getUserById(id)') && ll.includes("requesterProfile.role !== 'admin'"))
+  rec('마지막 로그인 API: 돌려주는 값은 id와 시각뿐', ll.includes('r?.data?.user?.last_sign_in_at || null') && !/\.email/.test(ll))
+  const hist = read('pages/student/history.js').replace(/\r\n/g, '\n')
+  const listCols = (hist.match(/const HISTORY_LIST_COLS = '([^']+)'/) || [])[1] || ''
+  rec('내 글 기록: 목록 조회에 본문·피드백·예시·교정이 없다', listCols.length > 0 && !/essay_text|feedback_|example_text|corrections|scores|rubric_reasons|improve_examples|\*/.test(listCols) && hist.includes('.select(HISTORY_LIST_COLS)'))
+  rec('내 글 기록: 목록이 쓰는 값은 다 받는다(점수·표식·읽음 판정)', ['id', 'topic_id', 'topic_title', 'attempt', 'created_at', 'total_score', 'max_score', 'teacher_score', 'grade_status', 'graded_with_model', 'teacher_comment', 'teacher_comment_read_at', 'extra_rewrite_allowed'].every(c => new RegExp('(^|, )' + c + '(,|$)').test(listCols)))
+  rec('내 글 기록: 상세를 열 때 그 주제 글만 전체로 받고, 받기 전에는 상세 본문을 그리지 않는다', hist.includes("select('*, topics(title, date, source_supply_id)').in('id', ids)") && hist.includes('items: data, full: true') && hist.indexOf('!grouped[selectedIdx].full) {') > 0 && hist.indexOf('!grouped[selectedIdx].full) {') < hist.indexOf('  // 디테일 화면\n'))
+  rec('내 글 기록: 목록·상세 조회 실패는 실패 안내(빈 목록 문구보다 먼저)', hist.includes('if (listErr) { setListError(true); setLoading(false); return }') && hist.indexOf('{listError ? (') > 0 && hist.indexOf('{listError ? (') < hist.lastIndexOf('아직 쓴 글이 없어요') && hist.includes('detailError'))
+  for (const [f, words] of [
+    ['pages/teacher/students.js', ['if (stuErr) { setLoadError(true); return }', '학생 목록을 불러오지 못했어요. 다시 시도해 주세요.']],
+    ['pages/teacher/topics.js', ['if (topicsErr) { setTopicsLoadError(true); return }', '주제 목록을 불러오지 못했어요. 다시 시도해 주세요.']],
+    ['pages/teacher/submissions.js', ['setTopicsLoadError(!!topicsErr)', '{topicsLoadError ? (']],
+    ['pages/teacher/status.js', ['if (topicErr) { setLoadError(true); setLoading(false); return }', 'if (subErr) { setLoadError(true); return }', '제출 현황을 불러오지 못했어요. 다시 시도해 주세요.']],
+    ['pages/teacher/trash.js', ['if (subErr) { setLoadError(true); return }', '보관된 글을 불러오지 못했어요. 다시 시도해 주세요.']],
+    ['pages/teacher/student-growth.js', ['if (subErr) { setLoadError(true); setLoading(false); return }', '성장 기록을 불러오지 못했어요. 다시 시도해 주세요.']],
+  ]) {
+    const t = read(f)
+    rec(`${f}: 조회 실패면 실패 안내(상태 선언·불러오기 포함)`, words.every(w => t.includes(w)) && /const \[(loadError|topicsLoadError), set(LoadError|TopicsLoadError)\] = useState\(false\)/.test(t) && t.includes("import LoadFailNotice from '../../components/LoadFailNotice'") && t.includes('retryOnce'))
+  }
+
   let pass = 0, fail = 0
   for (const r of results) { if (r.pass) pass++; else fail++; console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  — ${r.detail}` : ''}`) }
   console.log(`\n전체 ${pass}/${pass + fail} PASS${fail ? `  (실패 ${fail}건)` : ''}`)
