@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'   // step677: 조회 실패를 '없음'으로 읽지 않게(자동 재시도 1회)
 import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
@@ -490,10 +491,13 @@ export default function TopicsPage() {
     setEditingTopicId(t.id)
     // 🆕 step385: 실제 제출(삭제 제외, 숨김 학생 포함) 1건 이상이면 제목·루브릭 잠금.
     //   목록의 submitted_count는 숨김 학생을 빼고 세므로 여기선 정밀 카운트 1건으로 판정.
+    //   step677: supabase는 실패해도 던지지 않아 catch가 안 걸렸다(count 없음 → 0 → 잠금 풀림). error를 직접 보고, 실패면 잠근다.
+    //   저장할 때 한 번 더 확인하고, 그때도 실패하면 저장을 멈춘다(아래 saveTopic).
     try {
-      const { count } = await supabase.from('submissions')
+      const { count, error: cntErr } = await retryOnce(() => supabase.from('submissions')
         .select('id', { count: 'exact', head: true })
-        .eq('topic_id', t.id).is('deleted_at', null)
+        .eq('topic_id', t.id).is('deleted_at', null))
+      if (cntErr) throw cntErr
       setEditLocked((count || 0) > 0)
     } catch { setEditLocked(true) }  // 판정 실패 시 안전하게 잠금
     setDate(t.date)
@@ -622,6 +626,7 @@ export default function TopicsPage() {
     setSupplyBusy(false)
   }
 
+  const TOPIC_LOAD_FAIL = '주제 정보를 불러오지 못했어요. 다시 시도해 주세요.\n입력한 내용은 그대로 있어요.'   // step677
   const saveTopic = async () => {
     // step570: 엿보기 차단 — topics.insert/update + topic_copies.insert + rpc('notify_topic_copied')
     //   (rpc는 supabase Proxy가 못 막아 원작자에게 실제 알림이 가는 경로 — 담임 몰래 원칙 위반 방지)
@@ -665,8 +670,10 @@ export default function TopicsPage() {
       const isEditMode = !!editingTopicId
       let existing = null
       if (isEditMode) {
-        const { data } = await supabase.from('topics')
-          .select('id').eq('id', editingTopicId).maybeSingle()
+        // step677: 조회가 실패하면 저장을 멈춘다. 종전에는 실패가 "주제 없음"으로 읽혀 수정이 새 주제 등록으로 바뀌었다(중복 주제).
+        const { data, error: exErr } = await retryOnce(() => supabase.from('topics')
+          .select('id').eq('id', editingTopicId).maybeSingle())
+        if (exErr) { setSaving(false); alert(TOPIC_LOAD_FAIL); return }
         existing = data
       }
 
@@ -674,12 +681,14 @@ export default function TopicsPage() {
       if (existing) {
         // 🆕 step385: 저장 시점에 제출 여부 재확인 (편집 도중 첫 제출이 생겨도 제목·루브릭이 안 덮이게 이중 방어)
         let locked = editLocked
-        try {
-          const { count } = await supabase.from('submissions')
+        //   step677: 이 확인이 실패하면 저장을 멈춘다. 종전에는 실패가 "제출 0건"으로 읽혀 제출이 있는 주제의 제목·평가 기준이 바뀔 수 있었다.
+        {
+          const { count, error: cntErr } = await retryOnce(() => supabase.from('submissions')
             .select('id', { count: 'exact', head: true })
-            .eq('topic_id', existing.id).is('deleted_at', null)
+            .eq('topic_id', existing.id).is('deleted_at', null))
+          if (cntErr) { setSaving(false); alert(TOPIC_LOAD_FAIL); return }
           locked = (count || 0) > 0
-        } catch { locked = true }
+        }
 
         const payload = {
           date,

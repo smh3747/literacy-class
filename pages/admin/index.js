@@ -3734,9 +3734,10 @@ export default function AdminHome() {
               }
               const COLS = [
                 { key: 'n', label: '편수', tip: '이 기간에 측정된 글 수예요.' },
-                { key: 'p50', label: '보통(절반)', tip: '학생 절반은 이 시간 안에 결과를 받았어요.' },
-                { key: 'p95', label: '거의 모두(95%)', tip: '100명 중 95명은 이 시간 안에 결과를 받았어요.' },
-                { key: 'max', label: '가장 오래', tip: '가장 오래 기다린 글의 시간이에요.' },
+                // step677: 같은 이름 열(보통·거의 모두·가장 오래)은 아래 "진짜 대기" 표와 같은 문구로 통일
+                { key: 'p50', label: '보통(절반)', tip: '빠른 순서로 줄 세웠을 때 한가운데 학생의 시간이에요. 절반은 이보다 빨리 받았어요. 평균이 아니에요.' },
+                { key: 'p95', label: '거의 모두(95%)', tip: '100명 중 95명은 이 시간 안에 받았어요. 가장 느린 5명만 더 걸렸어요. 평균이 아니에요.' },
+                { key: 'max', label: '가장 오래', tip: '가장 오래 기다린 한 번의 시간이에요.' },
                 { key: 'over60', label: '1분 넘음', tip: '결과까지 1분 넘게 걸린 글 수예요. 0이면 초록이에요.' },
               ]
               const cell = (v, tone) => <td className={`px-2 py-1.5 text-right tabular-nums ${tone === 'warn' ? 'text-red-600 font-semibold' : tone === 'ok' ? 'text-green-600 font-semibold' : ''}`}>{v}</td>

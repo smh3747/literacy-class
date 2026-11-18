@@ -1492,6 +1492,7 @@ export default function StudentHome() {
     // 🆕 step283: 첫 await(중복확인 쿼리) 전에 동기 잠금 — 연타/재진입으로 같은 attempt 중복 insert 방지.
     //   read-then-insert(아래 existingSubs→insert)가 비원자라, 동시 진입 시 모두 같은 attempt로 insert되던 버그.
     submittingRef.current = true
+    setRewriting(true)   // step677: 로딩 표시를 조회보다 먼저 켠다(첫 글과 같은 순서). 종전에는 아래 조회가 느리면 눌러도 화면이 그대로였다(11/18 9초).
     const tGrade0 = performance.now()   // step643: 측정 시작(잠금 통과 직후, 수정 횟수 조회 포함)
     let gradingMs = null
 
@@ -1502,6 +1503,7 @@ export default function StudentHome() {
     // step575: 조회 실패 시 attempt=2로 추측 insert하던 경로 차단(중복행 방지)
     if (existingSubsErr) {
       submittingRef.current = false
+      setRewriting(false)
       return alert('연결이 불안정해서 제출을 잠시 멈췄어요. 잠시 후 다시 눌러주세요.\n📝 쓴 글은 이 기기에 저장돼 있어요.')
     }
 
@@ -1510,6 +1512,7 @@ export default function StudentHome() {
       ? todayTopic.max_rewrites : 1
     if (maxRewrites === 0) {
       submittingRef.current = false  // 🆕 잠금 해제 후 종료
+      setRewriting(false)
       return alert('이 주제는 수정이 허용되지 않아요.')
     }
 
@@ -1523,6 +1526,7 @@ export default function StudentHome() {
         const allowed = existingSubs.filter(s => (s.attempt || 1) === maxAtt).some(s => s.extra_rewrite_allowed)
         if (!allowed) {
           submittingRef.current = false  // 🆕 잠금 해제 후 종료
+          setRewriting(false)
           return alert(
             `수정 횟수를 모두 사용했어요 (${maxRewrites}회).\n` +
             `더 고치고 싶으면 선생님께 수정 기회를 요청할 수 있어요!`
@@ -1531,7 +1535,6 @@ export default function StudentHome() {
       }
     }
 
-    setRewriting(true)
     markGradingAttempt('start', { topicId: todayTopic.id, phase: 'rewrite', attempt: nextAttempt })   // step666: 누른 시도 기록(기다리지 않음, 실패 무시)
     try {
       const rubrics = todayTopic.rubrics

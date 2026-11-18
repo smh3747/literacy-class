@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
+import { retryOnce } from '../../lib/loadRetry'   // step677: 조회 실패를 '없음'으로 읽지 않게(자동 재시도 1회)
 import { getAuthErrorMessage } from '../../lib/authErrors'
 import ConsentForm from '../../components/ConsentForm'
 import PasswordInput from '../../components/PasswordInput'
@@ -196,7 +197,13 @@ export default function StudentLogin() {
         const { data: loginData, error: err } = await supabase.auth.signInWithPassword({ email, password })
         if (err) throw err
         
-        const { data: profile } = await supabase.from('profiles').select('role, realname').eq('id', loginData.user.id).maybeSingle()
+        // step677: 조회 실패(시간 초과 등)를 "회원 정보 없음"으로 안내하지 않는다. 한 번 더 해 보고, 그래도 안 되면 멈추고 다시 시도를 안내한다.
+        //   역할을 확인하지 못한 세션은 남기지 않는다(다시 로그인하면 된다).
+        const { data: profile, error: profErr } = await retryOnce(() => supabase.from('profiles').select('role, realname').eq('id', loginData.user.id).maybeSingle())
+        if (profErr) {
+          await supabase.auth.signOut({ scope: 'local' })
+          throw new Error('회원 정보를 불러오지 못했어요. 다시 시도해 주세요.')
+        }
         
         if (!profile) {
           await supabase.auth.signOut({ scope: 'local' })

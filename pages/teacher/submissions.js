@@ -11,6 +11,7 @@ import { GRAMMAR_NOTICE_TEACHER } from '../../lib/notices'
 import { pickStr } from '../../lib/pickStr'
 import { escapeHtml } from '../../lib/escapeHtml'
 import { callAI } from '../../lib/aiClient'
+import { retryOnce } from '../../lib/loadRetry'   // step677: 조회 실패를 "미제출"로 보이지 않게(자동 재시도 1회)
 import { toKST } from '../../lib/timeFormat'
 import { splitFeedbackItems } from '../../lib/feedbackFormat'
 import { displayStudentName, displayStudentNameWithNumber } from '../../lib/displayName'
@@ -204,18 +205,23 @@ export default function TeacherSubmissions() {
     }
   }
 
+  const LOAD_FAIL_SUBS = '학생 글을 불러오지 못했어요. 다시 시도해 주세요.'   // step677
+
   // classInfo state 의존하지 않는 버전 (URL query 자동 진입용)
   const openTopicWithClass = async (topic, cls, autoStudentId = null) => {
     setSelectedTopic(topic)
-    const { data: students } = await supabase.from('profiles')
+    // step677: 조회가 실패하면 멈춘다. 종전에는 실패가 "학급에 학생이 없어요"나 전원 "미제출"로 보였다.
+    const { data: students, error: stuErr } = await retryOnce(() => supabase.from('profiles')
       .select('id, realname, nickname, username, number, is_hidden')
-      .eq('class_id', cls.id).eq('role', 'student')
+      .eq('class_id', cls.id).eq('role', 'student'))
+    if (stuErr) { alert(LOAD_FAIL_SUBS); return }
     const visibleStudents = (students || []).filter(s => !s.is_hidden)
     const studentIds = visibleStudents.map(s => s.id)
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
 
-    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
-      .order('created_at', { ascending: true })   // step579: 시간순 단일 기준(attempt 중복행 대비)
+    const { data: subs, error: subErr } = await retryOnce(() => supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
+      .order('created_at', { ascending: true }))   // step579: 시간순 단일 기준(attempt 중복행 대비)
+    if (subErr) { alert(LOAD_FAIL_SUBS); return }   // step677: 실패를 전원 "미제출"로 보이지 않게
 
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
@@ -264,15 +270,18 @@ export default function TeacherSubmissions() {
     setSelectedTopic(topic)
     
     // 같은 학급 학생들의 이 주제 제출본 (숨김 학생 제외)
-    const { data: students } = await supabase.from('profiles')
+    // step677: 조회가 실패하면 멈춘다(위 openTopicWithClass와 같은 처리)
+    const { data: students, error: stuErr } = await retryOnce(() => supabase.from('profiles')
       .select('id, realname, nickname, username, number, is_hidden')
-      .eq('class_id', classInfo.id).eq('role', 'student')
+      .eq('class_id', classInfo.id).eq('role', 'student'))
+    if (stuErr) { alert(LOAD_FAIL_SUBS); return }
     const visibleStudents = (students || []).filter(s => !s.is_hidden)
     const studentIds = visibleStudents.map(s => s.id)
     if (studentIds.length === 0) { setTopicStudents([]); setView('topicStudents'); return }
     
-    const { data: subs } = await supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
-      .order('created_at', { ascending: true })   // step579: 시간순 단일 기준(attempt 중복행 대비)
+    const { data: subs, error: subErr } = await retryOnce(() => supabase.from('submissions').select('*').eq('topic_id', topic.id).in('user_id', studentIds).is('deleted_at', null)
+      .order('created_at', { ascending: true }))   // step579: 시간순 단일 기준(attempt 중복행 대비)
+    if (subErr) { alert(LOAD_FAIL_SUBS); return }   // step677: 실패를 전원 "미제출"로 보이지 않게
 
     const byStudent = {}
     visibleStudents.forEach(s => { byStudent[s.id] = { profile: s, items: [] } })
