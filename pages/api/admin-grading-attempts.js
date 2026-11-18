@@ -45,12 +45,17 @@ export default async function handler(req, res) {
       .select(cols).gte('started_at', since).order('started_at', { ascending: false }))
     // step668: 구간 컬럼(queue_ms·strict_ms·grade_ms·server_ms)이 아직 없으면(SQL 미적용) 기존 컬럼만 읽는다
     let att
-    try { att = await readAttempts(BASE_COLS + ', queue_ms, strict_ms, grade_ms, server_ms') }
-    catch (_) { att = await readAttempts(BASE_COLS) }
+    // step684: 학생 화면이 잰 두 구간(precheck_ms·save_ms)도 같은 방식으로 — 컬럼이 없으면 한 단계씩 물러난다
+    try { att = await readAttempts(BASE_COLS + ', queue_ms, strict_ms, grade_ms, server_ms, precheck_ms, save_ms') }
+    catch (_) {
+      try { att = await readAttempts(BASE_COLS + ', queue_ms, strict_ms, grade_ms, server_ms') }
+      catch (_2) { att = await readAttempts(BASE_COLS) }
+    }
     const rows = att.rows.filter(r => !isExcludedFromAdminStats(r.class_id)).map(r => ({
       userId: r.user_id, classId: r.class_id || null, startedAt: r.started_at, lastTryAt: r.last_try_at,
       finishedAt: r.finished_at || null, waitMs: r.wait_ms, tries: r.tries,
       queueMs: r.queue_ms ?? null, strictMs: r.strict_ms ?? null, gradeMs: r.grade_ms ?? null, serverMs: r.server_ms ?? null,
+      precheckMs: r.precheck_ms ?? null, saveMs: r.save_ms ?? null,
     }))
     // 원인 매칭 재료: 미완료 행이 있을 때만, 그 학생들의 채점 서버 오류만 읽는다
     const openUsers = [...new Set(rows.filter(r => !r.finishedAt).map(r => r.userId))]

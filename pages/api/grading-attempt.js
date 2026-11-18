@@ -9,7 +9,7 @@
 // 원칙: 측정 전용. 학생 화면은 응답을 기다리지 않고(발사 후 망각) 실패해도 제출 흐름에 영향이 없다.
 //   글 본문·실명·번호는 받지도 저장하지도 않는다. 표는 RLS 정책 없음(서비스 롤 전용).
 import { createClient } from '@supabase/supabase-js'
-import { ATTEMPT_JOIN_MS, segmentFields } from '../../lib/gradingTiming'
+import { ATTEMPT_JOIN_MS, segmentFields, clientSegmentFields } from '../../lib/gradingTiming'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -73,7 +73,14 @@ export default async function handler(req, res) {
     }
     // step668: 구간 시간(서버가 잰 값을 학생 화면이 그대로 전달). 0~10분 범위의 숫자만 받는다.
     const seg = segmentFields(req.body?.timing)
-    let { error } = await admin.from('grading_attempts').update({ ...base, ...seg }).eq('id', open.id).is('finished_at', null)
+    // step684: 학생 화면이 잰 두 구간(제출 전 조회·저장). 컬럼(step684 SQL)이 아직 없으면 이 두 값만 빼고 아래 종전 순서로 저장한다.
+    const cli = clientSegmentFields(req.body?.client)
+    let error = null
+    if (Object.keys(cli).length > 0) {
+      ;({ error } = await admin.from('grading_attempts').update({ ...base, ...seg, ...cli }).eq('id', open.id).is('finished_at', null))
+      if (!error) return res.status(200).json({ ok: true })
+    }
+    ;({ error } = await admin.from('grading_attempts').update({ ...base, ...seg }).eq('id', open.id).is('finished_at', null))
     if (error && Object.keys(seg).length > 0) {
       // 구간 컬럼(step668 SQL)이 아직 없으면 기존 값만 저장한다
       ;({ error } = await admin.from('grading_attempts').update(base).eq('id', open.id).is('finished_at', null))

@@ -46,7 +46,7 @@ const { pathToFileURL } = require('url')
   const rwStart = home.indexOf('const submitRewrite = async () => {')
   const rw = home.slice(rwStart, home.indexOf("console.error('수정본 제출 오류:'", rwStart))
   rec('첫 글: 제출 행 저장은 AI 결과를 받은 뒤 한 곳, 그 전에 중복 확인 조회', first.indexOf("await callAI('grading'") > 0 && first.indexOf(".select('id').eq('user_id', user.id).eq('topic_id', todayTopic.id)") < first.indexOf("await callAI('grading'"))
-  rec('수정본: 회차는 제출 직전 DB 조회로 정하고(추측 금지) AI 결과 뒤에 한 번 저장', rw.indexOf("select('attempt, extra_rewrite_allowed')") < rw.indexOf("await callAI('rewriteGrading'") && rw.indexOf("await callAI('rewriteGrading'") < rw.indexOf("from('submissions').insert({") && (rw.match(/from\('submissions'\)\.insert\(/g) || []).length === 1)
+  rec('수정본: 회차는 제출 직전 DB 조회로 정하고(추측 금지) AI 결과 뒤에 한 번 저장', rw.indexOf("select('attempt, extra_rewrite_allowed')") < rw.indexOf("await callAI('rewriteGrading'") && rw.indexOf("await callAI('rewriteGrading'") < rw.indexOf("await runGradedSave({ kind: 'rewrite'") && (rw.match(/await runGradedSave\(/g) || []).length === 1 && !rw.includes('.insert('))   // step684: 저장은 runGradedSave(공용) 한 곳으로 옮김
   rec('연타 잠금(submittingRef)은 두 제출 모두 첫 await 전에 건다', /submittingRef\.current = true[^\n]*\n\s*setSubmitting\(true\)/.test(first) && /submittingRef\.current = true\n\s*setRewriting\(true\)/.test(rw))
 
   // ── 로딩 표시 순서 ──

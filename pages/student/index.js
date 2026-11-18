@@ -38,6 +38,7 @@ import { REPORT_TAGS, REPORT_DETAIL_MAX, REPORT_DAILY_LIMIT, buildReportReason, 
 import { loadSlots, saveSlots, upsertSnapshot, removeSlotsFor, sortForList, previewOf } from '../../lib/draftSlots'   // step651: 게임식 저장 슬롯
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import StudentHomeFrame from '../../components/StudentHomeFrame'   // step683: 틀 먼저(조회가 끝나기 전 화면)
+import { SAVE_SLOW_MS, SAVE_TIMEOUT_MS, REWRITE_PRECHECK_TIMEOUT_MS, SAVE_TEXT, SAVED_ROW_COLS, mergeSavedRow, sameEssay, saveStageLabel } from '../../lib/saveStage'   // step684: 저장 구간 표시·다시 시도
 import { readHomeTopic, writeHomeTopic, sweepHomeTopic, clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 오늘 주제 카드만 기기에 잠깐 적어 둠
 
 // step683: 학생 홈이 실제로 읽는 제출 컬럼(step327 목록 + strict_status). 진입 조회 한 번으로 "오늘 주제들의 내 글"을 받아
@@ -245,6 +246,11 @@ export default function StudentHome() {
   const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)  // 🆕 진입 실패/타임아웃 시 재시도 화면
+  // step684: 저장 구간 표시 — null | 'saving'(채점 끝, 저장 중) | 'slow'(5초 넘음). 실패하면 saveFail에 채점 결과를 들고 [저장 다시 시도]
+  const [saveStage, setSaveStage] = useState(null)
+  const [saveFail, setSaveFail] = useState(null)        // null 또는 { ctx }
+  const [saveRetrying, setSaveRetrying] = useState(false)
+  const saveSlowTimerRef = useRef(null)
   const [frameTopic, setFrameTopic] = useState(null)   // step683: 틀 화면에 먼저 보여 줄 오늘 주제 카드(기기에 적어 둔 4칸). 보여 주기 전용
 
   const [step, setStep] = useState('write') // write / feedback / done
@@ -949,6 +955,171 @@ export default function StudentHome() {
     setTimeout(() => setPasteWarning(false), 5000)
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // step684: 저장 구간 — 채점 결과를 받은 뒤의 저장과 뒤 처리. 첫 글·수정본이 종전에 하던 일을 순서 그대로 옮겼다.
+  //   ctx = { kind, topic, row(저장할 행), essayText, result, totalMax, attempt, gradingMs, precheckMs, isFallback, existingRow? }
+  //   existingRow: [저장 다시 시도] 때 앞 저장이 늦게 성공해 이미 들어가 있는 같은 글. 있으면 새로 넣지 않고 뒤 처리만 이어 간다.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const insertGradedRow = async (ctx) => {
+    if (ctx.existingRow) return { sub: mergeSavedRow(ctx.row, ctx.existingRow), saveMs: null }
+    const tSave = performance.now()
+    // 저장 응답은 DB가 채우는 작은 칸만 돌려받는다(글·피드백은 방금 보낸 값을 쓴다). 20초를 넘기면 실패로 본다.
+    const { data, error } = await withTimeout(
+      supabase.from('submissions').insert(ctx.row).select(SAVED_ROW_COLS).single(), SAVE_TIMEOUT_MS)
+    if (error) throw error
+    return { sub: mergeSavedRow(ctx.row, data), saveMs: Math.round(performance.now() - tSave) }
+  }
+
+  // 측정값 기록(채점 시간·경로·구간) — 기다리지 않는다. 실패해도 화면·저장과 무관.
+  const recordGradedTiming = (ctx, sub, saveMs, strictStatus) => {
+    try {
+      const { topic, result, attempt, gradingMs, precheckMs, isFallback } = ctx
+      const failKey = `${topic.id}|${attempt}`
+      const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback, attempts: result.__attempts, ...(strictStatus !== undefined ? { strictStatus } : {}) })   // step663: congestion
+      gradeFailRef.current.delete(failKey)
+      markGradingAttempt('done', { topicId: topic.id, attempt, submissionId: sub?.id, path: gradingPath, timing: result.__timing, client: { precheckMs, saveMs } })   // step666 / step668: 구간 시간 / step684: 제출 전 조회·저장
+      if (gradingMs !== null && sub?.id) {
+        supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id).then(() => {}, () => {})
+      }
+    } catch (_) { /* 측정 저장 실패는 무시 */ }
+  }
+
+  const saveGradedFirst = async (ctx) => {
+    const { topic, essayText, result, totalMax } = ctx
+    const { sub, saveMs } = await insertGradedRow(ctx)
+    lockPassRef.current.delete(topic.id)   // step629: 저장 성공 → 유예 기록 삭제
+
+    // step643: 채점 대기 시간·경로를 별도 update로(컬럼 미적용이면 실패를 무시 — insert는 불변). 화면 영향 없음.
+    recordGradedTiming(ctx, sub, saveMs, result.__strictStatus)
+
+    // step571: 초안 정리 (새 키 + 구 백업 키)
+    clearSlotsFor(topic.id, 'write')   // step651: 제출 성공 → 이 주제 첫 글 슬롯 삭제
+    // step575: 지난 글 목록에서 제거 — 제출한 주제가 "안 쓴 글" 목록에 남아 재제출을 유인하던 문제
+    setPendingTopics(prev => prev.filter(t => t.id !== topic.id))
+    pasteDetectedRef.current = false
+    pasteCountRef.current = 0
+
+    setCurrentSub(sub)
+    setFeedbackResult(result)
+    scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
+    setStep('feedback')
+    loadPeerShareFor(topic)   // step621: 첫 제출 직후 친구 글 카드
+
+    // 🆕 step492: 챌린지 제출이면 카드의 제출 상태·내 순위 즉시 갱신(스테일 방지)
+    if (topic.source_supply_id) {
+      setChallengeTopics(prev => prev.map(t =>
+        t.id === topic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 1) } : t))
+      fetchMyRank(topic.source_supply_id)
+    }
+
+    // 예시 작품 생성 (백그라운드)
+    // 🆕 step368: subId 명시 전달 — 기존 generateExample은 낡은 클로저의 currentSub(null)를 봐서
+    //   첫 글 example_text가 DB에 저장된 적이 없었음(재방문 시 예시 미표시 원인)
+    // 🆕 step627: 서버가 피크(__exampleDeferred)면 자동 생성 대신 보류 → 학생이 "📖 예시 작품 보기"를 누를 때 생성
+    if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText, totalMax, subId: sub.id })
+    else generateExampleForSub(essayText, totalMax, sub.id)
+  }
+
+  const saveGradedRewrite = async (ctx) => {
+    const { topic, essayText, result, totalMax, attempt } = ctx
+    const { sub: newSub, saveMs } = await insertGradedRow(ctx)
+    lockPassRef.current.delete(topic.id)   // step629: 저장 성공 → 유예 기록 삭제
+
+    // step643: 채점 대기 시간·경로 별도 update(실패 무시, insert 불변). 수정본은 전용 검사가 없어 pending 없음.
+    recordGradedTiming(ctx, newSub, saveMs)
+
+    // 이전 글들도 final 처리 (step512: 수정 기회 요청 흔적도 청소 — 요청이 이행됐으므로)
+    await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
+      .eq('user_id', user.id).eq('topic_id', topic.id)
+
+    clearSlotsFor(topic.id, 'rewrite')  // step571→651: 수정본 제출 성공 → 수정본 슬롯 삭제
+    pasteDetectedRef.current = false
+    pasteCountRef.current = 0
+
+    // 새 정보로 업데이트
+    setEssay(essayText)
+    setCurrentSub(newSub) // 수정본 row를 currentSub로 (예시 저장 대상)
+    setFeedbackResult(result)
+    setExampleText('') // 새 예시 받기 위해 비우기
+    setExampleDeferred(null)   // step627
+    scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
+    setStep('done')
+    loadPeerShareFor(topic)   // step621: 수정본 제출 직후 친구 글 카드 갱신
+
+    // 🆕 step492: 챌린지 수정본이면 카드 상태·내 순위 즉시 갱신(스테일 방지)
+    if (topic.source_supply_id) {
+      setChallengeTopics(prev => prev.map(t =>
+        t.id === topic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 2) } : t))
+      fetchMyRank(topic.source_supply_id)
+    }
+    alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
+
+    // 수정본에 대한 새 예시 작품 생성 (백그라운드) — step627: 피크면 보류(온디맨드)
+    if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText, totalMax, subId: newSub?.id })
+    else generateExampleForSub(essayText, totalMax, newSub?.id)
+  }
+
+  // 저장 한 번 실행: 단계 표시(저장 중 → 5초 넘으면 느림 안내) + 실패하면 [저장 다시 시도] 창. 던지지 않는다.
+  const runGradedSave = async (ctx) => {
+    setSaveStage('saving')
+    if (saveSlowTimerRef.current) clearTimeout(saveSlowTimerRef.current)
+    saveSlowTimerRef.current = setTimeout(() => setSaveStage('slow'), SAVE_SLOW_MS)
+    try {
+      if (ctx.kind === 'rewrite') await saveGradedRewrite(ctx)
+      else await saveGradedFirst(ctx)
+      setSaveFail(null)
+      return true
+    } catch (e) {
+      console.error('글 저장 실패(채점 결과는 보관):', e?.message || e)
+      setSaveFail({ ctx })
+      return false
+    } finally {
+      if (saveSlowTimerRef.current) { clearTimeout(saveSlowTimerRef.current); saveSlowTimerRef.current = null }
+      setSaveStage(null)
+    }
+  }
+
+  // [저장 다시 시도] — 채점은 다시 하지 않는다. 앞 저장이 늦게 성공했을 수 있으므로 같은 회차의 글이 이미 있는지 먼저 본다.
+  const retrySave = async () => {
+    if (!saveFail || submittingRef.current) return
+    if (!assertWritable()) return
+    const { ctx } = saveFail
+    submittingRef.current = true
+    setSaveRetrying(true)
+    try {
+      let found = null
+      try {
+        const { data, error } = await withTimeout(supabase.from('submissions')
+          .select(SUB_VIEW_COLS).eq('user_id', user.id).eq('topic_id', ctx.topic.id).eq('attempt', ctx.attempt)
+          .is('deleted_at', null).limit(1))
+        if (error) throw error
+        found = (data && data[0]) || null
+      } catch (e) {
+        alert(SAVE_TEXT.retryCheckFail)   // 있는지 모르면 넣지 않는다(중복 방지)
+        return
+      }
+      if (found && !sameEssay(found.essay_text, ctx.essayText)) {
+        // 같은 회차에 다른 글이 이미 있다(다른 기기 등) → 이 결과는 버리고 화면을 새로 불러온다
+        setSaveFail(null)
+        alert(SAVE_TEXT.conflict)
+        await loadTodayTopic(user, ctx.topic.id)
+        return
+      }
+      await runGradedSave({ ...ctx, existingRow: found })
+    } finally {
+      submittingRef.current = false
+      setSaveRetrying(false)
+    }
+  }
+
+  // 저장 실패 창 닫기 — 채점 결과를 버린다(글은 기기 슬롯에 그대로). 다음 제출은 '실패 뒤 다시'로 기록된다.
+  const dismissSaveFail = () => {
+    if (!saveFail || saveRetrying) return
+    if (!confirm(SAVE_TEXT.closeConfirm)) return
+    try { gradeFailRef.current.add(`${saveFail.ctx.topic.id}|${saveFail.ctx.attempt}`) } catch (_) {}
+    setSaveFail(null)
+  }
+
   // 첫 글 제출
   const submitEssay = async () => {
     if (submitting || submittingRef.current) return
@@ -982,6 +1153,7 @@ export default function StudentHome() {
     setSubmitting(true)
     const tGrade0 = performance.now()   // step643: 채점 대기 시간 측정 시작(확인 대화상자 통과 직후, 중복 확인 조회 포함)
     let gradingMs = null
+    let precheckMs = null   // step684: 제출 전 조회에 걸린 시간(측정 전용)
 
     // 🆕 step575: insert 전 존재 확인 — attempt=1 중복행 사고(두 기기 동시 제출·AI 대기 중 이탈 후
     //   재제출·응답 유실 후 재시도) 차단. submittingRef는 마운트 로컬이라 이 검사가 유일한 교차 방어.
@@ -991,6 +1163,7 @@ export default function StudentHome() {
         .select('id').eq('user_id', user.id).eq('topic_id', todayTopic.id)
         .is('deleted_at', null).limit(1))
       if (dupErr) throw dupErr
+      precheckMs = Math.round(performance.now() - tGrade0)   // step684
       if (dupCheck && dupCheck.length > 0) {
         submittingRef.current = false
         setSubmitting(false)
@@ -1051,8 +1224,9 @@ export default function StudentHome() {
       const usedModel = result.__usedModel || 'unknown'
       const isFallback = usedModel !== 'gemini-3.1-flash-lite'
 
-      // DB 저장
-      const { data: sub, error } = await supabase.from('submissions').insert({
+      // DB 저장 — step684: 저장할 행은 종전과 같은 내용으로 여기서 한 번 만든다. 저장과 그 뒤 처리는 saveGradedFirst가 맡는다
+      //   (저장이 실패하거나 20초를 넘기면 채점부터 다시 하지 않고 이 행과 결과를 그대로 들고 [저장 다시 시도]).
+      const row = {
         user_id: user.id,
         topic_id: todayTopic.id,
         topic_title: todayTopic.title,
@@ -1068,46 +1242,8 @@ export default function StudentHome() {
           strict_status: result.__strictStatus,
           strict_at: result.__strictStatus === 'done' ? new Date().toISOString() : null
         } : {})
-      }).select().single()
-
-      if (error) throw error
-      lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
-
-      // step643: 채점 대기 시간·경로를 별도 update로(컬럼 미적용이면 실패를 무시 — insert는 불변). 화면 영향 없음.
-      try {
-        const failKey = `${todayTopic.id}|1`
-        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback, attempts: result.__attempts, strictStatus: result.__strictStatus })   // step663: congestion
-        gradeFailRef.current.delete(failKey)
-        markGradingAttempt('done', { topicId: todayTopic.id, attempt: 1, submissionId: sub.id, path: gradingPath, timing: result.__timing })   // step666 / step668: 구간 시간
-        if (gradingMs !== null) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', sub.id)
-      } catch (_) { /* 측정 저장 실패는 무시 */ }
-
-      // step571: 초안 정리 (새 키 + 구 백업 키)
-      clearSlotsFor(todayTopic.id, 'write')   // step651: 제출 성공 → 이 주제 첫 글 슬롯 삭제
-      // step575: 지난 글 목록에서 제거 — 제출한 주제가 "안 쓴 글" 목록에 남아 재제출을 유인하던 문제
-      setPendingTopics(prev => prev.filter(t => t.id !== todayTopic.id))
-      pasteDetectedRef.current = false
-      pasteCountRef.current = 0
-
-      setCurrentSub(sub)
-      setFeedbackResult(result)
-      scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
-      setStep('feedback')
-      loadPeerShareFor(todayTopic)   // step621: 첫 제출 직후 친구 글 카드
-
-      // 🆕 step492: 챌린지 제출이면 카드의 제출 상태·내 순위 즉시 갱신(스테일 방지)
-      if (todayTopic.source_supply_id) {
-        setChallengeTopics(prev => prev.map(t =>
-          t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 1) } : t))
-        fetchMyRank(todayTopic.source_supply_id)
       }
-
-      // 예시 작품 생성 (백그라운드)
-      // 🆕 step368: subId 명시 전달 — 기존 generateExample은 낡은 클로저의 currentSub(null)를 봐서
-      //   첫 글 example_text가 DB에 저장된 적이 없었음(재방문 시 예시 미표시 원인)
-      // 🆕 step627: 서버가 피크(__exampleDeferred)면 자동 생성 대신 보류 → 학생이 "📖 예시 작품 보기"를 누를 때 생성
-      if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText: essay, totalMax, subId: sub.id })
-      else generateExampleForSub(essay, totalMax, sub.id)
+      await runGradedSave({ kind: 'first', topic: todayTopic, row, essayText: essay, result, totalMax, attempt: 1, gradingMs, precheckMs, isFallback })
     } catch(e) {
       console.error('제출 오류:', e)
       try { gradeFailRef.current.add(`${todayTopic?.id}|1`) } catch (_) {}   // step643: 다음 성공 시 'error_then_retry'
@@ -1524,10 +1660,14 @@ export default function StudentHome() {
     const tGrade0 = performance.now()   // step643: 측정 시작(잠금 통과 직후, 수정 횟수 조회 포함)
     let gradingMs = null
 
-    // 추가 수정 권한 체크
-    const { data: existingSubs, error: existingSubsErr } = await supabase.from('submissions')
-      .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
-      .is('deleted_at', null)
+    // 추가 수정 권한 체크 — step684: 10초 제한(첫 글의 제출 전 조회와 같게). 넘기면 조회 실패와 같은 안내로 멈춘다.
+    let existingSubs = null, existingSubsErr = null
+    try {
+      ;({ data: existingSubs, error: existingSubsErr } = await withTimeout(supabase.from('submissions')
+        .select('attempt, extra_rewrite_allowed').eq('user_id', user.id).eq('topic_id', todayTopic.id)
+        .is('deleted_at', null), REWRITE_PRECHECK_TIMEOUT_MS))
+    } catch (e) { existingSubsErr = e }
+    const precheckMs = Math.round(performance.now() - tGrade0)   // step684: 제출 전 조회에 걸린 시간(측정 전용)
     // step575: 조회 실패 시 attempt=2로 추측 insert하던 경로 차단(중복행 방지)
     if (existingSubsErr) {
       submittingRef.current = false
@@ -1598,7 +1738,8 @@ export default function StudentHome() {
       const rwUsedModel = result.__usedModel || 'unknown'
       const rwIsFallback = rwUsedModel !== 'gemini-3.1-flash-lite'
 
-      const { data: newSub, error } = await supabase.from('submissions').insert({
+      // step684: 저장할 행은 종전과 같은 내용으로 여기서 한 번 만든다. 저장과 뒤 처리(이전 글 최종 처리 포함)는 saveGradedRewrite가 맡는다.
+      const row = {
         user_id: user.id,
         topic_id: todayTopic.id,
         topic_title: todayTopic.title,
@@ -1610,48 +1751,8 @@ export default function StudentHome() {
         paste_count: pasteCountRef.current,
         is_final: true,
         extra_rewrite_allowed: false
-      }).select().single()
-      if (error) throw error
-      lockPassRef.current.delete(todayTopic.id)   // step629: 저장 성공 → 유예 기록 삭제
-
-      // step643: 채점 대기 시간·경로 별도 update(실패 무시, insert 불변). 수정본은 전용 검사가 없어 pending 없음.
-      try {
-        const failKey = `${todayTopic.id}|${nextAttempt}`
-        const gradingPath = deriveGradingPath({ failedBefore: gradeFailRef.current.has(failKey), congestion: result.__congestion, isFallback: rwIsFallback, attempts: result.__attempts })   // step663: congestion
-        gradeFailRef.current.delete(failKey)
-        markGradingAttempt('done', { topicId: todayTopic.id, attempt: nextAttempt, submissionId: newSub?.id, path: gradingPath, timing: result.__timing })   // step666 / step668: 구간 시간
-        if (gradingMs !== null && newSub?.id) await supabase.from('submissions').update({ grading_ms: gradingMs, grading_path: gradingPath }).eq('id', newSub.id)
-      } catch (_) { /* 측정 저장 실패는 무시 */ }
-
-      // 이전 글들도 final 처리 (step512: 수정 기회 요청 흔적도 청소 — 요청이 이행됐으므로)
-      await supabase.from('submissions').update({ is_final: true, extra_rewrite_allowed: false, rewrite_requested_at: null })
-        .eq('user_id', user.id).eq('topic_id', todayTopic.id)
-
-      clearSlotsFor(todayTopic.id, 'rewrite')  // step571→651: 수정본 제출 성공 → 수정본 슬롯 삭제
-      pasteDetectedRef.current = false
-      pasteCountRef.current = 0
-
-      // 새 정보로 업데이트
-      setEssay(rewriteEssay)
-      setCurrentSub(newSub) // 수정본 row를 currentSub로 (예시 저장 대상)
-      setFeedbackResult(result)
-      setExampleText('') // 새 예시 받기 위해 비우기
-      setExampleDeferred(null)   // step627
-      scrollToResultRef.current = true  // 🆕 step364: 채점 직후 결과 상단 착지
-      setStep('done')
-      loadPeerShareFor(todayTopic)   // step621: 수정본 제출 직후 친구 글 카드 갱신
-
-      // 🆕 step492: 챌린지 수정본이면 카드 상태·내 순위 즉시 갱신(스테일 방지)
-      if (todayTopic.source_supply_id) {
-        setChallengeTopics(prev => prev.map(t =>
-          t.id === todayTopic.id ? { ...t, myMaxAttempt: Math.max(t.myMaxAttempt || 0, 2) } : t))
-        fetchMyRank(todayTopic.source_supply_id)
       }
-      alert(`🎉 수정본 제출 완료!\n최종 점수: ${result.total}/${totalMax}점`)
-
-      // 수정본에 대한 새 예시 작품 생성 (백그라운드) — step627: 피크면 보류(온디맨드)
-      if (decideExampleFlow(result) === 'deferred') setExampleDeferred({ essayText: rewriteEssay, totalMax, subId: newSub?.id })
-      else generateExampleForSub(rewriteEssay, totalMax, newSub?.id)
+      await runGradedSave({ kind: 'rewrite', topic: todayTopic, row, essayText: rewriteEssay, result, totalMax, attempt: nextAttempt, gradingMs, precheckMs, isFallback: rwIsFallback })
     } catch(e) {
       console.error('수정본 제출 오류:', e)
       try { gradeFailRef.current.add(`${todayTopic?.id}|${nextAttempt}`) } catch (_) {}   // step643
@@ -2172,7 +2273,8 @@ export default function StudentHome() {
                   <button onClick={submitEssay} disabled={submitting || isImpersonating || !!retryWait}
                     className="w-full py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
                     {submitting
-                      ? (gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
+                      ? (saveStageLabel(saveStage) ? saveStageLabel(saveStage)   /* step684: 채점 끝 → 저장 중 */
+                        : gradingStage === 'spell' ? '🔍 맞춤법을 꼼꼼히 확인하고 있어요…'
                         : gradingStage === 'queue' ? '⏳ 채점 중이에요. 조금만 기다려 주세요'
                         : '📝 글을 평가하고 있어요…')
                       : (retryWaitLabel || '제출하고 피드백 받기 →')}
@@ -2181,6 +2283,13 @@ export default function StudentHome() {
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
                       <span>⏳</span>
                       <span>{retryMessage}</span>
+                    </div>
+                  )}
+                  {/* step684: 저장이 5초를 넘으면 안내 한 줄 */}
+                  {submitting && saveStage === 'slow' && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-900 flex items-start gap-2">
+                      <span>📡</span>
+                      <span>{SAVE_TEXT.slow}</span>
                     </div>
                   )}
                 </div>
@@ -2611,9 +2720,16 @@ export default function StudentHome() {
                           className="flex-1 py-3 border border-gray-200 rounded-xl text-sm">취소</button>
                         <button onClick={submitRewrite} disabled={rewriting || isImpersonating || !!retryWait}
                           className="flex-[2] py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
-                          {rewriting ? '🤖 AI 검토 중...' : (retryWaitLabel || '수정본 제출 →')}
+                          {rewriting ? (saveStageLabel(saveStage) || '🤖 AI 검토 중...') : (retryWaitLabel || '수정본 제출 →')}
                         </button>
                       </div>
+                      {/* step684: 저장이 5초를 넘으면 안내 한 줄 */}
+                      {rewriting && saveStage === 'slow' && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-900 flex items-start gap-2 mt-3">
+                          <span>📡</span>
+                          <span>{SAVE_TEXT.slow}</span>
+                        </div>
+                      )}
                       {rewriting && retryMessage && (
                         <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2 mt-3">
                           <span>⏳</span>
@@ -2816,6 +2932,29 @@ export default function StudentHome() {
                   {reportModal.busy ? '보내는 중...' : '신고하기'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* step684: 채점은 끝났는데 저장을 못 했을 때 — 받은 채점 결과를 들고 저장만 다시 시도한다 */}
+        {saveFail && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
+              <h3 className="text-lg font-bold mb-3">📡 {SAVE_TEXT.failTitle}</h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-3">
+                <p className="text-sm text-amber-900 whitespace-pre-line leading-relaxed">{SAVE_TEXT.failBody}</p>
+              </div>
+              {saveRetrying && saveStage === 'slow' && (
+                <p className="text-xs text-amber-800 mb-3">{SAVE_TEXT.slow}</p>
+              )}
+              <button onClick={retrySave} disabled={saveRetrying}
+                className="w-full py-3 mb-2 bg-primary text-white rounded-xl font-semibold disabled:opacity-50">
+                {saveRetrying ? SAVE_TEXT.retrying : `🔄 ${SAVE_TEXT.retry}`}
+              </button>
+              <p className="text-xs text-gray-500 mb-2">{SAVE_TEXT.failHint}</p>
+              <button onClick={dismissSaveFail} disabled={saveRetrying}
+                className="w-full py-2 rounded-xl text-sm bg-gray-100 text-gray-600 disabled:opacity-50">
+                {SAVE_TEXT.close}
+              </button>
             </div>
           </div>
         )}
