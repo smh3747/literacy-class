@@ -37,6 +37,12 @@ import { deriveGradingPath } from '../../lib/gradingTiming'   // step643: 채점
 import { REPORT_TAGS, REPORT_DETAIL_MAX, REPORT_DAILY_LIMIT, buildReportReason, isDailyLimitReached } from '../../lib/reportReason'   // step649: 신고 사유 칩
 import { loadSlots, saveSlots, upsertSnapshot, removeSlotsFor, sortForList, previewOf } from '../../lib/draftSlots'   // step651: 게임식 저장 슬롯
 import ImpersonationBanner from '../../components/ImpersonationBanner'
+import StudentHomeFrame from '../../components/StudentHomeFrame'   // step683: 틀 먼저(조회가 끝나기 전 화면)
+import { readHomeTopic, writeHomeTopic, sweepHomeTopic, clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 오늘 주제 카드만 기기에 잠깐 적어 둠
+
+// step683: 학생 홈이 실제로 읽는 제출 컬럼(step327 목록 + strict_status). 진입 조회 한 번으로 "오늘 주제들의 내 글"을 받아
+//   회차 계산·이미 제출했나 확인·맞춤법 검사 상태를 모두 여기서 꺼낸다(종전 조회 3건 → 1건).
+const SUB_VIEW_COLS = 'id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model, grading_path, grade_status, strict_status'
 import { displayStudentNameWithNumber } from '../../lib/displayName'
 
 // step481: 주제 카드 렌더 전용 — description에서 갈래 줄("✏️ 오늘은 ○○을 써요.")과
@@ -239,6 +245,7 @@ export default function StudentHome() {
   const [showPendingPicker, setShowPendingPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)  // 🆕 진입 실패/타임아웃 시 재시도 화면
+  const [frameTopic, setFrameTopic] = useState(null)   // step683: 틀 화면에 먼저 보여 줄 오늘 주제 카드(기기에 적어 둔 4칸). 보여 주기 전용
 
   const [step, setStep] = useState('write') // write / feedback / done
   const [essay, setEssay] = useState('')
@@ -520,6 +527,14 @@ export default function StudentHome() {
       const uid = session?.user?.id
       if (!uid) { logAuthBounce({ screen: '/student', reason: 'no_session' }); router.push('/student/login'); return }   // step641: 세션 없음도 익명 기록
 
+      // step683: 틀 먼저 — 이 학생이 오늘 이 기기에서 본 주제 카드가 있으면 조회 전에 먼저 보여 준다.
+      //   다른 학생·지난 날짜의 것은 여기서 지운다(공용 태블릿). 엿보기와 ?topic= 진입(지난 주제)에서는 쓰지 않는다.
+      if (!isImpersonatingNow()) {
+        const store = homeStorage()
+        sweepHomeTopic(store, uid, todayStr())
+        setFrameTopic(router.query?.topic ? null : readHomeTopic(store, uid, todayStr()))
+      }
+
       const tProfile = performance.now()
       const PROFILE_SELECT = '*, classes:class_id(id, name, code, school, grade, tutor_chat_enabled, teacher_id, auto_supply_enabled, allow_paste)'
       // 👁 step633: ?as=가 있으면 getEffectiveProfile(admin만 통과, 대상은 학생만). 없으면 학생 본인 경로 종전 그대로.
@@ -689,6 +704,7 @@ export default function StudentHome() {
     }
 
     let topic = null
+    let todaySubsAll = null   // step683: 오늘 주제들의 내 글(화면 컬럼 전체). 아래 "이미 제출했나" 조회를 겸한다(null = 이 경로로 오지 않음)
     if (targetTopicId) {
       // 특정 주제 로드 (지난 주제 선택 시 또는 URL ?topic=)
       const { data } = await withTimeout(supabase.from('topics')
@@ -741,10 +757,14 @@ export default function StudentHome() {
         // 학생이 아직 제출 안 한 주제 ID 찾기
         const topicIds = todayTopics.map(t => t.id)
         const tTodaySubs = performance.now()
-        const { data: mySubs } = await withTimeout(supabase.from('submissions')
-          .select('topic_id, attempt').eq('user_id', profile.id).in('topic_id', topicIds)
-          .is('deleted_at', null)).catch(() => ({ data: [] }))
-        console.log(`[perf] todayTopic mySubs 조회: ${Math.round(performance.now() - tTodaySubs)}ms, rows=${(mySubs || []).length}`)
+        // step683: 회차만 받던 조회를 화면 컬럼 전체로 넓혀 아래 "이미 제출했나" 조회와 맞춤법 상태 조회를 겸한다(직렬 3건 → 1건).
+        //   조건(내 글·오늘 주제·삭제 안 됨)은 그대로. 실패하면 "제출 없음"으로 추측하지 않고 재시도 화면으로 간다(step575와 같은 원칙).
+        const { data: mySubs, error: mySubsErr } = await withTimeout(supabase.from('submissions')
+          .select(SUB_VIEW_COLS).eq('user_id', profile.id).in('topic_id', topicIds)
+          .is('deleted_at', null).order('attempt', { ascending: true }))
+        if (mySubsErr) throw mySubsErr
+        todaySubsAll = mySubs || []
+        console.log(`[perf] todayTopic mySubs 조회(글 포함): ${Math.round(performance.now() - tTodaySubs)}ms, rows=${(mySubs || []).length}`)
 
         // 각 주제별로 최대 attempt 계산
         const maxAttemptByTopic = {}
@@ -797,6 +817,12 @@ export default function StudentHome() {
       // 보조 조회(지난 주제·미확인 코멘트) 완료 보장 — 실패해도 진행(화면 결과 동일)
       //   step637: allSettled → all(각 항목 catch) — iOS 12·Safari 12에는 allSettled이 없어 진입이 재시도 화면으로 떨어졌다. 동작 동일.
       await Promise.all([pendingP, unreadP].map(p => p.catch(() => null)))
+
+      // step683: 다음 진입 때 틀 화면에 먼저 보여 줄 오늘 주제 카드(4칸)를 적어 둔다. 오늘 주제가 없으면 지운다. 엿보기는 적지 않는다.
+      if (!isImpersonatingNow()) {
+        if (topic) writeHomeTopic(homeStorage(), profile.id, today, topic)
+        else clearHomeTopic(homeStorage())
+      }
     }
 
     if (!topic) { syncTopicUrl(null); return }   // step513: 빈 날(챌린지만 등) — 홈은 깨끗한 URL
@@ -816,10 +842,14 @@ export default function StudentHome() {
 
     // 이미 제출했나 확인 (🆕 step327: select('*') → 화면에서 실제 읽는 컬럼만 명시)
     const tExisting = performance.now()
-    const { data: existing, error: existingErr } = await withTimeout(supabase.from('submissions')
-      .select('id, topic_id, user_id, attempt, essay_text, scores, rubric_reasons, improve_examples, corrections, total_score, max_score, feedback_overall, feedback_good, feedback_improve, example_text, teacher_comment, teacher_comment_at, teacher_stamp, created_at, re_graded_at, paste_detected, paste_count, reported, extra_rewrite_allowed, rewrite_requested_at, graded_with_model, grading_path, grade_status')   // step606: graded_with_model — 안전 필터 차단 표식 판정용 / step663: grading_path — 혼잡 전환 안내 줄(재진입)
-      .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
-      .is('deleted_at', null))
+    // step683: 오늘 주제 경로는 위에서 받은 글(todaySubsAll)에서 이 주제 것만 고른다(조회 생략). 지난 주제·?topic= 경로만 여기서 조회한다.
+    //   컬럼: step606 graded_with_model(안전 필터 차단 표식) / step663 grading_path(혼잡 전환 안내 줄) / step683 strict_status(보완 대기 배지)
+    const { data: existing, error: existingErr } = todaySubsAll
+      ? { data: todaySubsAll.filter(s => s.topic_id === topic.id), error: null }
+      : await withTimeout(supabase.from('submissions')
+        .select(SUB_VIEW_COLS)
+        .eq('user_id', profile.id).eq('topic_id', topic.id).order('attempt', { ascending: true })
+        .is('deleted_at', null))
     // step575: 조회 실패(401/5xx)를 "제출 없음"으로 오판해 이미 제출한 학생에게 빈 글쓰기 폼을
     //   보여주던 경로 차단 — throw하면 기존 catch가 재시도 화면(loadError)으로 안내
     if (existingErr) throw existingErr
@@ -830,14 +860,11 @@ export default function StudentHome() {
       const last = sorted[0]
       const maxAttempt = last.attempt || 1
       loadPeerShareFor(topic)   // step621: 제출이 있는 주제 → 친구 글 조회(비차단, 서버가 ON·본인 제출 검증)
+      // step683: strict_status는 위 조회에 들어 있다(종전 별도 조회 제거). 종전과 같게 "첫 글만 있고 값이 있을 때"만 남긴다.
+      if (maxAttempt !== 1 || !last.strict_status) delete last.strict_status
 
       if (maxAttempt === 1) {
         // 첫 글만 있음 → 피드백 화면 + 다시쓰기 가능
-        // step601: 보완 대기 배지용 strict_status는 별도 보조 조회(step600 SQL 미적용이면 조용히 실패 → 배지 없음, 화면 정상)
-        try {
-          const { data: st } = await supabase.from('submissions').select('strict_status').eq('id', last.id).maybeSingle()
-          if (st && st.strict_status) last.strict_status = st.strict_status
-        } catch (_) { /* 컬럼 없음 등 — 배지만 생략 */ }
         setCurrentSub(last)
         setEssay(last.essay_text)
         if (last.example_text) setExampleText(last.example_text)
@@ -900,6 +927,7 @@ export default function StudentHome() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }   // step633: 엿보기 중 로그아웃은 관리자 페이지로(세션 유지)
+    clearHomeTopic(homeStorage())   // step683: 공용 태블릿 — 적어 둔 오늘 주제 카드를 지운다
     await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 
@@ -1717,7 +1745,8 @@ export default function StudentHome() {
     return <>{classPending.map(t => item(t, false))}</>
   }
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-gray-500">로딩 중...</div></div>
+  // step683: 틀 먼저 — 종전 "로딩 중..." 한 줄 대신 머리줄·주제 카드·글쓰기 칸 자리를 먼저 그린다. 입력 칸과 누를 버튼은 없다.
+  if (loading) return <StudentHomeFrame topic={frameTopic} />
 
   // 🟣 step606: 지금 보고 있는 글이 AI 안전 필터 차단으로 점수 없이 저장된 글인지(제출 직후·재진입 모두 currentSub 기준)
   // step669: 채점 보류(grade_status='pending')·실패('failed') 글도 점수·피드백이 없으므로 같은 틀(안내 카드 + 내 글, 다시 쓰기·신고 숨김)로 보여 준다. 문구만 다르다.

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 로그아웃 때 오늘 주제 카드 삭제
 import Header from '../../components/Header'
 import { pickStr } from '../../lib/pickStr'  // step598: 로컬 복제본 → 공용 헬퍼(step427, 동일 로직)
 import { logError } from '../../lib/errorLog'  // step603: 재료 구성 실패 기록
@@ -212,6 +213,7 @@ export default function StudentQuiz() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }   // step633
+    clearHomeTopic(homeStorage())   // step683: 공용 태블릿 — 적어 둔 오늘 주제 카드를 지운다
     await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 

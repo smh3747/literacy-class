@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 로그아웃 때 오늘 주제 카드 삭제
 import Header from '../../components/Header'
 import { todayStr, daysAgoStr } from '../../lib/kstDate'   // step498: KST 날짜 헬퍼 공용화
 import { formatMyRank, cheerSeed } from '../../lib/rankDisplay'   // step539: 내 기록 구간화(하위권 숫자 미노출)
@@ -166,6 +167,7 @@ export default function StudentRanking() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }   // step633
+    clearHomeTopic(homeStorage())   // step683: 공용 태블릿 — 적어 둔 오늘 주제 카드를 지운다
     await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 

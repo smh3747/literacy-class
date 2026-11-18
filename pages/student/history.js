@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 로그아웃 때 오늘 주제 카드 삭제
 import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 "아직 쓴 글이 없어요"로 보이지 않게(자동 재시도 1회)
 import LoadFailNotice from '../../components/LoadFailNotice'  // step679
 import Header from '../../components/Header'
@@ -274,6 +275,7 @@ export default function StudentHistory() {
 
   const logout = async () => {
     if (isImpersonating) { router.push('/admin'); return }   // step633
+    clearHomeTopic(homeStorage())   // step683: 공용 태블릿 — 적어 둔 오늘 주제 카드를 지운다
     await supabase.auth.signOut({ scope: 'local' }); router.push('/')
   }
 

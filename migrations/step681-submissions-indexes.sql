@@ -4,6 +4,10 @@
 --   user_id·topic_id·created_at 조건이 전부 전체 훑기였다. 동시 제출 때 훑기가 겹쳐 몇 초씩 멈춘 것으로 본다.
 -- 실행: Supabase SQL Editor에서 수업 시간(09~15시) 밖에, 위에서부터 한 줄씩. 다시 실행해도 안전(if not exists).
 -- 되돌리기: step681-rollback.sql
+-- ★ 적용 완료: 2026-11-18 13:10경(KST), 4개 모두 + analyze. 사용자가 SQL Editor에서 실행.
+--   적용 직전 기준값(13:12 기록): seq_scan 137,709 / seq_tup_read 2,791,172,513 / idx_scan 49,001
+--   적용 뒤 3분(13:12 → 13:15): seq_scan +1(137,710), idx_scan +196
+--   인덱스별 누적(13:15): user_topic 1,394 / topic_created 72 / created 51 / grade_claimed 0
 
 -- ① 학생 한 명의 글 / 학생+주제 / 학급 학생 묶음(user_id in ...)
 create index if not exists idx_submissions_user_topic on submissions (user_id, topic_id);
