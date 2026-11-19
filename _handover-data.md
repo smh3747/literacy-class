@@ -631,6 +631,17 @@ export const GRAMMAR_NOTICE_TEACHER =
 - **실검증 결과**: **10/15 미실시**(SQL은 적용됨) — 엿보기(보기: 교사 켜기 카드·상태 줄·추가/빼기 배지) + 본인 반(누르기: 학생 제출 후 카드·알리기 종 알림·관리자 열람 숫자 +1)로 확인. 학생 쪽은 633 학생 엿보기로도 가능. 체크리스트 ①에 포함.
 - **후순위**: 2단계 전국 갤러리 · 3단계 학급 주제 교차(다른 반 주제 가져오기와 결합).
 
+**[★11/19 기준 이어갈 순서]** (step687. 아래 11/18판보다 이 블록이 최신)
+- **상태**: 676~680은 11/18 13:01 push 완료(origin/main `924340e`). push 뒤 30분 관찰 깨끗(auth_bounce 0, 결과 못 받음 0, 오류 기록 2건은 구글 AI 60초 초과 1건이 보류 저장으로 넘어간 것). **681·683~687은 로컬 커밋만**(push는 사용자가 "push 해 줘" 할 때). 682 번호는 비어 있다(파일 이름을 684로 맞춤).
+- **인덱스(681, 사용자가 11/18 13:10경 적용 완료)**: `migrations/step681-submissions-indexes.sql` 4개 + analyze. 적용 직전 seq_scan 137,709 / seq_tup_read 2,791,172,513 / idx_scan 49,001. 적용 뒤 3분 seq_scan +1, idx_scan +196. **할 일: 다음 수업일 오전 수업 뒤 "그 밖" 구간·서버 밖 시간(wait_ms − server_ms)·진짜 대기 95%·가장 오래를 인덱스 전(11/11~11/18 오전)과 비교 보고.** 조회 SQL은 11/18 보고(②)에 있다: 날짜별 percentile_cont, 시험 반(f0b64c29…) 제외.
+- **683 학생 홈**: 틀 먼저(`components/StudentHomeFrame.js`) + 조회 5단계 → 3단계(`SUB_VIEW_COLS`로 오늘 주제들의 내 글을 한 번에) + 오늘 주제 카드 4칸만 기기에 적기(`lib/homeCache.js`, 키에 학생 id·날짜, 진입 때 남의 것·지난 날짜 삭제, 로그아웃 4곳 삭제, 엿보기·?topic= 미사용). 게이트 gate-home-frame 47.
+- **684 제출 저장 구간**: 버튼 "채점이 끝났어요. 글을 저장하고 있어요." → 5초 넘으면 느림 안내 → 실패·20초 초과면 [저장 다시 시도](채점 재호출 없음, 다시 시도 전 같은 회차 글 존재 확인). 저장은 `insertGradedRow` 한 곳, 뒤 처리는 `saveGradedFirst`·`saveGradedRewrite`(순서 불변). 측정: `precheck_ms`·`save_ms`. **적용 대기 SQL: `migrations/step684-attempt-client-timing.sql`(컬럼 2개. 없어도 제출·시도 기록은 그대로 된다).** 관리자 "⏳ 구간별 시간"에 두 줄. 제출 전 조회는 wait_ms에 들어 있지 않다(시도 시작 기록보다 앞). 게이트 gate-save-stage 52. 남은 위험: 20초 제한에 걸린 저장이 다시 시도의 확인 조회보다 늦게 성공하면 같은 회차 2행이 될 수 있다(드묾, 종전의 "오류 뒤 다시 누름"과 같은 종류).
+- **685 교사 홈**: 학생 수·주제 수·오늘 제출 수 조회 실패를 0과 구분(`known`·`homeFail`). 모르면 배너·첫 설정 안내·다음 걸음 카드를 판정하지 않고 "–"와 실패 안내. gate-load-retry 60.
+- **686 알림**: `lib/notify.js sendNotification`으로 14곳 통일, 실패는 error_logs `notify_fail`(유형·오류 문구만). 교사 코멘트 추천 조회에 학급 학생 id 조건. 게이트 gate-notify 22. **사용자 몫 SQL: `create_notification`의 교사 → 자기 반 학생 분기 유형 목록에 'rewrite_allowed' 추가**(본문은 사용자가 보유. 적용 뒤 error_logs에 notify_fail(rewrite_allowed)가 더 생기지 않는지 확인). 참고: p_recipient = 호출자 본인이면 무조건 허용이라 grammar_done은 거절 대상이 아니다.
+- **RLS**: 계획만(11/18 보고 ③: auth.uid() 포장, is_my_classmate → my_classmate_ids() 한 번 계산, 시험 16종). 인덱스 효과를 하루 본 뒤 결정. 구현 금지 상태.
+- **화면 확인이 안 된 것**: 683~686 전부 실제 브라우저 시연 없음. 확인 항목은 `_last-report.md`(11/19) "확인할 것".
+- **다음 번호 = 688.**
+
 **[★11/18 기준 이어갈 순서]** (step678. 아래 11/11판보다 이 블록이 최신)
 - **지금 상태**: 로컬 main에 676(`e92e5f5`)·677(`59453f8`)·678(이 문서) 커밋. **push는 11/18 15시 이후**(수업 시간 배포 금지). push 전 `git pull --rebase`, 일반 push만. 적용 대기 SQL 없음. 채점 보류 전환은 전 학급 켜짐 그대로.
 - **676**: 관리자 "학생 글 0건" 수리. 원인은 step674의 시험 반 빼기 조회 2건(submissions와 profiles inner join 세기)이 8초 제한을 넘긴 것 + 조회 error를 안 보고 빈 목록으로 표시한 것. 시험 반 사람 id로 직접 세기(같은 값, 2.25초 → 0.13초), `lib/loadRetry.js` retryOnce(실패 시 0.8초 뒤 1회), `components/LoadFailNotice.js`("불러오지 못했어요. 다시 시도해 주세요." + [다시 시도]), 관리자 첫 묶음·학생 글·탭 목록 4곳 적용. `components/InfoTip.js`(ⓘ를 올리거나 누르면 설명, 화면 기준 위치)와 진짜 대기 표 문구 7개. 게이트 gate-load-retry 26, gate-test-student 53.
@@ -982,7 +993,8 @@ notifications CHECK 'message' / profiles.last_seen_at / submissions.teacher_scor
 - ❌ 학년별 채점 차등 → 데이터로 기각(2026-07-03). 대체=학년 맥락 보정(step345).
 - ❌ 맞춤법 누락 자동수집 → 폐기(규칙 보강으로 대체).
 
-## 워킹트리 상태 (2026-11-18 갱신)
+## 워킹트리 상태 (2026-11-19 갱신)
+- 11/19: step681(인덱스 SQL 파일)·683(학생 홈)·684(제출 저장 구간)·685(교사 홈)·686(알림·코멘트 추천)·687(이 문서). 로컬이 origin/main(`924340e`)보다 6커밋 앞, push 대기. 게이트 25종(신설 gate-home-frame 47 / gate-save-stage 52 / gate-notify 22, gate-load-retry 60), build 통과. 적용 대기 SQL: step684(컬럼 2개), create_notification 한 줄. 상세는 §13 [★11/19 기준 이어갈 순서].
 - 11/18: step676(`e92e5f5`)·677(`59453f8`)·678(문서). 로컬이 origin/main보다 3커밋 앞(push는 15시 이후). 게이트 22종(신설 gate-load-retry 26 / gate-net-retry 30, gate-test-student 53), build 통과. 적용 대기 SQL 없음. 상세는 §13 [★11/18 기준 이어갈 순서].
 - 11/11: step673~675(시험 학생·시험 반 보조·채점 보류 전 학급 적용과 시험 학생 붙여넣기). 워킹트리 깨끗, origin/main과 동일. 게이트 20종(gate-test-student 52 신설 / gate-grade-pending 46), build 통과. 적용 대기 SQL 없음.
 - 11/10 저녁: step671(채점 보류 전환, `0c64cd2`, 7420만 켬) + step672(문서만). 워킹트리 깨끗, origin/main과 동일. 게이트 19종(신설 grade-row 61 / grade-pending 38), build 통과. 적용 대기 SQL 없음. 집 PC에서 `git pull` 뒤 [★집에서 이어갈 순서]부터. 아래는 같은 날 오후 기록:
