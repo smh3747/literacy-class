@@ -27,6 +27,8 @@ import { displayStudentName } from '../../lib/displayName'   // step553: 오늘 
 import TeacherShowcaseModal from '../../components/TeacherShowcaseModal'   // step554: 교사용 전국 랭킹 모달 공용화
 import { adoptTodaySupply, fetchSupplyList } from '../../lib/supplyClient'   // step611: supply-adopt 호출 공용화 / step614: 원클릭 카드 조회를 서버 API로
 import { fetchPeerShare } from '../../lib/peerShareClient'   // step655: 오늘 제출 펼침 "📚 친구들에게 보이는 글 N편"(읽기 전용 list)
+import { retryOnce } from '../../lib/loadRetry'   // step685: 숫자 조회 재시도 1회
+import LoadFailNotice from '../../components/LoadFailNotice'   // step685: 숫자를 못 불러왔을 때 안내
 import { pickLatestSupply, shortMd } from '../../lib/supplyBands'   // step616: 챌린지 배너 "최근 주제" 1줄(주제 관리 카드와 같은 선택 규칙)
 
 export default function TeacherHome() {
@@ -37,6 +39,10 @@ export default function TeacherHome() {
   const [studentSamples, setStudentSamples] = useState([])  // 🆕 안내 카드용 학생 일부
   const [topicCount, setTopicCount] = useState(0)            // 🆕 셋업 체크리스트용
   const [studentCountTotal, setStudentCountTotal] = useState(0)  // 🆕 셋업 체크리스트용
+  // step685: 숫자 조회 실패를 0과 구분한다. known = 한 번이라도 받은 적 있음(없으면 '모름'), homeFail = 이번 진입에서 실패한 것.
+  //   실패하면 앞서 받은 값을 0으로 덮어쓰지 않는다. 모르는 숫자로는 화면 판정(학생 없음 배너·첫 설정 안내·다음 걸음 카드)을 하지 않는다.
+  const [known, setKnown] = useState({ students: false, topics: false, today: false })
+  const [homeFail, setHomeFail] = useState({ students: false, topics: false, today: false })
   const [hasApiKey, setHasApiKey] = useState(false)          // 🆕 셋업 체크리스트용 (값 자체는 안 가져옴)
   const apiKeyRef = useRef(null)                              // 🆕 셋업 체크리스트에서 스크롤
   const loginHintRef = useRef(null)                           // 🆕 로그인 안내 카드 스크롤
@@ -611,15 +617,16 @@ export default function TeacherHome() {
       const safe = (p) => Promise.resolve(p).then(r => r, () => null)
       const tRound1 = performance.now()
       const [s, t, samples, studentIdsRes, keyRes] = await Promise.all([
-        safe(supabase.from('profiles').select('id', { count: 'exact', head: true })
+        // step685: 학생 수·주제 수·학생 id는 재시도 1회(조건 불변). 실패는 { error }로 돌아온다(던지지 않음)
+        retryOnce(() => supabase.from('profiles').select('id', { count: 'exact', head: true })
           .eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false')),
-        safe(supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null)),   // step479: 공급 원본 제외(수치 왜곡 방지)
+        retryOnce(() => supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null)),   // step479: 공급 원본 제외(수치 왜곡 방지)
         // 🆕 안내 카드용 학생 username 일부 (최대 5명)
         safe(supabase.from('profiles').select('username').eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false').limit(5)),
         // 학생 id 전원(셋업 체크리스트 학생 수 + 아래 2라운드 in 절 재료)
-        safe(supabase.from('profiles')
+        retryOnce(() => supabase.from('profiles')
           .select('id').eq('class_id', profile.classes.id).eq('role', 'student')
           .or('is_hidden.is.null,is_hidden.eq.false')),
         // 🆕 셋업 체크리스트용 API 키 존재 여부 (값은 안 가져옴 - 보안)
@@ -631,7 +638,11 @@ export default function TeacherHome() {
       setStudentSamples(samples?.data || [])
       // 🆕 다음 걸음 카드 — 비차단(await 안 함). API키 불필요.
       //   step568: 엿보기에서도 호출(조회 전용 함수 — 화면 일치). 쓰기는 recordOnboarding 첫머리 가드가 차단.
-      maybeShowNextStepCard(profile, { students: s?.count || 0, topics: t?.count || 0 })
+      // step685: 조회 성공 여부. 모르는 숫자(실패)를 0으로 읽어 판정하지 않는다.
+      const okRes = (r) => !!r && !r.error
+      const sOk = okRes(s) && typeof s.count === 'number', tOk = okRes(t) && typeof t.count === 'number', idsOk = okRes(studentIdsRes) && Array.isArray(studentIdsRes.data)
+      let todayOk = false
+      if (sOk && tOk) maybeShowNextStepCard(profile, { students: s.count, topics: t.count })
       // 🆕 step477: 전국 글쓰기 챌린지 — lazy 등록·원클릭 카드 판정 (비차단, 실패 무시)
       //   step507: adopt는 토글 무관 상시 호출(OFF면 서버가 청소만 하고 disabled 반환), 원클릭 카드는 OFF일 때만
       // step616: 발행 목록 1회 조회(비차단) — 배너 "최근 주제" 줄(엿보기 포함, 읽기 전용) + 원클릭 카드 판정에 공용.
@@ -650,12 +661,12 @@ export default function TeacherHome() {
       let todayApiCalls = 0
       let todaySubmissions = 0  // 🆕 step315: 오늘 제출 수(새 쿼리 없이 subCount 재사용)
 
-      const studentIds = studentIdsRes?.data || null
-      // 🆕 셋업 체크리스트용 학생 수
-      setStudentCountTotal(studentIds?.length || 0)
+      const studentIds = idsOk ? studentIdsRes.data : null
+      // 🆕 셋업 체크리스트용 학생 수 — step685: 실패면 앞 값 유지(0으로 덮어쓰지 않음)
+      if (idsOk) setStudentCountTotal(studentIds.length)
 
       // 🆕 셋업 체크리스트용 주제 수 — step637-B: 위 t(동일 쿼리)를 재사용, 중복 조회 제거
-      setTopicCount(t?.count || 0)
+      if (tOk) setTopicCount(t.count)   // step685: 실패면 앞 값 유지
 
       // 🆕 셋업 체크리스트용 API 키 존재 여부 — step637-B: 1라운드 결과(keyRes) 사용. 조회 실패(null)면 없음으로.
       {
@@ -738,7 +749,7 @@ export default function TeacherHome() {
             .in('user_id', ids)
             .gte('created_at', todayStartIso)
             .is('deleted_at', null)),
-          safe(supabase.from('submissions')
+          retryOnce(() => supabase.from('submissions')   // step685: 카드의 오늘 제출 수는 재시도 1회(조건 불변)
             .select('id', { count: 'exact', head: true })
             .in('user_id', ids)
             .gte('created_at', kstMidnightUtc)
@@ -754,11 +765,25 @@ export default function TeacherHome() {
         }
         // 각 제출 = 채점(1) + 예시 생성(1) = 약 2회 호출 (Gemini 한도 추정 — PT 자정 기준 유지)
         todayApiCalls = (ptRes?.count || 0) * 2
-        todaySubmissions = kstRes?.count || 0
-      } else if (!tasteDismissed) {
-        setShowTaste(true)   // 학생 0명 = 피드백 본 적 없음(종전 seenFeedback=false 경로)
+        todayOk = okRes(kstRes) && typeof kstRes.count === 'number'   // step685
+        todaySubmissions = todayOk ? kstRes.count : 0
+      } else if (idsOk) {
+        todayOk = true   // step685: 학생 0명이 확인됨 → 오늘 제출 0건도 확인된 값
+        if (!tasteDismissed) setShowTaste(true)   // 학생 0명 = 피드백 본 적 없음(종전 seenFeedback=false 경로)
       }
-      setStats({ students: s?.count || 0, topics: t?.count || 0, reports: reportCount, todayApiCalls, todaySubmissions })
+      // step685: 실패한 숫자는 앞 값을 유지한다(0으로 덮어쓰지 않음). 신고 수·AI 사용량은 종전 그대로.
+      setStats(prev => ({
+        students: sOk ? s.count : prev.students,
+        topics: tOk ? t.count : prev.topics,
+        reports: reportCount, todayApiCalls,
+        todaySubmissions: todayOk ? todaySubmissions : prev.todaySubmissions,
+      }))
+      setKnown(prev => ({ students: prev.students || (sOk && idsOk), topics: prev.topics || tOk, today: prev.today || todayOk }))
+      setHomeFail({ students: !(sOk && idsOk), topics: !tOk, today: !todayOk })
+    } else {
+      // step685: 학급이 아직 없으면 조회할 것이 없다 → 0이 확인된 값(첫 설정 안내가 종전처럼 뜬다)
+      setKnown({ students: true, topics: true, today: true })
+      setHomeFail({ students: false, topics: false, today: false })
     }
     console.log(`[perf] 교사 진입 총계: ${Math.round(performance.now() - tStart)}ms`)
     setLoading(false)
@@ -1039,7 +1064,13 @@ export default function TeacherHome() {
           {/* 🆕 step552: 학생 0명 재방문 배너 — 깔때기 병목(학생 등록 11%) 대응. 닫으면 그날 하루 숨김, 다음 날(KST) 재표시.
               스타일은 step512 요청 배너 관행(amber 1줄) 통일. 배너 전면 우선순위 정리는 §13 백로그 별도. */}
           {/* step568: 엿보기에도 표시(화면 일치) — 닫기는 dismissNoStudentsBanner가 엿보기 시 저장 생략 */}
-          {!loading && studentCountTotal === 0 && !noStudentsBannerHiddenToday && (
+          {/* step685: 숫자를 못 불러왔으면 무엇을 못 불러왔는지 한 줄과 [다시 시도] */}
+          {!loading && classInfo && (homeFail.students || homeFail.topics || homeFail.today) && (
+            <LoadFailNotice
+              text={`${[homeFail.students && '학생 수', homeFail.topics && '주제 수', homeFail.today && '오늘 제출 수'].filter(Boolean).join(', ')}를 불러오지 못했어요. 다시 시도해 주세요.`}
+              onRetry={() => { setLoading(true); checkAuth() }} />
+          )}
+          {!loading && known.students && studentCountTotal === 0 && !noStudentsBannerHiddenToday && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3 flex-wrap">
               {peekNote && <div className="w-full">{peekNote}</div>}
               <p className="text-sm text-amber-900 font-medium flex-1 min-w-0">
@@ -1173,7 +1204,8 @@ export default function TeacherHome() {
 
           {/* 🆕 첫 셋업 체크리스트 (신규 선생님 안내 — 정착이면 숨김). step566: 미완료자의 홈 주인공 — 환영 바로 아래로 이동
               step568: 엿보기에도 표시(화면 일치) — readOnly로 닫기 저장만 생략 */}
-          {!setupDone && (
+          {/* step685: 학생 수·주제 수를 아직 모르면 첫 설정 안내를 띄우지 않는다(0으로 읽어 처음 단계로 돌아가 보이는 것 방지) */}
+          {!setupDone && known.students && known.topics && (
             <SetupChecklist
               classInfo={classInfo}
               teacherId={user?.id}
@@ -1272,8 +1304,8 @@ export default function TeacherHome() {
                   <div className="text-3xl font-mono font-bold tracking-widest text-primary-dark">{classInfo.code}</div>
                 </div>
                 <div className="text-right text-sm">
-                  <div className="text-primary-dark">학생 <strong>{stats.students}</strong>명</div>
-                  <div className="text-primary-dark">주제 <strong>{stats.topics}</strong>개</div>
+                  <div className="text-primary-dark">학생 <strong>{known.students ? stats.students : '–'}</strong>명</div>
+                  <div className="text-primary-dark">주제 <strong>{known.topics ? stats.topics : '–'}</strong>개</div>
                 </div>
               </div>
               {/* 🆕 step345: 학년 미설정 유도 — 학년 평균 비교(성장 그래프)를 보려면 학년 필요 */}
@@ -1301,7 +1333,9 @@ export default function TeacherHome() {
           {setupDone && (
             <div className="bg-white border-2 border-primary rounded-2xl p-5">
               <div className="text-xs text-primary-dark font-semibold mb-1">📅 오늘 우리 반</div>
-              {stats.todaySubmissions === 0 ? (
+              {!known.today ? (
+                <p className="text-sm text-gray-700 mt-1">오늘 제출 수를 불러오지 못했어요. 다시 시도해 주세요.</p>
+              ) : stats.todaySubmissions === 0 ? (
                 <p className="text-sm text-gray-700 mt-1">아직 오늘 제출이 없어요. 학생들에게 오늘 주제를 안내해 보세요.</p>
               ) : (
                 <>
@@ -1370,7 +1404,7 @@ export default function TeacherHome() {
               <div className="flex flex-wrap gap-2 mt-3">
                 <Link href={withImpersonation('/teacher/status')} className="text-sm bg-primary text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-dark">제출 현황 보기</Link>
                 <Link href={withImpersonation('/teacher/submissions')} className="text-sm bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">학생 글 보기</Link>
-                {stats.todaySubmissions === 0 && (
+                {known.today && stats.todaySubmissions === 0 && (
                   <Link href={withImpersonation('/teacher/topics')} className="text-sm bg-white border border-primary text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-primary-light">주제 관리</Link>
                 )}
               </div>

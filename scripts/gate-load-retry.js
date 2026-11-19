@@ -100,6 +100,28 @@ const { pathToFileURL } = require('url')
     rec(`${f}: 조회 실패면 실패 안내(상태 선언·불러오기 포함)`, words.every(w => t.includes(w)) && /const \[(loadError|topicsLoadError), set(LoadError|TopicsLoadError)\] = useState\(false\)/.test(t) && t.includes("import LoadFailNotice from '../../components/LoadFailNotice'") && t.includes('retryOnce'))
   }
 
+  // ── step685: 교사 홈 숫자(학생 수·주제 수·오늘 제출 수) — 실패를 0과 구분해 "모름"으로 둔다 ──
+  {
+    const th = read('pages/teacher/index.js').replace(/\r\n/g, '\n')
+    rec('교사 홈: 학생 수·주제 수·학생 id 조회에 재시도 1회(조건 불변)',
+      th.includes("retryOnce(() => supabase.from('profiles').select('id', { count: 'exact', head: true })\n          .eq('class_id', profile.classes.id).eq('role', 'student')\n          .or('is_hidden.is.null,is_hidden.eq.false')),") &&
+      th.includes("retryOnce(() => supabase.from('topics').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).is('supply_type', null)),") &&
+      th.includes("retryOnce(() => supabase.from('profiles')\n          .select('id').eq('class_id', profile.classes.id).eq('role', 'student')\n          .or('is_hidden.is.null,is_hidden.eq.false')),"))
+    rec('교사 홈: 오늘 제출 수(한국 자정 기준) 조회에 재시도 1회(조건 불변)', /retryOnce\(\(\) => supabase\.from\('submissions'\)[^\n]*\n\s+\.select\('id', \{ count: 'exact', head: true \}\)\n\s+\.in\('user_id', ids\)\n\s+\.gte\('created_at', kstMidnightUtc\)\n\s+\.is\('deleted_at', null\)\),/.test(th))
+    rec('교사 홈: 실패한 숫자를 0으로 덮어쓰지 않는다', !/[^A-Za-z]s\?\.count \|\| 0/.test(th) && !/[^A-Za-z]t\?\.count \|\| 0/.test(th) && !th.includes('studentIds?.length || 0') && !th.includes('kstRes?.count || 0') &&
+      th.includes('students: sOk ? s.count : prev.students,') && th.includes('topics: tOk ? t.count : prev.topics,') && th.includes('todaySubmissions: todayOk ? todaySubmissions : prev.todaySubmissions,') &&
+      th.includes('if (idsOk) setStudentCountTotal(studentIds.length)') && th.includes('if (tOk) setTopicCount(t.count)'))
+    rec('교사 홈: 다음 걸음 카드는 두 숫자를 모두 받았을 때만 판정', th.includes('if (sOk && tOk) maybeShowNextStepCard(profile, { students: s.count, topics: t.count })') && (th.match(/maybeShowNextStepCard\(profile/g) || []).length === 1)
+    rec('교사 홈: "학생이 아직 없어요" 배너는 0명이 확인됐을 때만', th.includes('{!loading && known.students && studentCountTotal === 0 && !noStudentsBannerHiddenToday && ('))
+    rec('교사 홈: 첫 설정 안내는 학생 수·주제 수를 알 때만', th.includes('{!setupDone && known.students && known.topics && (\n            <SetupChecklist'))
+    rec('교사 홈: 모르는 숫자는 –로 표시', th.includes("{known.students ? stats.students : '–'}") && th.includes("{known.topics ? stats.topics : '–'}"))
+    rec('교사 홈: 오늘 제출 수를 모르면 "오늘 제출이 없어요" 대신 실패 문구', th.includes("{!known.today ? (\n                <p className=\"text-sm text-gray-700 mt-1\">오늘 제출 수를 불러오지 못했어요. 다시 시도해 주세요.</p>\n              ) : stats.todaySubmissions === 0 ? ("))
+    rec('교사 홈: 무엇을 못 불러왔는지 한 줄과 [다시 시도]', th.includes("homeFail.students && '학생 수', homeFail.topics && '주제 수', homeFail.today && '오늘 제출 수'") && th.includes('onRetry={() => { setLoading(true); checkAuth() }} />'))
+    rec('교사 홈: 학급이 없는 교사는 종전처럼 첫 설정 안내가 뜬다(0이 확인된 값)', /\} else \{\n[^\n]*\n\s+setKnown\(\{ students: true, topics: true, today: true \}\)/.test(th))
+    rec('교사 홈: 한 번 받은 숫자는 다시 시도가 실패해도 "아는 값"으로 남는다', th.includes('setKnown(prev => ({ students: prev.students || (sOk && idsOk), topics: prev.topics || tOk, today: prev.today || todayOk }))'))
+    rec('교사 홈: 학생 0명이 확인되면 오늘 제출 0건도 확인된 값', /\} else if \(idsOk\) \{\n\s+todayOk = true/.test(th))
+  }
+
   let pass = 0, fail = 0
   for (const r of results) { if (r.pass) pass++; else fail++; console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  — ${r.detail}` : ''}`) }
   console.log(`\n전체 ${pass}/${pass + fail} PASS${fail ? `  (실패 ${fail}건)` : ''}`)
