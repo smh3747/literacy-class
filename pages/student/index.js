@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import { callAI } from '../../lib/aiClient'
 import { decideExampleFlow } from '../../lib/exampleDefer'   // step627: 피크 시 예시 생성 보류 판정
 import { canUseLockGrace } from '../../lib/lockGrace'        // step629: 시간 잠금 유예(종료 뒤 5분 안 1회)
@@ -600,7 +601,7 @@ export default function StudentHome() {
     if (!assertWritable()) return   // step633
     try {
       const args = peerShareNotifyArgs({ teacherId: user?.classes?.teacher_id, number: user?.number, topicId: todayTopic?.id, nickname: item.nickname })
-      if (args) await supabase.rpc('create_notification', args)
+      if (args) await sendNotification(args)
       setPeerNotified(prev => new Set([...prev, item.key]))
     } catch (e) {
       console.warn('알림 생성 실패:', e?.message)
@@ -1471,7 +1472,7 @@ export default function StudentHome() {
       const args = blockedNotificationArgs({
         teacherId: user?.classes?.teacher_id, number: user?.number, topicId: todayTopic.id, userId: user.id
       })
-      if (args) await supabase.rpc('create_notification', args)
+      if (args) await sendNotification(args)
     } catch (e) { console.warn('차단 알림 생성 실패:', e?.message) }
   }
 
@@ -1560,7 +1561,7 @@ export default function StudentHome() {
       try {
         const teacherId = user?.classes?.teacher_id
         if (teacherId) {
-          await supabase.rpc('create_notification', {
+          await sendNotification({
             p_recipient: teacherId,
             p_type: 'report',
             p_title: '학생이 AI 피드백을 신고했어요',

@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import Header from '../../components/Header'
 import StudentFeedbackCard from '../../components/StudentFeedbackCard'
 import AdminPeekSearch from '../../components/AdminPeekSearch'   // step648: 빠른 엿보기 검색
@@ -895,7 +896,7 @@ export default function AdminHome() {
         .insert({ teacher_id: newMsgTarget.id, sender_id: user.id, body })
       if (error) throw error
       try {
-        await supabase.rpc('create_notification', {
+        await sendNotification({
           p_recipient: newMsgTarget.id,
           p_type: 'message',
           p_title: '관리자 쪽지가 도착했어요',
@@ -940,7 +941,7 @@ export default function AdminHome() {
       setMsgReply('')
       if (msgReplyRef.current) msgReplyRef.current.style.height = ''  // step439: 초기 높이 복원
       try {
-        await supabase.rpc('create_notification', {
+        await sendNotification({
           p_recipient: msgSelected,
           p_type: 'message',
           p_title: '관리자 답장이 도착했어요',
@@ -1935,7 +1936,7 @@ export default function AdminHome() {
       try {
         if (f.user_id) {
           const isStudent = f.author?.role === 'student'
-          await supabase.rpc('create_notification', {
+          await sendNotification({
             p_recipient: f.user_id,
             p_type: 'admin_reply',
             p_title: isStudent ? '운영자 답장이 왔어요' : '관리자 답장이 도착했어요',

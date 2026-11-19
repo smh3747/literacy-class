@@ -6,6 +6,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import Header from '../../components/Header'
 import ImpersonationBanner from '../../components/ImpersonationBanner'
 import { getEffectiveProfile, withImpersonation, assertWritable } from '../../lib/impersonation'
@@ -95,7 +96,7 @@ export default function TeacherMessages() {
       try {
         const { data: admins } = await supabase.from('profiles').select('id').eq('role', 'admin')
         for (const a of (admins || [])) {
-          await supabase.rpc('create_notification', {
+          await sendNotification({
             p_recipient: a.id,
             p_type: 'message',
             p_title: '새 쪽지가 도착했어요',

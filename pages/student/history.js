@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import { clearHomeTopic, homeStorage } from '../../lib/homeCache'   // step683: 로그아웃 때 오늘 주제 카드 삭제
 import { retryOnce } from '../../lib/loadRetry'             // step679: 조회 실패를 "아직 쓴 글이 없어요"로 보이지 않게(자동 재시도 1회)
 import LoadFailNotice from '../../components/LoadFailNotice'  // step679
@@ -158,7 +159,7 @@ export default function StudentHistory() {
     if (!assertWritable()) return   // step633
     try {
       const args = peerShareNotifyArgs({ teacherId, number: user?.number, topicId, nickname: item.nickname })
-      if (args) await supabase.rpc('create_notification', args)
+      if (args) await sendNotification(args)
       setPeerNotified(prev => new Set([...prev, `${topicId}:${item.key}`]))
     } catch (e) {
       console.warn('알림 생성 실패:', e?.message)

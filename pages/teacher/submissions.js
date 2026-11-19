@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import Header from '../../components/Header'
 import useGrammarTooltip from '../../lib/useGrammarTooltip'
 import { regradeSubmission } from '../../lib/regrade'
@@ -514,7 +515,7 @@ export default function TeacherSubmissions() {
   //   type 'rewrite_allowed'는 notifications_type_check 제약에 추가돼야 생성됨(미적용 시 이 알림만 조용히 미생성).
   const notifyRewriteAllowed = async (sub) => {
     try {
-      await supabase.rpc('create_notification', {
+      await sendNotification({
         p_recipient: sub.user_id,
         p_type: 'rewrite_allowed',
         p_title: '✏️ 선생님이 수정 기회를 주셨어요!',
@@ -698,7 +699,7 @@ export default function TeacherSubmissions() {
       // 비차단: 실패해도 저장 무관. 임퍼소네이션은 위 조기 return으로 이미 차단됨.
       if (next) {
         try {
-          await supabase.rpc('create_notification', {
+          await sendNotification({
             p_recipient: s.user_id,
             p_type: 'stamp',
             p_title: '선생님이 내 글에 도장을 찍었어요',
@@ -939,7 +940,7 @@ export default function TeacherSubmissions() {
         // 🔔 step358: 알림 센터 2차 — 일괄 코멘트도 학생별 알림(비차단, 실패해도 집계·저장 무관).
         // 내용 미포함·임퍼소네이션 차단은 개별 코멘트와 동일 원칙(진입부 조기 return).
         try {
-          await supabase.rpc('create_notification', {
+          await sendNotification({
             p_recipient: s.user_id,
             p_type: 'teacher_comment',
             p_title: '선생님이 내 글에 코멘트를 남겼어요',
@@ -1643,6 +1644,7 @@ export default function TeacherSubmissions() {
                       onUpdated={() => openTopic(selectedTopic, selectedStudent.profile.id)}
                       disabled={isImpersonating}
                       maskNames={topicStudents.map(g => g.profile.realname).filter(Boolean)}
+                      classStudentIds={topicStudents.map(g => g.profile.id).filter(Boolean)}
                     />
 
                     {/* 🆕 담임 확인 도장 (코멘트와 동일 경로·가드) */}
@@ -2031,7 +2033,7 @@ export default function TeacherSubmissions() {
 // 학생 글 1편당 코멘트 1개. 작성·수정·삭제 가능.
 // 임퍼소네이션 중에는 작성 차단 (disabled prop).
 // ============================================
-function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskNames = [] }) {
+function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskNames = [], classStudentIds = [] }) {
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState(submission.teacher_comment || '')
   const [saving, setSaving] = useState(false)
@@ -2046,10 +2048,14 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskN
     setSuggestions([])
     try {
       // 내가 쓴 최근 코멘트 15개 (말투 샘플) — RLS로 내 학급만 조회됨
-      const { data: recent } = await supabase.from('submissions')
+      // step686: 학급 학생 id 조건을 건다. 종전에는 조건 없이 읽어 정책(RLS)만으로 걸러졌고, 그래서 표 전체를 훑었다(인덱스 미사용).
+      //   id를 못 받은 경우(빈 배열)는 종전 조회 그대로.
+      let recentQ = supabase.from('submissions')
         .select('teacher_comment')
         .not('teacher_comment', 'is', null)
         .neq('id', submission.id)
+      if (classStudentIds.length > 0) recentQ = recentQ.in('user_id', classStudentIds)
+      const { data: recent } = await recentQ
         .order('teacher_comment_at', { ascending: false })
         .limit(15)
 
@@ -2132,7 +2138,7 @@ function TeacherCommentBox({ submission, studentName, onUpdated, disabled, maskN
       // 🔔 step358: 알림 센터 2차 — 학생에게 코멘트 도착 알림(비차단, 실패해도 저장 무관).
       // 코멘트 내용은 p_body에 넣지 않음(알림함 노출 방지, 클릭해서 보게). 임퍼소네이션은 disabled 조기 return으로 차단됨.
       try {
-        await supabase.rpc('create_notification', {
+        await sendNotification({
           p_recipient: submission.user_id,
           p_type: 'teacher_comment',
           p_title: '선생님이 내 글에 코멘트를 남겼어요',

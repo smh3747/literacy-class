@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import { getFriendlyErrorMessage } from '../../lib/gemini'
 import { callAI } from '../../lib/aiClient'
 import Header from '../../components/Header'
@@ -190,7 +191,7 @@ export default function GrammarBackfill() {
     // 🔔 step348: 알림 센터 — 맞춤법 일괄 완료 알림(비차단, 실패해도 원 동작 무관)
     try {
       if (user?.id && successCount > 0) {
-        await supabase.rpc('create_notification', {
+        await sendNotification({
           p_recipient: user.id,
           p_type: 'grammar_done',
           p_title: '맞춤법 일괄 검사가 끝났어요',

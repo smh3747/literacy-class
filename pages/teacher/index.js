@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { sendNotification } from '../../lib/notify'   // step686: 알림 생성 실패를 기록(종전에는 { error }를 보지 않아 조용히 사라짐)
 import Header from '../../components/Header'
 import ApiKeyManager from '../../components/ApiKeyManager'
 import ClassSettings from '../../components/ClassSettings'
@@ -337,7 +338,7 @@ export default function TeacherHome() {
 
       // 종 알림 (비차단)
       try {
-        await supabase.rpc('create_notification', {
+        await sendNotification({
           p_recipient: profile.id,
           p_type: 'briefing',
           p_title: title,
