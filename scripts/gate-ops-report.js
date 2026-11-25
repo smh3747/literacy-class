@@ -258,6 +258,7 @@ const DAYS = [
     rec('화면 문구에 대시가 없다', !JSON.stringify(secs).includes('—') && !JSON.stringify(O.headlineOf(m)).includes('—'))
     const q = secs.find(s => s.key === 'growth').lists.find(l => l.title === '14일 넘게 조용한 학급')
     rec('조용한 학급 목록은 학교·반 이름으로 펼쳐 본다', q && q.items[0] === '사아초 3학년 4반 · 마지막 제출 2026-11-05 · 누적 1편', q && q.items[0])
+    rec('DB 용량 설명에 한도가 가정값이라고 적는다', secs.find(s => s.key === 'resources').rows.find(r => r.label === 'DB 용량').info.includes('한도 500MB는 가정값이에요'))
     rec('퀴즈는 "기록 없음"', secs.find(s => s.key === 'features').rows.find(r => r.label === '맞춤법 퀴즈').value === '기록 없음')
     eq('카드 앞면 숫자 4개', O.headlineOf(m).map(h => h.label), ['제출 수', '쓴 학급', '거의 모두(95%) 대기', '오늘 새로 온 것']) }
   rec('보고에 학생 id·시험 반 id가 들어가지 않는다', !/"(a1|a2|b1|c1|d1|x1)"/.test(JSON.stringify(rep)) && !JSON.stringify(rep).includes(T))
