@@ -1,9 +1,11 @@
 // step688: 관리자 "📋 오늘 운영 보고" — 지금 보고 만들기 · 지난 날짜 채우기 (관리자 전용)
 //   POST { accessToken, action: 'build' }            → 오늘 날짜 보고를 지금까지의 자료로 만들어 덮어쓴다(15시 전이면 중간 보고)
 //   POST { accessToken, action: 'backfill' }         → 지난 30일 가운데 보고가 없는 날짜만 채운다
+//   POST { accessToken, action: 'test_alert' }       → "[시험]" 제목의 운영 알림을 관리자에게 보낸다(step689. 붉은 띠·종 알림 확인용, 30분 제한과 무관)
 //   보고를 읽는 것은 화면이 ops_reports를 직접 읽는다(RLS: 관리자만).
 import { createClient } from '@supabase/supabase-js'
-import { kstToday, closedReportDate } from '../../lib/opsReport'
+import { kstToday, closedReportDate, ALERT_TEST_TITLE, ALERT_TEST_BODY } from '../../lib/opsReport'
+import { sendOpsAlert } from '../../lib/opsAlert.server'
 import { buildAndSaveReport, backfillReports } from '../../lib/opsReport.server'
 
 export const config = { maxDuration: 120 }
@@ -13,7 +15,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const { accessToken, action } = req.body || {}
   if (!accessToken) return res.status(401).json({ error: '로그인이 필요해요' })
-  if (action !== 'build' && action !== 'backfill') return res.status(400).json({ error: 'action이 올바르지 않아요' })
+  if (action !== 'build' && action !== 'backfill' && action !== 'test_alert') return res.status(400).json({ error: 'action이 올바르지 않아요' })
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !serviceKey) return res.status(500).json({ error: '서버 설정 오류: SUPABASE_SERVICE_ROLE_KEY가 없어요.' })
@@ -27,6 +29,11 @@ export default async function handler(req, res) {
 
   try {
     const now = Date.now()
+    if (action === 'test_alert') {
+      // 실제 알림과 같은 길(sendOpsAlert)로 보낸다. 30분 간격 검사는 하지 않는다.
+      const r = await sendOpsAlert(admin, { title: ALERT_TEST_TITLE, body: ALERT_TEST_BODY })
+      return res.status(200).json({ ok: true, sent: r.sent })
+    }
     if (action === 'build') {
       const row = await buildAndSaveReport(admin, kstToday(now), { source: 'manual', nowMs: now })
       return res.status(200).json({ ok: true, date: row.report_date, verdict: row.verdict })
@@ -36,6 +43,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ...r })
   } catch (e) {
     console.error('admin-ops-report 오류:', e?.message || e)
+    if (action === 'test_alert') return res.status(500).json({ error: '시험 알림을 보내지 못했어요.' })
     return res.status(500).json({ error: '보고를 만들지 못했어요. ops_reports 표(step688 SQL)가 적용됐는지 확인해 주세요.' })
   }
 }

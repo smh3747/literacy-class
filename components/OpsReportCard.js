@@ -57,7 +57,7 @@ export default function OpsReportCard({ user }) {
   const [alerts, setAlerts] = useState([])      // 최근 30분 운영 알림
   const [open, setOpen] = useState(false)
   const [list, setList] = useState(null)        // 지난 30일 [{ report_date, verdict }]
-  const [busy, setBusy] = useState(null)        // 'build' | 'backfill' | null
+  const [busy, setBusy] = useState(null)        // 'build' | 'backfill' | 'test_alert' | null
   const [note, setNote] = useState(null)        // { tone, text }
   const [expected, setExpected] = useState(null)
 
@@ -79,7 +79,7 @@ export default function OpsReportCard({ user }) {
     if (!user?.id) return
     const since = new Date(Date.now() - ALERT_COOLDOWN_MS).toISOString()
     const { data } = await supabase.from('notifications').select('id, title, body, created_at')
-      .eq('recipient_id', user.id).like('title', `${ALERT_TITLE_PREFIX}%`).gte('created_at', since)
+      .eq('recipient_id', user.id).like('title', `%${ALERT_TITLE_PREFIX}%`).gte('created_at', since)
       .order('created_at', { ascending: false }).limit(3)
     setAlerts(data || [])
   }, [user?.id])
@@ -99,6 +99,7 @@ export default function OpsReportCard({ user }) {
     setBusy(action); setNote(null)
     try {
       const r = await postAdmin(action)
+      if (action === 'test_alert') { await loadAlerts(); setNote({ tone: 'ok', text: `시험 알림을 관리자 ${r.sent}명에게 보냈어요. 카드 위 붉은 띠와 종 알림을 확인해 주세요. 띠는 30분 뒤 사라져요.` }); return }
       if (action === 'build') { await loadLatest(); setNote({ tone: 'ok', text: '보고를 새로 만들었어요.' }) }
       else setNote({ tone: 'ok', text: `지난 날짜 보고 ${r.made}개를 만들었어요. 이미 있던 ${r.skipped}개는 그대로 뒀어요.` })
       setList(null)
@@ -136,6 +137,12 @@ export default function OpsReportCard({ user }) {
           </h2>
           <div className="flex items-center gap-2">
             {row && <span className="text-xs text-gray-500">만든 시각 {madeAtText(row.created_at)} · {SOURCE_LABEL[row.source] || row.source}</span>}
+            {/* step689: 붉은 띠와 종 알림이 뜨는지 보는 시험 버튼. 제목에 [시험]이 붙는다. */}
+            <button type="button" onClick={() => run('test_alert')} disabled={!!busy}
+              title="제목에 [시험]이 붙은 운영 알림을 관리자에게 보내요. 붉은 띠와 종 알림이 뜨는지 볼 때 써요."
+              className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap">
+              {busy === 'test_alert' ? '보내는 중이에요...' : '알림 시험 보내기'}
+            </button>
             {buildBtn}
           </div>
         </div>

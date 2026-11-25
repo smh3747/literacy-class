@@ -183,7 +183,7 @@ const DAYS = [
     ],
     feedback: [
       { user_id: 'a1', created_at: at('2026-11-27', '09:00'), replied_at: null },
-      { user_id: 'a2', created_at: at('2026-09-15', '09:00'), replied_at: null },
+      { user_id: 'tA', created_at: at('2026-09-15', '09:00'), replied_at: null },     // 교사가 보낸 의견
       { user_id: 'a2', created_at: at('2026-09-16', '09:00'), replied_at: at('2026-09-17', '09:00') },
     ],
     peerViews: [{ class_id: 'cA', created_at: at('2026-11-27', '09:00') }, { class_id: T, created_at: at('2026-11-27', '09:00') }],
@@ -223,9 +223,15 @@ const DAYS = [
   eq('신고 사유 칩별·의심 교정·안전 필터', [m.quality.reports, m.quality.reportTags, m.quality.alertsNew, m.quality.safety], [1, { '점수가 이상해요': 1 }, 1, 1])
   eq('오늘 새로 온 것: 교사 쪽지 1 + 의견 1 + 신고 1', [m.waiting.newMessages, m.waiting.newFeedback, m.waiting.newReports, m.waiting.newTotal], [1, 1, 1, 3])
   eq('카드 앞면 숫자는 오늘 새로 온 것', m.headline.newWaiting, 3)
-  eq('쌓인 것: 읽지 않은 교사 쪽지 1, 답 없는 의견 2, 미해결 신고 2', m.waiting.backlog, { messages: 1, feedback: 2, reports: 2, total: 5 })
+  eq('쌓인 것: 읽지 않은 교사 쪽지 1, 답 없는 의견 2(학생 1·교사 1), 미해결 신고 2', m.waiting.backlog, { messages: 1, feedback: 2, feedbackStudent: 1, feedbackTeacher: 1, reports: 2, total: 5 })
+  eq('오늘 새로 온 의견을 보낸 사람 역할로 나눈다(학생 1·교사 0)', [m.waiting.newFeedbackStudent, m.waiting.newFeedbackTeacher], [1, 0])
+  { const r2 = O.buildReport(data, D, { nowMs, prevBacklog: { messages: 0, feedback: 3, feedbackStudent: 3, feedbackTeacher: 0, reports: 1, total: 4 } }).metrics.waiting
+    eq('전날 보고에 나눈 값이 있으면 나눈 증감도 낸다', [r2.delta.feedbackStudent, r2.delta.feedbackTeacher], [-2, 1]) }
+  { const rows = O.sectionsOf(m).find(s => s.key === 'waiting').rows
+    eq('8번에 학생 의견과 교사 의견이 따로 있다', rows.filter(r => /의견/.test(r.label)).map(r => `${r.label}: ${r.value}`), ['답 없는 학생 의견: 1건', '답 없는 교사 의견: 1건'])
+    rec('8번 새로 온 것 줄에도 나눠 적는다', rows[0].value === '3건 (교사 쪽지 1 · 학생 의견 1 · 교사 의견 0 · 신고 1)', rows[0].value) }
   eq('전날 대비 증감', m.waiting.delta, { messages: 1, feedback: -1, reports: 1, total: 1 })
-  eq('가장 오래 기다린 것', m.waiting.oldest, { date: '2026-09-15', kind: '의견' })
+  eq('가장 오래 기다린 것', m.waiting.oldest, { date: '2026-09-15', kind: '교사 의견' })
   eq('호출 추정 최고 학급: 누른 횟수 6 + 첫 글 2', m.resources.callsTop, { name: '가나초 5학년 1반', calls: 8, pct: 2 })
   eq('DB 용량 20%·줄 수', [m.resources.dbPct, m.resources.subsRows], [20, 12345])
   eq('판정: 15분 넘은 대기 1건으로 노랑', [rep.verdict, m.reasons.map(r => r.key)], ['yellow', ['stale']])
@@ -279,6 +285,9 @@ const DAYS = [
   rec('지난 날짜 채우기: 이미 있는 날짜는 건드리지 않고 historical로 만든다', srv.includes('!haveSet.has(k)') && srv.includes("source: 'backfill', historical: true"))
   rec('즉시 알림 검사는 grading-attempt 한 곳에서 기다리지 않고 부른다', ga.includes('runOpsAlertCheck(admin)') && !/await\s+runOpsAlertCheck/.test(ga) && ga.includes('waitUntil(p)'))
   rec('알림 검사는 던지지 않는다(전체 try/catch) + 1분 간격', /export async function runOpsAlertCheck[\s\S]*?try \{[\s\S]*?\} catch \(e\) \{/.test(alertSrv) && alertSrv.includes('CHECK_EVERY_MS'))
+  rec('시험 알림: 제목 앞에 [시험], 실제 알림 제목과 겹치지 않는다', O.ALERT_TEST_TITLE.startsWith('[시험] ') && O.ALERT_TEST_TITLE.includes(O.ALERT_TITLE_PREFIX) && !Object.values(O.ALERT_TITLES).includes(O.ALERT_TEST_TITLE))
+  rec('시험 알림: 관리자 확인 뒤 sendOpsAlert로 보낸다(30분 검사 없음)', /me\.role !== 'admin'[\s\S]*action === 'test_alert'[\s\S]*sendOpsAlert\(admin, \{ title: ALERT_TEST_TITLE/.test(api) && !api.includes('alertCooldownOk'))
+  rec('카드: 붉은 띠는 [시험] 제목도 잡고, 시험 버튼이 있다', card.includes(".like('title', `%${ALERT_TITLE_PREFIX}%`)") && card.includes('알림 시험 보내기'))
   rec('알림 보내기는 sendOpsAlert 한 함수', (alertSrv.match(/from\('notifications'\)\.insert/g) || []).length === 1 && alertSrv.includes('export async function sendOpsAlert'))
   rec('채점 경로(pages/api/ai.js)는 운영 보고·알림 코드를 부르지 않는다', !/opsAlert|opsReport/.test(read('pages/api/ai.js')))
   rec('카드는 진입 때 보고 1행만 읽는다(limit 1), 목록은 펼칠 때', card.includes(".order('report_date', { ascending: false }).limit(1)") && card.includes('if (open && list === null) loadList()'))
