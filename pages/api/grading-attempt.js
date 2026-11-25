@@ -10,6 +10,8 @@
 //   글 본문·실명·번호는 받지도 저장하지도 않는다. 표는 RLS 정책 없음(서비스 롤 전용).
 import { createClient } from '@supabase/supabase-js'
 import { ATTEMPT_JOIN_MS, segmentFields, clientSegmentFields } from '../../lib/gradingTiming'
+import { waitUntil } from '@vercel/functions'
+import { runOpsAlertCheck } from '../../lib/opsAlert.server'   // step688: 운영 즉시 알림 검사(응답과 따로, 실패는 삼킴)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -47,6 +49,8 @@ export default async function handler(req, res) {
     const open = openRows && openRows[0]
 
     if (action === 'start') {
+      // step688: 운영 즉시 알림 조건 검사. 기다리지 않는다(이 API의 응답과 무관). runOpsAlertCheck는 던지지 않는다.
+      try { const p = runOpsAlertCheck(admin); try { waitUntil(p) } catch (_) {} } catch (_) {}
       if (open) {
         const { error } = await admin.from('grading_attempts')
           .update({ tries: (Number(open.tries) || 1) + 1, last_try_at: now.toISOString() })

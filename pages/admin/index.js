@@ -22,6 +22,7 @@ import { mergeLogs, groupByDay, daySummary, kstDayOf } from '../../lib/errorHuma
 import { retryOnce, loadFailLine } from '../../lib/loadRetry'   // step676: 조회 실패를 "없어요"로 보이지 않게(자동 재시도 1회)
 import LoadFailNotice from '../../components/LoadFailNotice'   // step676: "불러오지 못했어요" + [다시 시도]
 import InfoTip from '../../components/InfoTip'                 // step676: ⓘ 설명 풍선(마우스·터치)
+import OpsReportCard from '../../components/OpsReportCard'   // step688: 📋 오늘 운영 보고(저장된 1행만 읽는 표시 전용 카드)
 
 // step679: 관리자 화면이 받는 학급 컬럼. 옛 열쇠 컬럼(api_key)은 넣지 않는다. 학급 표에 컬럼을 추가하면 여기에도 추가해야 화면에 온다.
 const ADMIN_CLASS_COLS = 'id, name, code, teacher_id, created_at, is_active, school, grade, board_scope, ranking_enabled, login_hint_enabled, login_username_prefix, login_default_password, trash_retention_days, deleted_at, deleted_by, delete_reason, tutor_chat_enabled, school_code, consent_password, feedback_reply_visible_to_students, self_signup_enabled, consent_notice_intro, morning_briefing_text, morning_briefing_source_topic_id, auto_supply_enabled, showcase_enabled, allow_paste, peer_share_enabled, peer_share_show_score'
@@ -2153,6 +2154,9 @@ export default function AdminHome() {
               </Link>
             </div>
           </div>
+
+          {/* 📋 step688: 오늘 운영 보고. 저장된 보고 1행만 읽어서 진입을 늦추지 않는다. */}
+          <OpsReportCard user={user} />
 
           {/* step676: 첫 묶음 조회 중 실패한 목록 안내. 실패한 목록은 비우지 않고 앞서 받은 값을 그대로 둔다. */}
           {loadFail.length > 0 && (
