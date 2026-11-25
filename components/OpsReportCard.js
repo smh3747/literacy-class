@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import InfoTip from './InfoTip'
 import {
-  sectionsOf, headlineOf, displayLines, judgeFromMetrics, expectedReportDate, addDays, dateLabel, titleOf, periodText, madeText,
+  sectionsOf, headlineOf, displayLines, judgeFromMetrics, expectedReportDate, kstToday, addDays, dateLabel, titleOf, periodText, madeText,
   VERDICT_LABEL, VERDICT_LEGEND, HIDDEN_NOTE, PARTIAL_NOTE, ALERT_BAND_PATTERN, ALERT_COOLDOWN_MS,
 } from '../lib/opsReport'
 
@@ -66,7 +66,24 @@ function SectionBox({ sec }) {
       <dl className="space-y-1">
         {sec.rows.map((r, i) => r.heading
           ? <div key={i} className="text-xs font-semibold text-gray-500 pt-1.5">{r.heading}</div>
-          : (
+          : r.table ? (
+            <table key={i} className="w-full text-sm ml-3" style={{ width: 'calc(100% - 0.75rem)' }}>
+              <thead>
+                <tr className="text-xs text-gray-500">
+                  <th className="text-left font-normal" />
+                  {r.table.cols.map(c => <th key={c} className="text-right font-normal whitespace-nowrap pl-3">{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {r.table.rows.map(t => (
+                  <tr key={t.label}>
+                    <th scope="row" className="text-left font-normal text-gray-600 whitespace-nowrap py-0.5">{t.label} <InfoTip text={t.info} /></th>
+                    {t.cells.map((c, j) => <td key={j} className="text-right font-semibold text-gray-900 whitespace-nowrap pl-3">{c}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
             <div key={i} className={`flex items-start justify-between gap-3 text-sm ${r.sub ? 'pl-3' : ''}`}>
               <dt className="text-gray-600 break-keep min-w-0">{r.label} <InfoTip text={r.info} /></dt>
               <dd className="text-right shrink-0 max-w-[60%]">
@@ -192,7 +209,7 @@ export default function OpsReportCard({ user }) {
               </ul>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {headlineOf(m).map(h => (
+              {headlineOf(m, !now || row.report_date === kstToday(now)).map(h => (
                 <div key={h.label} className="bg-white rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-xs text-gray-500 break-keep">{h.label} <InfoTip text={h.info} /></p>
                   <p className={`text-xl font-bold whitespace-nowrap ${h.tone === 'red' ? 'text-red-700' : h.tone === 'yellow' ? 'text-yellow-800' : 'text-gray-900'}`}>{h.value}</p>

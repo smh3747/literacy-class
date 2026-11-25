@@ -229,7 +229,7 @@ const DAYS = [
     eq('전날 보고에 나눈 값이 있으면 나눈 증감도 낸다', [r2.delta.feedbackStudent, r2.delta.feedbackTeacher], [-2, 1]) }
   { const rows = O.sectionsOf(m).find(s => s.key === 'waiting').rows
     eq('학생 의견과 선생님 의견이 따로 있다', rows.filter(r => /의견/.test(r.label || '')).map(r => `${r.label}: ${r.value}`), ['학생 의견: 1건', '선생님 의견: 0건', '답 없는 학생 의견: 1건', '답 없는 선생님 의견: 1건'])
-    eq('새로 온 것은 맨 위 합계와 종류마다 한 줄', rows.slice(0, 6).map(r => r.heading || `${r.label}: ${r.value}`), ['오늘 새로 온 것', '모두 합쳐: 3건', '선생님 쪽지: 1건', '학생 의견: 1건', '선생님 의견: 0건', '학생 신고: 1건']) }
+    eq('새로 온 것은 맨 위 합계와 종류마다 한 줄', rows.slice(0, 6).map(r => r.heading || `${r.label}: ${r.value}`), ['오늘 새로 온 것', '합계: 3건', '선생님 쪽지: 1건', '학생 의견: 1건', '선생님 의견: 0건', '학생 신고: 1건']) }
   eq('전날 대비 증감', m.waiting.delta, { messages: 1, feedback: -1, reports: 1, total: 1 })
   eq('가장 오래 기다린 것', m.waiting.oldest, { date: '2026-09-15', kind: '선생님 의견' })
   eq('호출 추정 최고 학급: 누른 횟수 6 + 첫 글 2', m.resources.callsTop, { name: '가나초 5학년 1반', calls: 8, pct: 2 })
@@ -261,18 +261,22 @@ const DAYS = [
     rec('부분마다 맨 위에 한 문장 결론', secs.every(s => typeof s.summary === 'string' && /요\.$/.test(s.summary)), secs.map(s => s.summary).join(' | '))
     eq('결론 문장(얼마나 썼나요)', sec('usage').summary, '반 3곳에서 학생 4명이 글 7편을 썼어요.')
     eq('결론 문장(빠르고 잘 됐나요)', sec('stability').summary, '제출 3번 가운데 거의 모두가 70초 안에 결과를 받았고, 결과를 못 받은 경우는 1번이었어요.')
-    rec('줄마다 설명 한 줄(묶음 제목 제외)', secs.every(s => s.rows.every(r => r.heading || (typeof r.info === 'string' && r.info.length > 5))) && O.headlineOf(m).every(h => h.info.length > 5))
+    rec('줄마다 설명 한 줄(묶음 제목 제외)', secs.every(s => s.rows.every(r => r.heading || (r.table && r.table.rows.every(t => t.info.length > 5)) || (typeof r.info === 'string' && r.info.length > 5))) && O.headlineOf(m).every(h => h.info.length > 5))
     eq('한 줄에 값 하나(얼마나 썼나요)', sec('usage').rows.map(r => r.label + ' ' + r.value), ['쓴 글 7편', '그중 처음 낸 글 4편', '고쳐 낸 글 3편', '쓴 반 3곳', '쓴 선생님 3명', '쓴 학생 4명', '평소 하루 평균 30편'])
-    rec('값에 가운뎃점으로 몰아 적은 것이 없다', secs.every(s => s.rows.every(r => r.heading || !/ · /.test(r.value))), JSON.stringify(secs.flatMap(s => s.rows.filter(r => !r.heading && / · /.test(r.value)).map(r => r.value))))
-    rec('값에 괄호 설명이 없다(묶음 제목의 "(추정)"만 허용)', secs.every(s => s.rows.every(r => r.heading || !/[()]/.test(r.value))))
+    rec('값에 가운뎃점으로 몰아 적은 것이 없다', secs.every(s => s.rows.every(r => r.heading || r.table || !/ · /.test(r.value))))
+    rec('값에 괄호 설명이 없다(묶음 제목의 "(추정)"만 허용)', secs.every(s => s.rows.every(r => r.heading || r.table || !/[()]/.test(r.value))))
+    eq('어디서 시간이 걸렸나: 표 하나(기록이 있는 줄만, 칸은 보통·거의 모두)', sec('stability').rows.find(r => r.table).table, { cols: ['보통', '거의 모두'], rows: [{ label: '제출 확인', info: '제출을 누른 뒤 이미 낸 글이 있는지 살펴보는 시간이에요.', cells: ['0.1초', '0.1초 안'] }, { label: 'AI 채점', info: 'AI가 글을 읽고 점수를 매기는 시간이에요.', cells: ['4초', '4초 안'] }] })
+    eq('표 바로 위는 묶음 제목', sec('stability').rows[sec('stability').rows.findIndex(r => r.table) - 1].heading, '어디서 시간이 걸렸나')
     eq('기다린 시간은 보통·거의 모두·가장 오래 각각 한 줄', [val('stability', '보통'), val('stability', '거의 모두'), val('stability', '가장 오래')], ['5초', '70초 안', '70초'])
     eq('1분 넘게 기다린 경우', val('stability', '1분 넘게 기다린 경우'), '3번 중 1번')
-    eq('결과를 못 받은 경우(한 반 1번이면 "가장 많았던 반" 줄 없음)', [val('stability', '결과를 못 받은 경우'), sec('stability').rows.filter(r => r.label === '가장 많았던 반').length], ['1번', 1])
-    eq('오류 종류는 사람 말로, 종류마다 한 줄', sec('stability').rows.filter(r => /오류|튕김/.test(r.label || '')).map(r => r.label + ' ' + r.value), ['AI 서버 오류 3번', '로그인 튕김 1번'])
+    eq('결과를 못 받은 경우(한 반 1번이면 "가장 많았던 반" 줄 없음)', [val('stability', '결과를 못 받은 경우'), sec('stability').rows.filter(r => r.label === '가장 많았던 반').length, sec('stability').rows.filter(r => r.label === '채점 실패가 가장 많았던 반').length], ['1번', 0, 1])
+    eq('오류 종류는 사람 말로, 종류마다 한 줄', sec('stability').rows.filter(r => /오류|튕김/.test(r.label || '')).map(r => r.label + ' ' + r.value), ['서버에서 난 AI 오류 3번', '로그인 튕김 1번'])
+    eq('오류 설명 두 줄', [O.sectionsOf({ ...m, stability: { ...m.stability, errors: { ai_call: 2, api_error: 1, js_error: 1 } } }).find(s => s.key === 'stability').rows.filter(r => /오류$/.test(r.label || '')).map(r => `${r.label}: ${r.info}`)][0], ['학생에게 보인 AI 오류: 학생 화면에 AI 오류 안내가 뜬 횟수예요.', "서버에서 난 AI 오류: 서버가 AI를 부르다 실패한 횟수예요. 같은 일이 '학생에게 보인 AI 오류'에도 한 번 더 적힐 수 있어요.", '화면 오류: 화면을 보여 주다가 오류가 난 경우예요.'])
+    eq('오류가 몰린 반 목록 제목', sec('stability').lists.map(l => l.title), ['오류가 몰린 반(모든 오류를 합친 수)'])
     eq('판정에 걸린 값은 색 표시(아직 점수를 기다리는 글)', rowOf('stability', '아직 점수를 기다리는 글').tone, 'yellow')
     eq('0인 값은 흐리게', [rowOf('stability', 'AI가 바빠서 나중에 채점한 글')?.tone, rowOf('growth', '새 반').tone, rowOf('quality', 'AI가 평가를 거절한 글').tone], [null, null, null])
     eq('0인 값은 흐리게(선생님 의견 0건)', sec('waiting').rows.find(r => r.label === '선생님 의견').tone, 'zero')
-    eq('쌓여 있는 것: 어제와 견준 말은 작은 글씨로', [rowOf('waiting', '모두 합쳐')?.value, sec('waiting').rows.filter(r => r.label === '모두 합쳐')[1].note, rowOf('waiting', '답 없는 학생 의견').note], ['3건', '어제보다 1건 늘었어요', null])
+    eq('쌓여 있는 것: 어제와 견준 말은 작은 글씨로', [rowOf('waiting', '합계')?.value, sec('waiting').rows.filter(r => r.label === '합계')[1].note, rowOf('waiting', '답 없는 학생 의견').note], ['3건', '어제보다 1건 늘었어요', null])
     eq('가장 오래 기다린 것', val('waiting', '가장 오래 기다린 것'), '2026년 9월 15일에 온 선생님 의견')
     eq('새 선생님이 있으면 첫 수업 줄', val('growth', '첫 수업을 한 새 선생님'), '2명 중 2명')
     const q = sec('growth').lists.find(l => l.title === '2주 넘게 쉬는 반')
@@ -282,6 +286,13 @@ const DAYS = [
     eq('저장 공간: 값과 한도 말', [val('resources', '저장 공간'), rowOf('resources', '저장 공간').note, rowOf('resources', '저장 공간').info], ['100MB', '한도 500MB의 20%', '지금까지 쌓인 자료의 크기예요. 한도 500MB는 추정이에요.'])
     eq('구글 AI를 가장 많이 쓴 반', [val('resources', '반 이름'), val('resources', '쓴 횟수'), rowOf('resources', '쓴 횟수').note], ['가나초 5학년 1반', '약 8번', '하루 한도 500번의 2%'])
     rec('주간: 새로 생긴 일은 새 용어', sec('weekly').lists[0].items[2] === '이번 주에 문제가 있었던 날은 1일, 살펴볼 일이 있었던 날은 2일이에요.', sec('weekly').lists[0].items[2])
+    eq('앞면 라벨: 지난 날짜면 "쓴 글"', [O.headlineOf(m, true)[0].label, O.headlineOf(m, false)[0].label], ['오늘 쓴 글', '쓴 글'])
+    eq('결론 문장(쓰는 반이 늘고 있나요): 새로 온 사람이 있으면 앞에', sec('growth').summary, '새로 온 선생님 1명, 새 반 1곳이 생겼어요. 최근 7일 동안 반 3곳이 썼고, 1곳은 2주 넘게 쉬고 있어요.')
+    eq('결론 문장: 새 선생님과 새 반이 모두 0이면 그 말은 뺀다', O.sectionsOf({ ...m, growth: { ...m.growth, newTeachers: 0, newClasses: 0, active7: 12, quietCount: 96 } }).find(s => s.key === 'growth').summary, '최근 7일 동안 반 12곳이 썼고, 96곳은 2주 넘게 쉬고 있어요.')
+    { const L3 = (x) => O.buildLines({ ...m, stability: { ...m.stability, ...x } }, { verdict: 'green', reasons: [] })[2]
+      eq('앞면 셋째 문장: 0인 항목은 빼고 있는 것만', [L3({ gradeErrors: 0, open: 2, deferred: 0 }), L3({ gradeErrors: 1, open: 2, deferred: 3 }), L3({ gradeErrors: 0, open: 0, deferred: 0 })], ['결과를 못 받은 경우가 2번 있었어요.', '채점 실패가 1번, 결과를 못 받은 경우가 2번, AI가 바빠서 나중에 채점한 글이 3편 있었어요.', '채점 실패나 결과를 못 받은 경우는 없었어요.']) }
+    eq('고친 뒤 점수 설명은 "바로 앞 글"로 통일', ['올랐어요', '그대로예요', '내려갔어요'].map(k => rowOf('effect', k).info), ['고쳐 쓴 글의 점수가 바로 앞 글보다 오른 경우예요.', '고쳐 쓴 글의 점수가 바로 앞 글과 같은 경우예요.', '고쳐 쓴 글의 점수가 바로 앞 글보다 낮아진 경우예요.'])
+    eq('고친 설명들', [rowOf('stability', '가장 오래').info, rowOf('resources', '반 이름').info, rowOf('features', '예시 작품 만든 수').info, rowOf('waiting', '처리 안 한 신고').info], ['가장 오래 기다린 한 번의 시간이에요.', '하루 동안 구글 AI를 가장 많이 쓴 것으로 보이는 반이에요.', 'AI가 본보기 글을 만들어 준 횟수예요.', '학생 신고 가운데 아직 확인 표시를 하지 않은 것이에요.'])
     eq('카드 앞면 숫자 4개', O.headlineOf(m).map(h => h.label + ' ' + h.value), ['오늘 쓴 글 7편', '쓴 반 3곳', '결과까지 걸린 시간(거의 모두) 70초', '새로 온 문의 3건'])
     // 영어·개발 용어 0개: 학교·반 이름을 뺀 화면 글자 전체에서 로마자 두 글자 이상은 AI·MB만 허용
     const texts = O.allDisplayText(m)
@@ -340,6 +351,7 @@ const DAYS = [
   rec('카드는 DB에 직접 쓰지 않는다', !/\.(insert|update|upsert|delete)\(/.test(card))
   rec('카드: 맨 위 버튼은 새로 고침 하나, 나머지 둘은 자세히 보기 맨 아래', (card.match(/<button/g) || []).length === 6 && card.includes("const REFRESH_LABEL = '🔄 최신으로 새로 고침'") && card.includes('보고가 아직 없어요. [{REFRESH_LABEL}]을 눌러 주세요.') && card.includes('빠진 날 채우기') && card.includes('경보가 잘 뜨는지 확인하기') && card.includes('누르면 연습용 경보가 한 번 떠요. 실제 문제가 아니에요.'))
   rec('카드: 누른 뒤 안내와 펼침 문구', card.includes("'새로 고쳤어요.'") && card.includes('연습용 경보를 보냈어요. 카드 위 빨간 띠와 종 알림을 확인해 주세요.') && card.includes("'접기 ▾' : '자세히 보기 ▸'"))
+  rec('카드: 표를 그리고, 앞면 라벨에 오늘 여부를 넘긴다', card.includes('r.table ? (') && card.includes('headlineOf(m, !now || row.report_date === kstToday(now))'))
   rec('카드: 저장된 문장(lines)을 읽지 않고 수치로 조립한다', !/select\('[^']*lines/.test(card) && card.includes('displayLines(m)'))
   rec('카드 글자에 영어·개발 용어가 없다', (() => { const lits = [...card.matchAll(/>([^<>{}]*[가-힣][^<>{}]*)</g)].map(x => x[1]).concat([...card.matchAll(/'([^'\n]*[가-힣][^'\n]*)'/g)].map(x => x[1])); return !lits.filter(t => !t.includes('`')).some(t => /[A-Za-z]{2,}/.test(t.replace(/AI|MB|REFRESH_LABEL/g, '')) || /학급|교사|—/.test(t)) })())
   rec('학생·교사 화면은 운영 보고를 부르지 않는다', (() => {
